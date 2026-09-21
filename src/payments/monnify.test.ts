@@ -155,6 +155,52 @@ describe("createSubAccount", () => {
     assert.ok((body as { defaultSplitPercentage: number }[])[0]!.defaultSplitPercentage > 0.1);
   });
 
+  it("reuses the existing subaccount when Monnify says it already exists", async () => {
+    // Re-running setup, or an earlier attempt that got this far, must not be a
+    // dead end: the subaccount that exists is the right answer.
+    const existing = {
+      subAccountCode: "MFY_SUB_942050897394",
+      accountNumber: "1960725673",
+      accountName: "DANIEL INIOBONG UWAK",
+      bankCode: "044",
+      bankName: "Access bank",
+      currencyCode: "NGN",
+      email: "a@b.ng",
+      defaultSplitPercentage: 1,
+    };
+
+    const f = stub((u, init) => {
+      if (init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            requestSuccessful: false,
+            responseMessage: "Sub account with account number 1960725673 already exists for merchant.",
+          }),
+          { status: 400 },
+        );
+      }
+      return envelope([existing]); // The GET listing.
+    });
+
+    const res = await createSubAccount({ accountNumber: "1960725673", bankCode: "044", email: "a@b.ng" }, f);
+    assert.equal(res.ok, true);
+    assert.equal(res.ok && res.account.subAccountCode, "MFY_SUB_942050897394");
+    assert.equal(res.ok && res.reused, true);
+  });
+
+  it("still fails if it already exists but cannot be found", async () => {
+    const f = stub((_u, init) =>
+      init?.method === "POST"
+        ? new Response(
+            JSON.stringify({ requestSuccessful: false, responseMessage: "already exists for merchant." }),
+            { status: 400 },
+          )
+        : envelope([]),
+    );
+    const res = await createSubAccount({ accountNumber: "1960725673", bankCode: "044", email: "a@b.ng" }, f);
+    assert.equal(res.ok, false);
+  });
+
   it("fails cleanly on an empty array", async () => {
     const f = stub(() => envelope([]));
     const res = await createSubAccount({ accountNumber: "1", bankCode: "044", email: "e" }, f);

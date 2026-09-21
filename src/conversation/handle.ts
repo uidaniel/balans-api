@@ -60,9 +60,15 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
 
   const outcome = await runEffects(result.effects, user.id, result.context.businessName, log);
 
-  // An effect can refuse to let the conversation move on — a wrong code must
-  // not advance to the consent step just because the machine hoped it would.
+  // An effect can refuse to let the conversation move on: a wrong code must not
+  // reach the consent step just because the machine hoped it would.
   const next = outcome.holdAt ?? result.next;
+
+  // And when it refuses, the machine's own replies describe a future that did
+  // not happen. Sending them anyway produces the worst kind of message pair -
+  // "what is your email?" immediately followed by "I could not set up your
+  // payouts" — so the effect's account of events replaces them.
+  const replies = outcome.holdAt ? outcome.lines : [...result.replies, ...outcome.lines];
 
   // The resolved name is what the next turn asks them to confirm.
   const context = outcome.resolvedName
@@ -70,7 +76,7 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     : result.context;
 
   await saveConversation(user.id, next, context);
-  await reply(user.id, msg.from, [...result.replies, ...outcome.lines], log);
+  await reply(user.id, msg.from, replies, log);
 
   log.info(
     { userId: user.id, from: state, to: next, effects: result.effects.map((e) => e.type) },
@@ -167,7 +173,10 @@ async function runEffects(
         }
 
         await activateBankAccount(userId, created.account.subAccountCode);
-        log.info({ userId, subAccount: created.account.subAccountCode }, "subaccount created");
+        log.info(
+          { userId, subAccount: created.account.subAccountCode, reused: created.reused ?? false },
+          created.reused ? "reused an existing subaccount" : "subaccount created",
+        );
         break;
       }
 

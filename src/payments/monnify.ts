@@ -163,10 +163,24 @@ export type SubAccount = {
  * transaction when the payment is initialised, which is where the fee engine's
  * answer goes. This is only the default Monnify falls back on.
  */
+export async function listSubAccounts(fetchImpl: typeof fetch = fetch): Promise<SubAccount[]> {
+  const res = await call<SubAccount[]>(SUB_ACCOUNTS_PATH, { method: "GET" }, fetchImpl);
+  return res.ok ? res.body : [];
+}
+
+/** The existing subaccount for an account number, if the merchant has one. */
+export async function findSubAccount(
+  accountNumber: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<SubAccount | null> {
+  const all = await listSubAccounts(fetchImpl);
+  return all.find((a) => a.accountNumber === accountNumber) ?? null;
+}
+
 export async function createSubAccount(
   input: { accountNumber: string; bankCode: string; email: string },
   fetchImpl: typeof fetch = fetch,
-): Promise<{ ok: true; account: SubAccount } | { ok: false; message: string }> {
+): Promise<{ ok: true; account: SubAccount; reused?: boolean } | { ok: false; message: string }> {
   const res = await call<SubAccount[]>(
     SUB_ACCOUNTS_PATH,
     {
@@ -184,7 +198,18 @@ export async function createSubAccount(
     fetchImpl,
   );
 
-  if (!res.ok) return { ok: false, message: res.message };
+  if (!res.ok) {
+    // Monnify refuses a second subaccount for an account number it already
+    // holds. That is not a failure: somebody re-running setup, or an earlier
+    // attempt that got this far before stopping, should end up with the
+    // subaccount that exists rather than a dead end.
+    if (/already exists/i.test(res.message)) {
+      const existing = await findSubAccount(input.accountNumber, fetchImpl);
+      if (existing) return { ok: true, account: existing, reused: true };
+    }
+    return { ok: false, message: res.message };
+  }
+
   const account = res.body[0];
   if (!account?.subAccountCode) return { ok: false, message: "no subaccount returned" };
   return { ok: true, account };
