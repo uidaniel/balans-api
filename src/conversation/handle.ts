@@ -15,7 +15,7 @@ import { checkCode, issueCode } from "../lib/codes.ts";
 import { sendEmail, transport, verificationEmail } from "../email/send.ts";
 import { markEmailVerified, setEmail, recordConsent, saveBankAccount, activateBankAccount, getPendingBank } from "./store.ts";
 import type { Inbound } from "../whatsapp/inbound.ts";
-import { step, type Effect, type State } from "./machine.ts";
+import { step, VOICE, type Effect, type State } from "./machine.ts";
 import {
   loadConversation,
   recordInbound,
@@ -57,6 +57,9 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   }
 
   const result = step(state, saved.context, { text: msg.text ?? "", profileName: msg.profileName }, legalConsentVersion);
+
+  // Out before the work, so a bank lookup or a code check is not a silent gap.
+  if (result.ack?.length) await reply(user.id, msg.from, result.ack, log);
 
   const outcome = await runEffects(result.effects, user.id, result.context.businessName, log);
 
@@ -221,6 +224,11 @@ async function runEffects(
 
         if (check.ok) {
           await markEmailVerified(userId, effect.email);
+          // The machine moved to consent but has nothing to say about it: only
+          // this branch knows the code was right. Without this the flow ends in
+          // silence at the last step.
+          extra.push("Email confirmed.");
+          extra.push(VOICE.askConsent);
           break;
         }
 

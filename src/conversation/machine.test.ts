@@ -159,6 +159,38 @@ describe("the email step", () => {
   });
 });
 
+describe("nothing waits in silence", () => {
+  // Anything that reaches a bank or a mailbox takes a second or two, and a
+  // silent gap in a chat reads as nothing happening.
+  it("says it is checking before it checks the account", () => {
+    const out = go("onboarding:bank", { businessName: "X" }, "GTBank 0123456789");
+    assert.ok(out.ack?.length, "the bank lookup must announce itself first");
+    assert.match(out.ack![0]!, /moment|checking/i);
+    // And not as a reply, which would arrive after the answer it precedes.
+    assert.equal(out.replies.length, 0);
+  });
+
+  it("says it is checking before it checks the code", () => {
+    const out = go("onboarding:verify_email", { email: "a@b.ng" }, "123456");
+    assert.ok(out.ack?.length, "the code check must announce itself first");
+    assert.match(out.ack![0]!, /checking/i);
+  });
+
+  it("never puts a slow step's reassurance in replies", () => {
+    // replies are sent after the effects, so a "one moment" there arrives at
+    // the same time as the result it was meant to precede.
+    for (const [state, ctx, text] of [
+      ["onboarding:bank", { businessName: "X" }, "GTBank 0123456789"],
+      ["onboarding:verify_email", { email: "a@b.ng" }, "123456"],
+    ] as const) {
+      const out = go(state, ctx, text);
+      for (const r of out.replies) {
+        assert.ok(!/one moment|checking/i.test(r), `"${r}" belongs in ack, not replies`);
+      }
+    }
+  });
+});
+
 describe("confirming the account", () => {
   it("yes moves on and asks for a subaccount", () => {
     const out = go("onboarding:confirm_account", { resolvedAccountName: "KEMI A" }, "yes");

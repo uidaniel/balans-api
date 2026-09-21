@@ -49,6 +49,15 @@ export type Effect =
   | { type: "show_help" };
 
 export type Step = {
+  /**
+   * Sent before the effects run, not after.
+   *
+   * Anything that reaches a bank or a mailbox takes a second or two, and a
+   * silent gap in a chat reads as nothing happening. "One moment" is only
+   * worth saying if it arrives while there is still a moment to wait.
+   */
+  ack?: string[];
+  /** Sent once the effects are done, and dropped if one of them held. */
   replies: string[];
   next: State;
   context: Context;
@@ -68,7 +77,7 @@ const HELP = /^(help|menu|what can you do|abeg help)\b/i;
 const CANCEL = /^(cancel|stop|start over|restart)\b/i;
 const GREETING = /^(hi|hello|hey|good (morning|afternoon|evening)|hola|howfa|how far)\b/i;
 
-const VOICE = {
+export const VOICE = {
   askBusinessName:
     "Welcome to Balans. What is your business called? This is the name your clients will see on every invoice.",
   askBank:
@@ -79,6 +88,7 @@ const VOICE = {
   askConsent:
     "Last thing. By continuing you accept our terms and privacy notice:\n" +
     "balans.ng/terms\nbalans.ng/privacy\n\nReply “I agree” to finish.",
+  verifying: "Checking that code…",
   done:
     "You are set up. Send me a line like “Invoice Zenith Homes 350k for duplex 3D render, due Friday” and I will draft it for you.",
   helpIdle:
@@ -212,7 +222,8 @@ function takeBank(text: string, ctx: Context): Step {
   }
 
   return {
-    replies: ["One moment, checking that account…"],
+    ack: ["One moment, checking that account…"],
+    replies: [],
     next: "onboarding:confirm_account",
     context: { ...ctx, accountNumber: account, bankName: bank, attempts: 0 },
     // The caller resolves the name with the provider. We never take the user's
@@ -300,8 +311,10 @@ function takeCode(text: string, ctx: Context): Step {
   }
 
   // Whether it is right is the caller's business: only it can check the hash.
-  // It moves the conversation on, or holds it here.
+  // It moves the conversation on, or holds it here, and it owns what is said
+  // either way — which is why there are no replies here.
   return {
+    ack: [VOICE.verifying],
     replies: [],
     next: "onboarding:consent",
     context: { ...ctx, attempts: 0 },
