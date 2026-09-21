@@ -8,6 +8,7 @@
     "dev": "node --env-file=.env.local --watch --experimental-strip-types src/index.ts",
     "start": "node --experimental-strip-types src/index.ts",
     "migrate": "node --env-file=.env.local --experimental-strip-types src/db/migrate.ts",
+    "reset": "node --env-file=.env.local --experimental-strip-types src/db/reset-user.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test --test-reporter=spec \"src/**/*.test.ts\" \"core/**/*.test.ts\""
   },

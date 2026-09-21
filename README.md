@@ -33,6 +33,23 @@ npm test
 Node 22 or newer. TypeScript runs directly through `--experimental-strip-types`;
 there is no build step.
 
+## Walking onboarding again
+
+Onboarding has six steps and a real bank lookup in the middle, so testing it
+means walking it repeatedly.
+
+```bash
+npm run reset -- 2348107408438     # same user, back to the first message
+npm run reset -- --last            # whoever messaged most recently
+npm run reset -- 2348107408438 --hard   # delete the user outright
+```
+
+From the chat itself, `restart` works too — but only mid-onboarding. Once
+someone is set up there is nothing to cancel, and the script is the way.
+
+Note the reset clears `messages` as well. Without that the next "Hi" carries a
+`wa_message_id` already on file, and is correctly ignored as a redelivery.
+
 If the database schema was created by hand — pasted into a SQL editor, say —
 record it without re-running the files:
 
