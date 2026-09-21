@@ -13,6 +13,14 @@
  */
 
 import { normalisePhone } from "../whatsapp/client.ts";
+import { b, field, i, lines, para } from "../whatsapp/format.ts";
+import type { Civil } from "../../core/dates.ts";
+import type { Parsed } from "../parser/schema.ts";
+import type { Correction } from "../parser/corrections.ts";
+import { parseAmountToKobo } from "../../core/amount.ts";
+import { resolveDueDate } from "../../core/dates.ts";
+import { askFor, DEFAULT_DESCRIPTION } from "../documents/summary.ts";
+import { defaults, env } from "../config.ts";
 
 export type State =
   | "new"
@@ -23,6 +31,21 @@ export type State =
   | "onboarding:verify_email"
   | "onboarding:consent"
   | "idle"
+  /** A draft is on screen and the next message decides its fate (F6 step 3). */
+  | "awaiting_confirm"
+  /** One field is missing and it is the only thing being asked about (F3). */
+  | "awaiting_field:client_name"
+  | "awaiting_field:amount"
+  | "awaiting_field:description"
+  | "awaiting_field:due_date"
+  /** Settings (F17). The bank change is the one with a code in front of it. */
+  | "settings:menu"
+  | "settings:business_name"
+  | "settings:due_days"
+  | "settings:bank_code"
+  | "settings:bank_details"
+  | "settings:bank_confirm"
+  | "settings:delete_confirm"
   | "paused";
 
 export type Context = {
@@ -34,6 +57,47 @@ export type Context = {
   email?: string;
   /** Wrong answers in a row on the current step. */
   attempts?: number;
+
+  /**
+   * The document being built, before it is worth a row in the database.
+   *
+   * It lives here through the awaiting_field steps and is written as a draft
+   * only once there is enough to show a summary. A half-built document in
+   * `documents` would be a draft the user never saw.
+   */
+  doc?: PendingDoc;
+  /** The draft on screen, once there is one. */
+  draftId?: string;
+
+  /**
+   * A bank change in progress (F17).
+   *
+   * Filled in by the effect that resolves the account and creates the
+   * subaccount, so the turn that says "yes" has everything it needs and
+   * committing is only a scheduling decision.
+   */
+  changing?: {
+    bankCode: string;
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+    subAccountCode: string;
+  };
+};
+
+/** A document under construction. Amounts are kobo; nothing here is a string. */
+export type PendingDoc = {
+  type: "invoice" | "quote";
+  clientName?: string;
+  clientEmail?: string | null;
+  lines: { description: string; qty: number; unitAmountKobo: number }[];
+  /** Set when an amount arrived with no description to attach it to. */
+  totalKobo?: number;
+  dueDate?: Civil | null;
+  vatPercent?: number | null;
+  depositPercent?: number | null;
+  passFeesToClient?: boolean;
+  notes?: string | null;
 };
 
 /**
@@ -46,15 +110,42 @@ export type Effect =
   | { type: "send_email_code"; email: string }
   | { type: "verify_email_code"; email: string; code: string }
   | { type: "record_consent"; version: string }
-  | { type: "show_help" };
+  | { type: "show_help" }
+  /** Write the draft and show its summary (F6 step 2). */
+  | { type: "save_draft"; doc: PendingDoc }
+  /** Number it, make the link, send it (F6 step 4). */
+  | { type: "send_document" }
+  | { type: "discard_draft" }
+  | { type: "show_debtors" }
+  | { type: "show_summary" }
+  | { type: "show_settings" }
+  | { type: "show_upgrade" }
+  | { type: "show_referral" }
+  | { type: "document_action"; intent: Parsed["intent"]; number: number | null }
+  /* -- Settings (F17) ---------------------------------------------------- */
+  | { type: "set_business_name"; name: string }
+  | { type: "set_due_days"; days: number }
+  /** A code to the verified email before anything about the bank moves. */
+  | { type: "send_bank_change_code" }
+  | { type: "verify_bank_change_code"; code: string }
+  /** Resolve the new account, for the user to confirm by name. */
+  | { type: "resolve_new_account"; bankQuery: string; accountNumber: string }
+  /** Schedule it, alert, and tell them when it takes effect. */
+  | { type: "commit_bank_change" }
+  | { type: "cancel_bank_change" }
+  | { type: "delete_account" }
+  /* -- Pro (F18) --------------------------------------------------------- */
+  | { type: "start_pro"; method: "link" | "deduct_from_invoice" };
 
 export type Step = {
   /**
    * Sent before the effects run, not after.
    *
-   * Anything that reaches a bank or a mailbox takes a second or two, and a
-   * silent gap in a chat reads as nothing happening. "One moment" is only
-   * worth saying if it arrives while there is still a moment to wait.
+   * Reserved for a wait long enough that the typing bubble is not enough on its
+   * own. Nothing currently uses it: the bank lookup, the subaccount and the code
+   * send are all about a second, which the typing bubble covers for free. A
+   * "one moment" is a chargeable message from October 2026, and it has to buy
+   * more reassurance than the free thing already does.
    */
   ack?: string[];
   /** Sent once the effects are done, and dropped if one of them held. */
@@ -67,36 +158,217 @@ export type Step = {
 export type Inbound = {
   text: string;
   profileName?: string;
+  /**
+   * What the parser made of the message, where the caller ran it.
+   *
+   * The parser is asynchronous and this function is not, so the reading
+   * happens at the edge and the decision happens here. That keeps every
+   * branch below testable by calling a function with a fixed parse.
+   */
+  parsed?: Parsed;
+  /** A correction read against the draft on screen, if there is one. */
+  correction?: Correction | null;
+  /** Set when nothing could read the message (F3, section 15). */
+  parseFailed?: "too_long" | "unavailable";
+  /** Today in Lagos, for the default due date. */
+  today?: Civil;
 };
 
 /* -------------------------------------------------------------------------- */
 /* Global commands                                                            */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The legal links, written in full.
+ *
+ * WhatsApp linkifies a URL it recognises, and "balans.ng/terms" is not
+ * reliably one — it renders as plain text somebody has to retype. Section 12
+ * requires these reachable at the moment of consent, and a link that cannot be
+ * tapped is not reachable on a phone.
+ */
+const site = env.SITE_URL.replace(/[/]$/, "");
+const TERMS_URL = site + "/terms";
+const PRIVACY_URL = site + "/privacy";
+
 const HELP = /^(help|menu|what can you do|abeg help)\b/i;
 const CANCEL = /^(cancel|stop|start over|restart)\b/i;
 const GREETING = /^(hi|hello|hey|good (morning|afternoon|evening)|hola|howfa|how far)\b/i;
 
+/**
+ * Everything the bot says during setup.
+ *
+ * Two things shape the copy. Bold marks values and actions, so a glance finds
+ * the thing to check and the thing to do. And a turn is one message: WhatsApp
+ * bills Nigeria per service message from 1 October 2026, so a "Got it" on its
+ * own line is a real cost for something that reads better joined to the
+ * question after it. PRD section 15 puts the whole of setup at six messages.
+ */
 export const VOICE = {
-  askBusinessName:
-    "Welcome to Balans. What is your business called? This is the name your clients will see on every invoice.",
-  askBank:
-    "Thanks. Which bank do you use, and what is the account number? Send them together, like “GTBank 0123456789”.",
-  askEmail:
-    "Almost done. What email address should we send your receipts and copies to?",
-  askCode: (email: string) => `We sent a 6-digit code to ${email}. What is it?`,
-  askConsent:
-    "Last thing. By continuing you accept our terms and privacy notice:\n" +
-    "balans.ng/terms\nbalans.ng/privacy\n\nReply “I agree” to finish.",
-  verifying: "Checking that code…",
-  done:
-    "You are set up. Send me a line like “Invoice Zenith Homes 350k for duplex 3D render, due Friday” and I will draft it for you.",
-  helpIdle:
-    "I handle quotes, invoices and payments.\n\n" +
-    "Try: Invoice Tunde 20k for logo design, due Friday\n" +
-    "Or ask: who owes me?",
-  paused:
-    "Your account is on hold while we review it. Payments on invoices you already sent still work. Email hello@balans.ng and a person will look at it.",
+  askBusinessName: para(
+    "👋 Welcome to Balans.",
+    lines(
+      b("What is your business called?"),
+      "This is the name your clients see on every invoice.",
+    ),
+  ),
+
+  /** The confirmation and the next question, in one message rather than two. */
+  gotNameAskBank: (name: string) =>
+    para(
+      `✅ ${field("Business", name)}`,
+      lines(
+        b("Which bank should your money go to?"),
+        `Send the bank and account number together — like ${b("GTBank 0123456789")}.`,
+      ),
+    ),
+
+  askBank: lines(
+    `🏦 ${b("Which bank should your money go to?")}`,
+    `Send the bank and account number together — like ${b("GTBank 0123456789")}.`,
+  ),
+
+  askEmail: lines(
+    `✉️ ${b("What email address should we use?")}`,
+    "Your receipts and invoice copies go there.",
+  ),
+
+  askCode: (email: string) =>
+    para(
+      `📨 Code sent to ${b(email)}.`,
+      lines(
+        b("Send me the 6 digits."),
+        `No code? Reply ${b("resend")}, or ${b("change")} to use another address.`,
+      ),
+    ),
+
+  /** Confirmation, the terms and the thing to reply: one message, not three. */
+  confirmedAskConsent: para(
+    "✅ Email confirmed.",
+    lines("One last thing — our terms and privacy notice:", TERMS_URL, PRIVACY_URL),
+    `Reply ${b("I agree")} to finish.`,
+  ),
+
+  askConsent: para(
+    lines("📄 Our terms and privacy notice:", TERMS_URL, PRIVACY_URL),
+    `Reply ${b("I agree")} to finish.`,
+  ),
+
+  done: para(
+    `🎉 ${b("You are set up.")}`,
+    lines(
+      "Send me a line like:",
+      i("Invoice Zenith Homes 350k for duplex 3D render, due Friday"),
+      "and I will draft it for you.",
+    ),
+  ),
+
+  helpIdle: para(
+    `👋 ${b("I handle quotes, invoices and payments.")}`,
+    lines(
+      `Try: ${i("Invoice Tunde 20k for logo design, due Friday")}`,
+      `Or ask: ${i("who owes me?")}`,
+    ),
+  ),
+
+  /** F6: a draft went away, and it should be obvious that it did. */
+  draftDiscarded: lines(
+    "🗑️ Dropped that one.",
+    `Send me another whenever you are ready — like ${b("Invoice Tunde 20k for logo")}.`,
+  ),
+
+  nothingPending: lines(
+    "There is no draft waiting.",
+    `Send me a line like ${b("Invoice Tunde 20k for logo, due Friday")}.`,
+  ),
+
+  /** Section 15: when the model is down, say so rather than guessing. */
+  cannotRead: para(
+    `🤔 ${b("I could not read that one.")}`,
+    lines(
+      `Try the short form: ${b("Invoice Tunde 20k for logo, due Friday")}`,
+      `Or reply ${b("help")}.`,
+    ),
+  ),
+
+  tooLong: lines(
+    b("That message is too long for me."),
+    "Send the short version — who, how much, what for, and when.",
+  ),
+
+  outOfScope: para(
+    `👋 ${b("I only do quotes, invoices and payments.")}`,
+    lines(
+      `Try: ${i("Invoice Tunde 20k for logo design, due Friday")}`,
+      `Or ask: ${i("who owes me?")}`,
+    ),
+  ),
+
+  notBuiltYet: (what: string) =>
+    lines(`🚧 ${b(what)} is not built yet.`, "It is coming — the rest works now."),
+
+  /* -- Settings (F17) ---------------------------------------------------- */
+
+  askNewBusinessName: lines(
+    `🏷️ ${b("What should your business be called?")}`,
+    "This changes the name on every invoice from now on.",
+  ),
+
+  askDueDays: lines(
+    `📅 ${b("How many days should invoices be due in?")}`,
+    `A number between 0 and 180. Most people use ${b("7")}.`,
+  ),
+
+  /**
+   * The code comes first, before any bank details are even asked for.
+   *
+   * That ordering is deliberate: somebody who has taken over the WhatsApp
+   * number gets stopped here, having learned nothing about the account.
+   */
+  askBankChangeCode: para(
+    `🔐 ${b("Changing where your money goes needs a code.")}`,
+    lines(
+      "We have sent a 6-digit code to your verified email.",
+      "Send it here to carry on.",
+    ),
+    `Reply ${b("cancel")} to leave things as they are.`,
+  ),
+
+  askNewBank: lines(
+    `🏦 ${b("Which bank and account number should we pay into?")}`,
+    `Send them together — like ${b("GTBank 0123456789")}.`,
+  ),
+
+  bankChangeAbandoned: lines(
+    b("Nothing changed."),
+    "Your money still goes to the account you set up.",
+  ),
+
+  settingsClosed: lines(b("Closed settings."), "Nothing changed."),
+
+  settingsUnknown: lines(
+    `Reply with a ${b("number")} from the list.`,
+    `Or ${b("cancel")} to leave settings.`,
+  ),
+
+  /** F17: "confirm twice", and the second one is not a yes/no. */
+  confirmDelete: para(
+    `⚠️ ${b("This closes your Balans account.")}`,
+    lines(
+      "Open invoices are cancelled. Your payout account is disconnected.",
+      "Records of money that moved are kept, as the law requires.",
+    ),
+    `If you are sure, send exactly: ${b("delete my account")}`,
+  ),
+
+  deleteAbandoned: b("Your account is untouched."),
+
+  paused: para(
+    `⏸️ ${b("Your account is on hold")} while we review it.`,
+    lines(
+      "Payments on invoices you already sent still work.",
+      "Email hello@balans.ng and a person will look at it.",
+    ),
+  ),
 };
 
 /* -------------------------------------------------------------------------- */
@@ -121,7 +393,7 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
 
   if (CANCEL.test(text) && state.startsWith("onboarding")) {
     return {
-      replies: ["No problem, we will start again.", VOICE.askBusinessName],
+      replies: [para("No problem, we will start again.", VOICE.askBusinessName)],
       next: "onboarding:business_name",
       context: {},
       effects: [],
@@ -136,7 +408,7 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       return {
         replies: GREETING.test(text)
           ? [VOICE.askBusinessName]
-          : ["Let us get you set up first, then I can do that.", VOICE.askBusinessName],
+          : [para("Let us get you set up first, then I can do that.", VOICE.askBusinessName)],
         next: "onboarding:business_name",
         context: {},
         effects: [],
@@ -160,20 +432,554 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
     case "onboarding:consent":
       return takeConsent(text, context, consentVersion);
 
-    case "idle":
+    case "idle": {
       if (GREETING.test(text)) {
         return { replies: [VOICE.helpIdle], next: "idle", context, effects: [] };
       }
-      // PRD-GAP: the parser (F3) turns this into a draft. Until it exists, say
-      // so plainly rather than pretending to understand.
-      return {
-        replies: ["I cannot draft documents yet — that part is still being built."],
-        next: "idle",
-        context,
-        effects: [],
-      };
+      // Answers to the Pro offer. Read here rather than by the model, because
+      // "pay now" is a decision about money and its meaning is fixed.
+      const pro = asProChoice(text);
+      if (pro) {
+        return { replies: [], next: "idle", context, effects: [{ type: "start_pro", method: pro }] };
+      }
+      return fromParsed(msg, context, today(msg));
+    }
+
+    case "awaiting_field:client_name":
+    case "awaiting_field:amount":
+    case "awaiting_field:description":
+    case "awaiting_field:due_date":
+      return takeMissingField(state, text, context, msg);
+
+    case "awaiting_confirm":
+      return atConfirm(text, context, msg);
+
+    case "settings:menu":
+      return atSettingsMenu(text, context, msg);
+
+    case "settings:business_name":
+      return takeNewBusinessName(text, context);
+
+    case "settings:due_days":
+      return takeDueDays(text, context);
+
+    case "settings:bank_code":
+      return takeBankChangeCode(text, context);
+
+    case "settings:bank_details":
+      return takeNewBankDetails(text, context);
+
+    case "settings:bank_confirm":
+      return confirmNewBank(text, context);
+
+    case "settings:delete_confirm":
+      return confirmDeletion(text, context);
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Settings (F17)                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The menu.
+ *
+ * Numbered, because a list of nine phrases to type is a list nobody reads. The
+ * words still work: "change bank" gets there without counting.
+ */
+function atSettingsMenu(text: string, ctx: Context, msg: Inbound): Step {
+  const s = text.trim().toLowerCase();
+  const now = today(msg);
+
+  const escape = commandEscape(msg, ctx, now);
+  if (escape) return escape;
+
+  if (/^(1|business name|name|change (my )?(business )?name)\b/.test(s)) {
+    return { replies: [VOICE.askNewBusinessName], next: "settings:business_name", context: ctx, effects: [] };
+  }
+
+  if (/^(2|bank|change (my )?bank|payout|account)\b/.test(s)) {
+    // F17 step 1: nothing about the bank moves before the code.
+    return {
+      replies: [],
+      next: "settings:bank_code",
+      context: { ...ctx, attempts: 0 },
+      effects: [{ type: "send_bank_change_code" }],
+    };
+  }
+
+  if (/^(3|due|due days|payment terms)\b/.test(s)) {
+    return { replies: [VOICE.askDueDays], next: "settings:due_days", context: ctx, effects: [] };
+  }
+
+  if (/^(4|delete|close|delete my account|close my account)\b/.test(s)) {
+    return { replies: [VOICE.confirmDelete], next: "settings:delete_confirm", context: ctx, effects: [] };
+  }
+
+  if (/^(cancel|back|never ?mind|exit|done|no)\b/.test(s)) {
+    return { replies: [VOICE.settingsClosed], next: "idle", context: forget(ctx), effects: [] };
+  }
+
+  return retry("settings:menu", ctx, VOICE.settingsUnknown);
+}
+
+function takeNewBusinessName(text: string, ctx: Context): Step {
+  const name = text.replace(/\s+/g, " ").trim();
+  if (name.length < 2 || name.length > 80) {
+    return retry("settings:business_name", ctx, VOICE.askNewBusinessName);
+  }
+  return {
+    replies: [],
+    next: "idle",
+    context: { ...ctx, businessName: name, attempts: 0 },
+    effects: [{ type: "set_business_name", name }],
+  };
+}
+
+function takeDueDays(text: string, ctx: Context): Step {
+  const days = Number(text.trim().replace(/[^0-9]/g, ""));
+  if (!Number.isInteger(days) || days < 0 || days > 180) {
+    return retry("settings:due_days", ctx, VOICE.askDueDays);
+  }
+  return {
+    replies: [],
+    next: "idle",
+    context: { ...ctx, attempts: 0 },
+    effects: [{ type: "set_due_days", days }],
+  };
+}
+
+/** F17 step 1: the code from the verified email, before anything else. */
+function takeBankChangeCode(text: string, ctx: Context): Step {
+  const s = text.trim();
+
+  if (/^(cancel|stop|never ?mind|no)\b/i.test(s)) {
+    return { replies: [VOICE.bankChangeAbandoned], next: "idle", context: forget(ctx), effects: [] };
+  }
+
+  const code = s.replace(/\D/g, "");
+  if (code.length !== 6) {
+    return retry("settings:bank_code", ctx, VOICE.askBankChangeCode);
+  }
+
+  return {
+    replies: [],
+    next: "settings:bank_details",
+    context: { ...ctx, attempts: 0 },
+    effects: [{ type: "verify_bank_change_code", code }],
+  };
+}
+
+/** Same shape as onboarding, because it is the same question. */
+function takeNewBankDetails(text: string, ctx: Context): Step {
+  const account = text.match(/\b(\d{10})\b/)?.[1];
+  const bank = text.replace(/\b\d{10}\b/, "").replace(/\s+/g, " ").trim();
+
+  if (/^(cancel|stop|never ?mind)\b/i.test(text.trim())) {
+    return { replies: [VOICE.bankChangeAbandoned], next: "idle", context: forget(ctx), effects: [] };
+  }
+
+  if (!account || bank.length < 2) {
+    return retry("settings:bank_details", ctx, VOICE.askNewBank);
+  }
+
+  return {
+    replies: [],
+    next: "settings:bank_confirm",
+    // `changing` is filled in by the effect, which is the only thing that
+    // knows the resolved name and the subaccount it created.
+    context: { ...ctx, attempts: 0 },
+    effects: [{ type: "resolve_new_account", bankQuery: bank, accountNumber: account }],
+  };
+}
+
+function confirmNewBank(text: string, ctx: Context): Step {
+  if (/^(yes|yeah|yep|correct|that is right|na me|ok|okay|confirm)\b/i.test(text.trim())) {
+    return {
+      replies: [],
+      next: "idle",
+      context: forget({ ...ctx, attempts: 0 }),
+      effects: [{ type: "commit_bank_change" }],
+    };
+  }
+  if (/^(no|nope|wrong|not me|cancel|stop)\b/i.test(text.trim())) {
+    return {
+      replies: [VOICE.bankChangeAbandoned],
+      next: "idle",
+      context: forget(ctx),
+      effects: [{ type: "cancel_bank_change" }],
+    };
+  }
+  return retry(
+    "settings:bank_confirm",
+    ctx,
+    ctx.changing?.accountName
+      ? lines(`Is ${b(ctx.changing.accountName)} the right account?`, `Reply ${b("yes")} or ${b("no")}.`)
+      : `Reply ${b("yes")} or ${b("no")}.`,
+  );
+}
+
+/** F17: "confirm twice". This is the second. */
+function confirmDeletion(text: string, ctx: Context): Step {
+  const s = text.trim().toLowerCase();
+  if (s === "delete my account") {
+    return { replies: [], next: "idle", context: forget(ctx), effects: [{ type: "delete_account" }] };
+  }
+  if (/^(no|cancel|stop|never ?mind)\b/.test(s)) {
+    return { replies: [VOICE.deleteAbandoned], next: "idle", context: forget(ctx), effects: [] };
+  }
+  return retry("settings:delete_confirm", ctx, VOICE.confirmDelete);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Documents (F6)                                                             */
+/* -------------------------------------------------------------------------- */
+
+const today = (msg: Inbound): Civil =>
+  msg.today ?? { y: 1970, m: 1, d: 1 }; // the caller always supplies it
+
+/**
+ * Acts on what the parser made of the message.
+ *
+ * Every branch that is not a document either runs now or says plainly that it
+ * does not. Silence and vague deferral are both worse than one honest line.
+ */
+function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
+  if (msg.parseFailed === "too_long") {
+    return { replies: [VOICE.tooLong], next: "idle", context: ctx, effects: [] };
+  }
+  if (msg.parseFailed || !msg.parsed) {
+    return { replies: [VOICE.cannotRead], next: "idle", context: ctx, effects: [] };
+  }
+
+  const p = msg.parsed;
+
+  switch (p.intent) {
+    case "create_invoice":
+    case "create_quote":
+      return startDocument(p, ctx, now);
+
+    case "help":
+      return { replies: [VOICE.helpIdle], next: "idle", context: ctx, effects: [{ type: "show_help" }] };
+
+    case "debtors":
+      return { replies: [], next: "idle", context: ctx, effects: [{ type: "show_debtors" }] };
+    case "summary":
+      return { replies: [], next: "idle", context: ctx, effects: [{ type: "show_summary" }] };
+    case "settings":
+      return {
+        replies: [],
+        next: "settings:menu",
+        context: ctx,
+        effects: [{ type: "show_settings" }],
+      };
+    case "upgrade":
+      return { replies: [], next: "idle", context: ctx, effects: [{ type: "show_upgrade" }] };
+    case "referral":
+      return { replies: [], next: "idle", context: ctx, effects: [{ type: "show_referral" }] };
+
+    case "status":
+    case "stop_reminders":
+    case "cancel_document":
+    case "resend_document":
+    case "convert_quote":
+    case "edit_document":
+    case "payment_request":
+    case "record_payment":
+      return {
+        replies: [],
+        next: "idle",
+        context: ctx,
+        effects: [{ type: "document_action", intent: p.intent, number: p.documentNumber }],
+      };
+
+    // A stray "yes" with nothing to confirm, and everything unrecognised.
+    case "confirm":
+    case "reject":
+      return { replies: [VOICE.nothingPending], next: "idle", context: ctx, effects: [] };
+
+    default:
+      return { replies: [VOICE.outOfScope], next: "idle", context: ctx, effects: [] };
+  }
+}
+
+/** Turns a parse into a document under construction, then asks or drafts. */
+function startDocument(p: Parsed, ctx: Context, now: Civil): Step {
+  const doc: PendingDoc = {
+    type: p.intent === "create_quote" ? "quote" : "invoice",
+    clientName: p.clientName ?? undefined,
+    clientEmail: p.clientEmail,
+    lines: p.lineItems,
+    totalKobo: p.lineItems.length ? undefined : (p.totalKobo ?? undefined),
+    dueDate: p.dueDate,
+    vatPercent: p.options.vatPercent,
+    depositPercent: p.options.depositPercent,
+    passFeesToClient: p.options.passFeesToClient ?? false,
+    notes: p.options.notes,
+  };
+
+  // They named a date we could not read. That is worth one question, because
+  // they did say something and quietly defaulting would ignore them.
+  const unreadableDate = Boolean(p.dueDatePhrase) && !p.dueDate;
+  return buildOrAsk(doc, ctx, now, unreadableDate);
+}
+
+/**
+ * Either shows a draft, or asks for the one thing standing in the way.
+ *
+ * F6 sets the bar at a client name and an amount. A description defaults to
+ * "Services" and a due date defaults to seven days, so neither is worth a
+ * round trip — asking for something we already have an answer for is how a
+ * two-message flow becomes a five-message one.
+ */
+function buildOrAsk(doc: PendingDoc, ctx: Context, now: Civil, askDate = false): Step {
+  const context = { ...ctx, doc, attempts: 0 };
+
+  if (!doc.clientName) {
+    return {
+      replies: [askFor("client_name", {})],
+      next: "awaiting_field:client_name",
+      context,
+      effects: [],
+    };
+  }
+
+  if (!totalOf(doc)) {
+    return {
+      replies: [askFor("amount", { clientName: doc.clientName })],
+      next: "awaiting_field:amount",
+      context,
+      effects: [],
+    };
+  }
+
+  if (askDate) {
+    return { replies: [askFor("due_date", {})], next: "awaiting_field:due_date", context, effects: [] };
+  }
+
+  // Everything else has a default, so this is a draft.
+  const ready = withDefaults(doc, now);
+  return {
+    replies: [],
+    next: "awaiting_confirm",
+    context: { ...ctx, doc: ready, attempts: 0 },
+    effects: [{ type: "save_draft", doc: ready }],
+  };
+}
+
+/** F6: description defaults to "Services", due date to seven days from issue. */
+function withDefaults(doc: PendingDoc, now: Civil): PendingDoc {
+  const lines = doc.lines.length
+    ? doc.lines
+    : [{ description: DEFAULT_DESCRIPTION, qty: 1, unitAmountKobo: doc.totalKobo ?? 0 }];
+
+  // An invoice falls due; a quote expires. Different words, different columns
+  // and different defaults, but one date on the document either way.
+  const days =
+    doc.type === "quote" ? defaults.behaviour.quoteValidDays : defaults.behaviour.defaultDueDays;
+
+  return {
+    ...doc,
+    lines,
+    totalKobo: undefined,
+    dueDate: doc.dueDate ?? addDaysTo(now, days),
+  };
+}
+
+const totalOf = (doc: PendingDoc): number =>
+  doc.lines.length
+    ? doc.lines.reduce((t, l) => t + l.unitAmountKobo * l.qty, 0)
+    : (doc.totalKobo ?? 0);
+
+/** Kept local rather than imported, so the machine stays free of side effects. */
+function addDaysTo(c: Civil, days: number): Civil {
+  const at = new Date(Date.UTC(c.y, c.m - 1, c.d) + days * 86_400_000);
+  return { y: at.getUTCFullYear(), m: at.getUTCMonth() + 1, d: at.getUTCDate() };
+}
+
+/* -------------------------------------------------------------------------- */
+
+/** The answer to a single question, and nothing else. */
+function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound): Step {
+  const doc = ctx.doc;
+  if (!doc) return { replies: [VOICE.nothingPending], next: "idle", context: {}, effects: [] };
+
+  const now = today(msg);
+
+  // Section 5: a new command always wins over a pending question.
+  const escape = commandEscape(msg, ctx, now);
+  if (escape) return escape;
+
+  const answer = text.trim();
+
+  switch (state) {
+    case "awaiting_field:client_name": {
+      const name = answer.replace(/^(?:for|to)\s+/i, "").replace(/\s+/g, " ").trim();
+      if (name.length < 2 || name.length > 80 || name.split(" ").length > 6) {
+        return retry("awaiting_field:client_name", ctx, askFor("client_name", {}));
+      }
+      return buildOrAsk({ ...doc, clientName: name }, ctx, now);
+    }
+
+    case "awaiting_field:amount": {
+      const kobo = parseAmountToKobo(answer);
+      if (kobo === null || kobo <= 0) {
+        return retry("awaiting_field:amount", ctx, askFor("amount", { clientName: doc.clientName }));
+      }
+      // It attaches to the single line if there is one, so "20k" after
+      // "invoice Tunde for a logo" prices the logo rather than adding a line.
+      const lines =
+        doc.lines.length === 1
+          ? [{ ...doc.lines[0]!, unitAmountKobo: kobo, qty: 1 }]
+          : doc.lines;
+      return buildOrAsk(
+        { ...doc, lines, totalKobo: lines.length ? undefined : kobo },
+        ctx,
+        now,
+      );
+    }
+
+    case "awaiting_field:description": {
+      if (/^(skip|nothing|none|no)$/i.test(answer)) return buildOrAsk(doc, ctx, now);
+      const description = answer.slice(0, 200).trim();
+      if (!description) return retry("awaiting_field:description", ctx, askFor("description", {}));
+      const total = totalOf(doc);
+      return buildOrAsk(
+        { ...doc, lines: [{ description, qty: 1, unitAmountKobo: total }], totalKobo: undefined },
+        ctx,
+        now,
+      );
+    }
+
+    case "awaiting_field:due_date": {
+      if (/^(skip|none|no|default|whenever)$/i.test(answer)) {
+        return buildOrAsk({ ...doc, dueDate: null }, ctx, now);
+      }
+      const resolved = resolveDueDate(answer, now);
+      if (!resolved) return retry("awaiting_field:due_date", ctx, askFor("due_date", {}));
+      return buildOrAsk({ ...doc, dueDate: resolved.date }, ctx, now);
+    }
+
+    default:
+      return { replies: [VOICE.nothingPending], next: "idle", context: {}, effects: [] };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+
+/** The draft is on screen. Confirm, reject, correct, or change the subject. */
+function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
+  const doc = ctx.doc;
+  if (!doc || !ctx.draftId) {
+    return { replies: [VOICE.nothingPending], next: "idle", context: {}, effects: [] };
+  }
+
+  const now = today(msg);
+  const intent = msg.parsed?.intent;
+
+  if (intent === "confirm") {
+    return {
+      replies: [],
+      next: "idle",
+      // The draft id stays until the effect has used it.
+      context: { ...ctx, attempts: 0 },
+      effects: [{ type: "send_document" }],
+    };
+  }
+
+  if (intent === "reject") {
+    return {
+      replies: [VOICE.draftDiscarded],
+      next: "idle",
+      context: forget(ctx),
+      effects: [{ type: "discard_draft" }],
+    };
+  }
+
+  /* A correction: change it and show it again (F6 step 3). ----------------- */
+  if (msg.correction) {
+    return buildOrAsk(applyCorrection(doc, msg.correction), ctx, now);
+  }
+
+  /* A whole new document replaces this one. -------------------------------- */
+  if (msg.parsed && (intent === "create_invoice" || intent === "create_quote")) {
+    return startDocument(msg.parsed, forget(ctx), now);
+  }
+
+  const escape = commandEscape(msg, ctx, now);
+  if (escape) return escape;
+
+  return retry(
+    "awaiting_confirm",
+    ctx,
+    lines(
+      `Reply ${b("yes")} to send it, or ${b("no")} to drop it.`,
+      `To change it, say something like ${b("make it 400k")} or ${b("due next Friday")}.`,
+    ),
+  );
+}
+
+function applyCorrection(doc: PendingDoc, c: Correction): PendingDoc {
+  const next: PendingDoc = { ...doc };
+
+  if (c.clientName) next.clientName = c.clientName;
+  if (c.dueDate) next.dueDate = c.dueDate;
+  if (c.vatPercent !== undefined) next.vatPercent = c.vatPercent;
+  if (c.depositPercent !== undefined) next.depositPercent = c.depositPercent;
+  if (c.passFeesToClient !== undefined) next.passFeesToClient = c.passFeesToClient;
+
+  if (c.description) {
+    next.lines = next.lines.length
+      ? [{ ...next.lines[0]!, description: c.description }, ...next.lines.slice(1)]
+      : [{ description: c.description, qty: 1, unitAmountKobo: next.totalKobo ?? 0 }];
+    next.totalKobo = undefined;
+  }
+
+  if (c.totalKobo !== undefined) {
+    // A new total replaces the price of a single line. With several lines
+    // there is no honest way to spread it, so it becomes one line instead and
+    // the summary shows exactly that.
+    next.lines = next.lines.length
+      ? [{ ...next.lines[0]!, qty: 1, unitAmountKobo: c.totalKobo }]
+      : [];
+    next.totalKobo = next.lines.length ? undefined : c.totalKobo;
+  }
+
+  return next;
+}
+
+/**
+ * Section 5: "A new command always wins over a pending question, so users are
+ * never trapped." Anything that is plainly a different instruction abandons
+ * the draft and runs.
+ */
+function commandEscape(msg: Inbound, ctx: Context, now: Civil): Step | null {
+  const intent = msg.parsed?.intent;
+  if (!intent || !msg.parsed) return null;
+
+  const leaves = ["debtors", "summary", "settings", "upgrade", "referral", "status",
+                  "cancel_document", "resend_document", "convert_quote"];
+  if (!leaves.includes(intent)) return null;
+
+  const step = fromParsed(msg, forget(ctx), now);
+  return { ...step, effects: [{ type: "discard_draft" }, ...step.effects] };
+}
+
+/** The two answers to the Pro offer (F18). Fixed phrases, not a model call. */
+function asProChoice(text: string): "link" | "deduct_from_invoice" | null {
+  const s = text.toLowerCase().trim().replace(/[.!]+$/, "");
+  if (/^(pay now|pay link|payment link|send me the link|card|pay by card)$/.test(s)) return "link";
+  if (/^(from my invoices?|deduct|deduct from invoices?|take it from my invoices?|take from invoice|from invoice)$/.test(s)) {
+    return "deduct_from_invoice";
+  }
+  return null;
+}
+
+/** Clears the document out of the conversation, keeping the account details. */
+const forget = (ctx: Context): Context => {
+  const { doc: _doc, draftId: _draftId, ...rest } = ctx;
+  return rest;
+};
 
 /* -------------------------------------------------------------------------- */
 /* Steps                                                                      */
@@ -186,12 +992,15 @@ function takeBusinessName(text: string, ctx: Context, msg: Inbound): Step {
     return retry(
       "onboarding:business_name",
       ctx,
-      "That does not look like a business name. Send the name your clients would recognise, like “Kemi Adeyemi Studio”.",
+      lines(
+        "That does not look like a business name.",
+        `Send the name your clients would recognise — like ${b("Kemi Adeyemi Studio")}.`,
+      ),
     );
   }
 
   return {
-    replies: [`Got it — ${name}.`, VOICE.askBank],
+    replies: [VOICE.gotNameAskBank(name)],
     next: "onboarding:bank",
     context: { ...ctx, businessName: name, attempts: 0 },
     effects: [],
@@ -210,19 +1019,21 @@ function takeBank(text: string, ctx: Context): Step {
     return retry(
       "onboarding:bank",
       ctx,
-      "I need a 10-digit account number. Send the bank and the number together, like “GTBank 0123456789”.",
+      lines(
+        "I need a 10-digit account number.",
+        `Send the bank and the number together — like ${b("GTBank 0123456789")}.`,
+      ),
     );
   }
   if (bank.length < 2) {
     return retry(
       "onboarding:bank",
       ctx,
-      `Which bank is ${account} with? Send the bank name, like “GTBank”.`,
+      `Which bank is ${b(account)} with? Send the bank name, like ${b("GTBank")}.`,
     );
   }
 
   return {
-    ack: ["One moment, checking that account…"],
     replies: [],
     next: "onboarding:confirm_account",
     context: { ...ctx, accountNumber: account, bankName: bank, attempts: 0 },
@@ -232,7 +1043,23 @@ function takeBank(text: string, ctx: Context): Step {
   };
 }
 
+const EMAIL = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
+
 function confirmAccount(text: string, ctx: Context): Step {
+  // Confirming and giving the email are one turn, not two. The question asks
+  // for the address, so an address *is* the yes — which removes a round trip
+  // and the message that went with it. Someone who just says "yes" is still
+  // right, and gets asked for the address on its own.
+  const email = text.trim().toLowerCase();
+  if (EMAIL.test(email) && email.length <= 254) {
+    return {
+      replies: [VOICE.askCode(email)],
+      next: "onboarding:verify_email",
+      context: { ...ctx, email, attempts: 0 },
+      effects: [{ type: "create_subaccount" }, { type: "send_email_code", email }],
+    };
+  }
+
   if (/^(yes|yeah|yep|correct|that is right|na me|ok|okay)\b/i.test(text)) {
     return {
       replies: [VOICE.askEmail],
@@ -253,12 +1080,13 @@ function confirmAccount(text: string, ctx: Context): Step {
     "onboarding:confirm_account",
     ctx,
     ctx.resolvedAccountName
-      ? `Is ${ctx.resolvedAccountName} the right account? Reply yes or no.`
-      : "Reply yes or no.",
+      ? lines(
+          `Is ${b(ctx.resolvedAccountName)} the right account?`,
+          `Send your email address if it is, or reply ${b("no")}.`,
+        )
+      : `Send your email address if that account is right, or reply ${b("no")}.`,
   );
 }
-
-const EMAIL = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 
 function takeEmail(text: string, ctx: Context): Step {
   const email = text.trim().toLowerCase();
@@ -266,7 +1094,10 @@ function takeEmail(text: string, ctx: Context): Step {
     return retry(
       "onboarding:email",
       ctx,
-      "That does not look like an email address. Send it like you@yourbusiness.com.",
+      lines(
+        "That does not look like an email address.",
+        `Send it like ${b("you@yourbusiness.com")}.`,
+      ),
     );
   }
   return {
@@ -284,7 +1115,9 @@ function takeCode(text: string, ctx: Context): Step {
   // dead end: the person cannot proceed and cannot ask for another.
   if (/^(resend|send again|didn.?t get it|no code)\b/i.test(trimmed)) {
     return {
-      replies: [],
+      // The effect says nothing when it works, so without this a "resend"
+      // answers with silence — exactly what the person was complaining about.
+      replies: [VOICE.askCode(ctx.email ?? "")],
       next: "onboarding:verify_email",
       context: { ...ctx, attempts: 0 },
       effects: [{ type: "send_email_code", email: ctx.email ?? "" }],
@@ -306,7 +1139,7 @@ function takeCode(text: string, ctx: Context): Step {
     return retry(
       "onboarding:verify_email",
       ctx,
-      'The code is 6 digits. Send it, or reply "resend" for a new one.',
+      `The code is ${b("6 digits")}. Send it, or reply ${b("resend")} for a new one.`,
     );
   }
 
@@ -314,7 +1147,6 @@ function takeCode(text: string, ctx: Context): Step {
   // It moves the conversation on, or holds it here, and it owns what is said
   // either way — which is why there are no replies here.
   return {
-    ack: [VOICE.verifying],
     replies: [],
     next: "onboarding:consent",
     context: { ...ctx, attempts: 0 },
@@ -334,7 +1166,10 @@ function takeConsent(text: string, ctx: Context, version: string): Step {
   return retry(
     "onboarding:consent",
     ctx,
-    "I need your agreement before we can create documents. Reply “I agree” to finish, or email hello@balans.ng with any question.",
+    lines(
+      "I need your agreement before we can create documents.",
+      `Reply ${b("I agree")} to finish, or email hello@balans.ng with any question.`,
+    ),
   );
 }
 
@@ -350,7 +1185,9 @@ function retry(state: State, ctx: Context, message: string): Step {
   const attempts = (ctx.attempts ?? 0) + 1;
   const replies = [message];
   if (attempts >= 3) {
-    replies.push("If this is not working, email hello@balans.ng and a person will set it up with you.");
+    replies.push(
+      `If this is not working, email ${b("hello@balans.ng")} and a person will set it up with you.`,
+    );
   }
   return { replies, next: state, context: { ...ctx, attempts }, effects: [] };
 }
@@ -358,17 +1195,34 @@ function retry(state: State, ctx: Context, message: string): Step {
 function onboardingHelp(state: State): string {
   switch (state) {
     case "onboarding:business_name":
-      return "I am setting up your account. Send the name your clients would recognise, like “Kemi Adeyemi Studio”. Reply “cancel” to start again.";
+      return lines(
+        "I am setting up your account.",
+        `Send the name your clients would recognise — like ${b("Kemi Adeyemi Studio")}.`,
+        `Reply ${b("cancel")} to start again.`,
+      );
     case "onboarding:bank":
-      return "Send your bank and account number together, like “GTBank 0123456789”. This is where your money will settle. Reply “cancel” to start again.";
+      return lines(
+        `Send your bank and account number together — like ${b("GTBank 0123456789")}.`,
+        "This is where your money will settle.",
+        `Reply ${b("cancel")} to start again.`,
+      );
     case "onboarding:confirm_account":
-      return "Reply yes if that is your account, or no to send different details.";
+      return lines(
+        "If that is your account, send your email address.",
+        `If it is not, reply ${b("no")} and send different details.`,
+      );
     case "onboarding:email":
-      return "Send an email address you can open now — we will send a code to it.";
+      return `Send an email address you can open now — ${b("we will send a code to it")}.`;
     case "onboarding:verify_email":
-      return "Send the 6-digit code from your email. Reply “cancel” to start again.";
+      return lines(
+        `Send the ${b("6-digit code")} from your email.`,
+        `Reply ${b("resend")} for another, or ${b("cancel")} to start again.`,
+      );
     case "onboarding:consent":
-      return "Read balans.ng/terms and balans.ng/privacy, then reply “I agree”.";
+      return lines(
+        `Read ${TERMS_URL} and ${PRIVACY_URL},`,
+        `then reply ${b("I agree")}.`,
+      );
     default:
       return VOICE.helpIdle;
   }

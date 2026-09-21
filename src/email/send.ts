@@ -32,7 +32,36 @@ export type Email = {
    */
   text: string;
   html?: string;
+
+  /**
+   * Who it appears to be from (F21).
+   *
+   * Client-facing mail goes out as "Their Business via Balans": the client
+   * hired them, not us, and an invoice from a company the client has never
+   * heard of is an invoice that gets queried. The address stays ours, because
+   * that is the domain with the SPF and DKIM records.
+   */
+  fromName?: string;
+
+  /** Where a reply should land. The user, for anything about their invoice. */
+  replyTo?: string;
+
+  /** A PDF, for an invoice or a receipt. */
+  attachments?: { filename: string; content: Buffer }[];
 };
+
+/**
+ * The same address, under a different display name.
+ *
+ * Only the name changes: the address must stay on the domain that holds the
+ * SPF and DKIM records, or the mail lands in spam.
+ */
+function withName(name: string): string {
+  const address = from().match(/<([^>]+)>/)?.[1] ?? from();
+  // Quotes and angle brackets in a display name break the header.
+  const safe = name.replace(/["<>\r\n]/g, "").trim().slice(0, 60) || "Balans";
+  return `${safe} <${address}>`;
+}
 
 export type SendResult =
   | { ok: true; id: string; delivered: boolean }
@@ -71,8 +100,9 @@ export async function sendEmail(
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        from: from(),
+        from: email.fromName ? withName(email.fromName) : from(),
         to: [email.to],
+        ...(email.replyTo ? { reply_to: email.replyTo } : {}),
         subject: email.subject,
         text: email.text,
         ...(email.html
@@ -87,6 +117,10 @@ export async function sendEmail(
                   content_id: MARK_CID,
                   content_type: "image/png",
                 },
+                ...(email.attachments ?? []).map((a) => ({
+                  filename: a.filename,
+                  content: a.content.toString("base64"),
+                })),
               ],
             }
           : {}),

@@ -18,6 +18,7 @@ const AUTH_PATH = "/api/v1/auth/login";
 const VALIDATE_PATH = "/api/v2/disbursements/account/validate";
 const SUB_ACCOUNTS_PATH = "/api/v1/sub-accounts";
 const INIT_TRANSACTION_PATH = "/api/v1/merchant/transactions/init-transaction";
+const VERIFY_TRANSACTION_PATH = "/api/v2/transactions";
 /** 374 banks with NIP codes. The /sdk/ variant returns only the top 28. */
 const BANKS_PATH = "/api/v1/banks";
 
@@ -177,10 +178,25 @@ export async function findSubAccount(
   return all.find((a) => a.accountNumber === accountNumber) ?? null;
 }
 
+export type CreateSubAccountResult =
+  | { ok: true; account: SubAccount; reused?: boolean }
+  | {
+      ok: false;
+      message: string;
+      /**
+       * Whether sending the same details again could ever work.
+       *
+       * A 5xx is the provider failing and worth one more go. A 4xx is a
+       * judgement about these details, and repeating them is how a person
+       * ends up sending their account number six times to the same refusal.
+       */
+      retryable: boolean;
+    };
+
 export async function createSubAccount(
   input: { accountNumber: string; bankCode: string; email: string },
   fetchImpl: typeof fetch = fetch,
-): Promise<{ ok: true; account: SubAccount; reused?: boolean } | { ok: false; message: string }> {
+): Promise<CreateSubAccountResult> {
   const res = await call<SubAccount[]>(
     SUB_ACCOUNTS_PATH,
     {
@@ -207,11 +223,13 @@ export async function createSubAccount(
       const existing = await findSubAccount(input.accountNumber, fetchImpl);
       if (existing) return { ok: true, account: existing, reused: true };
     }
-    return { ok: false, message: res.message };
+    return { ok: false, message: res.message, retryable: res.status >= 500 };
   }
 
   const account = res.body[0];
-  if (!account?.subAccountCode) return { ok: false, message: "no subaccount returned" };
+  if (!account?.subAccountCode) {
+    return { ok: false, message: "no subaccount returned", retryable: true };
+  }
   return { ok: true, account };
 }
 
@@ -254,32 +272,74 @@ const ALIASES: Record<string, string[]> = {
   "kuda microfinance bank": ["kuda"],
   "opay digital services limited": ["opay"],
   "palmpay": ["palm pay"],
+  // Monnify lists the bank as "First City Monument Bank Plc" and a separate
+  // wallet as "FCMB MOBILE". Without this, the abbreviation everybody uses
+  // matches only the wallet.
+  "first city monument bank": ["fcmb", "first city monument"],
+  "jaiz bank": ["jaiz"],
+  "providus bank": ["providus"],
+  "titan bank": ["titan"],
+  "globus bank": ["globus"],
+  "taj bank": ["taj"],
+  "lotus bank": ["lotus"],
+  "suntrust bank": ["suntrust", "sun trust"],
+  "premium trust bank": ["premium trust", "premiumtrust"],
+  "parallex bank": ["parallex"],
+  "citibank nigeria": ["citibank", "citi bank", "citi"],
+  "heritage bank": ["heritage"],
+  "standard chartered bank": ["standard chartered", "stanchart"],
+  "vfd microfinance bank": ["vfd"],
+  "paga": ["paga"],
 };
+
+/**
+ * A bank that can actually receive a settlement.
+ *
+ * Nigeria's three-digit CBN codes belong to licensed banks. The longer codes
+ * are NIP-only routes: mobile wallets, agent networks and some microfinance
+ * banks. Both resolve an account name perfectly well, which is the trap — a
+ * wallet passes every check we make and then fails at subaccount creation,
+ * after the user has confirmed their name and thinks they are done.
+ *
+ * So when several entries match one name, the licensed bank wins. "OPAY 3"
+ * and "PAYCOM (OPAY)" are the same institution; only one of them settles.
+ */
+const isLicensedBank = (b: Bank): boolean => /^\d{3}$/.test(b.code);
 
 export function matchBank(query: string, banks: Bank[]): Bank | null {
   const q = query.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
   if (!q) return null;
 
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-  const shortest = (a: Bank, b: Bank) => a.name.length - b.name.length;
 
-  const exact = banks.filter((b) => norm(b.name) === q);
-  if (exact.length) return exact.sort(shortest)[0]!;
+  /** Licensed bank first, then the plainer name. */
+  const best = (a: Bank, b: Bank) =>
+    Number(isLicensedBank(b)) - Number(isLicensedBank(a)) || a.name.length - b.name.length;
 
+  // Aliases before exact matches. An alias is a curated statement about what
+  // people mean; an exact match is a coincidence of spelling, and Monnify's
+  // list contains both "Globus" (a NIP route) and "Globus Bank" (the bank).
+  // Someone typing "globus" means the bank.
   for (const [canonical, alts] of Object.entries(ALIASES)) {
-    if (alts.includes(q) || q === canonical) {
-      const hit = banks.filter((b) => norm(b.name).startsWith(canonical.split(" ")[0]!)).sort(shortest);
-      const exactCanonical = banks.find((b) => norm(b.name) === canonical);
-      if (exactCanonical) return exactCanonical;
-      if (hit.length) return hit[0]!;
-    }
+    if (!alts.includes(q) && q !== canonical) continue;
+    // Every spelling of this bank, so "opay" finds "PAYCOM (OPAY)" too — the
+    // one that does not start with the word being searched for.
+    const needles = [canonical, ...alts];
+    const hits = banks.filter((b) => {
+      const name = norm(b.name);
+      return needles.some((needle) => name.includes(needle));
+    });
+    if (hits.length) return hits.sort(best)[0]!;
   }
 
+  const exact = banks.filter((b) => norm(b.name) === q);
+  if (exact.length) return exact.sort(best)[0]!;
+
   const prefix = banks.filter((b) => norm(b.name).startsWith(q));
-  if (prefix.length) return prefix.sort(shortest)[0]!;
+  if (prefix.length) return prefix.sort(best)[0]!;
 
   const contains = banks.filter((b) => norm(b.name).includes(q));
-  if (contains.length) return contains.sort(shortest)[0]!;
+  if (contains.length) return contains.sort(best)[0]!;
 
   // Last resort, the other direction: a bank name sitting inside a sentence.
   //
@@ -293,19 +353,22 @@ export function matchBank(query: string, banks: Bank[]): Bank | null {
   const phraseIn = (needle: string) =>
     needle.includes(" ") ? q.includes(needle) : words.has(needle);
 
-  let best: { bank: Bank; needle: number } | null = null;
+  let found: { bank: Bank; needle: number } | null = null;
   for (const bank of banks) {
     const name = norm(bank.name);
     for (const needle of [name, ...(ALIASES[name] ?? [])]) {
       if (needle.length < 3 || !phraseIn(needle)) continue;
       const better =
-        !best ||
-        needle.length > best.needle ||
-        (needle.length === best.needle && bank.name.length < best.bank.name.length);
-      if (better) best = { bank, needle: needle.length };
+        !found ||
+        needle.length > found.needle ||
+        (needle.length === found.needle && isLicensedBank(bank) && !isLicensedBank(found.bank)) ||
+        (needle.length === found.needle &&
+          isLicensedBank(bank) === isLicensedBank(found.bank) &&
+          bank.name.length < found.bank.name.length);
+      if (better) found = { bank, needle: needle.length };
     }
   }
-  return best?.bank ?? null;
+  return found?.bank ?? null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -323,6 +386,20 @@ export type InitResult =
  * one boundary in the system where kobo is converted. It happens here, once,
  * rather than at each call site.
  */
+/**
+ * Where a share of the payment goes.
+ *
+ * `amountKobo` is exact, not a percentage. A percentage of a grossed-up total
+ * rounds somewhere we cannot see, and the fee engine has already worked out to
+ * the kobo who gets what.
+ */
+export type Split = {
+  subAccountCode: string;
+  amountKobo: number;
+  /** True on the user's share: section 9 says the bearer is always the subaccount. */
+  bearsFee: boolean;
+};
+
 export async function initTransaction(
   input: {
     amountKobo: number;
@@ -331,6 +408,16 @@ export async function initTransaction(
     paymentReference: string;
     description: string;
     redirectUrl: string;
+    /**
+     * The user's share, sent straight to their subaccount.
+     *
+     * This is the rule the whole product rests on: Balans never holds user
+     * money. What is split out settles to the user's own bank on the
+     * processor's schedule, and only our fee is left behind in our wallet. A
+     * payment without a split would land entirely with us, which is a
+     * different business and a licensed one.
+     */
+    splits?: Split[];
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<InitResult> {
@@ -349,6 +436,17 @@ export async function initTransaction(
         currencyCode: "NGN",
         contractCode: env.MONNIFY_CONTRACT_CODE,
         redirectUrl: input.redirectUrl,
+        ...(input.splits?.length
+          ? {
+              incomeSplitConfig: input.splits.map((s) => ({
+                subAccountCode: s.subAccountCode,
+                // A flat reserved amount rather than splitPercentage: the
+                // share is already exact and a percentage would re-round it.
+                reservedAmount: s.amountKobo / 100,
+                feeBearer: s.bearsFee,
+              })),
+            }
+          : {}),
       }),
     },
     fetchImpl,
@@ -360,4 +458,110 @@ export async function initTransaction(
     return { ok: false, message: "no checkout url returned" };
   }
   return { ok: true, transactionReference, checkoutUrl };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Verification                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Monnify's own words for where a transaction stands.
+ *
+ * Only PAID and OVERPAID mean money arrived. PARTIALLY_PAID is a real state
+ * here — a client can pay a bank transfer short — and it is not "paid".
+ */
+export type PaymentStatus =
+  | "PAID"
+  | "OVERPAID"
+  | "PARTIALLY_PAID"
+  | "PENDING"
+  | "ABANDONED"
+  | "CANCELLED"
+  | "FAILED"
+  | "REVERSED"
+  | "EXPIRED";
+
+export type VerifiedTransaction = {
+  transactionReference: string;
+  /** Ours, the one we set at initialisation. */
+  paymentReference: string;
+  paymentStatus: PaymentStatus;
+  /** Kobo. Converted here so no caller ever sees a decimal amount. */
+  amountPaidKobo: number;
+  totalPayableKobo: number;
+  /** What actually settles to the subaccount, after the processor's cut. */
+  settlementAmountKobo: number | null;
+  currency: string;
+  paymentMethod: string | null;
+  paidOn: string | null;
+};
+
+export type VerifyResult =
+  | { ok: true; transaction: VerifiedTransaction; raw: unknown }
+  | { ok: false; message: string };
+
+/** Monnify returns decimal naira as a number or a string. Both become kobo. */
+function toKobo(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === "number" ? v : Number(String(v).replace(/,/g, ""));
+  if (!Number.isFinite(n)) return null;
+  // Round rather than truncate: 49150.00 arriving as 49149.999999 must not
+  // quietly lose a kobo.
+  return Math.round(n * 100);
+}
+
+/**
+ * Asks Monnify what really happened (PRD F10).
+ *
+ * The webhook says a payment succeeded. This is what decides whether it did.
+ * A webhook body is something that arrived at our door; this is us going to
+ * the provider and asking. Nothing is marked paid on the strength of the
+ * former alone, however good its signature.
+ */
+export async function verifyTransaction(
+  transactionReference: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<VerifyResult> {
+  // The reference contains pipes ("MNFY|11|..."), which must be encoded or the
+  // path is a different path than the one intended.
+  const path = `${VERIFY_TRANSACTION_PATH}/${encodeURIComponent(transactionReference)}`;
+
+  const res = await call<{
+    transactionReference?: string;
+    paymentReference?: string;
+    paymentStatus?: string;
+    amountPaid?: unknown;
+    totalPayable?: unknown;
+    settlementAmount?: unknown;
+    currencyCode?: string;
+    currency?: string;
+    paymentMethod?: string;
+    paidOn?: string;
+  }>(path, { method: "GET" }, fetchImpl);
+
+  if (!res.ok) return { ok: false, message: res.message };
+
+  const b = res.body;
+  const amountPaidKobo = toKobo(b.amountPaid);
+  const totalPayableKobo = toKobo(b.totalPayable);
+
+  if (!b.paymentReference || !b.paymentStatus || amountPaidKobo === null) {
+    return { ok: false, message: "verification response was missing fields" };
+  }
+
+  return {
+    ok: true,
+    raw: b,
+    transaction: {
+      transactionReference: b.transactionReference ?? transactionReference,
+      paymentReference: b.paymentReference,
+      paymentStatus: b.paymentStatus as PaymentStatus,
+      amountPaidKobo,
+      totalPayableKobo: totalPayableKobo ?? amountPaidKobo,
+      settlementAmountKobo: toKobo(b.settlementAmount),
+      currency: b.currencyCode ?? b.currency ?? "NGN",
+      paymentMethod: b.paymentMethod ?? null,
+      paidOn: b.paidOn ?? null,
+    },
+  };
 }

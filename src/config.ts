@@ -33,8 +33,25 @@ const schema = z.object({
   /* -- Entity switch (section 14). Moving to Balans Technologies Ltd is a
         configuration change, not a rebuild. ------------------------------- */
   LEGAL_ENTITY_NAME: z.string().default("MOTX Studios"),
-  PUBLIC_BASE_URL: z.string().url().default("http://localhost:3000"),
+  /**
+   * Where public document pages live: the origin in every /i/{token} link.
+   *
+   * That is this API for now, because it serves the page. Section 3 puts the
+   * invoice page in the web app eventually, and moving it is a change to this
+   * one value plus a route there — the token in the link stays valid either
+   * way, which matters, because those links are sent to clients and live in
+   * WhatsApp threads forever.
+   */
+  PUBLIC_BASE_URL: z.string().url().default("http://localhost:4000"),
   SUPPORT_EMAIL: z.string().email().default("hello@balans.ng"),
+  /**
+   * The marketing site: terms, privacy, the landing page.
+   *
+   * Deliberately separate from PUBLIC_BASE_URL. That one is wherever document
+   * pages are served from, which is the API today and may be the web app
+   * tomorrow; this is where the legal pages live and does not move with it.
+   */
+  SITE_URL: z.string().url().default("https://balans.ng"),
 
   /* -- WhatsApp Cloud API -------------------------------------------------- */
   WA_PHONE_NUMBER_ID: z.string().optional(),
@@ -53,6 +70,32 @@ const schema = z.object({
   MONNIFY_SECRET_KEY: z.string().optional(),
   /** Wallet the platform's own fee share settles into. */
   MONNIFY_CONTRACT_CODE: z.string().optional(),
+
+  /* -- Parser (section 14: model and confidence threshold) ----------------- */
+  /** Absent is a supported state: commands and the pattern still work. */
+  ANTHROPIC_API_KEY: z.string().optional(),
+  /** The architecture table asks for a small, cheap model with JSON output. */
+  PARSER_MODEL: z.string().default("claude-haiku-4-5-20251001"),
+  /** Below this, a document intent is treated as unknown rather than drafted. */
+  PARSER_CONFIDENCE_MIN: z.coerce.number().min(0).max(1).default(0.7),
+  /** F3: longer inputs are rejected with a short message. */
+  PARSER_MAX_CHARS: int(1000),
+  /** A person is waiting in a chat window, so this is short on purpose. */
+  PARSER_TIMEOUT_MS: int(8000),
+
+  /* -- Background jobs (F13) ------------------------------------------------ */
+  /** Off in tests and anywhere a second process should not also be sending. */
+  JOBS_ENABLED: bool(true),
+  /** Hourly: an invoice due at 9am is chased that morning, not the next day. */
+  JOBS_INTERVAL_MS: int(3_600_000),
+
+  /* -- PDF rendering (F20) -------------------------------------------------- */
+  /** Where Chrome lives, when it is not in one of the usual places. */
+  CHROME_PATH: z.string().optional(),
+  /** The debugging port the headless browser listens on, locally only. */
+  PDF_DEBUG_PORT: int(9222),
+  /** F20 targets under 5 seconds at p95; this is the hard stop. */
+  PDF_TIMEOUT_MS: int(15000),
 
   /* -- Encryption ---------------------------------------------------------- */
   /** 32 bytes, base64. Protects account numbers and TOTP secrets (section 11). */

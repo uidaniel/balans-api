@@ -103,16 +103,30 @@ export async function recordInbound(
   return rowCount === 1;
 }
 
+/**
+ * Logs a message that went out (PRD F16).
+ *
+ * Window state and estimated cost on every one, so "cost per completed
+ * invoice" is a query rather than a guess. A reply is always inside the
+ * window by definition — it is a reply — which is why that is the default.
+ */
 export async function recordOutbound(
   userId: string,
   waMessageId: string | null,
   status: string,
+  opts: { inWindow?: boolean; kind?: string; template?: string | null } = {},
 ): Promise<void> {
+  const { costOf } = await import("../whatsapp/window.ts");
+  const inWindow = opts.inWindow ?? true;
+  // Only a delivered message costs anything.
+  const cost = status === "sent" ? costOf({ inWindow }) : 0;
+
   await db().query(
-    `INSERT INTO messages (user_id, wa_message_id, direction, kind, status)
-     VALUES ($1, $2, 'out', 'text', $3)
+    `INSERT INTO messages
+       (user_id, wa_message_id, direction, kind, template, in_window, cost_estimate_kobo, status)
+     VALUES ($1, $2, 'out', $3, $4, $5, $6, $7)
      ON CONFLICT (wa_message_id) DO NOTHING`,
-    [userId, waMessageId, status],
+    [userId, waMessageId, opts.kind ?? "text", opts.template ?? null, inWindow, cost, status],
   );
 }
 

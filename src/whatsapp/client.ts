@@ -172,3 +172,125 @@ export async function markRead(
     /* Best effort. */
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Documents (PRD F20: "WhatsApp receives it as a document upload")            */
+/* -------------------------------------------------------------------------- */
+
+export type UploadResult = { ok: true; mediaId: string } | { ok: false; reason: string };
+
+/**
+ * Uploads bytes to Meta and returns the id to send them by.
+ *
+ * Two steps, not one: Meta will not take a document inline, and it will not
+ * fetch one from a URL unless that URL is public. Ours is not — an invoice
+ * link is a credential — so the bytes go up directly.
+ *
+ * Media ids expire after 30 days. Nothing here caches one: an invoice is sent
+ * once, and re-sending re-uploads, which costs a second and removes a whole
+ * class of "why is this document missing" problems.
+ */
+export async function uploadDocument(
+  bytes: Buffer,
+  filename: string,
+  contentType = "application/pdf",
+  fetchImpl: Transport = fetch,
+): Promise<UploadResult> {
+  require_("WA_PHONE_NUMBER_ID", "WA_ACCESS_TOKEN");
+
+  const form = new FormData();
+  form.set("messaging_product", "whatsapp");
+  form.set("type", contentType);
+  // A Blob rather than a stream: Meta wants a length, and these are small.
+  form.set("file", new Blob([new Uint8Array(bytes)], { type: contentType }), filename);
+
+  let res: Response;
+  try {
+    res = await fetchImpl(graphUrl(`${env.WA_PHONE_NUMBER_ID}/media`), {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.WA_ACCESS_TOKEN}` },
+      body: form,
+      // Longer than a text send: this is an upload, not a request.
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (e) {
+    return { ok: false, reason: `network: ${(e as Error).message}` };
+  }
+
+  const body = (await res.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
+  if (!res.ok || !body.id) {
+    return { ok: false, reason: body.error?.message ?? `HTTP ${res.status}` };
+  }
+  return { ok: true, mediaId: body.id };
+}
+
+/**
+ * Sends an already-uploaded document, with a caption.
+ *
+ * The caption is the message: WhatsApp shows it under the file, so a separate
+ * text would be a second bubble saying what the first one already says. One
+ * message, one charge, per section 16's budget.
+ */
+export function sendDocument(
+  to: string,
+  mediaId: string,
+  filename: string,
+  caption: string,
+  opts: { fetchImpl?: Transport } = {},
+): Promise<SendResult> {
+  const phone = normalisePhone(to);
+  if (!phone) {
+    return Promise.resolve({ ok: false, retryable: false, reason: `unusable phone number: ${to}` });
+  }
+  return call(
+    `${env.WA_PHONE_NUMBER_ID}/messages`,
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: phone,
+      type: "document",
+      document: { id: mediaId, filename, caption },
+    },
+    opts.fetchImpl ?? fetch,
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Templates (PRD F16)                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Sends an approved template.
+ *
+ * The only thing that reaches a user outside the 24-hour window. Parameters
+ * are positional and Meta matches them against what was approved, so a wrong
+ * count is rejected outright rather than delivering something garbled.
+ */
+export function sendTemplate(
+  to: string,
+  template: string,
+  params: string[],
+  opts: { language?: string; fetchImpl?: Transport } = {},
+): Promise<SendResult> {
+  const phone = normalisePhone(to);
+  if (!phone) {
+    return Promise.resolve({ ok: false, retryable: false, reason: `unusable phone number: ${to}` });
+  }
+  return call(
+    `${env.WA_PHONE_NUMBER_ID}/messages`,
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: phone,
+      type: "template",
+      template: {
+        name: template,
+        language: { code: opts.language ?? "en" },
+        components: params.length
+          ? [{ type: "body", parameters: params.map((text) => ({ type: "text", text })) }]
+          : [],
+      },
+    },
+    opts.fetchImpl ?? fetch,
+  );
+}

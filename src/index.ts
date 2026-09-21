@@ -26,7 +26,12 @@ setGlobalDispatcher(new Agent({ connect: { family: 4 } }));
 
 import { env } from "./config.ts";
 import { closeDb } from "./db/pool.ts";
+import { closeRenderer } from "./pdf/chrome.ts";
 import { buildServer } from "./http/server.ts";
+import { emailTransport } from "./conversation/handle.ts";
+import { modelConfigured } from "./parser/model.ts";
+import { chromePath } from "./pdf/chrome.ts";
+import { startScheduler, stopScheduler } from "./jobs/scheduler.ts";
 
 const app = buildServer();
 
@@ -37,10 +42,31 @@ try {
   process.exit(1);
 }
 
+// What this process can actually do, said once at boot. Every one of these has
+// already cost an hour of wondering why nothing happened, and each is a
+// configuration fact rather than a failure — the bot works without any of
+// them, it just works less.
+app.log.info(
+  {
+    email: emailTransport(),
+    parser: modelConfigured() ? env.PARSER_MODEL : "commands and patterns only",
+    pdf: chromePath() ?? "no renderer found",
+    jobs: env.JOBS_ENABLED ? `every ${Math.round(env.JOBS_INTERVAL_MS / 60000)}m` : "disabled",
+    whatsapp: env.WA_PHONE_NUMBER_ID ? "configured" : "not configured",
+    payments: env.MONNIFY_API_KEY ? env.MONNIFY_BASE_URL : "not configured",
+    publicBaseUrl: env.PUBLIC_BASE_URL,
+  },
+  "ready",
+);
+
+startScheduler(app.log);
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {
     app.log.info(`${signal} received, closing`);
+    stopScheduler();
     await app.close();
+    await closeRenderer();
     await closeDb();
     process.exit(0);
   });

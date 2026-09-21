@@ -8,6 +8,8 @@ import { randomUUID } from "node:crypto";
 import { env, isProd } from "../config.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { whatsappRoutes } from "./routes/whatsapp.ts";
+import { publicRoutes } from "./routes/public.ts";
+import { monnifyRoutes } from "./routes/monnify.ts";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -68,6 +70,19 @@ export function buildServer(): FastifyInstance {
     },
   );
 
+  /**
+   * The Pay button is a plain form, so its post arrives urlencoded.
+   *
+   * It carries no fields — what is owed comes from the database, never from
+   * the request — but Fastify refuses a content type it has no parser for,
+   * and a client pressing Pay must not meet a 415.
+   */
+  app.addContentTypeParser(
+    "application/x-www-form-urlencoded",
+    { parseAs: "string" },
+    (_req, _body, done) => done(null, {}),
+  );
+
   app.setErrorHandler((err: FastifyError, req, reply) => {
     const status = err.statusCode ?? 500;
     if (status >= 500) req.log.error({ err }, "request failed");
@@ -81,6 +96,10 @@ export function buildServer(): FastifyInstance {
 
   app.register(healthRoutes);
   app.register(whatsappRoutes, { prefix: "/webhooks/whatsapp" });
+  // No prefix: /i/{token} is a link people paste into WhatsApp, and every
+  // character of it is one more chance to mistype.
+  app.register(publicRoutes);
+  app.register(monnifyRoutes, { prefix: "/webhooks/monnify" });
 
   return app;
 }
