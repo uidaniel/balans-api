@@ -7,3 +7,6 @@ node_modules/
 # Editors and OS
 .DS_Store
 *.log
+
+# Scratch: the quick-tunnel URL changes every restart
+.tunnel-url
