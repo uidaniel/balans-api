@@ -13,7 +13,8 @@
 
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { outstandingKobo, payable, type PublicDocument } from "./public.ts";
+import { outstandingKobo, payable, payableLabel, payableNowKobo, type PublicDocument } from "./public.ts";
+import { logoAvailable, logoSvg, monnifyLogo } from "../brand/logo.ts";
 
 /** HTML-escapes text. Also escapes quotes, for anything inside an attribute. */
 export function esc(s: string): string {
@@ -39,6 +40,7 @@ border-radius:20px;overflow:hidden}
 .top{padding:28px 28px 0}
 .brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:-.03em;
 font-size:15px;color:var(--ink)}
+.brand svg{height:26px;width:auto;display:block}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--marigold);flex:none}
 .kind{margin-top:22px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;
 color:#6b7d74;font-weight:600}
@@ -76,10 +78,65 @@ button.pay-btn:disabled{opacity:.5;cursor:default}
 .banner.paid{background:#e4f2e9;color:#256b41;font-weight:600}
 .banner.cancelled{background:#eceae6;color:#57665e}
 .banner.quote{background:var(--cream);color:#4a5d54}
+.parts{padding:16px 28px 0}
+.part{display:flex;justify-content:space-between;align-items:center;
+padding:11px 0;border-bottom:1px solid #f0ece3;font-size:14.5px}
+.part:last-child{border-bottom:0}
+.part .who{color:#4a5d54}
+.part .amt{font-weight:650}
+.part.done .who,.part.done .amt{color:var(--moss)}
+.part .tag{font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;
+color:#8a9a92;margin-left:8px;font-weight:600}
+.trust{margin:24px 28px 0;padding:18px 20px;background:var(--cream);
+border:1px solid var(--sand);border-radius:14px}
+.tline{display:flex;align-items:center;justify-content:center;gap:9px;
+font-size:13.5px;color:#4a5d54;font-weight:550;flex-wrap:wrap}
+.tline .shield{width:16px;height:16px;color:var(--moss);flex:none}
+.tline .mlogo{height:22px;width:auto;display:block}
+.tsmall{margin-top:11px;text-align:center;font-size:12.5px;line-height:1.65;color:#7d8d85}
+.tsmall b{color:#5c6f66;font-weight:600}
 .files{padding:0 28px 26px;text-align:center;font-size:13.5px}
 .files a{color:#5c6f66;text-decoration:underline;text-underline-offset:3px}
 .foot{max-width:640px;margin:18px auto 0;text-align:center;font-size:13px;color:#7d8d85}
 .foot a{color:#7d8d85}
+.transfer .tlead{font-size:16px;color:#4a5d54;text-align:center;margin-bottom:16px}
+.transfer .tlead strong{color:var(--ink);font-weight:700}
+.tbox{border:1px solid var(--sand-2);border-radius:14px;overflow:hidden;background:var(--cream)}
+.trow{display:flex;align-items:center;justify-content:space-between;gap:14px;
+padding:13px 16px;border-bottom:1px solid var(--sand-2);font-size:15px}
+.trow:last-child{border-bottom:0}
+.tk{color:#6b7d74;font-size:13.5px;flex:none}
+.tv{font-weight:650;text-align:right;display:flex;align-items:center;gap:10px;min-width:0}
+.tv .acct{font-variant-numeric:tabular-nums;letter-spacing:.09em;font-size:19.5px;
+font-weight:700;-webkit-user-select:all;user-select:all}
+button.copy{border:1px solid var(--sand-2);background:#fff;color:#4a5d54;
+border-radius:8px;padding:5px 10px;font-size:12px;font-weight:650;cursor:pointer;
+font-family:inherit;flex:none}
+button.copy:hover{background:var(--sand)}
+button.copy.done{background:#e4f2e9;color:#256b41;border-color:#cfe5d8}
+/* A short list, not a paragraph: each line is one thing to do or know, and
+   a wall of grey text on a payment screen reads as small print. */
+.tnote{margin-top:16px;padding-left:0;list-style:none;font-size:13.5px;line-height:1.6;color:#6b7d74}
+.tnote li{position:relative;padding-left:18px}
+.tnote li+li{margin-top:7px}
+.tnote li:before{content:"";position:absolute;left:5px;top:.62em;
+width:5px;height:5px;border-radius:50%;background:var(--sand-2)}
+.tnote strong{color:var(--ink);font-weight:650}
+/* Not a flex row: the bare text between the dot and the countdown becomes its
+   own flex item and wraps onto a line of its own the moment the box is narrow,
+   which is every phone. Inline keeps the sentence a sentence. */
+.twait{margin-top:18px;font-size:13.5px;color:#6b7d74;text-align:center;line-height:1.7}
+.twait .dot{display:inline-block;vertical-align:baseline;width:8px;height:8px;
+margin-right:7px;border-radius:50%;background:var(--marigold);
+animation:pulse 1.4s ease-in-out infinite}
+.twait .tleft{color:#8a9a92}
+@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+@media(prefers-reduced-motion:reduce){.twait .dot{animation:none;opacity:.8}}
+.tussd{margin-top:12px;text-align:center;font-size:13.5px;color:#6b7d74}
+@media(max-width:520px){
+  .trow{padding:12px 13px;font-size:14.5px}
+  .tv .acct{font-size:17px}
+}
 @media(max-width:520px){
   body{padding:14px 10px 48px}
   .sheet{border-radius:16px}
@@ -89,8 +146,82 @@ button.pay-btn:disabled{opacity:.5;cursor:default}
   td{padding:12px 18px}
   .totals{padding:16px 18px 0}
   .pay,.banner{padding:20px 18px 24px;margin-left:18px;margin-right:18px}
+  .trust{margin-left:18px;margin-right:18px;padding:14px 14px}
   .note{margin-left:18px;margin-right:18px}
 }
+`;
+
+
+/**
+ * Enhancements for the transfer panel: copy, a countdown, and polling.
+ *
+ * Deliberately additive. The account details are already in the HTML, so a
+ * browser that runs none of this still shows a payable invoice — the client
+ * reads the number, sends the money, and refreshes. Everything here only
+ * shortens that loop.
+ *
+ * The poll asks our own server, which answers from our database. It never
+ * asks the processor and never decides anything: a payment becomes paid on a
+ * verified webhook, and this is just how the page finds out.
+ */
+const TRANSFER_JS = `
+(function () {
+  var box = document.querySelector('.transfer');
+  if (!box) return;
+
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('button.copy');
+    if (!b) return;
+    var text = b.getAttribute('data-copy') || '';
+    var done = function () {
+      var was = b.textContent;
+      b.textContent = 'Copied';
+      b.classList.add('done');
+      setTimeout(function () { b.textContent = was; b.classList.remove('done'); }, 1600);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () {});
+    } else {
+      var t = document.createElement('textarea');
+      t.value = text; document.body.appendChild(t); t.select();
+      try { document.execCommand('copy'); done(); } catch (err) {}
+      document.body.removeChild(t);
+    }
+  });
+
+  var left = box.querySelector('.tleft');
+  var ends = Date.now() + Number(box.getAttribute('data-expires') || 0);
+  function tick() {
+    var ms = ends - Date.now();
+    if (!left) return;
+    if (ms <= 0) {
+      left.hidden = false;
+      left.textContent = '\u2014 these details have expired, refresh for new ones';
+      return;
+    }
+    var mins = Math.floor(ms / 60000), secs = Math.floor((ms % 60000) / 1000);
+    left.hidden = false;
+    left.textContent = '\u2014 ' + mins + ':' + (secs < 10 ? '0' : '') + secs + ' left';
+    setTimeout(tick, 1000);
+  }
+  tick();
+
+  // Backs off as it goes, so a page left open all afternoon is not a
+  // request every three seconds all afternoon.
+  var token = box.getAttribute('data-token');
+  var wait = 3000;
+  function poll() {
+    fetch('/i/' + token + '/status', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (d && d.paid) { location.reload(); return; }
+        wait = Math.min(wait * 1.25, 20000);
+        setTimeout(poll, wait);
+      })
+      .catch(function () { setTimeout(poll, 10000); });
+  }
+  setTimeout(poll, wait);
+})();
 `;
 
 const LABEL: Record<PublicDocument["type"], string> = {
@@ -100,10 +231,26 @@ const LABEL: Record<PublicDocument["type"], string> = {
   sample: "Sample",
 };
 
+/**
+ * The one-time account a client transfers into.
+ *
+ * Structurally typed rather than imported from the store, because everything
+ * in this file is pure and tested by calling it with a fixture.
+ */
+export type TransferPanel = {
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  amountKobo: number;
+  ussd: string | null;
+  /** Milliseconds from render until the account stops accepting the transfer. */
+  expiresInMs: number;
+};
+
 export function renderDocument(
   doc: PublicDocument,
   today: Civil,
-  opts: { token: string; error?: string } = { token: "" },
+  opts: { token: string; error?: string; transfer?: TransferPanel | null } = { token: "" },
 ): string {
   const label = LABEL[doc.type];
   const outstanding = outstandingKobo(doc);
@@ -126,6 +273,10 @@ export function renderDocument(
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- Without this iOS reads a ten-digit account number as a phone number and
+     renders it as a blue call link. Tapping the thing we are asking somebody
+     to copy would offer to dial it. -->
+<meta name="format-detection" content="telephone=no,date=no,address=no,email=no">
 <title>${label} ${doc.number} from ${esc(doc.businessName)}</title>
 <meta name="robots" content="noindex,nofollow">
 <meta name="description" content="${label} for ${esc(formatNaira(doc.totalKobo))} from ${esc(doc.businessName)}.">
@@ -133,7 +284,11 @@ export function renderDocument(
 </head><body>
 <div class="sheet">
   <div class="top">
-    <div class="brand"><span class="dot"></span>balans</div>
+    <div class="brand">${
+      // The real logo where we have it; the wordmark in text if the asset is
+      // missing, because a payment page must render either way.
+      logoAvailable() ? logoSvg("26px") : `<span class="dot"></span>balans`
+    }</div>
     <div class="kind">${label} ${doc.number}</div>
     <h1>${formatNaira(doc.totalKobo)}</h1>
     <div class="from">From <b>${esc(doc.businessName)}</b> to ${esc(doc.clientName)}</div>
@@ -161,18 +316,27 @@ export function renderDocument(
     }
   </div>
 
+  ${partsBlock(doc)}
   ${doc.notes ? `<div class="note">${esc(doc.notes)}</div>` : ""}
-  ${payBlock(doc, can, outstanding, opts)}
+  ${payBlock(doc, can, payableNowKobo(doc), opts, payableLabel(doc))}
+  ${trustBlock(doc)}
   <div class="files">
-    <a href="/i/${esc(opts.token)}/pdf">Download ${label.toLowerCase()} (PDF)</a>
+    ${
+      // F8: a payment request is "a lightweight payable with no PDF". There is
+      // nothing itemised to render, and offering one implies there is.
+      doc.type === "payment_request"
+        ? ""
+        : `<a href="/i/${esc(opts.token)}/pdf">Download ${label.toLowerCase()} (PDF)</a>`
+    }
     ${
       doc.amountPaidKobo > 0
-        ? ` &middot; <a href="/i/${esc(opts.token)}/receipt">Receipt</a>`
+        ? `${doc.type === "payment_request" ? "" : " &middot; "}<a href="/i/${esc(opts.token)}/receipt">Receipt</a>`
         : ""
     }
   </div>
 </div>
 <p class="foot">Invoiced with balans &middot; <a href="https://balans.ng">balans.ng</a></p>
+${opts.transfer ? `<script>${TRANSFER_JS}</script>` : ""}
 </body></html>`;
 }
 
@@ -189,20 +353,50 @@ function statusPill(doc: PublicDocument, today: Civil, overdue: boolean): string
   return `<span class="pill due">Due ${when}</span>`;
 }
 
+/**
+ * The parts of a split invoice (F7).
+ *
+ * Shown even once they are paid, because the point of a deposit is that the
+ * client can see the shape of the whole arrangement and what is left of it.
+ */
+function partsBlock(doc: PublicDocument): string {
+  if (!doc.parts.length) return "";
+
+  const rows = doc.parts
+    .map((p) => {
+      const done = p.status === "paid";
+      const tag = done ? "Paid" : p.status === "payable" ? "Due now" : "Later";
+      return `<div class="part${done ? " done" : ""}">
+        <span class="who">${esc(p.label)}<span class="tag">${tag}</span></span>
+        <span class="amt">${formatNaira(p.amountKobo)}</span>
+      </div>`;
+    })
+    .join("");
+
+  return `<div class="parts">${rows}</div>`;
+}
+
 function payBlock(
   doc: PublicDocument,
   can: ReturnType<typeof payable>,
-  outstanding: number,
-  opts: { token: string; error?: string },
+  amount: number,
+  opts: { token: string; error?: string; transfer?: TransferPanel | null },
+  partLabel: string | null,
 ): string {
   if (can.ok) {
+    // Details already issued: show them instead of asking again. A client who
+    // has gone to their banking app and come back must meet the same account.
+    if (opts.transfer) return transferBlock(doc, opts.transfer, opts.token);
+
     // A plain form post, so the button works with no JavaScript at all.
     return `<div class="pay">
     ${opts.error ? `<p class="banner cancelled" style="margin:0 0 14px">${esc(opts.error)}</p>` : ""}
     <form method="post" action="/i/${esc(opts.token)}/pay">
-      <button class="pay-btn" type="submit">Pay ${formatNaira(outstanding)}</button>
+      <button class="pay-btn" type="submit">Pay ${formatNaira(amount)}${
+        partLabel ? ` &middot; ${esc(partLabel)}` : ""
+      }</button>
     </form>
-    <p class="secure">Paid securely to ${esc(doc.businessName)}. Card, transfer or USSD.</p>
+    <p class="secure">Pay by bank transfer to ${esc(doc.businessName)}. Takes about a minute.</p>
   </div>`;
   }
 
@@ -222,15 +416,118 @@ function payBlock(
   }
 }
 
+
+/**
+ * The account to transfer into.
+ *
+ * Everything needed to complete the payment is rendered here by the server,
+ * so the panel works with JavaScript switched off: the client can read the
+ * account, send the money, and refresh to see it land. The countdown, the copy
+ * button and the polling are enhancements on top, never the mechanism.
+ *
+ * Two things on this panel are load-bearing and easy to get wrong.
+ *
+ * The account name is Monnify's, not the freelancer's, because that is whose
+ * collection account it is. A client who reads an unfamiliar name on a payment
+ * screen is right to hesitate, so it is labelled and explained rather than
+ * quietly displayed and hoped over.
+ *
+ * And the amount has to be exact. These accounts are matched on the amount as
+ * well as the number, so "about right" does not settle; the figure is given
+ * once, in full, with nothing else competing for the same attention.
+ */
+function transferBlock(doc: PublicDocument, t: TransferPanel, token: string): string {
+  const amount = formatNaira(t.amountKobo);
+
+  const row = (k: string, v: string, copy?: string) =>
+    `<div class="trow">
+      <span class="tk">${k}</span>
+      <span class="tv">${v}${
+        copy
+          ? `<button class="copy" type="button" data-copy="${esc(copy)}" aria-label="Copy ${k.toLowerCase()}">Copy</button>`
+          : ""
+      }</span>
+    </div>`;
+
+  return `<div class="pay transfer" data-token="${esc(token)}" data-expires="${t.expiresInMs}">
+  <p class="tlead">Transfer <strong>${amount}</strong> to this account</p>
+
+  <div class="tbox">
+    ${row("Bank", esc(t.bankName))}
+    ${row("Account number", `<span class="acct">${esc(t.accountNumber)}</span>`, t.accountNumber)}
+    ${t.accountName ? row("Account name", esc(t.accountName)) : ""}
+    ${row("Amount", `<strong>${amount}</strong>`, String(t.amountKobo / 100))}
+  </div>
+
+  <ul class="tnote">
+    <li>Send <strong>exactly ${amount}</strong> from your bank app.</li>
+    <li>This account belongs to this ${LABEL[doc.type].toLowerCase()} alone${
+      t.accountName
+        ? `, so it is named <strong>${esc(t.accountName)}</strong> rather than ${esc(doc.businessName)}`
+        : ""
+    }.</li>
+    <li>Nothing else is needed &mdash; no reference, no sign-up.</li>
+  </ul>
+
+  <p class="twait" role="status">
+    <span class="dot"></span>Waiting for your transfer. This page updates itself
+    <span class="tleft" hidden></span>
+  </p>
+
+  ${
+    t.ussd
+      ? `<p class="tussd">On your phone: <strong>${esc(t.ussd)}</strong></p>`
+      : ""
+  }
+
+  <noscript><p class="tnote">Refresh this page after sending, to see it confirmed.</p></noscript>
+</div>`;
+}
+
+
+/**
+ * Who is handling the money, and who is not.
+ *
+ * The page asks a stranger to transfer real money to an account name they do
+ * not recognise. Everything that makes that reasonable belongs in one place,
+ * stated plainly rather than implied: the processor's own mark, the fact that
+ * we are not a bank and hold nothing, and where the money actually lands.
+ *
+ * These are also the two lines section 12 requires on every surface a client
+ * sees. They were on the PDF and missing here, which was the wrong way round
+ * — this is the page where somebody decides whether to part with the money.
+ */
+function trustBlock(doc: PublicDocument): string {
+  const mark = monnifyLogo();
+
+  return `<div class="trust">
+    <div class="tline">
+      <svg class="shield" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M8 1.75 2.75 3.6v3.9c0 3.1 2.2 5.6 5.25 6.75 3.05-1.15 5.25-3.65 5.25-6.75V3.6L8 1.75Z"
+              stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+        <path d="m5.6 8 1.7 1.7 3.1-3.3" stroke="currentColor" stroke-width="1.4"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Payments processed by</span>
+      ${mark ? `<img class="mlogo" src="${mark}" alt="Monnify" width="88" height="20">` : `<b>Monnify</b>`}
+    </div>
+    <p class="tsmall">
+      Balans is not a bank and does not hold your money. This payment settles
+      directly to the bank account of <b>${esc(doc.businessName)}</b>.
+    </p>
+  </div>`;
+}
+
 /** A 404 that does not confirm whether the token was ever real. */
 export function renderNotFound(): string {
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="format-detection" content="telephone=no">
 <title>Not found</title><meta name="robots" content="noindex,nofollow">
 <style>${CSS}</style></head><body>
 <div class="sheet"><div class="top" style="padding-bottom:28px">
-  <div class="brand"><span class="dot"></span>balans</div>
+  <div class="brand">${logoAvailable() ? logoSvg("26px") : `<span class="dot"></span>balans`}</div>
   <h1 style="margin-top:22px">Nothing here</h1>
   <p class="from">This link has expired, or it was never quite right. Ask whoever sent it for a new one.</p>
 </div></div>

@@ -11,7 +11,7 @@
 
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { b, lines, para } from "../whatsapp/format.ts";
+import { b, block, lines, para, row } from "../whatsapp/format.ts";
 import type { Draft } from "./store.ts";
 
 /** F6: description defaults to "Services" if absent, and the draft says so. */
@@ -24,53 +24,49 @@ const LABEL: Record<Draft["type"], string> = {
   sample: "Sample invoice",
 };
 
+/** F8: a request is numbered in the invoice sequence and reads like one. */
+const SENT_LABEL: Record<Draft["type"], string> = {
+  invoice: "Invoice",
+  quote: "Quote",
+  payment_request: "Request",
+  sample: "Sample",
+};
+
 export function draftSummary(draft: Draft, today: Civil): string {
-  const head = `🧾 ${LABEL[draft.type]} for ${b(draft.clientName)}`;
+  const rows: (string | false)[] = [row("Client", draft.clientName)];
 
-  const body: string[] = [];
-
-  // One line item reads better inline; several deserve a list with their own
-  // amounts, because that is the part a client will query.
+  // One line reads as a single "Work" row. Several deserve their own lines,
+  // because the itemisation is the part a client queries.
   if (draft.lines.length === 1) {
     const only = draft.lines[0]!;
-    body.push(`${only.description}${only.qty === 1 ? "" : ` x${only.qty}`}`);
+    rows.push(row("Work", `${only.description}${only.qty === 1 ? "" : ` x${only.qty}`}`));
   } else {
+    rows.push("Work:");
     for (const line of draft.lines) {
       const each = line.qty === 1 ? "" : ` x${line.qty}`;
-      body.push(`· ${line.description}${each} — ${formatNaira(line.unitAmountKobo * line.qty)}`);
+      rows.push(`  · ${line.description}${each} — ${formatNaira(line.unitAmountKobo * line.qty)}`);
     }
   }
 
-  // Subtotal only when it differs from the total, so a plain invoice shows one
-  // number and not the same number twice.
-  const money: string[] = [];
+  // Subtotal only when VAT makes it differ from the total: showing the same
+  // number twice is noise on the one line somebody is checking.
   if (draft.vatKobo > 0) {
-    money.push(`Subtotal: ${formatNaira(draft.subtotalKobo)}`);
-    money.push(`VAT ${draft.vatPercent}%: ${formatNaira(draft.vatKobo)}`);
+    rows.push(row("Subtotal", formatNaira(draft.subtotalKobo)));
+    rows.push(row(`VAT ${draft.vatPercent}%`, formatNaira(draft.vatKobo)));
   }
-  money.push(`Total: ${b(formatNaira(draft.totalKobo))}`);
 
-  const terms: string[] = [];
+  rows.push(row("Amount", b(formatNaira(draft.totalKobo))));
+
   if (draft.dueDate) {
-    // A quote does not fall due; it stops being good.
-    const word = draft.type === "quote" ? "Valid until" : "Due";
-    terms.push(`${word} ${formatFriendly(draft.dueDate, today)}`);
+    rows.push(row(draft.type === "quote" ? "Valid until" : "Due", formatFriendly(draft.dueDate, today)));
   }
-  if (draft.depositPercent) {
-    terms.push(`${draft.depositPercent}% deposit up front`);
-  }
-  if (draft.passFeesToClient) {
-    terms.push("Client pays the transaction fee");
-  }
-  if (draft.clientEmail) {
-    terms.push(`Copy to ${draft.clientEmail}`);
-  }
+  if (draft.depositPercent) rows.push(row("Deposit", `${draft.depositPercent}% up front`));
+  if (draft.passFeesToClient) rows.push(row("Fees", "Client pays the transaction fee"));
+  if (draft.clientEmail) rows.push(row("Email to", draft.clientEmail));
 
   return para(
-    lines(head, ...body),
-    lines(...money),
-    terms.length ? lines(...terms) : "",
-    `${b("Send it?")} Reply yes, or tell me what to change.`,
+    block(`🧾 ${b(`${LABEL[draft.type].toUpperCase()} DRAFT`)}`, rows),
+    `${b("Send it?")}  yes  /  tell me what to change`,
   );
 }
 
@@ -94,7 +90,7 @@ export function askFor(missing: string, draft: { clientName?: string }): string 
         : lines(`💰 ${b("How much is it for?")}`, `You can write it like ${b("350k")}.`);
     case "description":
       return lines(
-        b("What is it for?"),
+        `📝 ${b("What is it for?")}`,
         `A few words is enough — or reply ${b("skip")} and it will say "${DEFAULT_DESCRIPTION}".`,
       );
     case "due_date":
@@ -103,31 +99,45 @@ export function askFor(missing: string, draft: { clientName?: string }): string 
         `Try ${b("Friday")}, ${b("month end")}, or ${b("30 days")}.`,
       );
     default:
-      return b("Tell me a bit more and I will draft it.");
+      return `💬 ${b("Tell me a bit more and I will draft it.")}`;
   }
 }
 
-/** F6 step 4: one message with the link, ready to forward. */
+/**
+ * What goes out once a document is confirmed (F6 step 4).
+ *
+ * Two messages, and the split is the point. The first is written for the
+ * *client*: it carries the PDF and says "click the link to pay", so the user
+ * can forward it exactly as it arrived without editing anything out. The
+ * second is a private note to the user, which would read as nonsense to a
+ * client and must not be part of what they forward.
+ *
+ * It costs one extra message. Worth it: a message that has to be retyped
+ * before it can be sent is a message that does not get sent.
+ */
 export function sentMessage(
   draft: Draft,
   confirmed: { number: number; publicToken: string },
   baseUrl: string,
   today: Civil,
-): string {
-  const label = draft.type === "quote" ? "Quote" : "Invoice";
+): { forward: string; note: string } {
+  const label = SENT_LABEL[draft.type];
   const link = `${baseUrl.replace(/\/$/, "")}/i/${confirmed.publicToken}`;
 
-  return para(
-    `✅ ${label} ${b(`#${confirmed.number}`)} is ready.`,
-    lines(
-      `${draft.clientName} — ${formatNaira(draft.totalKobo)}`,
-      draft.dueDate
-        ? `${draft.type === "quote" ? "Valid until" : "Due"} ${formatFriendly(draft.dueDate, today)}`
-        : "",
-    ),
-    lines("Send this to them:", link),
-    draft.type === "quote"
-      ? `Reply ${b(`convert quote ${confirmed.number}`)} when they accept.`
-      : `I will tell you the moment it is paid.`,
+  const forward = para(
+    block(`✅ ${b(`${label.toUpperCase()} #${confirmed.number}`)}`, [
+      row("Client", draft.clientName),
+      row("Amount", b(formatNaira(draft.totalKobo))),
+      draft.dueDate &&
+        row(draft.type === "quote" ? "Valid until" : "Due", formatFriendly(draft.dueDate, today)),
+    ]),
+    lines(draft.type === "quote" ? "Click the link to view it:" : "Click the link to pay:", link),
   );
+
+  const note =
+    draft.type === "quote"
+      ? `🔁 Reply ${b(`convert quote ${confirmed.number}`)} when they accept.`
+      : "🔔 I will tell you the moment it is paid.";
+
+  return { forward, note };
 }

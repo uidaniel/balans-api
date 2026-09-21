@@ -257,3 +257,17 @@ export async function recordConsent(userId: string, version: string): Promise<vo
     [userId, version],
   );
 }
+
+/**
+ * Whether they have ever chosen an invoice design.
+ *
+ * Only used to decide whether to keep offering the picker. Somebody who has
+ * picked is not asked again on every invoice; `/design` still works.
+ */
+export async function hasChosenTemplate(userId: string): Promise<boolean> {
+  const { rows } = await db().query<{ chosen: boolean }>(
+    `SELECT template_id IS NOT NULL AS chosen FROM users WHERE id = $1`,
+    [userId],
+  );
+  return rows[0]?.chosen ?? false;
+}

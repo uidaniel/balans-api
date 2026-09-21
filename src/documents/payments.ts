@@ -78,3 +78,117 @@ export async function paymentsFor(documentId: string): Promise<
     paidAt: r.paid_at,
   }));
 }
+
+/* -------------------------------------------------------------------------- */
+/* Pay by transfer                                                            */
+/* -------------------------------------------------------------------------- */
+
+export type LiveTransfer = {
+  reference: string;
+  providerReference: string;
+  amountKobo: number;
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  ussd: string | null;
+  expiresAt: Date;
+};
+
+/** Keeps the account Monnify issued, against the payment it belongs to. */
+export async function recordTransferAccount(
+  reference: string,
+  a: {
+    bankName: string;
+    bankCode: string;
+    accountNumber: string;
+    accountName: string;
+    ussd: string | null;
+    expiresAt: Date;
+  },
+): Promise<void> {
+  await db().query(
+    `UPDATE payments
+        SET transfer_bank_name = $2, transfer_bank_code = $3,
+            transfer_account_number = $4, transfer_account_name = $5,
+            transfer_ussd = $6, transfer_expires_at = $7
+      WHERE reference = $1`,
+    [reference, a.bankName, a.bankCode, a.accountNumber, a.accountName, a.ussd, a.expiresAt],
+  );
+}
+
+/**
+ * The account a client is already part-way through paying into, if there is one.
+ *
+ * Bounded by the expiry Monnify gave and by the amount still being asked for.
+ * Reusing an account is the point: somebody who has copied the number into
+ * their banking app and come back must not be shown a different one, or the
+ * transfer they are about to send lands against nothing.
+ *
+ * A minute of headroom, because the client still has to finish in their bank's
+ * app after they read this. An account with forty seconds left is worse than
+ * no account at all.
+ */
+export async function liveTransferFor(
+  documentId: string,
+  amountKobo: number,
+): Promise<LiveTransfer | null> {
+  const { rows } = await db().query<{
+    reference: string;
+    provider_reference: string;
+    client_total_kobo: string;
+    transfer_bank_name: string;
+    transfer_account_number: string;
+    transfer_account_name: string;
+    transfer_ussd: string | null;
+    transfer_expires_at: Date;
+  }>(
+    `SELECT reference, provider_reference, client_total_kobo,
+            transfer_bank_name, transfer_account_number, transfer_account_name,
+            transfer_ussd, transfer_expires_at
+       FROM payments
+      WHERE document_id = $1
+        AND status = 'initialised'
+        AND transfer_account_number IS NOT NULL
+        AND transfer_expires_at > now() + interval '1 minute'
+        AND client_total_kobo = $2
+      ORDER BY transfer_expires_at DESC
+      LIMIT 1`,
+    [documentId, amountKobo],
+  );
+
+  const r = rows[0];
+  return r
+    ? {
+        reference: r.reference,
+        providerReference: r.provider_reference,
+        amountKobo: Number(r.client_total_kobo),
+        bankName: r.transfer_bank_name,
+        accountNumber: r.transfer_account_number,
+        accountName: r.transfer_account_name,
+        ussd: r.transfer_ussd,
+        expiresAt: r.transfer_expires_at,
+      }
+    : null;
+}
+
+/** What the page's poll asks: has this document been settled yet? */
+export async function paymentProgress(
+  documentId: string,
+): Promise<{ paid: boolean; pending: { reference: string; providerReference: string }[] }> {
+  const { rows } = await db().query<{
+    status: string;
+    reference: string;
+    provider_reference: string;
+  }>(
+    `SELECT status, reference, provider_reference
+       FROM payments WHERE document_id = $1`,
+    [documentId],
+  );
+
+  return {
+    paid: rows.some((r) => r.status === "success"),
+    pending: rows
+      .filter((r) => r.status === "initialised")
+      .map((r) => ({ reference: r.reference, providerReference: r.provider_reference })),
+  };
+}

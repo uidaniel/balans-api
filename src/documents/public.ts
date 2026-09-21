@@ -11,6 +11,7 @@
 
 import { db } from "../db/pool.ts";
 import type { Civil } from "../../core/dates.ts";
+import { partsFor, nextPayable, type Part } from "./parts.ts";
 
 export type PublicStatus =
   | "draft"
@@ -45,6 +46,8 @@ export type PublicDocument = {
   /** Where the user's share settles. Absent means the page cannot take money. */
   subAccountCode: string | null;
   plan: "free" | "pro";
+  /** F7: empty for an ordinary invoice, two or more for a deposit. */
+  parts: Part[];
 };
 
 const civil = (d: Date | null): Civil | null =>
@@ -133,6 +136,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     notes: r.notes,
     subAccountCode: r.sub_account_code,
     plan: r.plan,
+    parts: await partsFor(r.id),
   };
 }
 
@@ -151,9 +155,27 @@ export async function markViewed(id: string): Promise<void> {
   );
 }
 
-/** What is still owed. Deposits (F7) will make this the next part instead. */
+/** What is still owed on the whole document. */
 export const outstandingKobo = (d: PublicDocument): number =>
   Math.max(0, d.totalKobo - d.amountPaidKobo);
+
+/**
+ * What the Pay button charges (F7).
+ *
+ * The next unpaid part when the document has parts, the whole balance
+ * otherwise. Only the next one: a client who could pay the balance first
+ * would leave the user chasing the deposit, which is the opposite of why
+ * somebody asks for a deposit.
+ */
+export function payableNowKobo(d: PublicDocument): number {
+  if (!d.parts.length) return outstandingKobo(d);
+  const next = nextPayable(d.parts);
+  return next ? next.amountKobo : 0;
+}
+
+/** The label for that button, so the client knows which part they are paying. */
+export const payableLabel = (d: PublicDocument): string | null =>
+  d.parts.length ? (nextPayable(d.parts)?.label ?? null) : null;
 
 /** Whether the page should show a Pay button at all. */
 export function payable(d: PublicDocument): { ok: true } | { ok: false; why: string } {
@@ -161,6 +183,8 @@ export function payable(d: PublicDocument): { ok: true } | { ok: false; why: str
   if (d.type === "sample") return { ok: false, why: "sample" };
   if (d.status === "cancelled") return { ok: false, why: "cancelled" };
   if (d.status === "paid" || outstandingKobo(d) === 0) return { ok: false, why: "paid" };
+  // Every part settled but the document not yet marked paid: nothing to take.
+  if (d.parts.length && payableNowKobo(d) === 0) return { ok: false, why: "paid" };
   // Without a subaccount the money has nowhere to settle but our own wallet,
   // which is the one thing Balans must never do.
   if (!d.subAccountCode) return { ok: false, why: "no_account" };

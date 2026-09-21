@@ -17,11 +17,19 @@ import { randomUUID } from "node:crypto";
 import { defaults, env } from "../../config.ts";
 import { todayIn } from "../../../core/dates.ts";
 import { balansFee, settle, type BalansRates } from "../../../core/fees.ts";
-import { initTransaction } from "../../payments/monnify.ts";
-import { findByToken, markViewed, outstandingKobo, payable } from "../../documents/public.ts";
-import { renderDocument, renderNotFound } from "../../documents/page.ts";
-import { recordInitialisedPayment } from "../../documents/payments.ts";
+import { initBankTransfer, initTransaction } from "../../payments/monnify.ts";
+import { findByToken, markViewed, outstandingKobo, payable, payableNowKobo } from "../../documents/public.ts";
+import { renderDocument, renderNotFound, type TransferPanel } from "../../documents/page.ts";
+import {
+  liveTransferFor,
+  paymentProgress,
+  recordInitialisedPayment,
+  recordTransferAccount,
+  type LiveTransfer,
+} from "../../documents/payments.ts";
 import { renderDocumentPdf } from "../../documents/pdf.ts";
+import { confirmPayment } from "../../payments/confirm.ts";
+import { notifyPaid } from "../../payments/notify.ts";
 import { get as getFile } from "../../storage/files.ts";
 import { fileName } from "../../storage/files.ts";
 import { db } from "../../db/pool.ts";
@@ -58,6 +66,23 @@ function tooMany(token: string): boolean {
   return seen.count > PAY_LIMIT;
 }
 
+
+/**
+ * A stored transfer, as the page wants it.
+ *
+ * The expiry is handed over as a duration rather than a timestamp: the client's
+ * phone clock is frequently wrong, and a countdown driven by their clock
+ * against our timestamp is a countdown that can start already finished.
+ */
+const panelFor = (t: LiveTransfer): TransferPanel => ({
+  bankName: t.bankName,
+  accountNumber: t.accountNumber,
+  accountName: t.accountName,
+  amountKobo: t.amountKobo,
+  ussd: t.ussd,
+  expiresInMs: Math.max(0, t.expiresAt.getTime() - Date.now()),
+});
+
 export async function publicRoutes(app: FastifyInstance): Promise<void> {
   /* -- The page ----------------------------------------------------------- */
 
@@ -71,13 +96,23 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       req.log.error({ err: e, documentId: doc.id }, "could not mark viewed"),
     );
 
+    // If details were already issued and are still good, show those rather
+    // than a Pay button. Somebody returning from their banking app is the
+    // common case, and they must find the same account they copied.
+    const live = payable(doc).ok ? await liveTransferFor(doc.id, payableNowKobo(doc)) : null;
+
     return reply
       .type(HTML)
       // The page shows money owed and must never be served from a shared cache.
       .header("cache-control", "no-store, private")
       .header("referrer-policy", "no-referrer")
       .header("x-content-type-options", "nosniff")
-      .send(renderDocument(doc, todayIn(defaults.behaviour.timezone), { token: req.params.token }));
+      .send(
+        renderDocument(doc, todayIn(defaults.behaviour.timezone), {
+          token: req.params.token,
+          transfer: live ? panelFor(live) : null,
+        }),
+      );
   });
 
   /* -- The file ------------------------------------------------------------ */
@@ -164,6 +199,13 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       reply.type(HTML).header("cache-control", "no-store, private")
         .send(renderDocument(doc, today, { token, error }));
 
+    const showAccount = (t: LiveTransfer) =>
+      reply
+        .type(HTML)
+        .header("cache-control", "no-store, private")
+        .header("referrer-policy", "no-referrer")
+        .send(renderDocument(doc, today, { token, transfer: panelFor(t) }));
+
     if (tooMany(token)) {
       req.log.warn({ documentId: doc.id }, "pay rate limited");
       return again("Too many attempts just now. Wait a moment and try again.");
@@ -175,7 +217,17 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       return again("This invoice cannot be paid right now.");
     }
 
-    const outstanding = outstandingKobo(doc);
+    // F7: the next unpaid part, or the whole balance when there are none.
+    const outstanding = payableNowKobo(doc);
+
+    // Pressing Pay twice must not mint a second account. Monnify matches a
+    // transfer on the account *and* the amount, so two live accounts for the
+    // same balance is a way to lose somebody's money.
+    const existing = await liveTransferFor(doc.id, outstanding);
+    if (existing) {
+      req.log.info({ documentId: doc.id, reference: existing.reference }, "reusing live transfer account");
+      return showAccount(existing);
+    }
 
     // The fee is worked out here, from the row, and never from the request.
     const split = settle(outstanding, ratesFor(doc.plan), {
@@ -233,7 +285,82 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       "payment initialised",
     );
 
-    return reply.redirect(init.checkoutUrl, 303);
+    /*
+     * The account to pay into, for this transaction.
+     *
+     * This is the step that replaces the hosted checkout: the client stays on
+     * the invoice, reads an account number, and pays from the bank app they
+     * already trust. The split set on the transaction above still decides
+     * where the money goes, so nothing about rule 1 changes — we simply stop
+     * handing the payer to somebody else's page to do it.
+     */
+    const transfer = await initBankTransfer(init.transactionReference);
+
+    if (!transfer.ok) {
+      // The payment row stays: it is initialised, unpaid, and harmless. If a
+      // transfer somehow still arrives against it, the webhook will find it.
+      req.log.error(
+        { documentId: doc.id, reference, message: transfer.message },
+        "could not get transfer details",
+      );
+      return again("We could not get the account details just now. Please try again in a moment.");
+    }
+
+    await recordTransferAccount(reference, transfer.account);
+
+    req.log.info(
+      {
+        documentId: doc.id,
+        reference,
+        bank: transfer.account.bankName,
+        expiresAt: transfer.account.expiresAt,
+      },
+      "transfer account issued",
+    );
+
+    return showAccount({
+      reference,
+      providerReference: init.transactionReference,
+      amountKobo: split.clientPaysKobo,
+      bankName: transfer.account.bankName,
+      accountNumber: transfer.account.accountNumber,
+      accountName: transfer.account.accountName,
+      ussd: transfer.account.ussd,
+      expiresAt: transfer.account.expiresAt,
+    });
+  });
+
+  /* -- Has it landed yet? --------------------------------------------------- */
+
+  /**
+   * What the waiting page polls.
+   *
+   * Answers from our own database, which only the verified-webhook path ever
+   * writes to. When the webhook is late — and it sometimes is — this asks
+   * Monnify directly, but it does so through exactly the same confirmation
+   * code the webhook uses, so a payment is still only ever marked paid after a
+   * status check against the provider. There is no second way to become paid.
+   */
+  app.get<{ Params: { token: string } }>("/i/:token/status", async (req, reply) => {
+    const doc = await findByToken(req.params.token);
+    if (!doc) return reply.status(404).send({ error: "not_found" });
+
+    const progress = await paymentProgress(doc.id);
+
+    if (!progress.paid) {
+      for (const p of progress.pending) {
+        const outcome = await confirmPayment(
+          { paymentReference: p.reference, transactionReference: p.providerReference },
+          req.log,
+        );
+        if (outcome.kind === "confirmed") {
+          void notifyPaid(outcome, req.log);
+          return reply.header("cache-control", "no-store").send({ paid: true });
+        }
+      }
+    }
+
+    return reply.header("cache-control", "no-store").send({ paid: progress.paid });
   });
 
   /* -- Coming back from checkout ------------------------------------------- */

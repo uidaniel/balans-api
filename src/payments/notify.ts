@@ -15,7 +15,7 @@ import { db } from "../db/pool.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { send } from "../whatsapp/outbound.ts";
 import { renderReceiptPdf } from "../documents/pdf.ts";
-import { b, lines, para } from "../whatsapp/format.ts";
+import { b, block, lines, para, row } from "../whatsapp/format.ts";
 
 export type PaidNotice = {
   userId: string;
@@ -48,21 +48,26 @@ export function paidMessage(n: PaidNotice): string {
 
   if (n.fullyPaid) {
     return para(
-      `💸 ${b(formatNaira(n.paidKobo))} from ${n.clientName}.`,
-      lines(
-        `${which} is paid in full${how ? `, by ${how}` : ""}.`,
-        "It is on its way to your bank.",
-      ),
+      block(`💸 ${b("PAID")}`, [
+        row("From", n.clientName),
+        row("Amount", b(formatNaira(n.paidKobo))),
+        row(label, n.documentNumber === null ? "—" : `#${n.documentNumber}`),
+        how && row("Method", how.charAt(0).toUpperCase() + how.slice(1)),
+      ]),
+      "It is on its way to your bank.",
     );
   }
 
   const left = n.totalKobo - n.amountPaidKobo;
   return para(
-    `💰 ${b(formatNaira(n.paidKobo))} from ${n.clientName}.`,
-    lines(
-      `Part payment on ${which}${how ? `, by ${how}` : ""}.`,
-      `${formatNaira(left)} still to come.`,
-    ),
+    block(`💰 ${b("PART PAYMENT")}`, [
+      row("From", n.clientName),
+      row("Received", b(formatNaira(n.paidKobo))),
+      row("Still owed", formatNaira(left)),
+      row(label, n.documentNumber === null ? "—" : `#${n.documentNumber}`),
+      how && row("Method", how.charAt(0).toUpperCase() + how.slice(1)),
+    ]),
+    "It is on its way to your bank.",
   );
 }
 

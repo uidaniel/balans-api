@@ -12,7 +12,14 @@ import { randomUUID } from "node:crypto";
 import { legalConsentVersion } from "../config.ts";
 import { db, tx } from "../db/pool.ts";
 import { markRead, sendText } from "../whatsapp/client.ts";
-import { createSubAccount, initTransaction, listBanks, matchBank, resolveAccount } from "../payments/monnify.ts";
+import {
+  createSubAccount,
+  initTransaction,
+  listBanks,
+  matchBank,
+  payoutBlocked,
+  resolveAccount,
+} from "../payments/monnify.ts";
 import { checkCode, issueCode } from "../lib/codes.ts";
 import { sendEmail, transport, verificationEmail } from "../email/send.ts";
 import { markEmailVerified, setEmail, recordConsent, saveBankAccount, activateBankAccount, getPendingBank } from "./store.ts";
@@ -22,10 +29,12 @@ import { forLog, type Parsed } from "../parser/schema.ts";
 import { b, lines, para } from "../whatsapp/format.ts";
 import { parseMessage } from "../parser/parse.ts";
 import { readCorrection } from "../parser/corrections.ts";
+import { asCommand } from "../parser/commands.ts";
 import { todayIn, type Civil } from "../../core/dates.ts";
 import { defaults, env } from "../config.ts";
 import { confirmDraft, createDraft, discardDraft, getOpenDraft } from "../documents/store.ts";
 import { draftSummary, sentMessage } from "../documents/summary.ts";
+import { pickerUrlFor } from "../http/routes/templates.ts";
 import { debtors, documentsThisMonth, findDocument, planOf, summarise } from "../documents/queries.ts";
 import {
   cancelledMessage,
@@ -54,11 +63,13 @@ import {
 import { raiseSecurityAlert } from "../settings/alerts.ts";
 import { openSubscription, stateOf } from "../billing/subscription.ts";
 import { deductChosen, payLinkMessage, proActive, proOffer } from "../billing/messages.ts";
-import { settingsMenu, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
+import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
+import { sendCta, sendList } from "../whatsapp/client.ts";
 import { sendDocument, uploadDocument } from "../whatsapp/client.ts";
 import {
   loadConversation,
   recordInbound,
+  hasChosenTemplate,
   recordOutbound,
   saveConversation,
   setBusinessName,
@@ -89,8 +100,20 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   // A paused account is paused whatever the conversation last said.
   const state: State = user.status === "paused" ? "paused" : saved.state;
 
-  // Anything that is not text has no words to act on yet. Say so rather than
-  // letting it fall through the machine as an empty message.
+  /*
+   * Somebody opened the chat and has not said anything yet.
+   *
+   * There is no message to parse and no state to advance: this is the one
+   * moment to say what the product is, to a person looking at an empty screen
+   * who was probably just handed the number by somebody else.
+   */
+  if (msg.kind === "welcome") {
+    await reply(user.id, msg.from, [state === "new" ? VOICE.askBusinessName : VOICE.helpIdle], log);
+    return;
+  }
+
+  // Anything else that is not text has no words to act on yet. Say so rather
+  // than letting it fall through the machine as an empty message.
   if (msg.kind !== "text" && msg.kind !== "interactive" && !msg.text) {
     await reply(user.id, msg.from, [b("I can only read text messages at the moment.")], log);
     return;
@@ -103,7 +126,35 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   // machine is a pure function. Only the states that can act on a parse pay
   // for one — onboarding answers are a bank number and an email, and putting
   // those through a model would cost money to learn nothing.
-  const reading = NEEDS_PARSE.has(state) ? await parseMessage(text, { today }) : null;
+  /*
+   * A correction is read before the model, not after it.
+   *
+   * With a draft on screen, "make it 400k" and "due friday" are the two most
+   * common things anybody types, and `readCorrection` understands both for
+   * nothing. Asking the model first cost between one and five seconds to be
+   * told "unknown", and then the correction reader answered it anyway — a
+   * whole model call spent on a question we had already answered.
+   *
+   * The command check comes first of all, so "yes" and "no" are never mistaken
+   * for a correction.
+   */
+  const correction =
+    state === "awaiting_confirm" && !asCommand(text) ? readCorrection(text, today) : null;
+
+  // Nothing left to work out: the correction is the whole message.
+  const needsParse = NEEDS_PARSE.has(state) && !correction;
+  const reading = needsParse ? await parseMessage(text, { today }) : null;
+
+  /*
+   * Section 5: "A new command always wins over a pending question, so users
+   * are never trapped."
+   *
+   * The settings and onboarding steps do not run the parser — their answers
+   * are a bank number or a menu choice, and a model call would cost money to
+   * learn nothing. But somebody halfway through settings who types "who owes
+   * me" still means it, so the free command check runs even there.
+   */
+  const escaping = !needsParse ? asCommand(text) : null;
 
   const result = step(
     state,
@@ -112,13 +163,13 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
       text,
       profileName: msg.profileName,
       today,
-      parsed: reading?.ok ? reading.parsed : undefined,
+      parsed: reading?.ok
+        ? reading.parsed
+        : escaping
+          ? commandAsParsed(escaping)
+          : undefined,
       parseFailed: reading && !reading.ok ? reading.reason : undefined,
-      // Only read as a correction when there is something to correct.
-      correction:
-        state === "awaiting_confirm" && reading?.ok && !ACTIONS.has(reading.parsed.intent)
-          ? readCorrection(text, today)
-          : null,
+      correction,
     },
     legalConsentVersion,
   );
@@ -143,14 +194,17 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   });
 
   // An effect can refuse to let the conversation move on: a wrong code must not
-  // reach the consent step just because the machine hoped it would.
-  const next = outcome.holdAt ?? result.next;
+  // reach the consent step just because the machine hoped it would. A faulted
+  // effect goes further and stays where it started, because the state it was
+  // heading for assumes work that may not have happened.
+  const next = outcome.failed ? state : (outcome.holdAt ?? result.next);
 
   // And when it refuses, the machine's own replies describe a future that did
   // not happen. Sending them anyway produces the worst kind of message pair -
   // "what is your email?" immediately followed by "I could not set up your
   // payouts" — so the effect's account of events replaces them.
-  const replies = outcome.holdAt ? outcome.lines : [...result.replies, ...outcome.lines];
+  const replies =
+    outcome.holdAt || outcome.failed ? outcome.lines : [...result.replies, ...outcome.lines];
 
   // The resolved name is what the next turn asks them to confirm.
   let context = outcome.resolvedName
@@ -186,6 +240,14 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
 type EffectOutcome = {
   lines: string[];
   holdAt?: State;
+  /**
+   * An effect threw.
+   *
+   * Distinct from `holdAt`, which is a deliberate refusal with something to
+   * say. This is a fault: the conversation stays exactly where it was, because
+   * we do not know how much of the work happened.
+   */
+  failed?: true;
   resolvedName?: string;
   /** Set by save_draft, so the next turn knows which row "yes" refers to. */
   draftId?: string;
@@ -248,6 +310,7 @@ async function runEffects(
 ): Promise<EffectOutcome> {
   const extra: string[] = [];
   let holdAt: State | undefined;
+  let failed: true | undefined;
   /** A bank change resolved this turn, handed to the next one via context. */
   let pendingBankChange: {
     bankCode: string;
@@ -266,685 +329,812 @@ async function runEffects(
     // on a premise that no longer holds — and one of them posts a real email.
     if (holdAt) break;
 
-    switch (effect.type) {
-      case "show_help":
-        break;
-
-      case "resolve_account": {
-        // F17: the name comes from the bank, never from the user. It is what
-        // they confirm, and what the name check in F26 compares against.
-        const banks = await listBanks();
-        const bank = matchBank(effect.bankQuery, banks);
-
-        if (!bank) {
-          extra.push(
-            lines(
-              `I do not recognise ${b(effect.bankQuery)} as a bank.`,
-              `Send the bank and account number again — like ${b("GTBank 0123456789")}.`,
-            ),
-          );
-          holdAt = "onboarding:bank";
+    /*
+     * A throw in here used to reach the webhook's catch, which logged it and
+     * returned. The user got no reply at all, the conversation was never
+     * saved, and their next message met the same question again — which is
+     * exactly how a scheduled bank change turned into an endless loop of
+     * "Is this the right account?".
+     *
+     * So a fault is caught where it happens, said out loud, and the
+     * conversation is left standing still rather than silently abandoned.
+     */
+    try {
+      switch (effect.type) {
+        case "show_help":
           break;
-        }
 
-        const resolved = await resolveAccount(effect.accountNumber, bank.code);
+        case "resolve_account": {
+          // F17: the name comes from the bank, never from the user. It is what
+          // they confirm, and what the name check in F26 compares against.
+          const banks = await listBanks();
+          const bank = matchBank(effect.bankQuery, banks);
 
-        if (!resolved.ok) {
-          log.warn({ userId, reason: resolved.reason }, "account resolution failed");
-          extra.push(
-            resolved.reason === "invalid_details"
-              ? lines(
-                  `${bank.name} did not recognise ${b(effect.accountNumber)}.`,
-                  "Check the number and send it again.",
-                )
-              : "I could not reach the bank just now. Send it again in a moment.",
-          );
-          holdAt = "onboarding:bank";
-          break;
-        }
-
-        // Stored pending; it only becomes active once they confirm the name.
-        await saveBankAccount(userId, {
-          bankCode: bank.code,
-          bankName: bank.name,
-          accountNumber: effect.accountNumber,
-          accountName: resolved.account.accountName,
-        });
-
-        resolvedName = resolved.account.accountName;
-        extra.push(
-          para(
-            `🏦 That account is ${b(resolved.account.accountName)} at ${bank.name}.`,
-            lines(
-              `If that is right, ${b("send your email address")} — receipts and invoice copies go there.`,
-              `If it is not, reply ${b("no")}.`,
-            ),
-          ),
-        );
-        break;
-      }
-
-      case "create_subaccount": {
-        const pending = await getPendingBank(userId);
-        if (!pending) {
-          log.error({ userId }, "confirmed an account that is not on file");
-          extra.push(
-            lines(
-              "Something went wrong saving that account.",
-              "Send the bank and number again.",
-            ),
-          );
-          holdAt = "onboarding:bank";
-          break;
-        }
-
-        const created = await createSubAccount({
-          accountNumber: pending.accountNumber,
-          bankCode: pending.bankCode,
-          email: pending.email ?? `${userId}@users.balans.ng`,
-        });
-
-        if (!created.ok) {
-          await flagSetupForReview(userId, created.message, log);
-          const tries = await countSetupFailures(userId);
-          log.error(
-            { userId, message: created.message, retryable: created.retryable, tries },
-            "subaccount creation failed",
-          );
-
-          // F1: after three failures, stop asking and hand it to a person.
-          // Repeating a question somebody has already answered correctly three
-          // times is the worst thing a setup flow can do to them.
-          if (tries >= 3) {
+          if (!bank) {
             extra.push(
-              para(
-                b("I cannot set that account up for payouts."),
-                lines(
-                  `Email ${b("hello@balans.ng")} and a person will finish it with you — usually the same day.`,
-                  "Nothing you have told me is lost.",
-                ),
+              lines(
+                `🤔 I do not recognise ${b(effect.bankQuery)} as a bank.`,
+                `Send the bank and account number again — like ${b("GTBank 0123456789")}.`,
               ),
             );
             holdAt = "onboarding:bank";
             break;
           }
 
-          extra.push(
-            created.retryable
-              ? lines(
-                  "Our payments provider is not answering just now.",
-                  `Reply ${b("yes")} to try that account again.`,
-                )
-              : para(
-                  b("That account cannot receive payouts."),
-                  lines(
-                    "Some fintech and wallet accounts are not supported yet.",
-                    `Send a ${b("regular bank account")} instead — like ${b("GTBank 0123456789")}.`,
-                  ),
-                ),
-          );
-          holdAt = created.retryable ? "onboarding:confirm_account" : "onboarding:bank";
-          break;
-        }
 
-        await activateBankAccount(userId, created.account.subAccountCode);
-        log.info(
-          { userId, subAccount: created.account.subAccountCode, reused: created.reused ?? false },
-          created.reused ? "reused an existing subaccount" : "subaccount created",
-        );
-        break;
-      }
-
-      case "send_email_code": {
-        await setEmail(userId, effect.email);
-        const issued = await issueCode(userId, "email_verify", effect.email);
-
-        if (!issued.ok) {
-          extra.push(
-            lines(
-              "That is a lot of codes in a short time.",
-              `Wait ${b(`${issued.retryAfterMinutes} minutes`)} and reply ${b("resend")}.`,
-            ),
-          );
-          holdAt = "onboarding:verify_email";
-          break;
-        }
-
-        const sent = await sendEmail(
-          { to: effect.email, ...verificationEmail(issued.code, businessName) },
-          log,
-        );
-
-        if (!sent.ok) {
-          log.error({ userId, reason: sent.reason }, "could not send the verification code");
-          extra.push(
-            lines(
-              `That email would not send — check the address.`,
-              `Or reply ${b("change")} to use another one.`,
-            ),
-          );
-          holdAt = "onboarding:verify_email";
-          break;
-        }
-
-        // Without a provider the code only reached the server log, so say so
-        // rather than leaving someone waiting on an email that is not coming.
-        if (!sent.delivered) {
-          extra.push(
-            "Email sending is not connected on this environment yet, so the code is in the server log.",
-          );
-        }
-        break;
-      }
-
-      case "verify_email_code": {
-        const check = await checkCode(userId, "email_verify", effect.email, effect.code);
-
-        if (check.ok) {
-          await markEmailVerified(userId, effect.email);
-          // The machine moved to consent but has nothing to say about it: only
-          // this branch knows the code was right. Without this the flow ends in
-          // silence at the last step.
-          extra.push(VOICE.confirmedAskConsent);
-          break;
-        }
-
-        // Hold the conversation where it was; the machine had hoped to move on.
-        holdAt = "onboarding:verify_email";
-        switch (check.reason) {
-          case "expired":
-            extra.push(`That code has expired. Reply ${b("resend")} and I will send another.`);
-            break;
-          case "too_many_attempts":
-            extra.push(`Too many tries on that code. Reply ${b("resend")} for a new one.`);
-            break;
-          case "no_code":
-            extra.push(`I have no code waiting for that address. Reply ${b("resend")}.`);
-            break;
-          default:
+          // Said before the name check, not after it. Learning that an account
+          // cannot be paid into is bad news either way; hearing it after you
+          // have confirmed your own name is worse, and costs two more messages.
+          const blocked = payoutBlocked(bank.code);
+          if (blocked) {
+            log.info({ userId, bank: bank.name }, "payout-blocked bank offered");
             extra.push(
-              check.left
-                ? lines(
-                    b("That code is not right."),
-                    `${check.left} ${check.left === 1 ? "try" : "tries"} left, or reply ${b("resend")} for a new one.`,
-                  )
-                : `${b("That code is not right.")} Reply ${b("resend")} for a new one.`,
+              para(
+                `⛔ ${b(`${blocked} cannot receive payouts yet.`)}`,
+                lines(
+                  "Our payments provider will not settle into wallet accounts like",
+                  `${b("OPay")}, ${b("PalmPay")} or ${b("Moniepoint")} — we are working on it.`,
+                ),
+                `Send a regular bank account instead — like ${b("GTBank 0123456789")}.`,
+              ),
             );
-        }
-        break;
-      }
-
-      case "record_consent":
-        await recordConsent(userId, effect.version);
-        log.info({ userId, version: effect.version }, "consent recorded");
-        break;
-
-      /* -- Documents (F6) ------------------------------------------------- */
-
-      case "save_draft": {
-        const doc = effect.doc;
-
-        // F6: plan limits are checked before the draft is shown. Drafting
-        // something and refusing to send it afterwards would be worse than
-        // saying so now, because by then they have read and approved it.
-        const plan = await planOf(userId);
-        const limit = defaults.plans[plan].documentsPerMonth;
-        if (limit !== null) {
-          const used = await documentsThisMonth(userId, ctx.today);
-          if (used >= limit) {
-            log.info({ userId, used, limit, plan }, "monthly document limit reached");
-            extra.push(limitReachedMessage(used, limit));
-            holdAt = "idle";
+            holdAt = "onboarding:bank";
             break;
           }
-        }
+          const resolved = await resolveAccount(effect.accountNumber, bank.code);
 
-        const draft = await createDraft(userId, {
-          type: doc.type,
-          clientName: doc.clientName ?? "",
-          clientEmail: doc.clientEmail ?? null,
-          lines: doc.lines,
-          dueDate: doc.dueDate ?? null,
-          vatPercent: doc.vatPercent ?? null,
-          depositPercent: doc.depositPercent ?? null,
-          passFeesToClient: doc.passFeesToClient ?? false,
-          notes: doc.notes ?? null,
-        });
-        draftId = draft.id;
-        extra.push(draftSummary(draft, ctx.today));
-        log.info({ userId, draftId: draft.id, totalKobo: draft.totalKobo }, "draft saved");
-        break;
-      }
-
-      case "send_document": {
-        // Read it back rather than trusting the conversation: what goes out
-        // must be the row the summary was rendered from.
-        const draft = await getOpenDraft(userId);
-        if (!draft || draft.id !== ctx.draftId) {
-          log.warn({ userId, draftId: ctx.draftId }, "nothing to send");
-          extra.push("That draft is no longer waiting. Send me the details again.");
-          clearDraft = true;
-          break;
-        }
-
-        const confirmed = await confirmDraft(userId, draft.id);
-        if (!confirmed) {
-          extra.push("I could not send that just now. Try again in a moment.");
-          holdAt = "awaiting_confirm";
-          break;
-        }
-
-        clearDraft = true;
-        log.info(
-          { userId, documentId: confirmed.id, number: confirmed.number, type: confirmed.type },
-          "document sent",
-        );
-
-        // F21: if the client's email is known, the invoice goes to their
-        // inbox too. Not awaited — the user is waiting on their own message,
-        // and a slow mail provider must not hold it up.
-        void emailDocumentToClient(confirmed.id, log).then((r) => {
-          if (!r.ok && r.why !== "no_client_email" && r.why !== "not_pro") {
-            log.error({ documentId: confirmed.id, why: r.why }, "client delivery failed");
+          if (!resolved.ok) {
+            log.warn({ userId, reason: resolved.reason }, "account resolution failed");
+            extra.push(
+              resolved.reason === "invalid_details"
+                ? lines(
+                    `${bank.name} did not recognise ${b(effect.accountNumber)}.`,
+                    "Check the number and send it again.",
+                  )
+                : "I could not reach the bank just now. Send it again in a moment.",
+            );
+            holdAt = "onboarding:bank";
+            break;
           }
-        });
 
-        // F6 step 4: one message with the PDF and the link, ready to forward.
-        // The caption carries the words, so the file and the message are one
-        // bubble rather than two.
-        const caption = sentMessage(draft, confirmed, env.PUBLIC_BASE_URL, ctx.today);
-        const pdf = await renderDocumentPdf(confirmed.id, log);
+          // Stored pending; it only becomes active once they confirm the name.
+          await saveBankAccount(userId, {
+            bankCode: bank.code,
+            bankName: bank.name,
+            accountNumber: effect.accountNumber,
+            accountName: resolved.account.accountName,
+          });
 
-        if (pdf && ctx.phone) {
-          const up = await uploadDocument(pdf.bytes, pdf.filename);
-          if (up.ok) {
-            const sent = await sendDocument(ctx.phone, up.mediaId, pdf.filename, caption);
-            if (sent.ok) {
-              await recordOutbound(userId, sent.waMessageId, "sent", { kind: "document" });
-              // Already delivered, with the words attached. Anything pushed to
-              // `extra` here would repeat the whole message as text.
-              break;
-            }
-            log.error({ userId, reason: sent.reason }, "could not send the document");
-          } else {
-            log.error({ userId, reason: up.reason }, "could not upload the document");
-          }
-        }
-
-        // No renderer, no upload, or a failed send: the link still works, and
-        // that is the part that gets them paid.
-        extra.push(caption);
-        break;
-      }
-
-      case "discard_draft":
-        await discardDraft(userId);
-        clearDraft = true;
-        break;
-
-      /* -- Not built yet, and said so rather than left silent -------------- */
-
-      case "show_debtors": {
-        extra.push(debtorsMessage(await debtors(userId, ctx.today), ctx.today));
-        break;
-      }
-
-      case "show_summary": {
-        // The period comes from their words, not the model: a summary that
-        // adds up the wrong days is worse than one that asks.
-        const period = readPeriod(ctx.text ?? "", ctx.today) ?? defaultPeriod(ctx.today);
-        extra.push(summaryMessage(await summarise(userId, period, ctx.today)));
-        break;
-      }
-
-      case "show_settings": {
-        const [account, pending] = await Promise.all([
-          accountInForce(userId),
-          pendingChange(userId),
-        ]);
-        extra.push(settingsMenu({ businessName, account, pending }));
-        break;
-      }
-
-      /* -- Settings (F17) ------------------------------------------------- */
-
-      case "set_business_name":
-        await setBusinessName(userId, effect.name);
-        extra.push(`\u2705 Your business is now ${b(effect.name)}.`);
-        log.info({ userId }, "business name changed");
-        break;
-
-      case "set_due_days":
-        await db().query(`UPDATE users SET default_due_days = $2 WHERE id = $1`, [
-          userId,
-          effect.days,
-        ]);
-        extra.push(
-          effect.days === 0
-            ? `\u2705 New invoices will be ${b("due on receipt")}.`
-            : `\u2705 New invoices will be due in ${b(`${effect.days} days`)}.`,
-        );
-        break;
-
-      case "send_bank_change_code": {
-        // The code goes to the verified email, which is the factor the phone
-        // does not control. Without one there is no second factor at all, and
-        // the change simply cannot proceed.
-        const { rows } = await db().query<{ email: string | null; verified: boolean }>(
-          `SELECT email, email_verified_at IS NOT NULL AS verified FROM users WHERE id = $1`,
-          [userId],
-        );
-        const email = rows[0]?.verified ? rows[0]?.email : null;
-
-        if (!email) {
+          resolvedName = resolved.account.accountName;
           extra.push(
             para(
-              b("You need a verified email before you can change your bank."),
-              "It is what we send the security code to.",
-              `Email ${b("hello@balans.ng")} and a person will help.`,
+              `🏦 That account is ${b(resolved.account.accountName)} at ${bank.name}.`,
+              lines(
+                `If that is right, ${b("send your email address")} — receipts and invoice copies go there.`,
+                `If it is not, reply ${b("no")}.`,
+              ),
             ),
           );
-          holdAt = "idle";
           break;
         }
 
-        const issued = await issueCode(userId, "bank_change", email);
-        if (!issued.ok) {
-          extra.push(
-            lines(
-              "That is a lot of codes in a short time.",
-              `Wait ${b(`${issued.retryAfterMinutes} minutes`)} and try again.`,
-            ),
-          );
-          holdAt = "idle";
-          break;
-        }
+        case "create_subaccount": {
+          const pending = await getPendingBank(userId);
+          if (!pending) {
+            log.error({ userId }, "confirmed an account that is not on file");
+            extra.push(
+              lines(
+                "⚠️ Something went wrong saving that account.",
+                "Send the bank and number again.",
+              ),
+            );
+            holdAt = "onboarding:bank";
+            break;
+          }
 
-        const sent = await sendEmail(
-          { to: email, ...verificationEmail(issued.code, businessName) },
-          log,
-        );
-        if (!sent.ok) {
-          extra.push("I could not send that code. Try again in a moment.");
-          holdAt = "idle";
-          break;
-        }
+          const created = await createSubAccount({
+            accountNumber: pending.accountNumber,
+            bankCode: pending.bankCode,
+            email: pending.email ?? `${userId}@users.balans.ng`,
+          });
 
-        log.warn({ userId }, "bank change started");
-        extra.push(VOICE.askBankChangeCode);
-        break;
-      }
+          if (!created.ok) {
+            await flagSetupForReview(userId, created.message, log);
+            const tries = await countSetupFailures(userId);
+            log.error(
+              { userId, message: created.message, retryable: created.retryable, tries },
+              "subaccount creation failed",
+            );
 
-      case "verify_bank_change_code": {
-        const { rows } = await db().query<{ email: string | null }>(
-          `SELECT email FROM users WHERE id = $1`,
-          [userId],
-        );
-        const check = await checkCode(userId, "bank_change", rows[0]?.email ?? "", effect.code);
-
-        if (!check.ok) {
-          holdAt = "settings:bank_code";
-          extra.push(
-            check.reason === "expired"
-              ? "That code has expired. Reply *change bank* to start again."
-              : check.left
-                ? `That code is not right. ${check.left} ${check.left === 1 ? "try" : "tries"} left.`
-                : "That code is not right. Reply *change bank* to start again.",
-          );
-          break;
-        }
-
-        extra.push(VOICE.askNewBank);
-        break;
-      }
-
-      case "resolve_new_account": {
-        const banks = await listBanks();
-        const bank = matchBank(effect.bankQuery, banks);
-        if (!bank) {
-          extra.push(
-            lines(
-              `I do not recognise ${b(effect.bankQuery)} as a bank.`,
-              `Send it again — like ${b("GTBank 0123456789")}.`,
-            ),
-          );
-          holdAt = "settings:bank_details";
-          break;
-        }
-
-        const resolved = await resolveAccount(effect.accountNumber, bank.code);
-        if (!resolved.ok) {
-          extra.push(
-            resolved.reason === "invalid_details"
-              ? lines(
-                  `${bank.name} did not recognise ${b(effect.accountNumber)}.`,
-                  "Check the number and send it again.",
-                )
-              : "I could not reach the bank just now. Send it again in a moment.",
-          );
-          holdAt = "settings:bank_details";
-          break;
-        }
-
-        // The subaccount is created now, so that committing is only a
-        // scheduling decision and cannot fail halfway.
-        const created = await createSubAccount({
-          accountNumber: effect.accountNumber,
-          bankCode: bank.code,
-          email: `${userId}@users.balans.ng`,
-        });
-        if (!created.ok) {
-          log.error({ userId, message: created.message }, "new subaccount failed");
-          extra.push(
-            created.retryable
-              ? "Our payments provider is not answering. Send the details again in a moment."
-              : para(
-                  b("That account cannot receive payouts."),
-                  `Send a ${b("regular bank account")} instead.`,
+            // F1: after three failures, stop asking and hand it to a person.
+            // Repeating a question somebody has already answered correctly three
+            // times is the worst thing a setup flow can do to them.
+            if (tries >= 3) {
+              extra.push(
+                para(
+                  `🙋 ${b("I cannot set that account up for payouts.")}`,
+                  lines(
+                    `Email ${b("hello@balans.ng")} and a person will finish it with you — usually the same day.`,
+                    "Nothing you have told me is lost.",
+                  ),
                 ),
+              );
+              holdAt = "onboarding:bank";
+              break;
+            }
+
+            extra.push(
+              created.retryable
+                ? lines(
+                    "⏳ Our payments provider is not answering just now.",
+                    `Reply ${b("yes")} to try that account again.`,
+                  )
+                : para(
+                    b("That account cannot receive payouts."),
+                    lines(
+                      "Some fintech and wallet accounts are not supported yet.",
+                      `Send a ${b("regular bank account")} instead — like ${b("GTBank 0123456789")}.`,
+                    ),
+                  ),
+            );
+            holdAt = created.retryable ? "onboarding:confirm_account" : "onboarding:bank";
+            break;
+          }
+
+          await activateBankAccount(userId, created.account.subAccountCode);
+          log.info(
+            { userId, subAccount: created.account.subAccountCode, reused: created.reused ?? false },
+            created.reused ? "reused an existing subaccount" : "subaccount created",
           );
-          holdAt = "settings:bank_details";
           break;
         }
 
-        pendingBankChange = {
-          bankCode: bank.code,
-          bankName: bank.name,
-          accountNumber: effect.accountNumber,
-          accountName: resolved.account.accountName,
-          subAccountCode: created.account.subAccountCode,
-        };
-        resolvedName = resolved.account.accountName;
+        case "send_email_code": {
+          await setEmail(userId, effect.email);
+          const issued = await issueCode(userId, "email_verify", effect.email);
 
-        extra.push(
-          para(
-            `\u{1f3e6} That account is ${b(resolved.account.accountName)} at ${bank.name}.`,
-            lines(
-              `Reply ${b("yes")} to move your payouts there.`,
-              `It takes effect in ${b("24 hours")} \u2014 until then, money goes to your current account.`,
-            ),
-          ),
-        );
-        break;
-      }
+          if (!issued.ok) {
+            extra.push(
+              lines(
+                "🛑 That is a lot of codes in a short time.",
+                `Wait ${b(`${issued.retryAfterMinutes} minutes`)} and reply ${b("resend")}.`,
+              ),
+            );
+            holdAt = "onboarding:verify_email";
+            break;
+          }
 
-      case "commit_bank_change": {
-        const change = ctx.changing;
-        if (!change) {
-          extra.push("That change has expired. Reply *change bank* to start again.");
-          break;
-        }
-
-        const effectiveAt = await scheduleBankChange(userId, change, log);
-        extra.push(bankChangeScheduled(change, effectiveAt));
-
-        // F17 step 3. Not awaited on the reply path, and it cannot fail the
-        // change: the alert is a warning, not a gate.
-        void raiseSecurityAlert(
-          {
-            userId,
-            what: "your payout bank was changed",
-            detail: [
-              `New account: ${change.accountName} at ${change.bankName}, ending ${change.accountNumber.slice(-4)}.`,
-              `It takes effect in ${CHANGE_DELAY_HOURS} hours. Until then payments settle to your current account.`,
-            ],
-            undoHint: "reply STOP on WhatsApp or email hello@balans.ng now, and we will cancel it.",
-          },
-          log,
-        );
-        break;
-      }
-
-      case "cancel_bank_change":
-        await cancelPendingChange(userId);
-        break;
-
-      case "delete_account": {
-        // F17: cancel open invoices, disconnect payouts, keep the ledger.
-        // Anonymising personal data waits for the retention period, so this
-        // marks the account closed and hands it to a person rather than
-        // deleting rows an auditor may need.
-        await tx(async (c) => {
-          await c.query(
-            `UPDATE documents SET status = 'cancelled', cancelled_at = now()
-              WHERE user_id = $1 AND status IN ('draft', 'sent', 'viewed', 'overdue')
-                AND amount_paid_kobo = 0`,
-            [userId],
+          const sent = await sendEmail(
+            { to: effect.email, ...verificationEmail(issued.code, businessName) },
+            log,
           );
-          await c.query(`UPDATE bank_accounts SET status = 'retired' WHERE user_id = $1`, [userId]);
-          await c.query(`UPDATE reminders SET status = 'cancelled'
-                          WHERE status = 'pending'
-                            AND document_id IN (SELECT id FROM documents WHERE user_id = $1)`, [userId]);
-          await c.query(`UPDATE users SET status = 'closed', deleted_at = now() WHERE id = $1`, [userId]);
-          await c.query(
-            `INSERT INTO risk_flags (user_id, kind, detail, status)
-             VALUES ($1, 'account_deletion', 'user asked to close their account', 'open')`,
-            [userId],
+
+          if (!sent.ok) {
+            log.error({ userId, reason: sent.reason }, "could not send the verification code");
+            extra.push(
+              lines(
+                `✉️ That email would not send — check the address.`,
+                `Or reply ${b("change")} to use another one.`,
+              ),
+            );
+            holdAt = "onboarding:verify_email";
+            break;
+          }
+
+          // Without a provider the code only reached the server log, so say so
+          // rather than leaving someone waiting on an email that is not coming.
+          if (!sent.delivered) {
+            extra.push(
+              "Email sending is not connected on this environment yet, so the code is in the server log.",
+            );
+          }
+          break;
+        }
+
+        case "verify_email_code": {
+          const check = await checkCode(userId, "email_verify", effect.email, effect.code);
+
+          if (check.ok) {
+            await markEmailVerified(userId, effect.email);
+            // The machine moved to consent but has nothing to say about it: only
+            // this branch knows the code was right. Without this the flow ends in
+            // silence at the last step.
+            extra.push(VOICE.confirmedAskConsent);
+            break;
+          }
+
+          // Hold the conversation where it was; the machine had hoped to move on.
+          holdAt = "onboarding:verify_email";
+          switch (check.reason) {
+            case "expired":
+              extra.push(`⌛ That code has expired. Reply ${b("resend")} and I will send another.`);
+              break;
+            case "too_many_attempts":
+              extra.push(`🛑 Too many tries on that code. Reply ${b("resend")} for a new one.`);
+              break;
+            case "no_code":
+              extra.push(`🤔 I have no code waiting for that address. Reply ${b("resend")}.`);
+              break;
+            default:
+              extra.push(
+                check.left
+                  ? lines(
+                      b("That code is not right."),
+                      `${check.left} ${check.left === 1 ? "try" : "tries"} left, or reply ${b("resend")} for a new one.`,
+                    )
+                  : `${b("That code is not right.")} Reply ${b("resend")} for a new one.`,
+              );
+          }
+          break;
+        }
+
+        case "record_consent":
+          await recordConsent(userId, effect.version);
+          log.info({ userId, version: effect.version }, "consent recorded");
+          break;
+
+        /* -- Documents (F6) ------------------------------------------------- */
+
+        case "save_draft": {
+          const doc = effect.doc;
+
+          // F6: plan limits are checked before the draft is shown. Drafting
+          // something and refusing to send it afterwards would be worse than
+          // saying so now, because by then they have read and approved it.
+          const plan = await planOf(userId);
+          const limit = defaults.plans[plan].documentsPerMonth;
+          if (limit !== null) {
+            const used = await documentsThisMonth(userId, ctx.today);
+            if (used >= limit) {
+              log.info({ userId, used, limit, plan }, "monthly document limit reached");
+              extra.push(limitReachedMessage(used, limit));
+              holdAt = "idle";
+              break;
+            }
+          }
+
+          const draft = await createDraft(userId, {
+            type: doc.type,
+            clientName: doc.clientName ?? "",
+            clientEmail: doc.clientEmail ?? null,
+            lines: doc.lines,
+            dueDate: doc.dueDate ?? null,
+            vatPercent: doc.vatPercent ?? null,
+            depositPercent: doc.depositPercent ?? null,
+            passFeesToClient: doc.passFeesToClient ?? false,
+            notes: doc.notes ?? null,
+          });
+          draftId = draft.id;
+          extra.push(draftSummary(draft, ctx.today));
+          log.info({ userId, draftId: draft.id, totalKobo: draft.totalKobo }, "draft saved");
+          break;
+        }
+
+        case "send_document": {
+          // Read it back rather than trusting the conversation: what goes out
+          // must be the row the summary was rendered from.
+          const draft = await getOpenDraft(userId);
+          if (!draft || draft.id !== ctx.draftId) {
+            log.warn({ userId, draftId: ctx.draftId }, "nothing to send");
+            extra.push("📭 That draft is no longer waiting. Send me the details again.");
+            clearDraft = true;
+            break;
+          }
+
+          const confirmed = await confirmDraft(userId, draft.id);
+          if (!confirmed) {
+            extra.push("⚠️ I could not send that just now. Try again in a moment.");
+            holdAt = "awaiting_confirm";
+            break;
+          }
+
+          clearDraft = true;
+          log.info(
+            { userId, documentId: confirmed.id, number: confirmed.number, type: confirmed.type },
+            "document sent",
           );
-        });
-        log.warn({ userId }, "account closed at the user's request");
-        extra.push(deletionStarted());
-        break;
-      }
-      case "show_upgrade": {
-        const state = await stateOf(userId);
-        if (state.plan === "pro") {
-          extra.push(proActive(state));
-          break;
-        }
-        const used = await documentsThisMonth(userId, ctx.today);
-        extra.push(proOffer(used));
-        break;
-      }
 
-      case "start_pro": {
-        if (effect.method === "deduct_from_invoice") {
-          await openSubscription(userId, "deduct_from_invoice", log);
-          extra.push(deductChosen());
-          break;
-        }
+          // F21: if the client's email is known, the invoice goes to their
+          // inbox too. Not awaited — the user is waiting on their own message,
+          // and a slow mail provider must not hold it up.
+          void emailDocumentToClient(confirmed.id, log).then((r) => {
+            if (!r.ok && r.why !== "no_client_email" && r.why !== "not_pro") {
+              log.error({ documentId: confirmed.id, why: r.why }, "client delivery failed");
+            }
+          });
 
-        // A payment link is just an invoice we are the client of: the same
-        // Monnify initialisation, with no split, because this one is ours.
-        const opened = await openSubscription(userId, "link", log);
-        const reference = `sub_${opened.id.replace(/-/g, "").slice(0, 16)}_${randomUUID().slice(0, 8)}`;
-        const { rows } = await db().query<{ email: string | null }>(
-          `SELECT email FROM users WHERE id = $1`, [userId]);
+          // F6 step 4: one message with the PDF and the link, ready to forward.
+          // The caption carries the words, so the file and the message are one
+          // bubble rather than two.
+          const { forward, note } = sentMessage(draft, confirmed, env.PUBLIC_BASE_URL, ctx.today);
+          const pdf = await renderDocumentPdf(confirmed.id, log);
 
-        const init = await initTransaction({
-          amountKobo: opened.priceKobo,
-          customerName: businessName ?? "Balans user",
-          customerEmail: rows[0]?.email ?? `${userId}@users.balans.ng`,
-          paymentReference: reference,
-          description: "Balans Pro, one month",
-          redirectUrl: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/pay/callback?ref=${reference}`,
-          // No split: this payment is ours, not the user's.
-        });
+          /*
+           * The note is a message of its own either way, so the offer to restyle
+           * rides on it as a button instead of costing another one.
+           *
+           * Offered until they have chosen once. Somebody who has picked their
+           * design does not need to be asked again on every invoice they send;
+           * `/design` is there when they want to change it.
+           */
+          const pushNote = async (): Promise<void> => {
+            if (ctx.phone && !(await hasChosenTemplate(userId))) {
+              const cta = await sendCta(ctx.phone, {
+                body: note,
+                label: "Change design",
+                url: await pickerUrlFor(userId, env.PUBLIC_BASE_URL),
+                footer: "See how each one looks",
+              });
+              if (cta.ok) {
+                await recordOutbound(userId, cta.waMessageId, "sent", { kind: "interactive" });
+                return;
+              }
+              log.warn({ userId, reason: cta.reason }, "could not send the design button");
+            }
+            extra.push(note);
+          };
 
-        if (!init.ok) {
-          log.error({ userId, message: init.message }, "could not create a Pro payment link");
-          extra.push("I could not reach the payment provider. Try again in a moment.");
-          break;
-        }
-
-        await db().query(
-          `UPDATE subscriptions SET status = 'pending' WHERE id = $1`, [opened.id]);
-        extra.push(payLinkMessage(init.checkoutUrl));
-        break;
-      }
-      case "show_referral":
-        extra.push(VOICE.notBuiltYet("Referrals"));
-        break;
-      case "document_action": {
-        const number = effect.number;
-
-        if (effect.intent === "stop_reminders") {
-          const stopped = await stopReminders(userId, number);
-          extra.push(remindersStoppedMessage(stopped, number));
-          break;
-        }
-
-        if (effect.intent === "cancel_document") {
-          if (!number) { extra.push(notFoundMessage({})); break; }
-          const done = await cancelDocument(userId, number);
-          extra.push(done.ok ? cancelledMessage(done.value) : cannotCancelMessage(number, done.why));
-          break;
-        }
-
-        if (effect.intent === "resend_document") {
-          if (!number) { extra.push(notFoundMessage({})); break; }
-          const found = await findForResend(userId, number);
-          if (!found.ok) { extra.push(notFoundMessage({ number })); break; }
-
-          const d = found.value;
-          const link = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/${d.publicToken}`;
-          const caption = resendMessage(d, link);
-
-          // F6: "returns the current PDF and link." The stored one, not a new
-          // render — the client must get the document they already have.
-          const pdf = await renderDocumentPdf(d.id, log);
           if (pdf && ctx.phone) {
             const up = await uploadDocument(pdf.bytes, pdf.filename);
             if (up.ok) {
-              const sent = await sendDocument(ctx.phone, up.mediaId, pdf.filename, caption);
+              const sent = await sendDocument(ctx.phone, up.mediaId, pdf.filename, forward);
               if (sent.ok) {
                 await recordOutbound(userId, sent.waMessageId, "sent", { kind: "document" });
+                // The forwardable part went with the file. The note follows as
+                // its own message, so nothing the user forwards contains it.
+                await pushNote();
                 break;
               }
+              log.error({ userId, reason: sent.reason }, "could not send the document");
+            } else {
+              log.error({ userId, reason: up.reason }, "could not upload the document");
             }
           }
-          extra.push(caption);
+
+          // No renderer, no upload, or a failed send: the link still works, and
+          // that is the part that gets them paid.
+          extra.push(forward);
+          await pushNote();
           break;
         }
 
-        if (effect.intent === "convert_quote") {
-          if (!number) { extra.push(notFoundMessage({})); break; }
-          const due = addDaysTo(ctx.today, defaults.behaviour.defaultDueDays);
-          const done = await convertQuote(userId, number, due);
-          extra.push(done.ok ? convertedMessage(done.value) : cannotConvertMessage(number, done.why));
+        case "discard_draft":
+          await discardDraft(userId);
+          clearDraft = true;
+          break;
+
+        /* -- Not built yet, and said so rather than left silent -------------- */
+
+        case "show_debtors": {
+          extra.push(debtorsMessage(await debtors(userId, ctx.today), ctx.today));
           break;
         }
 
-        // Status is the remaining one that works; the rest still say so.
-        if (effect.intent !== "status") {
-          extra.push(VOICE.notBuiltYet(ACTION_NAMES[effect.intent] ?? "That"));
+        case "show_summary": {
+          // The period comes from their words, not the model: a summary that
+          // adds up the wrong days is worse than one that asks.
+          const period = readPeriod(ctx.text ?? "", ctx.today) ?? defaultPeriod(ctx.today);
+          extra.push(summaryMessage(await summarise(userId, period, ctx.today)));
           break;
         }
 
-        const by = { number, clientName: ctx.parsed?.clientName ?? null };
-        if (!by.number && !by.clientName) {
-          extra.push(notFoundMessage(by));
+        case "show_designs": {
+          // A button rather than a pasted URL: the picker is the whole point,
+          // and it should be one tap from the words describing it.
+          if (ctx.phone) {
+            const sent = await sendCta(ctx.phone, {
+              body: VOICE.designs,
+              label: "See designs",
+              url: await pickerUrlFor(userId, env.PUBLIC_BASE_URL),
+              footer: "Your current one is marked",
+            });
+            if (sent.ok) {
+              await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+              break;
+            }
+            log.error({ userId, reason: sent.reason }, "could not send the design link");
+          }
+
+          extra.push(`${VOICE.designs}
+
+  ${await pickerUrlFor(userId, env.PUBLIC_BASE_URL)}`);
           break;
         }
 
-        const found = await findDocument(userId, by);
-        extra.push(
-          found
-            ? statusMessage(found, ctx.today, env.PUBLIC_BASE_URL)
-            : notFoundMessage(by),
-        );
-        break;
+        case "show_settings": {
+          const [account, pending] = await Promise.all([
+            accountInForce(userId),
+            pendingChange(userId),
+          ]);
+
+          // A tappable list rather than "reply with a number". One tap cannot be
+          // mistyped, and it shows what each option does without a wall of text.
+          if (ctx.phone) {
+            const sent = await sendList(ctx.phone, settingsList({ businessName, account, pending }));
+            if (sent.ok) {
+              await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+              break;
+            }
+            log.error({ userId, reason: sent.reason }, "settings list failed; falling back to text");
+          }
+
+          extra.push(settingsMenu({ businessName, account, pending }));
+          break;
+        }
+
+        /* -- Settings (F17) ------------------------------------------------- */
+
+        case "set_business_name":
+          await setBusinessName(userId, effect.name);
+          extra.push(`✅ Your business is now ${b(effect.name)}.`);
+          log.info({ userId }, "business name changed");
+          break;
+
+        case "set_due_days":
+          await db().query(`UPDATE users SET default_due_days = $2 WHERE id = $1`, [
+            userId,
+            effect.days,
+          ]);
+          extra.push(
+            effect.days === 0
+              ? `\u2705 New invoices will be ${b("due on receipt")}.`
+              : `\u2705 New invoices will be due in ${b(`${effect.days} days`)}.`,
+          );
+          break;
+
+        case "send_bank_change_code": {
+          // The code goes to the verified email, which is the factor the phone
+          // does not control. Without one there is no second factor at all, and
+          // the change simply cannot proceed.
+          const { rows } = await db().query<{ email: string | null; verified: boolean }>(
+            `SELECT email, email_verified_at IS NOT NULL AS verified FROM users WHERE id = $1`,
+            [userId],
+          );
+          const email = rows[0]?.verified ? rows[0]?.email : null;
+
+          if (!email) {
+            extra.push(
+              para(
+                b("You need a verified email before you can change your bank."),
+                "It is what we send the security code to.",
+                `Email ${b("hello@balans.ng")} and a person will help.`,
+              ),
+            );
+            holdAt = "idle";
+            break;
+          }
+
+          const issued = await issueCode(userId, "bank_change", email);
+          if (!issued.ok) {
+            extra.push(
+              lines(
+                "🛑 That is a lot of codes in a short time.",
+                `Wait ${b(`${issued.retryAfterMinutes} minutes`)} and try again.`,
+              ),
+            );
+            holdAt = "idle";
+            break;
+          }
+
+          const sent = await sendEmail(
+            { to: email, ...verificationEmail(issued.code, businessName) },
+            log,
+          );
+          if (!sent.ok) {
+            extra.push("⚠️ I could not send that code. Try again in a moment.");
+            holdAt = "idle";
+            break;
+          }
+
+          log.warn({ userId }, "bank change started");
+          extra.push(VOICE.askBankChangeCode);
+          break;
+        }
+
+        case "verify_bank_change_code": {
+          const { rows } = await db().query<{ email: string | null }>(
+            `SELECT email FROM users WHERE id = $1`,
+            [userId],
+          );
+          const check = await checkCode(userId, "bank_change", rows[0]?.email ?? "", effect.code);
+
+          if (!check.ok) {
+            holdAt = "settings:bank_code";
+            extra.push(
+              check.reason === "expired"
+                ? "That code has expired. Reply *change bank* to start again."
+                : check.left
+                  ? `That code is not right. ${check.left} ${check.left === 1 ? "try" : "tries"} left.`
+                  : "That code is not right. Reply *change bank* to start again.",
+            );
+            break;
+          }
+
+          extra.push(VOICE.askNewBank);
+          break;
+        }
+
+        case "resolve_new_account": {
+          const banks = await listBanks();
+          const bank = matchBank(effect.bankQuery, banks);
+          if (!bank) {
+            extra.push(
+              lines(
+                `🤔 I do not recognise ${b(effect.bankQuery)} as a bank.`,
+                `Send it again — like ${b("GTBank 0123456789")}.`,
+              ),
+            );
+            holdAt = "settings:bank_details";
+            break;
+          }
+
+
+          // Said before the name check, not after it. Learning that an account
+          // cannot be paid into is bad news either way; hearing it after you
+          // have confirmed your own name is worse, and costs two more messages.
+          const blocked = payoutBlocked(bank.code);
+          if (blocked) {
+            log.info({ userId, bank: bank.name }, "payout-blocked bank offered");
+            extra.push(
+              para(
+                `⛔ ${b(`${blocked} cannot receive payouts yet.`)}`,
+                lines(
+                  "Our payments provider will not settle into wallet accounts like",
+                  `${b("OPay")}, ${b("PalmPay")} or ${b("Moniepoint")} — we are working on it.`,
+                ),
+                `Send a regular bank account instead — like ${b("GTBank 0123456789")}.`,
+              ),
+            );
+            holdAt = "settings:bank_details";
+            break;
+          }
+          const resolved = await resolveAccount(effect.accountNumber, bank.code);
+          if (!resolved.ok) {
+            extra.push(
+              resolved.reason === "invalid_details"
+                ? lines(
+                    `${bank.name} did not recognise ${b(effect.accountNumber)}.`,
+                    "Check the number and send it again.",
+                  )
+                : "I could not reach the bank just now. Send it again in a moment.",
+            );
+            holdAt = "settings:bank_details";
+            break;
+          }
+
+          // The subaccount is created now, so that committing is only a
+          // scheduling decision and cannot fail halfway.
+          const created = await createSubAccount({
+            accountNumber: effect.accountNumber,
+            bankCode: bank.code,
+            email: `${userId}@users.balans.ng`,
+          });
+          if (!created.ok) {
+            log.error({ userId, message: created.message }, "new subaccount failed");
+            extra.push(
+              created.retryable
+                ? "Our payments provider is not answering. Send the details again in a moment."
+                : para(
+                    b("That account cannot receive payouts."),
+                    `Send a ${b("regular bank account")} instead.`,
+                  ),
+            );
+            holdAt = "settings:bank_details";
+            break;
+          }
+
+          pendingBankChange = {
+            bankCode: bank.code,
+            bankName: bank.name,
+            accountNumber: effect.accountNumber,
+            accountName: resolved.account.accountName,
+            subAccountCode: created.account.subAccountCode,
+          };
+          resolvedName = resolved.account.accountName;
+
+          extra.push(
+            para(
+              `🏦 That account is ${b(resolved.account.accountName)} at ${bank.name}.`,
+              lines(
+                `Reply ${b("yes")} to move your payouts there.`,
+                `It takes effect in ${b("24 hours")} \u2014 until then, money goes to your current account.`,
+              ),
+            ),
+          );
+          break;
+        }
+
+        case "commit_bank_change": {
+          const change = ctx.changing;
+          if (!change) {
+            extra.push(`⌛ That change has expired. Reply ${b("change bank")} to start again.`);
+            break;
+          }
+
+          const effectiveAt = await scheduleBankChange(userId, change, log);
+          extra.push(bankChangeScheduled(change, effectiveAt));
+
+          // F17 step 3. Not awaited on the reply path, and it cannot fail the
+          // change: the alert is a warning, not a gate.
+          void raiseSecurityAlert(
+            {
+              userId,
+              what: "your payout bank was changed",
+              detail: [
+                `New account: ${change.accountName} at ${change.bankName}, ending ${change.accountNumber.slice(-4)}.`,
+                `It takes effect in ${CHANGE_DELAY_HOURS} hours. Until then payments settle to your current account.`,
+              ],
+              undoHint: "reply STOP on WhatsApp or email hello@balans.ng now, and we will cancel it.",
+            },
+            log,
+          );
+          break;
+        }
+
+        case "cancel_bank_change":
+          await cancelPendingChange(userId);
+          break;
+
+        case "delete_account": {
+          // F17: cancel open invoices, disconnect payouts, keep the ledger.
+          // Anonymising personal data waits for the retention period, so this
+          // marks the account closed and hands it to a person rather than
+          // deleting rows an auditor may need.
+          await tx(async (c) => {
+            await c.query(
+              `UPDATE documents SET status = 'cancelled', cancelled_at = now()
+                WHERE user_id = $1 AND status IN ('draft', 'sent', 'viewed', 'overdue')
+                  AND amount_paid_kobo = 0`,
+              [userId],
+            );
+            await c.query(`UPDATE bank_accounts SET status = 'retired' WHERE user_id = $1`, [userId]);
+            await c.query(`UPDATE reminders SET status = 'cancelled'
+                            WHERE status = 'pending'
+                              AND document_id IN (SELECT id FROM documents WHERE user_id = $1)`, [userId]);
+            await c.query(`UPDATE users SET status = 'closed', deleted_at = now() WHERE id = $1`, [userId]);
+            await c.query(
+              `INSERT INTO risk_flags (user_id, kind, detail, status)
+               VALUES ($1, 'account_deletion', 'user asked to close their account', 'open')`,
+              [userId],
+            );
+          });
+          log.warn({ userId }, "account closed at the user's request");
+          extra.push(deletionStarted());
+          break;
+        }
+        case "show_upgrade": {
+          const state = await stateOf(userId);
+          if (state.plan === "pro") {
+            extra.push(proActive(state));
+            break;
+          }
+          const used = await documentsThisMonth(userId, ctx.today);
+          extra.push(proOffer(used));
+          break;
+        }
+
+        case "start_pro": {
+          if (effect.method === "deduct_from_invoice") {
+            await openSubscription(userId, "deduct_from_invoice", log);
+            extra.push(deductChosen());
+            break;
+          }
+
+          // A payment link is just an invoice we are the client of: the same
+          // Monnify initialisation, with no split, because this one is ours.
+          const opened = await openSubscription(userId, "link", log);
+          const reference = `sub_${opened.id.replace(/-/g, "").slice(0, 16)}_${randomUUID().slice(0, 8)}`;
+          const { rows } = await db().query<{ email: string | null }>(
+            `SELECT email FROM users WHERE id = $1`, [userId]);
+
+          const init = await initTransaction({
+            amountKobo: opened.priceKobo,
+            customerName: businessName ?? "Balans user",
+            customerEmail: rows[0]?.email ?? `${userId}@users.balans.ng`,
+            paymentReference: reference,
+            description: "Balans Pro, one month",
+            redirectUrl: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/pay/callback?ref=${reference}`,
+            // No split: this payment is ours, not the user's.
+          });
+
+          if (!init.ok) {
+            log.error({ userId, message: init.message }, "could not create a Pro payment link");
+            extra.push("⏳ I could not reach the payment provider. Try again in a moment.");
+            break;
+          }
+
+          await db().query(
+            `UPDATE subscriptions SET status = 'pending' WHERE id = $1`, [opened.id]);
+          extra.push(payLinkMessage(init.checkoutUrl));
+          break;
+        }
+        case "show_referral":
+          extra.push(VOICE.notBuiltYet("Referrals"));
+          break;
+        case "document_action": {
+          const number = effect.number;
+
+          if (effect.intent === "stop_reminders") {
+            const stopped = await stopReminders(userId, number);
+            extra.push(remindersStoppedMessage(stopped, number));
+            break;
+          }
+
+          if (effect.intent === "cancel_document") {
+            if (!number) { extra.push(notFoundMessage({})); break; }
+            const done = await cancelDocument(userId, number);
+            extra.push(done.ok ? cancelledMessage(done.value) : cannotCancelMessage(number, done.why));
+            break;
+          }
+
+          if (effect.intent === "resend_document") {
+            if (!number) { extra.push(notFoundMessage({})); break; }
+            const found = await findForResend(userId, number);
+            if (!found.ok) { extra.push(notFoundMessage({ number })); break; }
+
+            const d = found.value;
+            const link = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/${d.publicToken}`;
+            const caption = resendMessage(d, link);
+
+            // F6: "returns the current PDF and link." The stored one, not a new
+            // render — the client must get the document they already have.
+            const pdf = await renderDocumentPdf(d.id, log);
+            if (pdf && ctx.phone) {
+              const up = await uploadDocument(pdf.bytes, pdf.filename);
+              if (up.ok) {
+                const sent = await sendDocument(ctx.phone, up.mediaId, pdf.filename, caption);
+                if (sent.ok) {
+                  await recordOutbound(userId, sent.waMessageId, "sent", { kind: "document" });
+                  break;
+                }
+              }
+            }
+            extra.push(caption);
+            break;
+          }
+
+          if (effect.intent === "convert_quote") {
+            if (!number) { extra.push(notFoundMessage({})); break; }
+            const due = addDaysTo(ctx.today, defaults.behaviour.defaultDueDays);
+            const done = await convertQuote(userId, number, due);
+            extra.push(done.ok ? convertedMessage(done.value) : cannotConvertMessage(number, done.why));
+            break;
+          }
+
+          // Status is the remaining one that works; the rest still say so.
+          if (effect.intent !== "status") {
+            extra.push(VOICE.notBuiltYet(ACTION_NAMES[effect.intent] ?? "That"));
+            break;
+          }
+
+          const by = { number, clientName: ctx.parsed?.clientName ?? null };
+          if (!by.number && !by.clientName) {
+            extra.push(notFoundMessage(by));
+            break;
+          }
+
+          const found = await findDocument(userId, by);
+          extra.push(
+            found
+              ? statusMessage(found, ctx.today, env.PUBLIC_BASE_URL)
+              : notFoundMessage(by),
+          );
+          break;
+        }
       }
+    } catch (err) {
+      log.error({ err, userId, effect: effect.type }, "effect failed");
+      extra.push(
+        para(
+          `⚠️ ${b("Something went wrong on our side.")}`,
+          lines(
+            "Nothing was changed. Try again in a moment.",
+            `If it keeps happening, email ${b("hello@balans.ng")}.`,
+          ),
+        ),
+      );
+      failed = true;
+      break;
     }
   }
 
@@ -956,13 +1146,37 @@ async function runEffects(
     );
   }
 
-  return { lines: extra, holdAt, resolvedName, draftId, clearDraft, pendingBankChange };
+  return { lines: extra, holdAt, failed, resolvedName, draftId, clearDraft, pendingBankChange };
 }
 
 /** Seven days from a civil date, without pulling in the date module's clock. */
 function addDaysTo(c: { y: number; m: number; d: number }, days: number) {
   const at = new Date(Date.UTC(c.y, c.m - 1, c.d) + days * 86_400_000);
   return { y: at.getUTCFullYear(), m: at.getUTCMonth() + 1, d: at.getUTCDate() };
+}
+
+/**
+ * A command, in the shape the machine expects a parse to be.
+ *
+ * Only the fields a command can carry are filled in; everything else is the
+ * empty answer, because a command says what to do and nothing about a
+ * document.
+ */
+function commandAsParsed(c: { intent: Parsed["intent"]; documentNumber?: number }): Parsed {
+  return {
+    intent: c.intent,
+    clientName: null,
+    clientEmail: null,
+    lineItems: [],
+    totalKobo: null,
+    dueDate: null,
+    dueDatePhrase: null,
+    documentNumber: c.documentNumber ?? null,
+    options: { depositPercent: null, passFeesToClient: null, vatPercent: null, notes: null },
+    confidence: 1,
+    source: "command",
+    missing: [],
+  };
 }
 
 /** Named so the "not built yet" line reads like the thing they asked for. */

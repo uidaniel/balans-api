@@ -20,6 +20,47 @@ import type { Intent } from "./schema.ts";
 export type Command = { intent: Intent; documentNumber?: number };
 
 /**
+ * Slash commands.
+ *
+ * WhatsApp has no autocomplete, so "/" cannot pop up a menu the way it does in
+ * Slack. What it can do is answer: typing "/" on its own returns the list, and
+ * every entry on that list works typed out in full.
+ *
+ * The point is discoverability. Somebody who has never used this has no idea
+ * that "who owes me" is a thing they can say, and a product whose entire
+ * surface is a text box has to tell them. "/" is the one convention people
+ * already try when they are looking for that.
+ *
+ * Every one of these also works without the slash, because most people will
+ * just type the word.
+ */
+const SLASH: Record<string, Intent> = {
+  invoice: "create_invoice",
+  bill: "create_invoice",
+  quote: "create_quote",
+  collect: "payment_request",
+  request: "payment_request",
+  owed: "debtors",
+  debtors: "debtors",
+  summary: "summary",
+  status: "status",
+  settings: "settings",
+  design: "templates",
+  designs: "templates",
+  template: "templates",
+  templates: "templates",
+  pro: "upgrade",
+  upgrade: "upgrade",
+  help: "help",
+  menu: "help",
+  cancel: "reject",
+  stop: "stop_reminders",
+};
+
+/** "/" on its own, or "/menu": the list of everything. */
+const SLASH_MENU = /^\/(?:\s*|help|menu|commands?|\?)$/;
+
+/**
  * Nigerian English and light Pidgin, because that is what people type.
  * "na so", "correct", "abeg" and "dey" are not decoration: leaving them out
  * means a model call for the most common message in the product.
@@ -32,6 +73,9 @@ const EXACT: [RegExp, Intent][] = [
   [/^(status|my status|where we dey|any update)\??$/, "status"],
   [/^(summary|report|how much did i make|how far|my earnings|this month|total)\??$/, "summary"],
   [/^(settings|setting|my details|change bank|change my bank|update bank|my bank|account details)$/, "settings"],
+  // Advertised on the landing page, so people will ask. Answered honestly
+  // rather than steered into settings, which has nothing to do with it.
+  [/^(templates?|invoice templates?|change (my )?(invoice |email )?templates?|design|invoice design)$/, "templates"],
   [/^(upgrade|go pro|pro|subscribe|premium|upgrade me)$/, "upgrade"],
   [/^(referral|refer|refer a friend|invite|invite a friend|my referral|referral code)$/, "referral"],
   [/^(stop reminders?|no more reminders?|stop reminding me|turn off reminders?|stop chasing)$/, "stop_reminders"],
@@ -64,6 +108,20 @@ export function asCommand(text: string): Command | null {
     .trim();
 
   if (!s || s.length > 60) return null;
+
+  // "/" is a request for the list, not a command that does anything.
+  if (SLASH_MENU.test(s)) return { intent: "help" };
+
+  if (s.startsWith("/")) {
+    // "/invoice Tunde 20k" carries a sentence after the command, and the
+    // sentence is the part that matters: strip the slash and read it whole.
+    const [word = "", ...rest] = s.slice(1).split(" ");
+    const intent = SLASH[word];
+    if (!intent) return null;
+    // A bare slash command is the command. One with arguments is a sentence.
+    if (rest.length) return null;
+    return { intent };
+  }
 
   for (const [re, intent] of EXACT) {
     if (re.test(s)) return { intent };

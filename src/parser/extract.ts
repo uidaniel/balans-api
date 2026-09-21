@@ -20,11 +20,28 @@
 import type { Civil } from "../../core/dates.ts";
 import { normalise, type Intent, type Parsed, type RawParse } from "./schema.ts";
 
-/** The verb decides the document type, so it is required. */
-const VERB =
-  /^(?:abeg\s+|please\s+|pls\s+|oya\s+|make\s+you\s+)?(?:send\s+|create\s+|make\s+|raise\s+|prepare\s+|generate\s+|draft\s+)?(invoice|bill|charge|quote|quotation|estimate)\s+(?:for\s+|to\s+)?/i;
+/**
+ * The verb decides the document type, so it is required.
+ *
+ * Widened to cover how people actually open the sentence: a polite lead-in
+ * ("can you", "i want to"), an article ("send an invoice"), or a filler
+ * ("new invoice"). Each of those used to fall through to the model, which
+ * costs a second or more and a fraction of a naira to be told what a regex
+ * already knew. The verb and an amount are still both required, so nothing
+ * here starts claiming sentences it cannot read.
+ */
+const LEAD_IN = String.raw`(?:(?:abeg|please|pls|oya|kindly|just|now|new|another|quick|make\s+you|i\s+want\s+to|i\s+need\s+to|i\s+wan(?:\s+to)?|can\s+you|could\s+you|help\s+me|let\s+me)\s+)*`;
+const ACTION = String.raw`(?:(?:send|create|make|raise|prepare|generate|draft|do|issue|write)\s+)?`;
+const ARTICLE = String.raw`(?:(?:an?|the)\s+)?`;
+const KIND = String.raw`(invoice|bill|charge|quote|quotation|estimate|collect|request)`;
+const JOINER = String.raw`(?:\s+(?:of|for|from|to))?\s+`;
+
+// A leading slash is allowed: "/invoice Tunde 20k" is the same sentence.
+const VERB = new RegExp(`^/?${LEAD_IN}${ACTION}${ARTICLE}${KIND}${JOINER}`, "i");
 
 const QUOTE_VERBS = new Set(["quote", "quotation", "estimate"]);
+/** F8: "Collect 20k from Tunde" is a payable with no PDF and no line items. */
+const REQUEST_VERBS = new Set(["collect", "request"]);
 
 /**
  * An amount as people write it here: "350k", "1.2m", "N5,000", "₦350000",
@@ -32,7 +49,11 @@ const QUOTE_VERBS = new Set(["quote", "quotation", "estimate"]);
  * "2 logos" is never mistaken for two kobo.
  */
 const AMOUNT =
-  /(?:₦|n(?=\s?[\d])|ngn\s?)?\s?(\d[\d,]*(?:\.\d+)?)\s?([hkm])?\b/gi;
+  // The bare "n" must not be the last letter of a word. "Invoice MTN 20k"
+  // is MTN being billed twenty thousand, and "Invoice Steven 5k" is Steven,
+  // not "Steve" being billed "N5k". The lookbehind is what stops a currency
+  // mark eating the end of a name — and names ending in n are common here.
+  /(?:₦|(?<![a-z])n(?=\s?[\d])|(?<![a-z])ngn\s?)?\s?(\d[\d,]*(?:\.\d+)?)\s?([hkm])?\b/gi;
 
 /** Where the date starts. Everything after it belongs to the date, not the work. */
 const DUE = /[,;]?\s*\b(?:due|deadline|payable|by|before|not later than|within)\b\s*:?\s*/i;
@@ -55,9 +76,12 @@ export function extractDocument(text: string, today: Civil): Parsed | null {
   const verb = VERB.exec(lower);
   if (!verb) return null;
 
-  const intent: Intent = QUOTE_VERBS.has(verb[1]!.toLowerCase())
+  const word = verb[1]!.toLowerCase();
+  const intent: Intent = QUOTE_VERBS.has(word)
     ? "create_quote"
-    : "create_invoice";
+    : REQUEST_VERBS.has(word)
+      ? "payment_request"
+      : "create_invoice";
 
   let rest = norm.slice(verb[0].length);
   let restLower = rest.toLowerCase();
@@ -108,11 +132,11 @@ export function extractDocument(text: string, today: Civil): Parsed | null {
   const after = rest.slice(amount.end).trim();
 
   // Usually "<client> <amount> for <work>", but "bill 20k to Tunde for logo"
-  // happens too, and then the name is on the other side.
+  // happens too — and "collect 20k from Tunde" always puts it that way.
   let clientPart = before;
   let workPart = after;
   if (!clientPart && after) {
-    const to = /^(?:for|to)\s+/i.exec(after);
+    const to = /^(?:for|from|to)\s+/i.exec(after);
     if (to) {
       const tail = after.slice(to[0].length);
       const split = /\s+for\s+/i.exec(tail);
@@ -146,6 +170,21 @@ export function extractDocument(text: string, today: Civil): Parsed | null {
   };
 
   return normalise(raw, today, "pattern");
+}
+
+/**
+ * The amount a sentence plainly states, or null.
+ *
+ * Exposed for one job: repairing a model parse that lost it. The model is
+ * probabilistic and this is not — given "school fees 356k" it returns "356k"
+ * every time — so when the model reports no amount and the text obviously
+ * holds one, this is the better answer.
+ *
+ * It inherits the ranking below, which is what makes it safe to trust: a bare
+ * number needs four digits, so the "2" in "2 logos" is never money.
+ */
+export function readAmount(text: string): string | null {
+  return pickAmount(text.replace(/\s+/g, " ").trim())?.raw ?? null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -193,7 +232,7 @@ function pickAmount(s: string): Found | null {
 /** "to Tunde", "for Zenith Homes:", "my client Tunde" -> the name. */
 function cleanClient(s: string): string | null {
   const name = s
-    .replace(/^(?:for|to|the|my client|client|customer)\s+/i, "")
+    .replace(/^(?:for|from|to|the|my client|client|customer)\s+/i, "")
     .replace(/[,:;]+$/, "")
     .replace(/\s+(?:for|of)$/i, "")
     .trim();

@@ -15,6 +15,7 @@
 import { z } from "zod";
 import { parseAmountToKobo } from "../../core/amount.ts";
 import { formatISO, resolveDueDate, type Civil } from "../../core/dates.ts";
+import { titleCaseName } from "../../core/names.ts";
 
 export const INTENTS = [
   "create_invoice",
@@ -33,6 +34,8 @@ export const INTENTS = [
   "referral",
   /** F13: "stop reminders for invoice 14". */
   "stop_reminders",
+  /** Choosing an invoice design. Advertised on the site, not built. */
+  "templates",
   "help",
   "confirm",
   "reject",
@@ -42,7 +45,13 @@ export const INTENTS = [
 export type Intent = (typeof INTENTS)[number];
 
 /** The intents that produce a document, and so must pass draft-and-confirm. */
-export const DOCUMENT_INTENTS: readonly Intent[] = ["create_invoice", "create_quote"];
+export const DOCUMENT_INTENTS: readonly Intent[] = [
+  "create_invoice",
+  "create_quote",
+  // F8: a payment request goes through the same draft-and-confirm as anything
+  // else that asks somebody for money.
+  "payment_request",
+];
 
 export const isDocumentIntent = (i: Intent): boolean => DOCUMENT_INTENTS.includes(i);
 
@@ -156,8 +165,13 @@ export function normalise(raw: RawParse, today: Civil, source: Parsed["source"])
   const priced = lineItems.some((l) => l.unitAmountKobo > 0);
   // Line items win over a stated total: they are the itemised truth, and a
   // mismatch between the two is the user's to resolve at the confirm step.
-  // Lines with no price at all leave the total unknown, not zero.
-  const totalKobo = lineItems.length ? (priced ? summed : null) : stated;
+  //
+  // Unpriced lines are the exception. The model quite often splits "school
+  // fees 356k" into a line called "school fees" and forgets to put the money
+  // on it — and when it does that it usually still reports the total. Dropping
+  // the total there loses an amount the user plainly wrote, and asks them for
+  // something they have already said.
+  const totalKobo = lineItems.length ? (priced ? summed : stated) : stated;
 
   const resolved = raw.due_date ? resolveDueDate(raw.due_date, today) : null;
 
@@ -173,7 +187,9 @@ export function normalise(raw: RawParse, today: Civil, source: Parsed["source"])
 
   return {
     intent: raw.intent,
-    clientName: raw.client_name,
+    // A phone keyboard does not capitalise mid-sentence, and the result ends
+    // up on an invoice somebody's client reads.
+    clientName: raw.client_name ? titleCaseName(raw.client_name) : null,
     clientEmail: raw.client_email,
     lineItems,
     totalKobo,

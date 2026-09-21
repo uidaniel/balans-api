@@ -17,6 +17,7 @@ import { env } from "../config.ts";
 import type { Civil } from "../../core/dates.ts";
 import { renderPdf, rendererAvailable } from "../pdf/chrome.ts";
 import { renderDocumentHtml, snapshotOf, type DocumentData, type Variant } from "../pdf/template.ts";
+import { renderTemplate, TEMPLATES } from "../pdf/templates.ts";
 import { documentKey, fileName, put, receiptKey } from "../storage/files.ts";
 
 /** Section 12: both lines appear on everything a client sees. */
@@ -55,11 +56,14 @@ export async function renderDocumentPdf(
     return null;
   }
 
-  const { doc, userId, version } = data;
+  const { doc, userId, version, templateId } = data;
 
   try {
     const started = Date.now();
-    const bytes = await renderPdf(renderDocumentHtml(doc));
+    // The user's chosen layout, or the one the product shipped with. A
+    // template that was withdrawn falls back rather than failing to render.
+    const html = renderTemplate(templateId, doc) ?? renderDocumentHtml(doc);
+    const bytes = await renderPdf(html);
     const key = documentKey(documentId, version);
 
     await put(key, bytes, "application/pdf", userId);
@@ -145,7 +149,7 @@ const labelFor = (v: Variant): string =>
 /** Everything the template needs, in one query per document. */
 async function loadForRender(
   documentId: string,
-): Promise<{ doc: DocumentData; userId: string; version: number } | null> {
+): Promise<{ doc: DocumentData; userId: string; version: number; templateId: string | null } | null> {
   const { rows } = await db().query<{
     user_id: string;
     type: string;
@@ -166,13 +170,15 @@ async function loadForRender(
     tin: string | null;
     logo_url: string | null;
     plan: "free" | "pro";
+    template_id: string | null;
     client_name: string;
     client_email: string | null;
   }>(
     `SELECT d.user_id, d.type, d.number, d.subtotal_kobo, d.vat_kobo, d.total_kobo,
             d.amount_paid_kobo, d.issue_date, d.due_date, d.valid_until, d.notes,
             d.public_token, d.current_version,
-            u.business_name, u.email AS business_email, u.address, u.tin, u.logo_url, u.plan,
+            u.business_name, u.email AS business_email, u.address, u.tin, u.logo_url,
+            u.plan, u.template_id,
             c.name AS client_name, c.email AS client_email
        FROM documents d
        JOIN users u   ON u.id = d.user_id
@@ -201,6 +207,9 @@ async function loadForRender(
   return {
     userId: r.user_id,
     version: r.current_version,
+    // A Pro layout stops applying the moment a subscription lapses, so a Free
+    // invoice never goes out carrying a paid design.
+    templateId: r.plan === "pro" || !isProTemplate(r.template_id) ? r.template_id : null,
     doc: {
       variant,
       number: r.number,
@@ -272,3 +281,6 @@ async function nextReceiptNumber(userId: string): Promise<number> {
 }
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
+
+const isProTemplate = (id: string | null): boolean =>
+  TEMPLATES.some((t) => t.id === id && t.pro);

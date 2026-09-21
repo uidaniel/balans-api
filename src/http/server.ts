@@ -10,6 +10,7 @@ import { healthRoutes } from "./routes/health.ts";
 import { whatsappRoutes } from "./routes/whatsapp.ts";
 import { publicRoutes } from "./routes/public.ts";
 import { monnifyRoutes } from "./routes/monnify.ts";
+import { templateRoutes } from "./routes/templates.ts";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -71,16 +72,29 @@ export function buildServer(): FastifyInstance {
   );
 
   /**
-   * The Pay button is a plain form, so its post arrives urlencoded.
+   * Plain HTML forms post urlencoded: the Pay button, and the design picker.
    *
-   * It carries no fields — what is owed comes from the database, never from
-   * the request — but Fastify refuses a content type it has no parser for,
-   * and a client pressing Pay must not meet a 415.
+   * Pay carries no fields at all — what is owed comes from the database, never
+   * from the request — but Fastify refuses a content type it has no parser
+   * for, and a client pressing Pay must not meet a 415.
+   *
+   * Parsed with URLSearchParams rather than a body plugin: these forms carry a
+   * handful of short fields, and the last value wins, so a repeated key cannot
+   * smuggle an array into somewhere a string was expected.
    */
   app.addContentTypeParser(
     "application/x-www-form-urlencoded",
     { parseAs: "string" },
-    (_req, _body, done) => done(null, {}),
+    (_req, body: string, done) => {
+      const out: Record<string, string> = {};
+      try {
+        for (const [k, v] of new URLSearchParams(body)) out[k] = v;
+      } catch {
+        // A body that will not parse is an empty body, not a 500. Every route
+        // reading one of these forms validates what it finds anyway.
+      }
+      done(null, out);
+    },
   );
 
   app.setErrorHandler((err: FastifyError, req, reply) => {
@@ -99,6 +113,8 @@ export function buildServer(): FastifyInstance {
   // No prefix: /i/{token} is a link people paste into WhatsApp, and every
   // character of it is one more chance to mistype.
   app.register(publicRoutes);
+  // Also unprefixed: /designs/{token} is a link opened from a phone.
+  app.register(templateRoutes);
   app.register(monnifyRoutes, { prefix: "/webhooks/monnify" });
 
   return app;

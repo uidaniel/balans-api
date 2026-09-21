@@ -269,3 +269,147 @@ describe("what the parser does with the answer", () => {
     assert.ok(out.parsed.missing.includes("amount"), "it should ask for the amount");
   });
 });
+
+
+/*
+ * A real failure, reproduced exactly.
+ *
+ * "daniel uwak for his school fees 356k due tomorrow" came back from the model
+ * as a line called "school fees" with no price on it and no total, so the bot
+ * asked how much Daniel was paying — a question the sentence had already
+ * answered. Asked again on the same words the model got it right, which is the
+ * point: it is a model, and the amount cannot depend on which way it went.
+ *
+ * The stub below is that bad parse, character for character, so these pass
+ * only while the repair holds.
+ */
+describe("an amount the model dropped", () => {
+  const LOST = toolUse({
+    intent: "create_invoice",
+    client_name: "Daniel Uwak",
+    client_email: null,
+    line_items: [{ description: "school fees", qty: 1, unit_amount: null }],
+    total_amount: null,
+    due_date: "tomorrow",
+    document_number: null,
+    options: { deposit_percent: null, pass_fees_to_client: null, vat_percent: null, notes: null },
+    confidence: 0.95,
+  });
+
+  it("is read back out of the sentence", async () => {
+    const { impl } = stub(LOST);
+    const out = await parseMessage("daniel uwak for his school fees 356k due tomorrow", {
+      today: TODAY,
+      fetchImpl: impl,
+    });
+
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.parsed.totalKobo, 356_000_00, "the amount was not recovered");
+    assert.ok(!out.parsed.missing.includes("amount"), "still asking for an amount");
+  });
+
+  it("keeps the work the model did read", async () => {
+    const { impl } = stub(LOST);
+    const out = await parseMessage("daniel uwak for his school fees 356k due tomorrow", {
+      today: TODAY,
+      fetchImpl: impl,
+    });
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.parsed.clientName, "Daniel Uwak");
+    assert.equal(out.parsed.lineItems.length, 1);
+    assert.equal(out.parsed.lineItems[0]?.description, "school fees");
+    assert.equal(out.parsed.lineItems[0]?.unitAmountKobo, 356_000_00);
+  });
+
+  it("does not invent one when the sentence has no money in it", async () => {
+    const { impl } = stub(
+      toolUse({
+        intent: "create_invoice",
+        client_name: "Daniel Uwak",
+        client_email: null,
+        line_items: [{ description: "school fees", qty: 1, unit_amount: null }],
+        total_amount: null,
+        due_date: null,
+        document_number: null,
+        options: { deposit_percent: null, pass_fees_to_client: null, vat_percent: null, notes: null },
+        confidence: 0.9,
+      }),
+    );
+    const out = await parseMessage("daniel uwak for his school fees", { today: TODAY, fetchImpl: impl });
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.parsed.totalKobo, null);
+    assert.ok(out.parsed.missing.includes("amount"), "it should still be asking");
+  });
+
+  /*
+   * The guard that makes this safe to do at all. A quantity is not a price,
+   * so a bare small number must never be picked up as one.
+   */
+  it("does not mistake a quantity for a price", async () => {
+    const { impl } = stub(
+      toolUse({
+        intent: "create_invoice",
+        client_name: "Tunde",
+        client_email: null,
+        line_items: [{ description: "2 banners", qty: 1, unit_amount: null }],
+        total_amount: null,
+        due_date: null,
+        document_number: null,
+        options: { deposit_percent: null, pass_fees_to_client: null, vat_percent: null, notes: null },
+        confidence: 0.9,
+      }),
+    );
+    const out = await parseMessage("tunde for 2 banners", { today: TODAY, fetchImpl: impl });
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.parsed.totalKobo, null, "the 2 was read as money");
+  });
+
+  it("never overrides an amount the model did read", async () => {
+    const { impl } = stub(
+      toolUse({
+        intent: "create_invoice",
+        client_name: "Tunde",
+        client_email: null,
+        line_items: [{ description: "logo", qty: 1, unit_amount: "20000" }],
+        total_amount: null,
+        due_date: null,
+        document_number: null,
+        options: { deposit_percent: null, pass_fees_to_client: null, vat_percent: null, notes: null },
+        confidence: 0.95,
+      }),
+    );
+    // The sentence also mentions 99k. The model's reading stands.
+    const out = await parseMessage("tunde logo 20000, not 99k", { today: TODAY, fetchImpl: impl });
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.parsed.totalKobo, 20_000_00);
+  });
+
+  /*
+   * The other half of the same failure: the model priced nothing but did
+   * report the total. That total used to be discarded outright.
+   */
+  it("keeps a stated total when the lines came back unpriced", async () => {
+    const { impl } = stub(
+      toolUse({
+        intent: "create_invoice",
+        client_name: "Daniel Uwak",
+        client_email: null,
+        line_items: [{ description: "school fees", qty: 1, unit_amount: null }],
+        total_amount: "356000",
+        due_date: null,
+        document_number: null,
+        options: { deposit_percent: null, pass_fees_to_client: null, vat_percent: null, notes: null },
+        confidence: 0.95,
+      }),
+    );
+    const out = await parseMessage("daniel uwak school fees", { today: TODAY, fetchImpl: impl });
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.parsed.totalKobo, 356_000_00);
+  });
+});

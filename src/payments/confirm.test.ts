@@ -25,55 +25,53 @@ const notice = (over: Partial<PaidNotice> = {}): PaidNotice => ({
 });
 
 describe("the message that says you got paid", () => {
-  it("leads with the money", () => {
-    // One mark, then the amount. Nothing else may come before it.
+  it("bolds the amount and nothing that competes with it", () => {
+    // The layout may change; what must not is that the eye lands on the
+    // figure. The title and the amount are the only bold spans.
     const m = paidMessage(notice());
-    const withoutEmoji = m.replace(/^\p{Extended_Pictographic}️?\s*/u, "");
-    assert.ok(
-      withoutEmoji.startsWith("*₦350,000*"),
-      `starts with: ${m.slice(0, 30)}`,
-    );
+    const bold: string[] = m.match(/\*[^*]+\*/g) ?? [];
+    assert.ok(bold.includes("*₦350,000*"), `bold spans: ${bold.join(" ")}`);
+    assert.ok(bold.length <= 2, `too much bold: ${bold.join(" ")}`);
+  });
+
+  it("puts the amount on its own row", () => {
+    const m = paidMessage(notice());
+    assert.match(m, /^Amount: \*₦350,000\*$/m);
   });
 
   it("names the client and the invoice", () => {
     const m = paidMessage(notice());
-    assert.match(m, /Zenith Homes/);
-    assert.match(m, /#7/);
-    assert.match(m, /paid in full/i);
+    assert.match(m, /^From: Zenith Homes$/m);
+    assert.match(m, /^Invoice: #7$/m);
+    assert.match(m, /PAID/);
   });
 
   it("says how they paid, in words a person uses", () => {
-    assert.match(paidMessage(notice({ method: "ACCOUNT_TRANSFER" })), /bank transfer/);
-    assert.match(paidMessage(notice({ method: "CARD" })), /by card/);
-    assert.match(paidMessage(notice({ method: "USSD" })), /USSD/);
+    assert.match(paidMessage(notice({ method: "ACCOUNT_TRANSFER" })), /Bank transfer/i);
+    assert.match(paidMessage(notice({ method: "CARD" })), /Method: Card/);
+    assert.match(paidMessage(notice({ method: "USSD" })), /USSD/i);
   });
 
   it("copes with a method nobody has seen before", () => {
     const m = paidMessage(notice({ method: "SOME_NEW_RAIL" }));
-    assert.match(m, /some new rail/);
+    assert.match(m, /Some new rail/);
     assert.doesNotMatch(m, /SOME_NEW_RAIL/);
   });
 
   it("leaves the method out rather than guessing", () => {
     const m = paidMessage(notice({ method: null }));
-    assert.match(m, /paid in full\./);
-    assert.doesNotMatch(m, /by null|undefined/);
+    assert.doesNotMatch(m, /Method:/);
+    assert.doesNotMatch(m, /null|undefined/);
   });
 
   it("says what is left on a part payment", () => {
     const m = paidMessage(
       notice({ paidKobo: 100_000_00, amountPaidKobo: 100_000_00, fullyPaid: false }),
     );
-    assert.match(m, /Part payment/);
-    assert.match(m, /₦250,000 still to come/);
-    assert.doesNotMatch(m, /paid in full/i);
-  });
-
-  it("bolds the amount and nothing else that competes with it", () => {
-    const m = paidMessage(notice());
-    const bold: string[] = m.match(/\*[^*]+\*/g) ?? [];
-    assert.ok(bold.includes("*₦350,000*"), "the amount must be the emphasis");
-    assert.ok(bold.length <= 2, `too much bold: ${bold.join(" ")}`);
+    assert.match(m, /PART PAYMENT/);
+    assert.match(m, /^Received: \*₦100,000\*$/m);
+    assert.match(m, /^Still owed: ₦250,000$/m);
+    assert.doesNotMatch(m, /PAID/);
   });
 
   it("does not promise a bank transfer that has not happened", () => {

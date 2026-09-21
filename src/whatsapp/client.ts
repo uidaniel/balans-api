@@ -294,3 +294,130 @@ export function sendTemplate(
     opts.fetchImpl ?? fetch,
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Interactive lists                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A message with one button that opens a link.
+ *
+ * The same words could carry a bare URL, and a bare URL in WhatsApp is a grey
+ * line of text somebody has to decide to trust. A button says what happens
+ * when you press it, and it opens in the in-app browser rather than throwing
+ * the user out of the chat.
+ *
+ * Costs exactly what a text message costs, so it replaces one rather than
+ * following it.
+ */
+export function sendCta(
+  to: string,
+  content: { body: string; label: string; url: string; header?: string; footer?: string },
+  opts: { fetchImpl?: Transport } = {},
+): Promise<SendResult> {
+  const phone = normalisePhone(to);
+  if (!phone) {
+    return Promise.resolve({ ok: false, retryable: false, reason: `unusable phone number: ${to}` });
+  }
+
+  // Meta requires an absolute http(s) URL and refuses the whole message
+  // otherwise, which would swallow the words as well as the button.
+  if (!/^https?:\/\//i.test(content.url)) {
+    return Promise.resolve({ ok: false, retryable: false, reason: `not a link: ${content.url}` });
+  }
+
+  return call(
+    `${env.WA_PHONE_NUMBER_ID}/messages`,
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: phone,
+      type: "interactive",
+      interactive: {
+        type: "cta_url",
+        ...(content.header ? { header: { type: "text", text: content.header.slice(0, 60) } } : {}),
+        body: { text: content.body.slice(0, 1024) },
+        ...(content.footer ? { footer: { text: content.footer.slice(0, 60) } } : {}),
+        action: {
+          name: "cta_url",
+          parameters: { display_text: content.label.slice(0, 20), url: content.url },
+        },
+      },
+    },
+    opts.fetchImpl ?? fetch,
+  );
+}
+
+export type ListRow = {
+  /** Comes back as the message text when tapped, so it is read like a command. */
+  id: string;
+  /** At most 24 characters. Longer is silently rejected by Meta. */
+  title: string;
+  /** At most 72. */
+  description?: string;
+};
+
+export type ListSection = { title?: string; rows: ListRow[] };
+
+/**
+ * A menu the user taps instead of typing.
+ *
+ * Worth the extra shape for anything with a fixed set of answers. A numbered
+ * text list asks somebody to read, remember a number, switch to the keyboard
+ * and type it; this is one tap, and a tap cannot be mistyped.
+ *
+ * The reply arrives as an ordinary inbound message carrying the row's `id`,
+ * which is why the ids here are written as things the parser already
+ * understands.
+ */
+export function sendList(
+  to: string,
+  content: {
+    body: string;
+    button: string;
+    sections: ListSection[];
+    header?: string;
+    footer?: string;
+  },
+  opts: { fetchImpl?: Transport } = {},
+): Promise<SendResult> {
+  const phone = normalisePhone(to);
+  if (!phone) {
+    return Promise.resolve({ ok: false, retryable: false, reason: `unusable phone number: ${to}` });
+  }
+
+  // Meta rejects the whole message for a single over-long field, so the limits
+  // are enforced here rather than discovered in production.
+  const rows = content.sections.flatMap((s) => s.rows);
+  if (rows.length > 10) {
+    return Promise.resolve({ ok: false, retryable: false, reason: "a list may hold at most 10 rows" });
+  }
+
+  return call(
+    `${env.WA_PHONE_NUMBER_ID}/messages`,
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: phone,
+      type: "interactive",
+      interactive: {
+        type: "list",
+        ...(content.header ? { header: { type: "text", text: content.header.slice(0, 60) } } : {}),
+        body: { text: content.body.slice(0, 1024) },
+        ...(content.footer ? { footer: { text: content.footer.slice(0, 60) } } : {}),
+        action: {
+          button: content.button.slice(0, 20),
+          sections: content.sections.map((s) => ({
+            ...(s.title ? { title: s.title.slice(0, 24) } : {}),
+            rows: s.rows.map((r) => ({
+              id: r.id.slice(0, 200),
+              title: r.title.slice(0, 24),
+              ...(r.description ? { description: r.description.slice(0, 72) } : {}),
+            })),
+          })),
+        },
+      },
+    },
+    opts.fetchImpl ?? fetch,
+  );
+}

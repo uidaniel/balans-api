@@ -134,6 +134,60 @@ describe("numbered commands carry the number", () => {
   }
 });
 
+describe("slash commands", () => {
+  // WhatsApp has no autocomplete, so "/" cannot pop up a menu. What it can do
+  // is answer — and "/" is the convention people already try when they are
+  // looking for what a thing can do.
+  const cases: [string, Intent][] = [
+    ["/", "help"],
+    ["/help", "help"],
+    ["/menu", "help"],
+    ["/?", "help"],
+    ["/invoice", "create_invoice"],
+    ["/bill", "create_invoice"],
+    ["/quote", "create_quote"],
+    ["/collect", "payment_request"],
+    ["/owed", "debtors"],
+    ["/debtors", "debtors"],
+    ["/summary", "summary"],
+    ["/status", "status"],
+    ["/settings", "settings"],
+    ["/pro", "upgrade"],
+    ["/upgrade", "upgrade"],
+  ];
+
+  for (const [text, intent] of cases) {
+    it(`${JSON.stringify(text)} -> ${intent}`, () => {
+      assert.equal(asCommand(text)?.intent, intent);
+    });
+  }
+
+  it("does not invent a command from a slash it does not know", () => {
+    for (const text of ["/nonsense", "/xyz", "/delete-everything"]) {
+      assert.equal(asCommand(text), null, text);
+    }
+  });
+
+  it("reads a slash with a sentence after it as the sentence", () => {
+    // "/invoice Tunde 20k for logo" is an instruction, not a menu choice, so
+    // it must reach the parser whole rather than opening an empty draft.
+    assert.equal(asCommand("/invoice Tunde 20k for logo"), null);
+    const out = extractDocument("/invoice Tunde 20k for logo", TODAY);
+    assert.equal(out?.clientName, "Tunde");
+    assert.equal(out?.totalKobo, N(20_000));
+  });
+
+  it("answers a question about invoice designs rather than opening settings", () => {
+    // The landing page advertises templates, so people ask. Steering them into
+    // settings gives them a menu that cannot possibly help.
+    for (const text of ["templates", "invoice templates", "change my invoice template"]) {
+      assert.equal(asCommand(text)?.intent, "templates", text);
+    }
+    assert.equal(asCommand("settings")?.intent, "settings");
+    assert.equal(asCommand("change bank")?.intent, "settings");
+  });
+});
+
 describe("a command must be the whole message", () => {
   // "yes" is the message that sends a real invoice to a real client. Anything
   // with more in it than the word is not a confirmation.
@@ -182,6 +236,18 @@ const SENTENCES: [string, Expect][] = [
   ["create invoice for Tunde 20k for logo", { intent: "create_invoice", client: "Tunde" }],
   ["raise invoice Tunde 20k for logo", { intent: "create_invoice", client: "Tunde" }],
   ["make invoice Tunde 20k for logo", { intent: "create_invoice", client: "Tunde" }],
+  // The way people actually open the sentence. Every one of these used to
+  // cost a model call — a second or more, and a fraction of a naira — to be
+  // told what the regex already knew.
+  ["send an invoice to Tunde for 20k for logo", { intent: "create_invoice", client: "Tunde", total: N(20_000) }],
+  ["create an invoice for Tunde 20k for logo", { intent: "create_invoice", client: "Tunde" }],
+  ["make an invoice for Tunde 20k for logo", { intent: "create_invoice", client: "Tunde" }],
+  ["i want to invoice Tunde 20k for logo", { intent: "create_invoice", client: "Tunde" }],
+  ["can you invoice Tunde 20k for logo", { intent: "create_invoice", client: "Tunde" }],
+  ["kindly raise an invoice for Kemi 50k for shoot", { intent: "create_invoice", client: "Kemi" }],
+  ["new invoice Tunde 20k for logo", { intent: "create_invoice", client: "Tunde" }],
+  ["please send an invoice of 500k to Zenith Homes", { intent: "create_invoice", client: "Zenith Homes", total: N(500_000) }],
+
   // Pidgin, which F3 asks for by name.
   ["abeg bill Tunde 20k for logo", { intent: "create_invoice", client: "Tunde", total: N(20_000), desc: "logo" }],
   ["oya invoice Kemi 50k for shoot", { intent: "create_invoice", client: "Kemi", total: N(50_000) }],
@@ -233,6 +299,19 @@ const SENTENCES: [string, Expect][] = [
   ],
   // The amount is not always where you expect it.
   ["bill 20k to Tunde for logo design", { intent: "create_invoice", client: "Tunde", desc: "logo design" }],
+  // A name ending in "n" must not lose it to the naira sign. Steven, Hassan,
+  // Edidiong, Chidinma, MTN — the ending is common here, and "Steve" being
+  // billed "N5k" is a client's name printed wrongly on a real document.
+  ["Invoice Steven 5k for shoot", { intent: "create_invoice", client: "Steven", total: N(5_000) }],
+  ["Invoice Hassan 2k for edits", { intent: "create_invoice", client: "Hassan", total: N(2_000) }],
+  ["Invoice MTN 20k for logo", { intent: "create_invoice", client: "MTN", total: N(20_000) }],
+  // A bare number needs four digits to count as money, so this one uses 5k.
+  ["Invoice Edidiong 5k for design", { intent: "create_invoice", client: "Edidiong", total: N(5_000) }],
+
+  // Names arrive from a phone keyboard, which does not capitalise mid-sentence.
+  ["invoice edidiong uwak 5000 for design", { intent: "create_invoice", client: "Edidiong Uwak" }],
+  ["bill zenith homes limited 350k for renders", { intent: "create_invoice", client: "Zenith Homes Limited" }],
+
   // A stray small number must not be mistaken for the money.
   ["Invoice Tunde 50k for 2 banners", { intent: "create_invoice", total: N(50_000), desc: "2 banners" }],
   ["Invoice Tunde 3 logos 90k", { intent: "create_invoice", total: N(90_000) }],

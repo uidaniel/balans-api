@@ -11,8 +11,15 @@ process.env.MONNIFY_CONTRACT_CODE = "1234567890";
 // above is set before the module reads it.
 import type { Bank } from "./monnify.ts";
 
-const { matchBank, resolveAccount, createSubAccount, initTransaction, resetAuth } =
-  await import("./monnify.ts");
+const {
+  matchBank,
+  resolveAccount,
+  createSubAccount,
+  initTransaction,
+  initBankTransfer,
+  payoutBlocked,
+  resetAuth,
+} = await import("./monnify.ts");
 
 /** Responses shaped exactly as the sandbox returned them. */
 const envelope = (body: unknown, ok = true) =>
@@ -119,6 +126,71 @@ describe("resolveAccount", () => {
     const f = stub(() => new Response("{}", { status: 500 }));
     const res = await resolveAccount("1960725673", "044", f);
     assert.equal(res.ok === false && res.reason, "provider_error");
+  });
+
+  /*
+   * Monnify answers 400 both for "no such account" and for "I could not reach
+   * that bank", with responseCode 99 either way. Reading the second as the
+   * first tells somebody their correct account number is wrong, and they
+   * retype a right answer until they give up. Moniepoint users were being put
+   * through exactly that.
+   */
+  it("does not blame the user for a failure that is not theirs", async () => {
+    const excuses = [
+      "Unable to process request at the moment. Please try again.",
+      "Bank is temporarily unavailable",
+      "Request timed out",
+    ];
+
+    for (const responseMessage of excuses) {
+      const f = stub(
+        () => new Response(JSON.stringify({ requestSuccessful: false, responseMessage }), { status: 400 }),
+      );
+      const res = await resolveAccount("8107408438", "50515", f);
+      assert.equal(
+        res.ok === false && res.reason,
+        "provider_error",
+        `${JSON.stringify(responseMessage)} is not the user's fault`,
+      );
+    }
+  });
+
+  it("still blames the number when the number really is wrong", async () => {
+    // The guard above must not swallow the ordinary mistyping case.
+    const f = stub(
+      () =>
+        new Response(JSON.stringify({ requestSuccessful: false, responseMessage: "Invalid account details supplied" }), {
+          status: 400,
+        }),
+    );
+    const res = await resolveAccount("0000000000", "044", f);
+    assert.equal(res.ok === false && res.reason, "invalid_details");
+  });
+});
+
+/*
+ * Measured against the sandbox, not assumed: the name check on an OPay or
+ * PalmPay account succeeds and the subaccount then fails 500, every time, and
+ * Moniepoint fails the name check itself. Saying so up front is the whole
+ * point — the alternative is a user confirming their own name and then being
+ * told to "try again in a moment", forever.
+ */
+describe("banks that cannot receive a payout", () => {
+  it("names the wallets we know Monnify will not settle into", () => {
+    assert.equal(payoutBlocked("305"), "OPay");
+    assert.equal(payoutBlocked("999992"), "OPay");
+    assert.equal(payoutBlocked("100033"), "PalmPay");
+    assert.equal(payoutBlocked("50515"), "Moniepoint");
+  });
+
+  it("lets every ordinary bank through", () => {
+    for (const code of ["044", "058", "011", "033", "057", "090267"]) {
+      assert.equal(payoutBlocked(code), null, `${code} must not be blocked`);
+    }
+  });
+
+  it("does not care whether the code arrives as a string or a number", () => {
+    assert.equal(payoutBlocked(305 as unknown as string), "OPay");
   });
 });
 
@@ -244,13 +316,129 @@ describe("initTransaction", () => {
     assert.equal(res.ok && res.checkoutUrl, "https://checkout/x");
   });
 
-  it("fails when no checkout url comes back", async () => {
+  /*
+   * We collect by transfer on our own page now, so a missing checkoutUrl is no
+   * longer a failure. A missing transactionReference still is: it is what the
+   * transfer account is issued against, and what the webhook is reconciled by.
+   */
+  it("carries on without a checkout url, which we no longer use", async () => {
     const f = stub(() => envelope({ transactionReference: "MNFY|1" }));
     const res = await initTransaction(
       { amountKobo: 1000_00, customerName: "A", customerEmail: "a@b.ng", paymentReference: "r", description: "d", redirectUrl: "u" },
       f,
     );
+    assert.equal(res.ok, true);
+    assert.equal(res.ok && res.transactionReference, "MNFY|1");
+  });
+
+  it("fails when no transaction reference comes back", async () => {
+    const f = stub(() => envelope({ checkoutUrl: "https://checkout/x" }));
+    const res = await initTransaction(
+      { amountKobo: 1000_00, customerName: "A", customerEmail: "a@b.ng", paymentReference: "r", description: "d", redirectUrl: "u" },
+      f,
+    );
     assert.equal(res.ok, false);
+  });
+});
+
+/*
+ * Pay by transfer. The shape below is exactly what the sandbox returned on
+ * 21 September 2026, down to the zoneless `expiresOn`, which is the field
+ * this code deliberately does not trust.
+ */
+describe("initBankTransfer", () => {
+  const sandbox = {
+    accountNumber: "7004199814",
+    accountName: "Balans-Pro",
+    bankName: "Sterling bank",
+    bankCode: "232",
+    accountDurationSeconds: 2400,
+    ussdPayment: null,
+    requestTime: "2026-09-21T23:07:43.900657213",
+    expiresOn: "2026-09-21T23:47:43",
+    transactionReference: "MNFY|57|20260921230742|000016",
+    paymentReference: "probe_1",
+    amount: 2000.0,
+    fee: 0.0,
+    totalPayable: 2000.0,
+    collectionChannel: "API_NOTIFICATION",
+  };
+
+  it("reads the account the payer must send to", async () => {
+    const f = stub(() => envelope(sandbox));
+    const res = await initBankTransfer("MNFY|57", f);
+
+    assert.equal(res.ok, true);
+    if (!res.ok) return;
+    assert.equal(res.account.accountNumber, "7004199814");
+    assert.equal(res.account.bankName, "Sterling bank");
+    assert.equal(res.account.accountName, "Balans-Pro");
+    // Naira in, kobo out: the page must never render a float.
+    assert.equal(res.account.totalPayableKobo, 200000);
+  });
+
+  it("posts the transaction reference it was given", async () => {
+    let sent: unknown;
+    const f = stub((_u, init) => {
+      sent = JSON.parse(String(init?.body));
+      return envelope(sandbox);
+    });
+    await initBankTransfer("MNFY|57|x", f);
+    assert.deepEqual(sent, { transactionReference: "MNFY|57|x" });
+  });
+
+  /*
+   * The expiry drives a countdown and, more importantly, whether we reuse an
+   * account. `expiresOn` has no zone on it; read as UTC on a UTC server it is
+   * an hour of Lagos time out, in the direction that keeps a dead account on
+   * screen. So the duration wins whenever it is there.
+   */
+  it("takes the expiry from the duration, not their zoneless timestamp", async () => {
+    const f = stub(() => envelope(sandbox));
+    const before = Date.now();
+    const res = await initBankTransfer("MNFY|57", f);
+    assert.equal(res.ok, true);
+    if (!res.ok) return;
+
+    const ms = res.account.expiresAt.getTime() - before;
+    assert.ok(ms > 2_390_000 && ms < 2_410_000, `expected ~2400s, got ${Math.round(ms / 1000)}s`);
+  });
+
+  it("reads their timestamp as Lagos time when there is no duration", async () => {
+    const f = stub(() => envelope({ ...sandbox, accountDurationSeconds: undefined }));
+    const res = await initBankTransfer("MNFY|57", f);
+    assert.equal(res.ok, true);
+    if (!res.ok) return;
+    // 23:47:43 in Lagos is 22:47:43 UTC.
+    assert.equal(res.account.expiresAt.toISOString(), "2026-09-21T22:47:43.000Z");
+  });
+
+  it("expires almost immediately rather than trusting a date it cannot read", async () => {
+    const f = stub(() => envelope({ ...sandbox, accountDurationSeconds: 0, expiresOn: "not a date" }));
+    const res = await initBankTransfer("MNFY|57", f);
+    assert.equal(res.ok, true);
+    if (!res.ok) return;
+    const ms = res.account.expiresAt.getTime() - Date.now();
+    assert.ok(ms > 0 && ms <= 5 * 60 * 1000, `expected a short fallback, got ${ms}ms`);
+  });
+
+  it("refuses a response with no account on it", async () => {
+    const f = stub(() => envelope({ bankName: "Sterling bank", totalPayable: 2000.0 }));
+    const res = await initBankTransfer("MNFY|57", f);
+    assert.equal(res.ok, false);
+  });
+
+  it("passes the provider's message through when it refuses", async () => {
+    const f = stub(
+      () =>
+        new Response(
+          JSON.stringify({ requestSuccessful: false, responseMessage: "Transaction not found" }),
+          { status: 404 },
+        ),
+    );
+    const res = await initBankTransfer("MNFY|nope", f);
+    assert.equal(res.ok, false);
+    assert.match(res.ok === false ? res.message : "", /Transaction not found/);
   });
 });
 

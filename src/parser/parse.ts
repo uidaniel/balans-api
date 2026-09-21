@@ -14,9 +14,11 @@
 
 import { env } from "../config.ts";
 import { todayIn, type Civil } from "../../core/dates.ts";
+import { parseAmountToKobo } from "../../core/amount.ts";
 import { defaults } from "../config.ts";
 import { asCommand } from "./commands.ts";
-import { extractDocument } from "./extract.ts";
+import { extractDocument, readAmount } from "./extract.ts";
+import { readTemplate } from "./template.ts";
 import { modelConfigured, parseWithModel } from "./model.ts";
 import { normalise, isDocumentIntent, type Parsed, type RawParse } from "./schema.ts";
 
@@ -60,16 +62,20 @@ export async function parseMessage(
     return { ok: true, parsed: normalise(raw, today, "command"), latencyMs: since() };
   }
 
-  /* 2. The sentence the product teaches. ----------------------------------- */
+  /* 2. The form, filled in and sent back. ---------------------------------- */
+  const filled = readTemplate(text, today);
+  if (filled) return { ok: true, parsed: filled, latencyMs: since() };
+
+  /* 3. The sentence the product teaches. ----------------------------------- */
   const pattern = extractDocument(text, today);
   if (pattern && !pattern.missing.length) {
     return { ok: true, parsed: pattern, latencyMs: since() };
   }
 
-  /* 3. The model. ---------------------------------------------------------- */
+  /* 4. The model. ---------------------------------------------------------- */
   const model = await parseWithModel(text, today, opts.fetchImpl);
   if (model.ok) {
-    const parsed = normalise(model.parse, today, "model");
+    const parsed = recoverAmount(normalise(model.parse, today, "model"), text, today);
 
     // F3: "If confidence is below the configured threshold, or a required
     // field is missing, ask for that one thing only." Below the threshold the
@@ -103,3 +109,67 @@ export async function parseMessage(
 
 /** Whether document creation can work at all right now (section 15). */
 export const canParseDocuments = (): boolean => modelConfigured();
+
+/**
+ * Puts back an amount the model dropped.
+ *
+ * Asked for ₦356,000 in "daniel uwak for his school fees 356k due tomorrow",
+ * the model returned a line called "school fees" with no price and no total,
+ * so the bot asked how much Daniel was paying — a question he had already
+ * answered in the same sentence. Run again on the same words it got it right,
+ * which is the nature of the thing: it is a model, not a parser.
+ *
+ * So where the model says there is no amount and the sentence plainly states
+ * one, the sentence wins. The reader used here is the same deterministic one
+ * behind the fast path, and it only accepts something marked as money — a
+ * currency sign, a k/m/h suffix, or four digits — so it cannot turn a
+ * quantity into a price.
+ *
+ * Deliberately one-way: it never overrides an amount the model did read, and
+ * it never invents one where the text has none. And nothing it produces
+ * becomes a document without the user confirming the draft (F6).
+ */
+function recoverAmount(parsed: Parsed, text: string, today: Civil): Parsed {
+  if (!isDocumentIntent(parsed.intent)) return parsed;
+  if (!parsed.missing.includes("amount")) return parsed;
+
+  const raw = readAmount(text);
+  if (!raw) return parsed;
+
+  const kobo = parseAmountToKobo(raw);
+  if (kobo === null || kobo <= 0) return parsed;
+
+  // Onto the single line if there is one, so the work keeps its description;
+  // otherwise as the total, which is what an unitemised invoice is.
+  const single = parsed.lineItems.length === 1 && parsed.lineItems[0]!.unitAmountKobo === 0;
+  const lineItems = single
+    ? [{ ...parsed.lineItems[0]!, unitAmountKobo: kobo, qty: 1 }]
+    : parsed.lineItems;
+
+  // Rebuilt through normalise rather than patched, so `missing` and the total
+  // are worked out by the one piece of code that knows how.
+  return normalise(
+    {
+      intent: parsed.intent,
+      client_name: parsed.clientName,
+      client_email: parsed.clientEmail,
+      line_items: lineItems.map((l) => ({
+        description: l.description,
+        qty: l.qty,
+        unit_amount: String(l.unitAmountKobo / 100),
+      })),
+      total_amount: lineItems.length ? null : String(kobo / 100),
+      due_date: parsed.dueDatePhrase,
+      document_number: parsed.documentNumber,
+      options: {
+        deposit_percent: parsed.options.depositPercent,
+        pass_fees_to_client: parsed.options.passFeesToClient,
+        vat_percent: parsed.options.vatPercent,
+        notes: parsed.options.notes,
+      },
+      confidence: parsed.confidence,
+    },
+    today,
+    "model",
+  );
+}

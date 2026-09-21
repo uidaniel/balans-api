@@ -32,7 +32,8 @@ export function settingsMenu(x: {
       "1  Change your business name",
       "2  Change your payout bank",
       "3  Change your default due days",
-      "4  Close your account",
+      "4  Change your invoice design",
+      "5  Close your account",
     ),
     `Reply with a number, or ${b("cancel")}.`,
   );
@@ -80,4 +81,73 @@ function whenWords(at: Date): string {
     hour12: false,
   });
   return fmt.format(at);
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The same menu, as something to tap (F17).
+ *
+ * The row ids are phrases the parser already understands, so a tap arrives as
+ * an ordinary message and travels the same path as somebody typing it. Nothing
+ * downstream has to know the difference between a tap and a sentence.
+ */
+export function settingsList(x: {
+  businessName: string | null | undefined;
+  account: ActiveAccount | null;
+  pending: { bankName: string; last4: string; accountName: string; effectiveAt: Date } | null;
+}): {
+  body: string;
+  button: string;
+  sections: { title?: string; rows: { id: string; title: string; description?: string }[] }[];
+  header?: string;
+  footer?: string;
+} {
+  const now = x.account
+    ? `Paid into ${x.account.bankName} ••${x.account.last4}`
+    : "No payout account yet";
+
+  const scheduled = x.pending
+    ? `\nA change to ${x.pending.bankName} ••${x.pending.last4} takes effect ${whenWords(x.pending.effectiveAt)}.`
+    : "";
+
+  return {
+    header: x.businessName ?? "Your account",
+    body: `${now}${scheduled}`,
+    button: "Change something",
+    footer: "Nothing changes until you confirm it",
+    sections: [
+      {
+        rows: [
+          {
+            id: "change business name",
+            title: "Business name",
+            description: "The name your clients see on every invoice",
+          },
+          {
+            id: "change bank",
+            title: "Payout bank",
+            description: "Where your money lands. Needs an email code",
+          },
+          {
+            id: "due days",
+            title: "Default due days",
+            description: "How long clients get to pay, by default",
+          },
+          {
+            // Reads as a command, like every other row, so tapping it goes
+            // through the same path as typing it.
+            id: "invoice design",
+            title: "Invoice design",
+            description: "How your invoices look. Eight to choose from",
+          },
+          {
+            id: "delete my account",
+            title: "Close my account",
+            description: "Cancels unpaid invoices and disconnects payouts",
+          },
+        ],
+      },
+    ],
+  };
 }

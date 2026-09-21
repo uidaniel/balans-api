@@ -714,3 +714,157 @@ describe("nothing is drafted out of nothing", () => {
     }
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Settings (F17)                                                             */
+/* -------------------------------------------------------------------------- */
+
+describe("the settings menu", () => {
+  /**
+   * Each row of the tappable list, by the id it sends back.
+   *
+   * These ids are phrases the parser also understands as "open settings",
+   * which is the trap: read in that order, tapping a row reopens the menu and
+   * the person taps forever. Kept here as the ids the list actually uses, so
+   * changing one without changing the other fails.
+   */
+  const rows: [string, State][] = [
+    ["change business name", "settings:business_name"],
+    ["change bank", "settings:bank_code"],
+    ["due days", "settings:due_days"],
+    ["delete my account", "settings:delete_confirm"],
+  ];
+
+  for (const [id, next] of rows) {
+    it(`tapping ${JSON.stringify(id)} goes to ${next}`, () => {
+      // With `parsed` set, because the handler now supplies one from the free
+      // command matcher even in states that do not call the model.
+      const out = doc("settings:menu", {}, id, { parsed: parse({ intent: "settings" }) });
+      assert.equal(out.next, next, `${id} did not advance`);
+      assert.notEqual(out.next, "settings:menu", "the menu reopened itself");
+    });
+  }
+
+  it("does not reopen itself when the row is also a settings phrase", () => {
+    // The specific loop: "change bank" reads as both a row and a command.
+    const out = doc("settings:menu", {}, "change bank", { parsed: parse({ intent: "settings" }) });
+    assert.ok(
+      !out.effects.some((e) => e.type === "show_settings"),
+      "tapping a row must not show the menu again",
+    );
+  });
+
+  it("still lets a genuinely different command win (section 5)", () => {
+    for (const intent of ["debtors", "summary", "upgrade"] as const) {
+      const out = doc("settings:menu", {}, "who owes me", { parsed: parse({ intent }) });
+      assert.notEqual(out.next, "settings:menu", `${intent} did not escape settings`);
+    }
+  });
+
+  it("opens the design picker from its row, and from its number", () => {
+    for (const said of ["invoice design", "design", "4"]) {
+      const out = doc("settings:menu", {}, said, { parsed: parse({ intent: "templates" }) });
+      assert.ok(
+        out.effects.some((e) => e.type === "show_designs"),
+        `${JSON.stringify(said)} did not open the picker`,
+      );
+      assert.equal(out.next, "idle", "the picker is a link, not another question");
+    }
+  });
+
+  it("keeps the numbers in step with the rows they are printed beside", () => {
+    // The design row was inserted above "close my account", which moved that
+    // one from 4 to 5. A number that opens the wrong row closes an account.
+    const four = doc("settings:menu", {}, "4", { parsed: parse({ intent: "templates" }) });
+    assert.notEqual(four.next, "settings:delete_confirm", "4 must no longer start a deletion");
+
+    const five = doc("settings:menu", {}, "5", { parsed: parse({ intent: "unknown" }) });
+    assert.equal(five.next, "settings:delete_confirm");
+  });
+
+  it("closes on cancel", () => {
+    const out = doc("settings:menu", {}, "cancel", { parsed: parse({ intent: "reject" }) });
+    assert.equal(out.next, "idle");
+  });
+
+  it("asks again when the answer is not on the menu", () => {
+    const out = doc("settings:menu", {}, "purple", { parsed: parse({ intent: "unknown" }) });
+    assert.equal(out.next, "settings:menu");
+  });
+});
+
+/*
+ * The loop a real user hit: they confirmed a bank change, the effect behind it
+ * threw on a database constraint, and because a throw produced no reply and
+ * saved no state, every later message met the same question again. Typing a
+ * command did not get them out either.
+ *
+ * The throw is fixed elsewhere. These are the conversational halves: a yes
+ * must commit, and anything that is plainly a different instruction must be
+ * able to leave.
+ */
+describe("confirming a new bank account (F17)", () => {
+  const changing = {
+    bankCode: "044",
+    bankName: "Access bank",
+    accountNumber: "1960725673",
+    accountName: "DANIEL INIOBONG UWAK",
+    subAccountCode: "MFY_SUB_1",
+  };
+  const at = (text: string, parsed?: Parsed) =>
+    doc("settings:bank_confirm", { changing }, text, parsed ? { parsed } : {});
+
+  for (const yes of ["yes", "Yes", "yep", "correct", "ok", "confirm"]) {
+    it(`commits on ${JSON.stringify(yes)}`, () => {
+      const out = at(yes, parse({ intent: "confirm" }));
+      assert.ok(
+        out.effects.some((e) => e.type === "commit_bank_change"),
+        "the change was not committed",
+      );
+      assert.equal(out.next, "idle");
+    });
+  }
+
+  for (const no of ["no", "nope", "wrong", "cancel"]) {
+    it(`abandons on ${JSON.stringify(no)}`, () => {
+      const out = at(no, parse({ intent: "reject" }));
+      assert.ok(out.effects.some((e) => e.type === "cancel_bank_change"));
+      assert.equal(out.next, "idle");
+    });
+  }
+
+  it("asks again when the answer is neither, and says which account", () => {
+    const out = at("maybe later", parse({ intent: "unknown" }));
+    assert.equal(out.next, "settings:bank_confirm");
+    assert.match(out.replies.join("\n"), /DANIEL INIOBONG UWAK/);
+  });
+
+  /*
+   * The half that was missing. "/design" is not yes, not no, and not an
+   * answer to this question at all — so it must take them somewhere, not
+   * repeat the question a third time.
+   */
+  it("lets a command out, rather than repeating the question", () => {
+    const out = at("/design", parse({ intent: "templates" }));
+    assert.notEqual(out.next, "settings:bank_confirm", "still stuck on the question");
+    assert.ok(
+      out.effects.some((e) => e.type === "show_designs"),
+      "the command did not run",
+    );
+  });
+
+  it("does not leave a half-answered change behind when a command wins", () => {
+    const out = at("who owes me", parse({ intent: "debtors" }));
+    assert.equal(out.context.changing, undefined, "the abandoned change is still in context");
+    assert.ok(out.effects.some((e) => e.type === "show_debtors"));
+  });
+
+  /*
+   * "no" is both an answer here and a global cancel. The question has to win,
+   * or answering it honestly would escape instead of declining.
+   */
+  it("reads no as declining the change, not as a cancel command", () => {
+    const out = at("no", parse({ intent: "reject" }));
+    assert.ok(out.effects.some((e) => e.type === "cancel_bank_change"));
+  });
+});

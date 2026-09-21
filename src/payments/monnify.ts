@@ -18,6 +18,7 @@ const AUTH_PATH = "/api/v1/auth/login";
 const VALIDATE_PATH = "/api/v2/disbursements/account/validate";
 const SUB_ACCOUNTS_PATH = "/api/v1/sub-accounts";
 const INIT_TRANSACTION_PATH = "/api/v1/merchant/transactions/init-transaction";
+const BANK_TRANSFER_PATH = "/api/v1/merchant/bank-transfer/init-payment";
 const VERIFY_TRANSACTION_PATH = "/api/v2/transactions";
 /** 374 banks with NIP codes. The /sdk/ variant returns only the top 28. */
 const BANKS_PATH = "/api/v1/banks";
@@ -125,7 +126,17 @@ export type ResolveResult =
  *
  * A bad account number comes back 404 with "Invalid account details supplied",
  * which is a normal outcome — someone mistyped — not an outage.
+ *
+ * The status alone does not say which happened. Monnify answers 400 both for
+ * "that account does not exist" and for "I could not reach that bank", and
+ * sends responseCode 99 for every failure, so the message is the only thing
+ * that separates them. Getting this wrong tells somebody their correct
+ * account number is wrong, and they retype a right answer until they give up
+ * — which is exactly what Moniepoint users were being put through.
  */
+const NOT_THE_USERS_FAULT =
+  /unable to process|try again|temporar|timeout|timed out|unavailable|could not be completed/i;
+
 export async function resolveAccount(
   accountNumber: string,
   bankCode: string,
@@ -135,11 +146,51 @@ export async function resolveAccount(
   const res = await call<ResolvedAccount>(`${VALIDATE_PATH}?${q}`, { method: "GET" }, fetchImpl);
 
   if (res.ok) return { ok: true, account: res.body };
-  if (res.status === 404 || res.status === 400) {
+
+  const theirs = res.status === 404 || res.status === 400;
+  if (theirs && !NOT_THE_USERS_FAULT.test(res.message)) {
     return { ok: false, reason: "invalid_details", message: res.message };
   }
   return { ok: false, reason: "provider_error", message: res.message };
 }
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Banks Monnify cannot settle a subaccount into.
+ *
+ * Measured against the sandbox on 2026-09-21, not assumed:
+ *
+ *   OPay (305 and 999992)  name check passes, subaccount creation returns 500
+ *                          "There was an error processing the request" — nine
+ *                          attempts, nine failures.
+ *   PalmPay (100033)       same: the name resolves, the subaccount will not.
+ *   Moniepoint (50515)     the name check itself answers 400 "Unable to
+ *                          process request at the moment" — eight for eight.
+ *
+ * A commercial bank account in the same sandbox creates a subaccount fine, so
+ * this is these banks specifically rather than the endpoint being down.
+ *
+ * The point of naming them is honesty about timing. Without this the user
+ * answers correctly, confirms their own name, and only then meets a failure
+ * that says "try again in a moment" — which will never come true. Told up
+ * front, they can go and find an account that works.
+ *
+ * This is a sandbox finding. The first thing to re-run once the business is
+ * activated is whether production still refuses them; if it does not, delete
+ * this list, because OPay and PalmPay are what a great many Nigerian
+ * freelancers actually get paid into.
+ */
+const NO_PAYOUT: Record<string, string> = {
+  "305": "OPay",
+  "999992": "OPay",
+  "100033": "PalmPay",
+  "50515": "Moniepoint",
+};
+
+/** The wallet's name when it cannot receive payouts, or null when it can. */
+export const payoutBlocked = (bankCode: string): string | null =>
+  NO_PAYOUT[String(bankCode)] ?? null;
 
 /* -------------------------------------------------------------------------- */
 /* Sub accounts                                                               */
@@ -454,10 +505,120 @@ export async function initTransaction(
 
   if (!res.ok) return { ok: false, message: res.message };
   const { transactionReference, checkoutUrl } = res.body;
-  if (!transactionReference || !checkoutUrl) {
-    return { ok: false, message: "no checkout url returned" };
+  // checkoutUrl is no longer used — we collect by transfer on our own page —
+  // but its absence still means the transaction did not really start.
+  if (!transactionReference) {
+    return { ok: false, message: "no transaction reference returned" };
   }
-  return { ok: true, transactionReference, checkoutUrl };
+  return { ok: true, transactionReference, checkoutUrl: checkoutUrl ?? "" };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Pay by transfer                                                            */
+/* -------------------------------------------------------------------------- */
+
+export type TransferAccount = {
+  bankName: string;
+  bankCode: string;
+  accountNumber: string;
+  /** Monnify's collection account name, not the user's business. */
+  accountName: string;
+  /** What the payer must send, to the kobo. */
+  totalPayableKobo: number;
+  /** When the account stops accepting this transfer. */
+  expiresAt: Date;
+  /** Some banks return a USSD string for the same transfer. */
+  ussd: string | null;
+};
+
+export type TransferResult =
+  | { ok: true; account: TransferAccount }
+  | { ok: false; message: string };
+
+/**
+ * Turns an initialised transaction into an account number to pay into.
+ *
+ * This is what replaces the hosted checkout. Monnify hands back a one-time
+ * account tied to this transaction, so we can show the details on our own
+ * invoice page and the payer never leaves it. The split set on the transaction
+ * still governs where the money goes.
+ *
+ * The account is short-lived — the sandbox gives 40 minutes — so the expiry is
+ * part of the result and has to be honoured. Paying into a dead account is the
+ * one failure a client cannot undo themselves.
+ */
+export async function initBankTransfer(
+  transactionReference: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<TransferResult> {
+  const res = await call<{
+    accountNumber?: string;
+    accountName?: string;
+    bankName?: string;
+    bankCode?: string;
+    accountDurationSeconds?: number;
+    expiresOn?: string;
+    totalPayable?: unknown;
+    ussdPayment?: string | null;
+  }>(
+    BANK_TRANSFER_PATH,
+    { method: "POST", body: JSON.stringify({ transactionReference }) },
+    fetchImpl,
+  );
+
+  if (!res.ok) return { ok: false, message: res.message };
+
+  const b = res.body;
+  const totalPayableKobo = toKobo(b.totalPayable);
+
+  if (!b.accountNumber || !b.bankName || totalPayableKobo === null) {
+    return { ok: false, message: "transfer response was missing account details" };
+  }
+
+  /*
+   * Expiry is computed from our own clock and their duration, not from
+   * `expiresOn`.
+   *
+   * `expiresOn` comes back as "2026-09-21T23:47:43" with no zone on it. Read
+   * as UTC by a server running in UTC that is an hour of Lagos time adrift,
+   * and the direction of the error is the dangerous one: we would go on
+   * showing an account that had already closed.
+   */
+  const seconds = Number(b.accountDurationSeconds);
+  const expiresAt =
+    Number.isFinite(seconds) && seconds > 0
+      ? new Date(Date.now() + seconds * 1000)
+      : parseLagos(b.expiresOn);
+
+  return {
+    ok: true,
+    account: {
+      bankName: b.bankName,
+      bankCode: b.bankCode ?? "",
+      accountNumber: b.accountNumber,
+      accountName: b.accountName ?? "",
+      totalPayableKobo,
+      expiresAt,
+      ussd: b.ussdPayment ?? null,
+    },
+  };
+}
+
+/**
+ * Their zoneless timestamp, read as Lagos time.
+ *
+ * Only a fallback for when the duration is missing. Anything unparseable
+ * becomes five minutes from now: short enough that we refresh the account
+ * rather than trusting a date we could not read.
+ */
+function parseLagos(raw: string | undefined): Date {
+  if (raw) {
+    // Lagos is UTC+1 and does not observe daylight saving, so the offset is
+    // a constant rather than something that needs a timezone database.
+    const at = Date.parse(`${raw.replace(/\.\d+$/, "")}+01:00`);
+    if (Number.isFinite(at)) return new Date(at);
+  }
+  return new Date(Date.now() + 5 * 60 * 1000);
 }
 
 /* -------------------------------------------------------------------------- */

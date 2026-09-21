@@ -8,7 +8,22 @@
  * `entry[0].changes[0].value.messages` exists.
  */
 
-export type InboundKind = "text" | "image" | "audio" | "document" | "interactive" | "other";
+export type InboundKind =
+  | "text"
+  | "image"
+  | "audio"
+  | "document"
+  | "interactive"
+  /**
+   * Somebody opened the chat for the first time and has not typed anything.
+   *
+   * Meta sends this once, only while `enable_welcome_message` is on, and only
+   * before the first real message. It is the one chance to say what the
+   * product is to somebody who has just been handed a number and is looking at
+   * an empty screen.
+   */
+  | "welcome"
+  | "other";
 
 export type Inbound = {
   /** Meta's message id. Unique, and what makes redelivery a no-op. */
@@ -90,7 +105,10 @@ export function parseInbound(payload: unknown): { messages: Inbound[]; statuses:
           repliedTo: str(obj(obj(msg.context)?.id ? msg.context : undefined)?.id),
         };
 
-        if (type === "text") {
+        if (type === "request_welcome") {
+          // No words to act on: the greeting is the whole event.
+          out.text = "";
+        } else if (type === "text") {
           out.text = str(obj(msg.text)?.body);
         } else if (type === "interactive") {
           // A tapped button or list item. Its id is the intent; its title is
@@ -142,6 +160,8 @@ function kindOf(type: string): InboundKind {
     case "interactive":
     case "button":
       return "interactive";
+    case "request_welcome":
+      return "welcome";
     default:
       return "other";
   }

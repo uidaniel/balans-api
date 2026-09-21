@@ -132,6 +132,28 @@ export async function scheduleBankChange(
       [userId],
     );
 
+    /*
+     * Retire accounts that an earlier change has already replaced.
+     *
+     * The one still in force is kept — retiring it here would leave the user
+     * with nowhere for money to go for the next 24 hours, which is the one
+     * outcome this whole flow exists to avoid. Everything older than it has
+     * been superseded and is only history.
+     */
+    await c.query(
+      `UPDATE bank_accounts SET status = 'retired'
+        WHERE user_id = $1 AND status = 'active'
+          AND (effective_at IS NULL OR effective_at <= now())
+          AND id <> (
+            SELECT id FROM bank_accounts
+             WHERE user_id = $1 AND status = 'active'
+               AND (effective_at IS NULL OR effective_at <= now())
+             ORDER BY effective_at DESC NULLS LAST, created_at DESC
+             LIMIT 1
+          )`,
+      [userId],
+    );
+
     await c.query(
       `INSERT INTO bank_accounts
          (user_id, bank_code, bank_name, account_last4, account_number_encrypted,

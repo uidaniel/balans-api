@@ -149,9 +149,16 @@ export function renderDocumentHtml(d: DocumentData): string {
     <div>
       <div class="brand">
         ${
-          d.logoDataUri
-            ? `<img class="logo" src="${d.logoDataUri}" alt="">`
-            : `<span class="dot"></span>`
+          /*
+           * The user's own logo, or nothing.
+           *
+           * Deliberately never ours. This invoice is from their business to
+           * their client, and a Balans coin beside their name reads as their
+           * mark — which it is not, and which would be the wrong claim on a
+           * document somebody is being asked to pay. Our name belongs in the
+           * footer, where it already is.
+           */
+          d.logoDataUri ? `<img class="logo" src="${d.logoDataUri}" alt="">` : ""
         }
         <span class="bizname">${esc(d.businessName)}</span>
       </div>

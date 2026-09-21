@@ -253,10 +253,17 @@ export async function confirmDraft(userId: string, draftId: string): Promise<Con
     const draft = rows[0];
     if (!draft) return null;
 
+    // F8: a payment request is "numbered in the invoice sequence". A client
+    // receiving request 4 and invoice 4 from the same person would reasonably
+    // think one was a duplicate of the other.
+    const sequence = draft.type === "payment_request" ? "invoice" : draft.type;
+
     const { rows: numbered } = await c.query<{ next: number }>(
       `SELECT COALESCE(MAX(number), 0) + 1 AS next
-         FROM documents WHERE user_id = $1 AND type = $2`,
-      [userId, draft.type],
+         FROM documents
+        WHERE user_id = $1
+          AND type = ANY($2)`,
+      [userId, sequence === "invoice" ? ["invoice", "payment_request"] : [sequence]],
     );
     const number = numbered[0]!.next;
 

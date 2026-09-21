@@ -12,7 +12,7 @@
 
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { b, i, lines, para } from "../whatsapp/format.ts";
+import { b, block, i, lines, para, row, rule } from "../whatsapp/format.ts";
 import { bucketOf, type Bucket, type Debtors, type DocumentStatus, type Summary } from "./queries.ts";
 
 const BUCKET_TITLE: Record<Bucket, string> = {
@@ -56,7 +56,14 @@ export function debtorsMessage(d: Debtors, today: Civil): string {
       ? `and ${b(`${d.more} more`)} worth ${formatNaira(d.moreKobo)}. Reply ${b("dashboard")} to see all.`
       : "";
 
-  return para(`⏳ ${b(formatNaira(d.totalKobo))} owed to you.`, ...groups, tail);
+  // A one-row block is two rules around a single line, which reads as heavy.
+  // The total belongs in the title here, and the rule separates it from the
+  // groups underneath.
+  return para(
+    lines(`⏳ ${b("OWED TO YOU")} — ${b(formatNaira(d.totalKobo))}`, rule()),
+    ...groups,
+    tail,
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -143,11 +150,11 @@ export function summaryMessage(s: Summary): string {
   }
 
   const body: string[] = [
-    `Invoiced: ${formatNaira(s.invoicedKobo)} across ${s.documents} ${s.documents === 1 ? "document" : "documents"}`,
-    `Paid: ${formatNaira(s.paidKobo)}`,
+    row("Paid", b(formatNaira(s.paidKobo))),
+    row("Invoiced", `${formatNaira(s.invoicedKobo)} across ${s.documents}`),
   ];
-  if (s.outstandingKobo > 0) body.push(`Outstanding: ${formatNaira(s.outstandingKobo)}`);
-  if (s.overdueKobo > 0) body.push(`Overdue: ${formatNaira(s.overdueKobo)}`);
+  if (s.outstandingKobo > 0) body.push(row("Outstanding", formatNaira(s.outstandingKobo)));
+  if (s.overdueKobo > 0) body.push(row("Overdue", formatNaira(s.overdueKobo)));
 
   const top = s.topClients.length
     ? lines(
@@ -159,8 +166,7 @@ export function summaryMessage(s: Summary): string {
   // The headline is what landed, not what was billed: money in the bank is
   // the number people actually want.
   return para(
-    `💰 ${b(formatNaira(s.paidKobo))} paid ${s.period.label}.`,
-    lines(...body),
+    block(`💰 ${b(s.period.label.toUpperCase())}`, body),
     top,
   );
 }
@@ -242,11 +248,11 @@ export function cannotConvertMessage(quoteNumber: number, why: string): string {
   if (why.startsWith("already_converted")) {
     const n = why.split(":")[1];
     return lines(
-      `Quote ${b(`#${quoteNumber}`)} is already Invoice ${b(`#${n}`)}.`,
+      `ℹ️ Quote ${b(`#${quoteNumber}`)} is already Invoice ${b(`#${n}`)}.`,
       `Reply ${b(`resend invoice ${n}`)} for the link.`,
     );
   }
-  if (why === "cancelled") return `Quote ${b(`#${quoteNumber}`)} was cancelled.`;
+  if (why === "cancelled") return `🚫 Quote ${b(`#${quoteNumber}`)} was cancelled.`;
   return lines(
     `🔍 I cannot find ${b(`quote ${quoteNumber}`)}.`,
     `Reply ${b("who owes me")} to see what is outstanding.`,
@@ -254,7 +260,7 @@ export function cannotConvertMessage(quoteNumber: number, why: string): string {
 }
 
 export function remindersStoppedMessage(count: number, number: number | null): string {
-  if (count === 0) return "There were no reminders waiting to stop.";
+  if (count === 0) return "🔕 There were no reminders waiting to stop.";
   return number === null
     ? "🔕 Reminders are off for all your open invoices."
     : `🔕 Reminders are off for ${b(`invoice #${number}`)}.`;

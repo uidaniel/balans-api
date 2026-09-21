@@ -22,6 +22,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { db, tx } from "../db/pool.ts";
 import { verifyTransaction, type VerifiedTransaction } from "./monnify.ts";
 import { collect, deductionFor, stateOf } from "../billing/subscription.ts";
+import { settleParts } from "../documents/parts.ts";
 
 export type ConfirmOutcome =
   /** Already done. A retry, and the right answer is to do nothing. */
@@ -264,6 +265,11 @@ async function apply(
     );
     const doc = rows[0];
     if (!doc) throw new Error(`payment ${paymentId} points at a document that is gone`);
+
+    // F7: settle whichever parts this payment covers, and open the next one.
+    // Done inside the same transaction as the document update, so a document
+    // can never be part_paid with no part marked.
+    await settleParts(documentId, t.amountPaidKobo).catch(() => undefined);
 
     // `documents_paid_within_total` will not hold more than the total, and an
     // overpayment is a refund question rather than a bigger invoice. The

@@ -42,6 +42,8 @@ const doc = (over: Partial<PublicDocument> = {}): PublicDocument => ({
   notes: null,
   subAccountCode: "MFY_SUB_123",
   plan: "free",
+  // No parts by default: an ordinary invoice is one payment.
+  parts: [],
   ...over,
 });
 
@@ -184,7 +186,14 @@ describe("nothing a user types can escape", () => {
     // No opening tag survived. The words themselves may remain — "onerror" as
     // escaped text is just a word — and what matters is that nothing can open
     // an element to hang it on.
-    assert.doesNotMatch(hostile, /<script|<img/i);
+    //
+    // Checked against what the input tried to open, not against the tag names
+    // in the abstract: the page has an <img> of its own for the processor's
+    // mark, and the count above is what proves the input added none.
+    assert.doesNotMatch(hostile, /<script/i, "a script tag was opened");
+    assert.doesNotMatch(hostile, /<img[^>]*onerror/i, "an event handler was opened");
+    assert.doesNotMatch(hostile, /<img\s+src=x/i, "the input's img rendered");
+    assert.doesNotMatch(hostile, /<b>bold|<i>italic|<u>under|<em>em/i, "input markup rendered");
     // And it is still visible to the reader, just as text.
     assert.match(hostile, /&lt;script&gt;/);
     assert.match(hostile, /&lt;img src=x onerror/);
@@ -258,9 +267,12 @@ describe("the messages that go with a document", () => {
       depositPercent: null,
       publicToken: null,
     } as never;
+    const sent = sentMessage(draft, { number: 7, publicToken: "abc" }, "https://balans.ng", TODAY);
     return [
       draftSummary(draft, TODAY),
-      sentMessage(draft, { number: 7, publicToken: "abc" }, "https://balans.ng", TODAY),
+      // Both halves: the part the user forwards and the note that follows it.
+      sent.forward,
+      sent.note,
       askFor("client_name", {}),
       askFor("amount", { clientName: "Zenith" }),
       askFor("description", {}),
