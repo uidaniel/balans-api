@@ -142,17 +142,30 @@ export function sendText(
 }
 
 /**
- * Marks an inbound message read (the blue ticks).
+ * Marks an inbound message read and, optionally, shows the typing bubble.
  *
- * Cosmetic, and deliberately never retried: if it fails the person has still
- * had their answer, and a retry storm over a read receipt helps nobody.
+ * One call does both: Meta carries the typing indicator on the same read
+ * receipt. The bubble clears by itself after about 25 seconds, or the moment
+ * the next message is sent — so it is only ever shown when there is genuinely
+ * something being worked on, never as decoration.
+ *
+ * Cosmetic, and deliberately never retried: if it fails the person still gets
+ * their answer, and a retry storm over a read receipt helps nobody.
  */
-export async function markRead(waMessageId: string, fetchImpl: Transport = fetch): Promise<void> {
+export async function markRead(
+  waMessageId: string,
+  opts: { typing?: boolean; fetchImpl?: Transport } = {},
+): Promise<void> {
   try {
     await call(
       `${env.WA_PHONE_NUMBER_ID}/messages`,
-      { messaging_product: "whatsapp", status: "read", message_id: waMessageId },
-      fetchImpl,
+      {
+        messaging_product: "whatsapp",
+        status: "read",
+        message_id: waMessageId,
+        ...(opts.typing ? { typing_indicator: { type: "text" } } : {}),
+      },
+      opts.fetchImpl ?? fetch,
       MAX_ATTEMPTS - 1,
     );
   } catch {

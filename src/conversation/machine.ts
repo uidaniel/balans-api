@@ -267,11 +267,40 @@ function takeEmail(text: string, ctx: Context): Step {
 }
 
 function takeCode(text: string, ctx: Context): Step {
-  const code = text.replace(/\D/g, "");
-  if (code.length !== 6) {
-    return retry("onboarding:verify_email", ctx, "The code is 6 digits. What is it?");
+  const trimmed = text.trim();
+
+  // "resend" is a way out of a code that never arrived, which is otherwise a
+  // dead end: the person cannot proceed and cannot ask for another.
+  if (/^(resend|send again|didn.?t get it|no code)\b/i.test(trimmed)) {
+    return {
+      replies: [],
+      next: "onboarding:verify_email",
+      context: { ...ctx, attempts: 0 },
+      effects: [{ type: "send_email_code", email: ctx.email ?? "" }],
+    };
   }
-  // Whether it is right is the caller's business; a wrong code returns here.
+
+  // Changing the address mid-step, for the common case of a typo.
+  if (/^(change|wrong email|different email)\b/i.test(trimmed)) {
+    return {
+      replies: [VOICE.askEmail],
+      next: "onboarding:email",
+      context: { ...ctx, email: undefined, attempts: 0 },
+      effects: [],
+    };
+  }
+
+  const code = trimmed.replace(/\D/g, "");
+  if (code.length !== 6) {
+    return retry(
+      "onboarding:verify_email",
+      ctx,
+      'The code is 6 digits. Send it, or reply "resend" for a new one.',
+    );
+  }
+
+  // Whether it is right is the caller's business: only it can check the hash.
+  // It moves the conversation on, or holds it here.
   return {
     replies: [],
     next: "onboarding:consent",

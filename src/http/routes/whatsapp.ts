@@ -14,6 +14,8 @@ import type { FastifyInstance } from "fastify";
 import { env, require_ } from "../../config.ts";
 import { db } from "../../db/pool.ts";
 import { safeEqual, verifyMetaSignature } from "../../lib/crypto.ts";
+import { parseInbound } from "../../whatsapp/inbound.ts";
+import { handleInbound } from "../../conversation/handle.ts";
 
 type VerifyQuery = {
   "hub.mode"?: string;
@@ -91,7 +93,23 @@ export async function whatsappRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    req.log.info({ events: events.length }, "webhook accepted");
+    // Acknowledge first, then do the work.
+    //
+    // Meta retries anything it does not see acknowledged quickly, and a slow
+    // handler turns one message into several. Replying to the person takes a
+    // round trip to the Graph API, which is far too long to hold this open.
+    //
+    // PRD-GAP: section 3 wants a Postgres-backed queue so a crash mid-handler
+    // is picked up again. Until that exists the work happens here, detached,
+    // and a failure is logged rather than retried.
+    const { messages } = parseInbound(body);
+    for (const m of messages) {
+      void handleInbound(m, req.log).catch((err: unknown) => {
+        req.log.error({ err, waMessageId: m.waMessageId }, "failed to handle message");
+      });
+    }
+
+    req.log.info({ events: events.length, messages: messages.length }, "webhook accepted");
     return reply.status(200).send({ received: true });
   });
 }

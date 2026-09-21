@@ -88,6 +88,9 @@ export function require_(...keys: (keyof typeof env)[]): void {
 /* Commercial defaults (section 2). The `config` table overrides these.        */
 /* -------------------------------------------------------------------------- */
 
+/** Stored as users.consent_version when someone accepts (PRD section 12). */
+export const legalConsentVersion = process.env.LEGAL_CONSENT_VERSION ?? "2026-09-draft-1";
+
 export const defaults = {
   plans: {
     free: {
