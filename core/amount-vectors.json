@@ -1,0 +1,66 @@
+{
+  "_comment": [
+    "Canonical behaviour of parseAmountToKobo, shared between this repo and the",
+    "web app's copy in src/lib/amount.ts.",
+    "",
+    "The two are separate files in separate repositories, and PRD section 3 says",
+    "the backend owns the authoritative copy and that the two must not drift. This",
+    "file is how that is enforced: copy it into both repos alongside the parser,",
+    "run it from both test suites, and a disagreement about what '350k' means",
+    "fails a test instead of reaching a client's invoice.",
+    "",
+    "Values are integer kobo. null means unparseable."
+  ],
+
+  "shorthand": {
+    "350k": 35000000,
+    "1.2m": 120000000,
+    "2.5k": 250000,
+    "5h": 50000,
+    "1m": 100000000,
+    "0.5k": 50000,
+    "12k": 1200000
+  },
+
+  "plain": {
+    "350000": 35000000,
+    "350,000": 35000000,
+    "1000": 100000,
+    "0": 0,
+    "350000.50": 35000050,
+    "0.99": 99
+  },
+
+  "currency_marks": {
+    "₦350,000": 35000000,
+    "N350000": 35000000,
+    "n350k": 35000000,
+    "NGN 350000": 35000000,
+    "₦ 350,000": 35000000
+  },
+
+  "case_and_space": {
+    "350K": 35000000,
+    "1.2M": 120000000,
+    " 350k ": 35000000,
+    "350 k": 35000000
+  },
+
+  "rejected": {
+    "": null,
+    "abc": null,
+    "k": null,
+    "350x": null,
+    "3.5.0": null,
+    "350k extra": null,
+    "-350k": null,
+    "0.001": null,
+    "1.2345678m": null
+  },
+
+  "_notes": {
+    "0.001": "finer than a kobo, so refused rather than rounded",
+    "-350k": "no negative invoices; a credit note is a different document",
+    "350 k": "people type a space before the suffix, and mean the same thing"
+  }
+}

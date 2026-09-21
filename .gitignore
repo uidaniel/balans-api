@@ -1,0 +1,9 @@
+node_modules/
+
+# Secrets. .env.example is the committed template.
+.env*
+!.env.example
+
+# Editors and OS
+.DS_Store
+*.log
