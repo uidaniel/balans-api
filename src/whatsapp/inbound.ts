@@ -43,6 +43,15 @@ export type Inbound = {
   sentAt: Date;
   /** The message this one replies to, if any. */
   repliedTo?: string;
+  /**
+   * A submitted Flow form.
+   *
+   * Every field the form collected, as strings — Meta sends `response_json`
+   * and everything inside it is a string, including numbers. `flow_token` is
+   * the value we sent the form with, which is how a submission is tied back
+   * to the conversation that asked for it.
+   */
+  flow?: { token: string; fields: Record<string, string> };
 };
 
 export type StatusUpdate = {
@@ -116,6 +125,39 @@ export function parseInbound(payload: unknown): { messages: Inbound[]; statuses:
           const interactive = obj(msg.interactive);
           const reply = obj(interactive?.button_reply) ?? obj(interactive?.list_reply);
           out.text = str(reply?.id) ?? str(reply?.title);
+
+          /*
+           * A submitted Flow form.
+           *
+           * `response_json` is a JSON string inside the JSON, and it is
+           * whatever the form's `complete` payload named — so it is read
+           * defensively. A form that returns something unexpected must not
+           * take the whole webhook down with it: the worst case here is an
+           * interactive message with no words, which the handler already
+           * knows how to answer.
+           */
+          const flow = obj(interactive?.nfm_reply);
+          const raw = str(flow?.response_json);
+          if (raw) {
+            try {
+              const parsed: unknown = JSON.parse(raw);
+              if (parsed && typeof parsed === "object") {
+                const all = parsed as Record<string, unknown>;
+                const fields: Record<string, string> = {};
+                for (const [k, v] of Object.entries(all)) {
+                  if (k === "flow_token") continue;
+                  if (typeof v === "string") fields[k] = v;
+                  else if (typeof v === "number" || typeof v === "boolean") fields[k] = String(v);
+                }
+                out.flow = { token: str(all.flow_token) ?? "", fields };
+                // The form is the message. Without this the handler sees an
+                // interactive message with no text and says it cannot read it.
+                out.text = out.text ?? "";
+              }
+            } catch {
+              // Not our JSON. Falls through as an ordinary interactive reply.
+            }
+          }
         } else if (type === "button") {
           out.text = str(obj(msg.button)?.text);
         } else if (type === "image" || type === "audio" || type === "document" || type === "video") {

@@ -58,6 +58,15 @@ const schema = z.object({
   WA_BUSINESS_ACCOUNT_ID: z.string().optional(),
   /** Bearer token for the Graph API. Temporary tokens last 24 hours. */
   WA_ACCESS_TOKEN: z.string().optional(),
+  /*
+   * Send Flows in draft mode.
+   *
+   * Meta refuses to publish a Flow until the business behind it is verified,
+   * and a draft one opens only for someone with developer access to the app.
+   * So this is how the forms are tested before verification comes through —
+   * and it must be off in production, where a draft opens for nobody.
+   */
+  WA_FLOWS_DRAFT: z.enum(["true", "false"]).optional(),
   /** Our own string, echoed back during Meta's webhook handshake. */
   WA_VERIFY_TOKEN: z.string().optional(),
   /** Meta app secret. Every inbound webhook is signed with it. */

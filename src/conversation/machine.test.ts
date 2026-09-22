@@ -46,7 +46,9 @@ describe("onboarding: the happy path", () => {
     // No separate email step: confirming the account and giving the address are
     // the same turn, because the confirm question asks for the address.
     assert.deepEqual(states, [
-      "onboarding:business_name",
+      // "Hi" opens the setup form. Typing instead of filling it in is the
+      // supported fallback, and what this walk does from here.
+      "onboarding:form",
       "onboarding:bank",
       "onboarding:confirm_account",
       "onboarding:verify_email",
@@ -237,8 +239,9 @@ describe("what setup costs to run", () => {
 
   it("never leaves a turn with nothing to show for it", () => {
     // Except where an effect owns the answer: the code check and the bank
-    // lookup both reply from the caller, which is the only thing that knows.
-    const effectOwned = ["resolve_account", "verify_email_code"];
+    // lookup both reply from the caller, which is the only thing that knows,
+    // and a Flow's words travel on the form message itself.
+    const effectOwned = ["resolve_account", "verify_email_code", "send_flow"];
     const turns: [State, Context, string][] = [
       ["new", {}, "Hi"],
       ["onboarding:business_name", {}, "Kemi Adeyemi Studio"],
@@ -412,8 +415,34 @@ describe("a paused account", () => {
 describe("a first message that is not a greeting", () => {
   it("still starts setup, without scolding", () => {
     const out = go("new", {}, "Invoice Tunde 20k for logo design");
+    assert.equal(out.next, "onboarding:form");
+
+    const effect = out.effects[0];
+    assert.equal(effect?.type, "send_flow");
+    // The words ride on the form message, so that is where to look for them.
+    assert.match(effect.type === "send_flow" ? effect.body : "", /set up first/i);
+  });
+
+  it("opens the setup form on a greeting too", () => {
+    const out = go("new", {}, "Hi");
+    assert.equal(out.next, "onboarding:form");
+    const effect = out.effects[0];
+    assert.equal(effect?.type, "send_flow");
+    assert.equal(effect.type === "send_flow" ? effect.key : "", "onboarding");
+  });
+
+  it("keeps what they typed when they answer instead of filling the form", () => {
+    // Someone who types their business name while the form is open has
+    // already answered the first question. Asking it again would be rude.
+    const out = go("onboarding:form", {}, "Kemi Adeyemi Studio");
+    assert.equal(out.context.businessName, "Kemi Adeyemi Studio");
+    assert.equal(out.next, "onboarding:bank");
+  });
+
+  it("asks the question when they only say hello", () => {
+    const out = go("onboarding:form", {}, "hello");
     assert.equal(out.next, "onboarding:business_name");
-    assert.ok(out.replies.some((r) => /set up first/i.test(r)));
+    assert.match(out.replies.join(" "), /what is your business called/i);
   });
 });
 

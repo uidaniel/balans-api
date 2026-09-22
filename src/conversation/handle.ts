@@ -26,7 +26,7 @@ import { markEmailVerified, setEmail, recordConsent, saveBankAccount, activateBa
 import type { Inbound } from "../whatsapp/inbound.ts";
 import { step, VOICE, type Effect, type State } from "./machine.ts";
 import { forLog, type Parsed } from "../parser/schema.ts";
-import { b, i, lines, para } from "../whatsapp/format.ts";
+import { b, i, lines, para, row } from "../whatsapp/format.ts";
 import { parseMessage } from "../parser/parse.ts";
 import { readCorrection } from "../parser/corrections.ts";
 import { asCommand } from "../parser/commands.ts";
@@ -65,7 +65,9 @@ import { raiseSecurityAlert } from "../settings/alerts.ts";
 import { attachPaymentReference, openSubscription, stateOf } from "../billing/subscription.ts";
 import { deductChosen, payLinkMessage, proActive, proOffer, proOfferButtons } from "../billing/messages.ts";
 import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
-import { sendCta, sendList } from "../whatsapp/client.ts";
+import { sendCta, sendFlow, sendList } from "../whatsapp/client.ts";
+import { flowId } from "../whatsapp/flows/register.ts";
+import { OTHER_BANK } from "../whatsapp/flows/banks.ts";
 import { sendDocument, uploadDocument } from "../whatsapp/client.ts";
 import {
   loadConversation,
@@ -137,6 +139,33 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
    */
   if (msg.kind === "image" && msg.mediaId) {
     await handleLogo(user.id, msg.mediaId, msg.from, log);
+    return;
+  }
+
+  /*
+   * A submitted form.
+   *
+   * Handled before the machine, like an image is, because it arrives as a
+   * whole set of answers at once rather than as the reply to the question the
+   * conversation happens to be on. Its `flow_token` says which form it was and
+   * who it belongs to — checked against this user, because the token travels
+   * through the client and nothing that comes back from there is trusted.
+   */
+  if (msg.flow) {
+    const [key, tokenUser] = msg.flow.token.split(":");
+    if (tokenUser !== user.id) {
+      log.warn({ userId: user.id, tokenUser }, "flow token does not match the sender");
+      return;
+    }
+    if (key === "onboarding") {
+      await handleOnboardingForm(user.id, msg.from, msg.flow.fields, log);
+      return;
+    }
+    if (key === "business_details") {
+      await handleDetailsForm(user.id, msg.from, msg.flow.fields, log);
+      return;
+    }
+    log.warn({ userId: user.id, key }, "a form we do not know");
     return;
   }
 
@@ -540,6 +569,56 @@ async function runEffects(
             { userId, subAccount: created.account.subAccountCode, reused: created.reused ?? false },
             created.reused ? "reused an existing subaccount" : "subaccount created",
           );
+          break;
+        }
+
+        case "send_flow": {
+          const id = await flowId(effect.key);
+
+          /*
+           * No published flow means no form. That is a configuration state,
+           * not a user's problem: fall back to the typed questions, which are
+           * still there and still work.
+           *
+           * It is also the state this account is in until the business is
+           * verified — Meta refuses to publish a Flow before then — so this
+           * branch is the live path today, not a theoretical one.
+           */
+          if (!id) {
+            log.warn({ userId, key: effect.key }, "no published flow, asking in words");
+            extra.push(VOICE.setupByHand);
+            holdAt = effect.key === "onboarding" ? "onboarding:business_name" : "idle";
+            break;
+          }
+
+          if (!ctx.phone) {
+            log.error({ userId }, "no phone on the effect context, cannot send a flow");
+            extra.push(VOICE.setupByHand);
+            holdAt = "onboarding:business_name";
+            break;
+          }
+
+          const sent = await sendFlow(ctx.phone, {
+            body: effect.body,
+            cta: effect.cta,
+            flowId: id,
+            // Ties the submission back to this person. Read on the way in, and
+            // never trusted for anything the sender could have chosen.
+            token: `${effect.key}:${userId}`,
+            screen: effect.key === "onboarding" ? "BUSINESS" : "DETAILS",
+            data: effect.key === "business_details" ? await detailsFor(userId) : undefined,
+            // A draft flow opens for anyone with developer access to the app,
+            // which is how this is tested before verification comes through.
+            draft: env.WA_FLOWS_DRAFT === "true",
+          });
+
+          if (sent.ok) {
+            await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+          } else {
+            log.error({ userId, reason: sent.reason }, "flow send failed");
+            extra.push(VOICE.setupByHand);
+            holdAt = effect.key === "onboarding" ? "onboarding:business_name" : "idle";
+          }
           break;
         }
 
@@ -1238,6 +1317,170 @@ async function runEffects(
  * because this is the one moment they are actively wanting something Pro gives
  * them.
  */
+/**
+ * A completed onboarding form.
+ *
+ * Four answers land together, so the six questions collapse into one exchange.
+ * What cannot collapse is the bank check: ten digits and a bank name are not
+ * proof of an account, and somebody who mistypes a digit would otherwise be
+ * paid into a stranger's account forever. So this writes what it can trust,
+ * resolves the account, and asks the one question that has to be asked.
+ *
+ * Every value is treated as if a person typed it, because a person did.
+ */
+async function handleOnboardingForm(
+  userId: string,
+  phone: string,
+  fields: Record<string, string>,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  const businessName = (fields.business_name ?? "").trim();
+  const email = (fields.email ?? "").trim().toLowerCase();
+  const accountNumber = (fields.account_number ?? "").replace(/\D/g, "");
+
+  // "Other" means the dropdown did not have their bank, so the free-text box
+  // beside it is the real answer.
+  const chosen = (fields.bank ?? "").trim();
+  const bankQuery = chosen === OTHER_BANK ? (fields.other_bank ?? "").trim() : chosen;
+
+  log.info({ userId, hasName: Boolean(businessName), hasEmail: Boolean(email) }, "onboarding form received");
+
+  if (!businessName || !email || !bankQuery || accountNumber.length !== 10) {
+    // The form marks these required, so getting here means something odd.
+    // Falling back to the questions is better than guessing at a blank.
+    await saveConversation(userId, "onboarding:business_name", {});
+    await reply(userId, phone, [VOICE.setupByHand], log);
+    return;
+  }
+
+  await setBusinessName(userId, businessName);
+
+  const banks = await listBanks();
+  const bank = matchBank(bankQuery, banks);
+  if (!bank) {
+    await saveConversation(userId, "onboarding:bank", { email });
+    await reply(
+      userId,
+      phone,
+      [para(`🤔 I could not find ${b(bankQuery)}.`, VOICE.askBank)],
+      log,
+    );
+    return;
+  }
+
+  const resolved = await resolveAccount(accountNumber, bank.code);
+  if (!resolved.ok) {
+    await saveConversation(userId, "onboarding:bank", { email });
+    await reply(
+      userId,
+      phone,
+      [
+        para(
+          resolved.reason === "invalid_details"
+            ? `🤔 ${b("That account did not check out.")}`
+            : `⏳ ${b("The bank did not answer just now.")}`,
+          VOICE.askBank,
+        ),
+      ],
+      log,
+    );
+    return;
+  }
+
+  await saveBankAccount(userId, {
+    bankCode: bank.code,
+    bankName: bank.name,
+    accountNumber,
+    accountName: resolved.account.accountName,
+  });
+
+  await saveConversation(userId, "onboarding:confirm_account", {
+    email,
+    resolvedAccountName: resolved.account.accountName,
+  });
+
+  await reply(
+    userId,
+    phone,
+    [
+      para(
+        `🏦 That account is ${b(resolved.account.accountName)} at ${bank.name}.`,
+        "Is that you?",
+      ),
+    ],
+    log,
+    VOICE.yesNo("✅ That's me", "❌ Not me"),
+  );
+}
+
+/**
+ * A completed business-details form.
+ *
+ * Nothing here needs verifying: a name, an address and a tax number are what
+ * the user says they are, and they print on an invoice rather than deciding
+ * where money goes. The email is the exception — changing it changes where
+ * receipts land — so it goes through the same code the settings flow uses
+ * rather than being written straight in.
+ */
+async function handleDetailsForm(
+  userId: string,
+  phone: string,
+  fields: Record<string, string>,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  const businessName = (fields.business_name ?? "").trim();
+  const address = (fields.address ?? "").trim();
+  const tin = (fields.tin ?? "").trim();
+  const email = (fields.email ?? "").trim().toLowerCase();
+
+  if (!businessName) {
+    await reply(userId, phone, ["🤔 A business name cannot be empty. Nothing was changed."], log);
+    return;
+  }
+
+  await setBusinessName(userId, businessName);
+  await db().query(
+    `UPDATE users SET address = NULLIF($2, ''), tin = NULLIF($3, '') WHERE id = $1`,
+    [userId, address, tin],
+  );
+
+  const { rows } = await db().query<{ email: string | null }>(
+    `SELECT email FROM users WHERE id = $1`,
+    [userId],
+  );
+  const changedEmail = email && email !== (rows[0]?.email ?? "");
+
+  log.info({ userId, changedEmail }, "business details updated");
+
+  const said = [
+    para(
+      `✅ ${b("Saved.")}`,
+      lines(
+        row("Business", businessName),
+        address ? row("Address", address) : false,
+        tin ? row("TIN", tin) : false,
+      ),
+    ),
+  ];
+
+  if (changedEmail) {
+    // A new address is not a verified address, and receipts must not start
+    // going somewhere nobody has proved they can read.
+    await saveConversation(userId, "onboarding:verify_email", { email });
+    await setEmail(userId, email);
+    const issued = await issueCode(userId, "email_verify", email);
+    said.push(
+      issued.ok
+        ? VOICE.askCode(email)
+        : "⏳ I could not send the code just now. Try again in a minute.",
+    );
+    await reply(userId, phone, said, log, issued.ok ? VOICE.codeButtons() : undefined);
+    return;
+  }
+
+  await reply(userId, phone, said, log);
+}
+
 async function handleLogo(
   userId: string,
   mediaId: string,
@@ -1365,6 +1608,29 @@ async function flagSetupForReview(
   } catch (err) {
     log.error({ err, userId }, "could not flag payout setup for review");
   }
+}
+
+/**
+ * What the business-details form opens filled in with.
+ *
+ * Every value is a string because Flow JSON has no null: a field with nothing
+ * in it is an empty one, not a missing one.
+ */
+async function detailsFor(userId: string): Promise<Record<string, string>> {
+  const { rows } = await db().query<{
+    business_name: string | null;
+    email: string | null;
+    address: string | null;
+    tin: string | null;
+  }>(`SELECT business_name, email, address, tin FROM users WHERE id = $1`, [userId]);
+
+  const u = rows[0];
+  return {
+    business_name: u?.business_name ?? "",
+    email: u?.email ?? "",
+    address: u?.address ?? "",
+    tin: u?.tin ?? "",
+  };
 }
 
 /** Reported at boot so nobody wonders why no email arrived. */

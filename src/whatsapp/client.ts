@@ -428,6 +428,78 @@ export function sendCta(
   );
 }
 
+/**
+ * A form, opened from the chat and filled in on one screen.
+ *
+ * Worth a message when several known facts have to be handed over at once —
+ * onboarding asks for four and takes six messages to do it. Not worth one for
+ * a decision, which is what buttons are for, and actively wrong for the thing
+ * somebody came here to say in their own words.
+ *
+ * `navigate` means the form runs on its own and hands everything back when it
+ * closes. `data_exchange` would let it call us between screens, which needs a
+ * published key and a decrypting endpoint; nothing here needs that yet.
+ *
+ * `token` comes back untouched in the reply, so it is how a completed form is
+ * tied to the conversation that sent it.
+ */
+export function sendFlow(
+  to: string,
+  content: {
+    body: string;
+    /** On the button that opens the form. Meta advises 30 characters. */
+    cta: string;
+    flowId: string;
+    token: string;
+    /** The screen to open on. */
+    screen: string;
+    /** Values the first screen starts with, for an edit form. */
+    data?: Record<string, string>;
+    header?: string;
+    footer?: string;
+    /** Draft flows can be opened by the developer before publishing. */
+    draft?: boolean;
+  },
+  opts: { fetchImpl?: Transport } = {},
+): Promise<SendResult> {
+  const phone = normalisePhone(to);
+  if (!phone) {
+    return Promise.resolve({ ok: false, retryable: false, reason: `unusable phone number: ${to}` });
+  }
+
+  return call(
+    `${env.WA_PHONE_NUMBER_ID}/messages`,
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: phone,
+      type: "interactive",
+      interactive: {
+        type: "flow",
+        ...(content.header ? { header: { type: "text", text: content.header.slice(0, 60) } } : {}),
+        body: { text: content.body.slice(0, 1024) },
+        ...(content.footer ? { footer: { text: content.footer.slice(0, 60) } } : {}),
+        action: {
+          name: "flow",
+          parameters: {
+            flow_message_version: "3",
+            flow_token: content.token,
+            flow_id: content.flowId,
+            flow_cta: content.cta.slice(0, 30),
+            flow_action: "navigate",
+            mode: content.draft ? "draft" : "published",
+            flow_action_payload: {
+              screen: content.screen,
+              ...(content.data && Object.keys(content.data).length ? { data: content.data } : {}),
+            },
+          },
+        },
+      },
+    },
+    opts.fetchImpl ?? fetch,
+  );
+}
+
 export type ReplyButton = {
   /**
    * Comes back as the message text when tapped, so it is written as something

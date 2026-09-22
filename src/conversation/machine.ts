@@ -25,6 +25,8 @@ import { defaults, env } from "../config.ts";
 
 export type State =
   | "new"
+  /** The onboarding form is open on their phone and we are waiting for it. */
+  | "onboarding:form"
   | "onboarding:business_name"
   | "onboarding:bank"
   | "onboarding:confirm_account"
@@ -109,6 +111,16 @@ export type Effect =
   | { type: "resolve_account"; bankQuery: string; accountNumber: string }
   | { type: "create_subaccount" }
   | { type: "send_email_code"; email: string }
+  /**
+   * Open a Flow on the user's phone.
+   *
+   * The flow's published id lives in `config`, not here: a flow recreated
+   * after a mistake gets a new id, and the machine is a pure function with no
+   * way to read a table. The caller looks it up and falls back to asking in
+   * words if the flow is missing, so a Flow that was never published cannot
+   * strand somebody at their first message.
+   */
+  | { type: "send_flow"; key: "onboarding" | "business_details"; body: string; cta: string }
   | { type: "verify_email_code"; email: string; code: string }
   | { type: "record_consent"; version: string }
   | { type: "show_help" }
@@ -221,6 +233,30 @@ const GREETING = /^(hi|hello|hey|good (morning|afternoon|evening)|hola|howfa|how
  * question after it. PRD section 15 puts the whole of setup at six messages.
  */
 export const VOICE = {
+  /** The invitation that carries the setup form. */
+  setupInvite: para(
+    "👋 Welcome to Balans.",
+    lines(
+      b("Four quick things and you are set up."),
+      "Your business name, your email, and the account your money should land in.",
+    ),
+  ),
+
+  /** The same, for somebody whose first message was an instruction. */
+  setupFirst: para(
+    "👋 Let us get you set up first, then I can do that.",
+    lines(
+      b("Four quick things."),
+      "Your business name, your email, and the account your money should land in.",
+    ),
+  ),
+
+  /** They closed the form, or would rather type. Both are fine. */
+  setupByHand: para(
+    "📝 No problem, we can do it here instead.",
+    lines(b("What is your business called?"), "This is the name your clients see on every invoice."),
+  ),
+
   askBusinessName: para(
     "👋 Welcome to Balans.",
     lines(
@@ -511,17 +547,45 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
 
   switch (state) {
     case "new":
-      // Anything at all begins onboarding. A greeting is the common case, but
-      // someone who opens with "invoice Tunde 20k" should not be told off:
-      // take them through setup and their instruction still stands afterwards.
+      /*
+       * Anything at all begins onboarding. A greeting is the common case, but
+       * someone who opens with "invoice Tunde 20k" should not be told off:
+       * take them through setup and their instruction still stands afterwards.
+       *
+       * Setup is a form rather than six questions. Business name, email, bank
+       * and account number are four things they already know, and asking for
+       * them one at a time is four chances to wander off — plus four
+       * chargeable messages from October 2026.
+       */
       return {
-        replies: GREETING.test(text)
-          ? [VOICE.askBusinessName]
-          : [para("Let us get you set up first, then I can do that.", VOICE.askBusinessName)],
-        next: "onboarding:business_name",
+        replies: [],
+        next: "onboarding:form",
         context: {},
-        effects: [],
+        effects: [
+          {
+            type: "send_flow",
+            key: "onboarding",
+            body: GREETING.test(text) ? VOICE.setupInvite : VOICE.setupFirst,
+            cta: "Set up Balans",
+          },
+        ],
       };
+
+    case "onboarding:form":
+      /*
+       * The form is open and this is a typed message instead of a submission.
+       *
+       * Either they closed it or they would rather type, and both are fine —
+       * the form is the fast path, never the only one.
+       *
+       * A greeting means they want the question. Anything else is almost
+       * certainly already the answer to it, and throwing that away to ask for
+       * it again is the rudest thing this branch could do.
+       */
+      if (GREETING.test(text)) {
+        return { replies: [VOICE.setupByHand], next: "onboarding:business_name", context: {}, effects: [] };
+      }
+      return takeBusinessName(text, context, msg);
 
     case "onboarding:business_name":
       return takeBusinessName(text, context, msg);
