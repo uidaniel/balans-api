@@ -1,6 +1,9 @@
 {
   "name": "balans-api",
   "version": "0.1.0",
+  "engines": {
+    "node": ">=22.6.0"
+  },
   "private": true,
   "type": "module",
   "description": "Balans backend: WhatsApp bot, documents, payments.",
