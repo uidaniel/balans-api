@@ -868,3 +868,73 @@ describe("confirming a new bank account (F17)", () => {
     assert.ok(out.effects.some((e) => e.type === "cancel_bank_change"));
   });
 });
+
+
+/*
+ * From a real thread: "/quote" put a quote form on screen, and "/invoice"
+ * sent next was read as the answer to "who is this for?". The client became
+ * "/invoice" and the bot asked how much /invoice was paying.
+ */
+describe("asking for a different document mid-flow", () => {
+  const halfBuilt = { doc: { type: "quote" as const, lines: [] } };
+
+  /** What `asCommand("/invoice")` actually produces: an intent and nothing else. */
+  const bare = (intent: Parsed["intent"]): Parsed =>
+    parse({
+      intent,
+      source: "command",
+      clientName: null,
+      lineItems: [],
+      totalKobo: null,
+      confidence: 1,
+      missing: ["client_name", "amount", "description"],
+    });
+
+  for (const [command, intent, wanted] of [
+    ["/invoice", "create_invoice", "invoice"],
+    ["/quote", "create_quote", "quote"],
+    ["/collect", "payment_request", "payment_request"],
+  ] as const) {
+    it(`${command} while a client name is being asked for starts a ${wanted}`, () => {
+      const out = doc("awaiting_field:client_name", halfBuilt, command, {
+        parsed: bare(intent),
+      });
+
+      assert.equal(out.context.doc?.type, wanted, "it kept the old document");
+      assert.notEqual(out.context.doc?.clientName, command, "the command became the client");
+      assert.match(out.replies.join("\n"), /Copy this|Who is this for/i);
+    });
+  }
+
+  it("does not carry the abandoned document forward", () => {
+    const out = doc(
+      "awaiting_field:amount",
+      { doc: { type: "quote", clientName: "Zenith Homes", lines: [] } },
+      "/invoice",
+      { parsed: bare("create_invoice") },
+    );
+    assert.equal(out.context.doc?.type, "invoice");
+    assert.equal(out.context.doc?.clientName, undefined, "the old client survived the restart");
+  });
+
+  /*
+   * The other half. The parser reads plenty of plain answers as document
+   * intents, and restarting on those would throw away the answer somebody
+   * just gave — so only an exact command counts.
+   */
+  it("still takes a plain name as a name, however the model reads it", () => {
+    const out = doc("awaiting_field:client_name", halfBuilt, "Zenith Homes", {
+      parsed: parse({ intent: "create_invoice", clientName: "Zenith Homes" }),
+    });
+    assert.equal(out.context.doc?.clientName, "Zenith Homes");
+  });
+
+  it("refuses a slash command as a client name whatever the parse says", () => {
+    // The fallback path, for a command the matcher does not know.
+    const out = doc("awaiting_field:client_name", halfBuilt, "/whatever", {
+      parsed: parse({ intent: "unknown" }),
+    });
+    assert.equal(out.next, "awaiting_field:client_name");
+    assert.notEqual(out.context.doc?.clientName, "/whatever");
+  });
+});

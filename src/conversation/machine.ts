@@ -955,6 +955,23 @@ function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound
   const escape = commandEscape(msg, ctx, now);
   if (escape) return escape;
 
+  /*
+   * Asking for a different document starts a different document.
+   *
+   * `commandEscape` deliberately leaves the document intents out, because
+   * "Invoice Tunde 20k" arriving mid-flow is usually an answer. But "/invoice"
+   * on its own, while a quote is half-built, is nobody's answer to "who is
+   * this for?" — it is somebody starting again. It used to be taken as the
+   * client's name, and the next question was "How much is /invoice paying?".
+   *
+   * Only an exact command counts. A model that reads "Zenith Homes" as
+   * create_invoice is naming a client, not asking for a new document, and
+   * restarting on that would throw away the answer somebody just gave.
+   */
+  if (msg.parsed && isDocumentIntent(msg.parsed.intent) && msg.parsed.source === "command") {
+    return startDocument(msg.parsed, forget(ctx), now);
+  }
+
   const answer = text.trim();
 
   switch (state) {
@@ -966,7 +983,15 @@ function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound
       }
 
       const name = answer.replace(/^(?:for|to)\s+/i, "").replace(/\s+/g, " ").trim();
-      if (name.length < 2 || name.length > 80 || name.split(" ").length > 6) {
+      // A slash command is never a client's name. Anything we do not
+      // recognise still reaches here, and putting "/whatever" on an invoice
+      // is worse than asking once more.
+      if (
+        name.startsWith("/") ||
+        name.length < 2 ||
+        name.length > 80 ||
+        name.split(" ").length > 6
+      ) {
         return retry("awaiting_field:client_name", ctx, askFor("client_name", {}));
       }
       return buildOrAsk({ ...doc, clientName: titleCaseName(name) }, ctx, now);
