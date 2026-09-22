@@ -80,9 +80,23 @@ import {
 export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promise<void> {
   const user = await upsertUser(msg.from);
 
-  // Meta redelivers on any doubt. Storing the id first means a repeat stops
-  // here rather than producing a second reply to the same sentence.
-  const first = await recordInbound(user.id, msg.waMessageId, msg.kind);
+  /*
+   * Both of these need the user and neither needs the other, so they go
+   * together. The database is in Ireland and the server is not, which puts
+   * about 160ms on every round trip — sequencing two independent reads costs
+   * a fifth of a second of pure waiting, and a turn only has a handful of
+   * those to spend.
+   *
+   * On a redelivery this reads a conversation it then throws away. That is a
+   * wasted read on the rare path to save a round trip on the common one.
+   */
+  const [first, saved] = await Promise.all([
+    // Meta redelivers on any doubt. Storing the id first means a repeat stops
+    // here rather than producing a second reply to the same sentence.
+    recordInbound(user.id, msg.waMessageId, msg.kind),
+    loadConversation(user.id),
+  ]);
+
   if (!first) {
     log.info({ waMessageId: msg.waMessageId }, "duplicate delivery ignored");
     return;
@@ -97,7 +111,6 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   // it is decoration, and the reply must not wait on a read receipt.
   void markRead(msg.waMessageId, { typing: true });
 
-  const saved = await loadConversation(user.id);
   // A paused account is paused whatever the conversation last said.
   const state: State = user.status === "paused" ? "paused" : saved.state;
 
@@ -626,10 +639,14 @@ async function runEffects(
           // F6: plan limits are checked before the draft is shown. Drafting
           // something and refusing to send it afterwards would be worse than
           // saying so now, because by then they have read and approved it.
-          const plan = await planOf(userId);
+          // Independent of each other, and both are needed before anything
+          // can be drafted. Another 160ms round trip saved.
+          const [plan, used] = await Promise.all([
+            planOf(userId),
+            documentsThisMonth(userId, ctx.today),
+          ]);
           const limit = defaults.plans[plan].documentsPerMonth;
           if (limit !== null) {
-            const used = await documentsThisMonth(userId, ctx.today);
             if (used >= limit) {
               log.info({ userId, used, limit, plan }, "monthly document limit reached");
               extra.push(limitReachedMessage(used, limit));
