@@ -24,6 +24,9 @@ const FILES: Record<string, { file: string; type: string }> = {
   "welcome.png": { file: "welcome.png", type: "image/png" },
   "setup-done.png": { file: "setup-done.png", type: "image/png" },
   "cheatsheet.png": { file: "cheatsheet.png", type: "image/png" },
+  // Two, chosen by the clock. See `settlesTonight`.
+  "paid-tonight.png": { file: "paid-tonight.png", type: "image/png" },
+  "paid-tomorrow.png": { file: "paid-tomorrow.png", type: "image/png" },
 };
 
 /**

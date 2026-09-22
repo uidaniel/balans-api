@@ -14,6 +14,8 @@ import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { send } from "../whatsapp/outbound.ts";
+import { settlesTonight } from "./settlement.ts";
+import { env } from "../config.ts";
 import { renderReceiptPdf } from "../documents/pdf.ts";
 import { proStarted } from "../billing/messages.ts";
 import { b, block, lines, para, row } from "../whatsapp/format.ts";
@@ -96,11 +98,25 @@ export async function notifyPaid(n: PaidNotice, log: FastifyBaseLogger): Promise
   // which of those it is.
   const receipt = n.paymentId ? await renderReceiptPdf(n.paymentId, log) : null;
 
+  /*
+   * Which card, decided by the clock rather than written into the message.
+   *
+   * Monnify settles once a day at 22:00 Lagos. A payment before it is in the
+   * bank tonight; after it, tomorrow night. Both cards say so in as many
+   * words, and `settlesTonight` is the same function the caption uses — so
+   * the picture and the words underneath it cannot disagree.
+   */
+  const at = new Date();
+  const card = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/brand/${
+    settlesTonight(at) ? "paid-tonight.png" : "paid-tomorrow.png"
+  }`;
+
   const outcome = await send(
     {
       userId: n.userId,
       phone,
-      text: paidMessage(n),
+      text: paidMessage(n, at),
+      image: card,
       document: receipt ? { bytes: receipt.bytes, filename: receipt.filename } : undefined,
       // This is the message the whole product exists to send. If the window
       // has closed — and it usually has, because clients pay days later — it

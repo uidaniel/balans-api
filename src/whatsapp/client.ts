@@ -311,6 +311,41 @@ export async function downloadMedia(
  * text would be a second bubble saying what the first one already says. One
  * message, one charge, per section 16's budget.
  */
+/**
+ * A picture with words under it.
+ *
+ * By URL, which Meta fetches: an uploaded media id expires after thirty days
+ * and these are the same few files on every send. The caption is the message —
+ * with images turned off, or slow to load, it is all somebody sees, so it has
+ * to stand on its own.
+ */
+export function sendImage(
+  to: string,
+  link: string,
+  caption: string,
+  opts: { fetchImpl?: Transport } = {},
+): Promise<SendResult> {
+  const phone = normalisePhone(to);
+  if (!phone) {
+    return Promise.resolve({ ok: false, retryable: false, reason: `unusable phone number: ${to}` });
+  }
+  if (!/^https?:\/\//i.test(link)) {
+    return Promise.resolve({ ok: false, retryable: false, reason: `image needs an absolute URL: ${link}` });
+  }
+
+  return call(
+    `${env.WA_PHONE_NUMBER_ID}/messages`,
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: phone,
+      type: "image",
+      image: { link, caption: caption.slice(0, 1024) },
+    },
+    opts.fetchImpl ?? fetch,
+  );
+}
+
 export function sendDocument(
   to: string,
   mediaId: string,

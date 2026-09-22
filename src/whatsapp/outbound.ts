@@ -14,7 +14,10 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
-import { sendDocument, sendTemplate, sendText, uploadDocument } from "./client.ts";
+import { sendDocument, sendImage, sendTemplate, sendText, uploadDocument } from "./client.ts";
+
+/** On the receipt when a card carried the words already. */
+const RECEIPT_CAPTION = "Receipt, for your records.";
 import { costOf, windowFor, TEMPLATES, TEMPLATE_LANGUAGE, type TemplateName } from "./window.ts";
 
 export type Outbound = {
@@ -32,6 +35,17 @@ export type Outbound = {
   fallback?: { template: TemplateName; params: string[] };
   /** Attached inside the window only; templates cannot carry a file. */
   document?: { bytes: Buffer; filename: string };
+  /**
+   * A picture to lead with, by URL.
+   *
+   * Costs a message. A WhatsApp message carries an image or a document, not
+   * both, so anything with a `document` as well goes out as two — which is
+   * why only the payment notice uses this. It is the message the whole
+   * product exists to send, and the one people screenshot.
+   *
+   * Inside the window only. A template cannot carry one either.
+   */
+  image?: string;
 };
 
 export type SendOutcome =
@@ -104,6 +118,36 @@ export async function send(msg: Outbound, log: FastifyBaseLogger): Promise<SendO
 
 /** Inside the window: free-form, with the file attached if there is one. */
 async function sendInside(msg: Outbound, log: FastifyBaseLogger): Promise<SendOutcome> {
+  /*
+   * The picture goes first, carrying the words.
+   *
+   * It leads because it is what the message is: somebody sees the card before
+   * they read anything. The file follows on its own, with a caption of its
+   * own, because a message cannot hold both.
+   *
+   * A failed picture is not a failed message. The words are in its caption,
+   * so if it will not send they go with the document instead — or as text —
+   * and nothing is lost but the decoration.
+   */
+  if (msg.image) {
+    const shown = await sendImage(msg.phone, msg.image, msg.text);
+    if (shown.ok) {
+      if (!msg.document) return { kind: "sent", inWindow: true };
+
+      const up = await uploadDocument(msg.document.bytes, msg.document.filename);
+      if (up.ok) {
+        const res = await sendDocument(msg.phone, up.mediaId, msg.document.filename, RECEIPT_CAPTION);
+        if (res.ok) return { kind: "sent", inWindow: true };
+        log.error({ userId: msg.userId, reason: res.reason }, "receipt send failed after the card");
+      } else {
+        log.error({ userId: msg.userId, reason: up.reason }, "receipt upload failed after the card");
+      }
+      // The card carried the words, so the notice itself did arrive.
+      return { kind: "sent", inWindow: true };
+    }
+    log.error({ userId: msg.userId, reason: shown.reason }, "card send failed; sending it plain");
+  }
+
   if (msg.document) {
     const up = await uploadDocument(msg.document.bytes, msg.document.filename);
     if (up.ok) {
