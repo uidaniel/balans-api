@@ -76,7 +76,7 @@ import { attachPaymentReference, openSubscription, stateOf } from "../billing/su
 import { deductChosen, payLinkMessage, proActive, proOffer, proOfferButtons } from "../billing/messages.ts";
 import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
 import { sendCta, sendFlow, sendList } from "../whatsapp/client.ts";
-import { mainMenuList } from "./menu.ts";
+import { helpButtons } from "./menu.ts";
 import { flowId } from "../whatsapp/flows/register.ts";
 
 /**
@@ -104,13 +104,18 @@ async function sendMenu(
 ): Promise<string | null> {
   if (!phone) return fallback;
 
-  const sent = await sendList(phone, mainMenuList());
+  const sent = await sendButtons(phone, {
+    headerImage: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/brand/cheatsheet.png`,
+    body: VOICE.helpCaption,
+    buttons: helpButtons(),
+  });
+
   if (sent.ok) {
     await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
     return null;
   }
 
-  log.warn({ userId, reason: sent.reason }, "menu list failed, sending it as words");
+  log.warn({ userId, reason: sent.reason }, "cheat sheet failed, sending the menu as words");
   return fallback;
 }
 

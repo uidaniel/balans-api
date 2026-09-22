@@ -1,101 +1,51 @@
 /**
- * The menu behind "/" (PRD F3's discoverability problem).
+ * What "/" and "help" answer with (PRD F3's discoverability problem).
  *
  * A product whose entire surface is a text box has to tell people what it can
- * do. WhatsApp has no autocomplete, so "/" cannot pop up a list the way it
- * does in Slack — but an interactive list is the closest thing, and it is
- * tappable, which a wall of slash commands is not.
+ * do, and it has three ways to say it. They are not alternatives; each covers
+ * a moment the others cannot.
  *
- * Every row's id is the command it stands for, so tapping "Bill a client" and
- * typing "/invoice" arrive at the same place by the same path. That is the
- * same trick `draftButtons` and `settingsList` use, and it is what keeps the
- * tappable surface from becoming a second implementation of the typed one.
+ *   The native "/" popup   Drawn by WhatsApp above the keyboard as you type,
+ *                          before you send anything. Registered once on the
+ *                          phone number, costs nothing, and is the only one
+ *                          that helps somebody who has not thought of asking
+ *                          for help. See `register-commands.ts`.
  *
- * The description on each row carries the command in plain sight. Somebody who
- * taps it once has learnt the word, and the second time they will type it —
- * which is faster than the list and costs us nothing.
+ *   The cheat sheet        This. All ten commands at once, grouped, legible,
+ *                          and saveable — somebody can scroll back to it or
+ *                          screenshot it, which a message of text is worse at.
  *
- * A list holds ten rows. There are nine here, and the tenth is being held for
- * the next thing that earns a place rather than spent on something that does
- * not. If a tenth is ever needed, the answer is not an eleventh: it is that
- * two of these belong under one row.
+ *   The typed menu         The fallback, for when the image cannot be sent.
+ *
+ * The picture cannot be tapped, so three buttons ride under it. Three is the
+ * limit, which is a useful constraint: it forces the question of which three
+ * things somebody actually opens this to do, rather than listing ten and
+ * making them read.
+ *
+ * A list message was the obvious shape and is not available: probed against
+ * the live API, an image header on `type: "list"` is rejected outright, while
+ * `type: "button"` takes one. So the ten live in the picture and the three
+ * live under it.
+ *
+ * Every button id is the command it stands for, so tapping and typing arrive
+ * at the same place by the same path — the trick `draftButtons` and
+ * `settingsList` already use, and what stops the tappable surface becoming a
+ * second implementation of the typed one.
  */
 
-export type MenuList = {
-  body: string;
-  button: string;
-  sections: { title?: string; rows: { id: string; title: string; description?: string }[] }[];
-  header?: string;
-  footer?: string;
-};
+import type { ReplyButton } from "../whatsapp/client.ts";
 
-export function mainMenuList(): MenuList {
-  return {
-    header: "What I can do",
-    body: "Tap one, or just say it in your own words.",
-    button: "See everything",
-    footer: "Invoice Tunde 20k for logo, due Friday",
-    sections: [
-      {
-        title: "Getting paid",
-        rows: [
-          {
-            id: "/invoice",
-            title: "Bill a client",
-            description: "/invoice — an invoice with a payment link on it",
-          },
-          {
-            id: "/quote",
-            title: "Send a quote",
-            description: "/quote — turns into an invoice when they accept",
-          },
-          {
-            id: "/collect",
-            title: "Request a payment",
-            description: "/collect — a quick link, no invoice",
-          },
-        ],
-      },
-      {
-        title: "Keeping track",
-        rows: [
-          {
-            id: "/owed",
-            title: "Who owes me",
-            description: "/owed — everything unpaid, oldest first",
-          },
-          {
-            id: "/summary",
-            title: "How this month went",
-            description: "/summary — what you billed and what landed",
-          },
-          {
-            id: "/status",
-            title: "Check one invoice",
-            description: "/status — whether it was seen, and whether it was paid",
-          },
-        ],
-      },
-      {
-        title: "Your account",
-        rows: [
-          {
-            id: "/settings",
-            title: "Settings",
-            description: "/settings — your name, your bank, your due days",
-          },
-          {
-            id: "/design",
-            title: "Invoice design",
-            description: "/design — how your invoices look to a client",
-          },
-          {
-            id: "/pro",
-            title: "Go Pro",
-            description: "/pro — unlimited invoices and your own logo",
-          },
-        ],
-      },
-    ],
-  };
-}
+/**
+ * The three, and why these three.
+ *
+ * Billing somebody is the product. Chasing money is the reason anyone opens
+ * an invoicing tool a second time. The month is the question every freelancer
+ * asks themselves and cannot usually answer.
+ *
+ * Everything else is on the picture above and in the "/" popup.
+ */
+export const helpButtons = (): ReplyButton[] => [
+  { id: "/invoice", title: "🧾 New invoice" },
+  { id: "/owed", title: "💰 Who owes me" },
+  { id: "/summary", title: "📊 This month" },
+];

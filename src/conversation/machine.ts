@@ -396,6 +396,18 @@ export const VOICE = {
     "Type it like a text, or tap below.",
   ),
 
+  /**
+   * Under the cheat sheet, which is the message.
+   *
+   * The picture already lists the ten and shows the example, so the only
+   * things left to say are the two the picture cannot: that the buttons work,
+   * and that "/" draws a list above the keyboard without sending anything.
+   */
+  helpCaption: para(
+    `\u{1F4CB} ${b("Save this one.")}`,
+    'Tap below, type / for the full list, or just say it.',
+  ),
+
   /** Under the form invitation, which is the whole message. */
   changeInvite: para(
     `✏️ ${b("Change anything you like.")}`,

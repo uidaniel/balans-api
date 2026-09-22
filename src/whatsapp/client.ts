@@ -542,7 +542,22 @@ export type ReplyButton = {
  */
 export function sendButtons(
   to: string,
-  content: { body: string; buttons: ReplyButton[]; header?: string; footer?: string },
+  content: {
+    body: string;
+    buttons: ReplyButton[];
+    header?: string;
+    /**
+     * A picture above the message, by URL.
+     *
+     * Reply buttons take one; a list does not. Probed against the live API —
+     * an image header on `type: "list"` comes back 400 "Parameter value is
+     * not valid", and on `type: "button"` it is accepted.
+     *
+     * Takes precedence over `header`. A header is one thing or the other.
+     */
+    headerImage?: string;
+    footer?: string;
+  },
   opts: { fetchImpl?: Transport } = {},
 ): Promise<SendResult> {
   const phone = normalisePhone(to);
@@ -575,7 +590,11 @@ export function sendButtons(
       type: "interactive",
       interactive: {
         type: "button",
-        ...(content.header ? { header: { type: "text", text: content.header.slice(0, 60) } } : {}),
+        ...(content.headerImage
+          ? { header: { type: "image", image: { link: content.headerImage } } }
+          : content.header
+            ? { header: { type: "text", text: content.header.slice(0, 60) } }
+            : {}),
         body: { text: content.body.slice(0, 1024) },
         ...(content.footer ? { footer: { text: content.footer.slice(0, 60) } } : {}),
         action: {
