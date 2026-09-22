@@ -38,10 +38,10 @@ font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
 .sheet{max-width:640px;margin:0 auto;background:#fff;border:1px solid var(--sand-2);
 border-radius:20px;overflow:hidden}
 .top{padding:28px 28px 0}
-.brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:-.03em;
-font-size:15px;color:var(--ink)}
-.brand svg{height:26px;width:auto;display:block}
-.dot{width:10px;height:10px;border-radius:50%;background:var(--marigold);flex:none}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:-.03em;
+font-size:20px;color:var(--ink)}
+.brand svg{height:36px;width:auto;display:block}
+.dot{width:14px;height:14px;border-radius:50%;background:var(--marigold);flex:none}
 .kind{margin-top:22px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;
 color:#6b7d74;font-weight:600}
 h1{font-size:30px;letter-spacing:-.045em;font-weight:700;margin-top:4px;line-height:1.15}
@@ -95,7 +95,7 @@ font-size:13.5px;color:#4a5d54;font-weight:550;flex-wrap:wrap}
 .tline .mlogo{height:22px;width:auto;display:block}
 .tsmall{margin-top:11px;text-align:center;font-size:12.5px;line-height:1.65;color:#7d8d85}
 .tsmall b{color:#5c6f66;font-weight:600}
-.files{padding:0 28px 26px;text-align:center;font-size:13.5px}
+.files{padding:22px 28px 26px;text-align:center;font-size:13.5px}
 .files a{color:#5c6f66;text-decoration:underline;text-underline-offset:3px}
 .foot{max-width:640px;margin:18px auto 0;text-align:center;font-size:13px;color:#7d8d85}
 .foot a{color:#7d8d85}
@@ -284,7 +284,7 @@ export function renderDocument(
     <div class="brand">${
       // The real logo where we have it; the wordmark in text if the asset is
       // missing, because a payment page must render either way.
-      logoAvailable() ? logoSvg("26px") : `<span class="dot"></span>balans`
+      logoAvailable() ? logoSvg("36px") : `<span class="dot"></span>balans`
     }</div>
     <div class="kind">${label} ${doc.number}</div>
     <h1>${formatNaira(doc.totalKobo)}</h1>
@@ -512,7 +512,7 @@ export function renderNotFound(): string {
 <title>Not found</title><meta name="robots" content="noindex,nofollow">
 <style>${CSS}</style></head><body>
 <div class="sheet"><div class="top" style="padding-bottom:28px">
-  <div class="brand">${logoAvailable() ? logoSvg("26px") : `<span class="dot"></span>balans`}</div>
+  <div class="brand">${logoAvailable() ? logoSvg("36px") : `<span class="dot"></span>balans`}</div>
   <h1 style="margin-top:22px">Nothing here</h1>
   <p class="from">This link has expired, or it was never quite right. Ask whoever sent it for a new one.</p>
 </div></div>
