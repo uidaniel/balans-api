@@ -116,7 +116,13 @@ describe("a command always beats a pending question", () => {
 
   it("cancel restarts onboarding", () => {
     const out = go("onboarding:verify_email", { businessName: "X", email: "a@b.ng" }, "cancel");
-    assert.equal(out.next, "onboarding:business_name");
+
+    // Starting again offers the same beginning a new number gets — the card
+    // and the form — rather than the first typed question.
+    const flow = out.effects.find((e) => e.type === "send_flow");
+    assert.ok(flow, "cancel should offer the form again");
+    assert.equal(flow.fallback?.holdAt, "onboarding:business_name", "and the question without one");
+
     assert.deepEqual(out.context, {}, "cancel must not keep half-entered details");
   });
 });

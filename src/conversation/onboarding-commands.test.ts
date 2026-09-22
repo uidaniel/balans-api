@@ -114,7 +114,7 @@ describe("slash commands during setup", () => {
 
   it("leaves cancel working, so somebody can get out", () => {
     const out = say("onboarding:bank", "cancel");
-    assert.equal(out.next, "onboarding:business_name");
+    assert.ok(out.effects.some((e) => e.type === "send_flow"), "cancel should restart setup");
   });
 
   it("does not interfere once setup is done", () => {
@@ -199,5 +199,45 @@ describe("what counts as a business name", () => {
     assert.equal(nameFrom("x".repeat(81)), undefined);
     // Accepted, and title-cased on the way in like every other name.
     assert.equal(nameFrom("x".repeat(80)), "X" + "x".repeat(79));
+  });
+});
+
+describe("starting setup again", () => {
+  /*
+   * Cancel used to answer with the first typed question — a different and
+   * worse beginning than a new number gets. Somebody who has just backed out
+   * of setup is the person least sure about it, and a bare question is the
+   * wrong half of the product to hand them.
+   */
+  for (const state of [
+    "onboarding:business_name",
+    "onboarding:bank",
+    "onboarding:confirm_account",
+    "onboarding:email",
+  ] as const) {
+    it(`offers the same beginning from ${state}`, () => {
+      const out = say(state, "cancel");
+      const flow = out.effects.find((e) => e.type === "send_flow");
+
+      assert.ok(flow, "it should offer the form, not just a question");
+      assert.equal(flow.key, "onboarding");
+      assert.match(flow.image ?? "", /welcome\.png$/, "the card a new number gets");
+      assert.equal(flow.cta, "Set up Balans");
+    });
+  }
+
+  it("forgets everything that was half-answered", () => {
+    // Starting again means starting again. A half-entered email surviving a
+    // restart is how somebody ends up verifying an address they meant to
+    // replace.
+    const out = say("onboarding:bank", "cancel");
+    assert.deepEqual(out.context, {});
+  });
+
+  it("still asks in words when there is no form", () => {
+    const out = say("onboarding:bank", "cancel");
+    const flow = out.effects.find((e) => e.type === "send_flow");
+    assert.match(flow?.fallback?.line ?? "", /start again/i);
+    assert.equal(flow?.fallback?.holdAt, "onboarding:business_name");
   });
 });

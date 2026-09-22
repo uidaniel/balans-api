@@ -310,6 +310,12 @@ export const VOICE = {
    */
   setupInvite: para(`\u{1F44B} ${b("Tap below to set up.")}`, "It takes about a minute."),
 
+  /** Somebody who backed out and is being offered the same beginning again. */
+  setupAgain: para(
+    `\u{1F44B} ${b("No problem, starting again.")}`,
+    "Tap below. It takes about a minute.",
+  ),
+
   /** The same, for somebody whose first message was an instruction. */
   setupFirst: para(
     "👋 Let us get you set up first, then I can do that.",
@@ -703,11 +709,37 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
   }
 
   if (CANCEL.test(text) && state.startsWith("onboarding")) {
+    /*
+     * Starting again means starting again.
+     *
+     * It used to answer with the first typed question, which is a different
+     * and worse beginning than the one a new number gets — the card, what
+     * this is for, and a button. Somebody who has just backed out of setup is
+     * exactly the person least sure about it, and handing them a bare
+     * question is the wrong half of the product to show.
+     *
+     * So: the same message, the same card, the same button. Only the words
+     * differ, and only to acknowledge that they asked.
+     */
     return {
-      replies: [para("No problem, we will start again.", VOICE.askBusinessName)],
-      next: "onboarding:business_name",
+      replies: [],
+      next: "onboarding:form",
       context: {},
-      effects: [],
+      effects: [
+        {
+          type: "send_flow",
+          key: "onboarding",
+          body: VOICE.setupAgain,
+          cta: "Set up Balans",
+          image: WELCOME_CARD,
+          // Without a form there is no card either, so the fallback is what
+          // this branch used to say on its own.
+          fallback: {
+            line: para("No problem, we will start again.", VOICE.askBusinessName),
+            holdAt: "onboarding:business_name",
+          },
+        },
+      ],
     };
   }
 
