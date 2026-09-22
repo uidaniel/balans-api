@@ -280,6 +280,24 @@ export async function summarise(
  * Drafts do not, because the limit is checked before the draft is shown and
  * counting the one being made would be off by one.
  */
+/**
+ * How many documents this user has ever actually sent.
+ *
+ * Used to stop offering something after the first couple of invoices. Drafts
+ * and cancelled documents do not count, because neither reached a client, and
+ * samples are ours rather than theirs.
+ */
+export async function documentsEverSent(userId: string): Promise<number> {
+  const { rows } = await db().query<{ n: string }>(
+    `SELECT COUNT(*) AS n FROM documents
+      WHERE user_id = $1
+        AND type <> 'sample'
+        AND status <> 'draft' AND status <> 'cancelled'`,
+    [userId],
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
 export async function documentsThisMonth(userId: string, today: Civil): Promise<number> {
   const from = formatISO({ ...today, d: 1 });
   const { rows } = await db().query<{ n: string }>(

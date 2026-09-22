@@ -39,7 +39,14 @@ import { confirmDraft, createDraft, discardDraft, getOpenDraft } from "../docume
 import { draftButtons, draftSummary, sentMessage } from "../documents/summary.ts";
 import { pickerUrlFor } from "../http/routes/templates.ts";
 import { clearLogo, saveLogo } from "../brand/user-logo.ts";
-import { debtors, documentsThisMonth, findDocument, planOf, summarise } from "../documents/queries.ts";
+import {
+  debtors,
+  documentsEverSent,
+  documentsThisMonth,
+  findDocument,
+  planOf,
+  summarise,
+} from "../documents/queries.ts";
 import {
   cancelledMessage,
   cannotCancelMessage,
@@ -71,6 +78,15 @@ import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from
 import { sendCta, sendFlow, sendList } from "../whatsapp/client.ts";
 import { mainMenuList } from "./menu.ts";
 import { flowId } from "../whatsapp/flows/register.ts";
+
+/**
+ * How many sent documents still carry the "pick a design" offer.
+ *
+ * Two, because the first invoice is a busy moment and the offer is easy to
+ * miss. Not more, because every one of them is a chargeable message asking
+ * again about something the user has already not acted on.
+ */
+const DESIGN_OFFER_LIMIT = 2;
 
 /**
  * The menu, tappable, with the typed one as its fallback.
@@ -873,16 +889,26 @@ async function runEffects(
           const pdf = await renderDocumentPdf(confirmed.id, log);
 
           /*
-           * The design picker, once.
+           * The design picker, once or twice and then never again.
            *
            * It used to ride on the note as a button, which was free because the
            * note was a message anyway. The note is now in the caption, so this
-           * is the only thing that would cost an extra send — and it is offered
-           * to somebody who has never chosen a design, which happens once in
-           * the life of an account. Afterwards `/design` is the way in.
+           * is the only thing that would cost an extra send.
+           *
+           * "Somebody who has never chosen a design" was the whole gate, and
+           * that is not once in the life of an account — it is every invoice
+           * they ever send, for anyone who sees the offer and is not
+           * interested. From October that is ₦14.50 each time to re-ask a
+           * question they have already declined, which on twenty invoices a
+           * month is ₦290 of being nagged.
+           *
+           * So: the first two, and then it stops. Two rather than one because
+           * the first invoice is a busy moment and the offer is easy to miss.
+           * After that `/design` is the way in, and it is on the menu.
            */
           const offerDesigns = async (): Promise<void> => {
             if (!ctx.phone || (await hasChosenTemplate(userId))) return;
+            if ((await documentsEverSent(userId)) > DESIGN_OFFER_LIMIT) return;
 
             const cta = await sendCta(ctx.phone, {
               body: "🎨 Want your invoices to look different? Pick a design.",
