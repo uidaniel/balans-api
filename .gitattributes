@@ -1,0 +1,19 @@
+# This repository is written on Windows and runs on Linux.
+#
+# Git converts line endings in the working copy, which is fine for source
+# files and fatal for shell scripts: a provision.sh checked out with CRLF
+# fails on the server with
+#
+#   /usr/bin/env: 'bash\r': No such file or directory
+#
+# which says nothing about line endings and costs an hour to work out. These
+# files are LF wherever they land.
+*.sh      text eol=lf
+Dockerfile text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+Caddyfile text eol=lf
+.env.example text eol=lf
+
+# Everything else: normalised in the repository, native in the working copy.
+* text=auto

@@ -1,0 +1,60 @@
+# Two containers: the API, and Caddy in front of it holding the certificates.
+#
+# Caddy rather than nginx because TLS here is the whole job and Caddy does it
+# without being told — it gets a certificate from Let's Encrypt on first boot
+# and renews it forever, which is one fewer thing to remember in December.
+#
+# The API is not published to the host at all. It listens on the compose
+# network and only Caddy can reach it, so there is no port on the public
+# internet serving plain HTTP by accident.
+
+name: balans
+
+services:
+  api:
+    build:
+      # The Dockerfile lives at the repo root; this file is one level down.
+      context: ..
+      dockerfile: Dockerfile
+    restart: always
+
+    # Outside the repository, so a `git pull` can never touch it and a stray
+    # `git add -A` can never stage it.
+    env_file:
+      - /opt/balans/.env
+
+    expose:
+      - "4000"
+
+    # Chrome is the memory risk here, not Node. On a 2GB box a runaway render
+    # would otherwise take the whole instance down with it, including Caddy,
+    # so the API is the thing that dies and restarts rather than the host.
+    mem_limit: 1400m
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      # Generous: the first check happens while the database pool is opening.
+      start_period: 40s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates live here. Losing this volume means re-issuing them, and
+      # Let's Encrypt rate-limits that, so it is a named volume rather than
+      # anything that gets cleaned up with the containers.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  caddy_data:
+  caddy_config:

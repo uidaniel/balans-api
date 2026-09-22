@@ -1,0 +1,41 @@
+# Both hostnames, because both are in use and missing one breaks payments.
+#
+#   api.balans.ng      the WhatsApp webhook Meta calls
+#   payment.balans.ng  PUBLIC_BASE_URL — the origin in every /i/{token} link
+#                      a client opens to pay
+#
+# Cloudflare sits in front of both. Set Cloudflare's SSL mode to Full (strict):
+# "Flexible" would make Cloudflare talk plain HTTP to this box, and Meta's
+# webhook signature is checked over a connection that must be the one it
+# thinks it is.
+
+{
+	# Let's Encrypt writes here if a certificate is about to expire and
+	# renewal is failing. It is the only warning you get.
+	email hello@balans.ng
+
+	# Caddy's own logs stay quiet; the API does the logging that matters.
+	log {
+		level ERROR
+	}
+}
+
+api.balans.ng, payment.balans.ng {
+	reverse_proxy api:4000 {
+		# Fastify runs with trustProxy, so it reads these for the real client
+		# IP rather than seeing Caddy's address on every request.
+		header_up X-Real-IP {remote_host}
+	}
+
+	encode gzip
+
+	# One line per request, kept for a week. Enough to answer "did Meta
+	# actually call us?" without filling a 2GB disk.
+	log {
+		output file /data/access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		format json
+	}
+}
