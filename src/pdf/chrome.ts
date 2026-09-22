@@ -77,6 +77,10 @@ async function launch(): Promise<Browser> {
       // Required where the API runs as root in a container, and harmless
       // otherwise: there is no untrusted code in these templates.
       "--no-sandbox",
+      // Containers get a 64MB /dev/shm by default, which Chrome runs out of
+      // part-way through a render — it dies with no useful error and the
+      // invoice never arrives. This moves those allocations to /tmp.
+      "--disable-dev-shm-usage",
       "about:blank",
     ],
     { stdio: "ignore" },

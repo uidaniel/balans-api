@@ -1,0 +1,30 @@
+# Nothing here belongs in an image.
+#
+# .env* most of all. The image is the one artefact that gets pushed to a
+# registry and pulled by a build system, and a secret baked into a layer stays
+# in that layer even after a later one deletes it.
+.env
+.env.*
+!.env.example
+
+node_modules
+npm-debug.log*
+
+.git
+.gitignore
+.github
+
+# Tests and their fixtures. They are not run from the image, and *.db.test.ts
+# would connect to a real database if anything ever did run them.
+**/*.test.ts
+**/__fixtures__
+
+# Local noise.
+*.md
+!README.md
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+coverage
+tmp
