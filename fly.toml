@@ -1,0 +1,52 @@
+# Fly.io.
+#
+# The reason to pick this over Render is one line: `primary_region = "dub"`.
+# Dublin is where the Supabase database lives, so a query is a hop inside one
+# city rather than a trip to Frankfurt and back — roughly 5ms against 25ms.
+#
+# Whether that matters is a judgement. A bot turn makes about four queries, so
+# it is ~80ms on a turn that already spends over a second inside Meta's API.
+# Real, measurable, and not the difference between a good product and a bad one.
+#
+# Kept alongside render.yaml deliberately. The binding constraint here is not
+# latency, it is which provider accepts a Nigerian prepaid card — and that is
+# not knowable in advance. Both configs exist so whichever takes the card wins
+# and nothing has to be rebuilt.
+
+app = "balans-api"
+primary_region = "dub"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  # No PORT is set anywhere, so the app falls back to config.ts's default.
+  # This number and that default have to agree.
+  internal_port = 4000
+  force_https = true
+
+  # The important pair.
+  #
+  # Fly stops idle machines by default, and the first request after that waits
+  # for a cold boot. This service answers WhatsApp webhooks, which arrive
+  # without warning and time out. A sleeping instance is a bot that is broken
+  # in a way nobody can see — worse than one that is obviously missing.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    # Long enough to open the database pool. Without the grace period Fly
+    # calls a booting process unhealthy and restarts it, forever.
+    grace_period = "30s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  # 1GB, for Chrome. The renderer holds a browser open between invoices, and
+  # 512MB is enough right up until a long invoice, at which point Chrome is
+  # killed mid-render and the PDF simply never arrives.
+  memory = "1gb"
