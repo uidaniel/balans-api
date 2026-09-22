@@ -309,3 +309,77 @@ export async function renewalsDue(): Promise<
     priceKobo: defaults.plans.pro.priceKobo,
   }));
 }
+
+/* -------------------------------------------------------------------------- */
+/* Paying for Pro directly (F18)                                              */
+/* -------------------------------------------------------------------------- */
+
+/** Remembers the reference a pay-link was opened under, so a webhook can find it. */
+export async function attachPaymentReference(
+  subscriptionId: string,
+  reference: string,
+): Promise<void> {
+  await db().query(
+    `UPDATE subscriptions SET payment_reference = $2 WHERE id = $1`,
+    [subscriptionId, reference],
+  );
+}
+
+export type SubscriptionPayment = {
+  userId: string;
+  subscriptionId: string;
+  priceKobo: number;
+  until: Date;
+};
+
+/**
+ * Turns a paid reference into an active month.
+ *
+ * Called only from the verified confirmation path, so by the time it runs
+ * Monnify has already been asked whether this reference was really paid.
+ *
+ * Idempotent by the same rule as everything else that moves money: the update
+ * only matches a subscription that is not already active, so a redelivered
+ * webhook finds nothing to do and returns null rather than granting a second
+ * month.
+ */
+export async function activateByReference(
+  reference: string,
+  paidKobo: number,
+  providerReference: string,
+  log: FastifyBaseLogger,
+): Promise<SubscriptionPayment | null> {
+  const { rows } = await db().query<{
+    id: string;
+    user_id: string;
+    price_kobo: number;
+    period_end: Date;
+  }>(
+    `UPDATE subscriptions
+        SET status = 'active',
+            amount_collected_kobo = $2,
+            provider_reference = $3,
+            paid_at = now()
+      WHERE payment_reference = $1
+        AND status IN ('pending', 'collecting')
+      RETURNING id, user_id, price_kobo, period_end`,
+    [reference, paidKobo, providerReference],
+  );
+
+  const sub = rows[0];
+  if (!sub) return null;
+
+  await db().query(`UPDATE users SET plan = 'pro' WHERE id = $1`, [sub.user_id]);
+
+  log.warn(
+    { userId: sub.user_id, subscriptionId: sub.id, paidKobo, until: sub.period_end },
+    "pro activated by payment",
+  );
+
+  return {
+    userId: sub.user_id,
+    subscriptionId: sub.id,
+    priceKobo: sub.price_kobo,
+    until: sub.period_end,
+  };
+}

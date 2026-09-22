@@ -17,26 +17,28 @@ const pro = defaults.plans.pro;
 
 export function proOffer(used: number): string {
   /*
-   * Ticks rather than bullets, and U+2713 rather than the heavy one.
+   * Ticks rather than bullets.
    *
-   * The heavy tick and its emoji presentation form are both pictographic, and
-   * five of them would put six emoji in a message whose budget is one. This
-   * one is a plain symbol: it reads as a list marker, which is what it is.
+   * This is the one message with a budget for more than a single emoji. Every
+   * other message gets one opener and no more, because varied emoji stop
+   * meaning anything; a repeated marker is different in kind — it is
+   * structure, uniform down the list, and it reads as a tick rather than as
+   * decoration. `voice.test.ts` allows exactly that and nothing looser.
    */
   return para(
     `⭐ ${b("Balans Pro")} — ${b(formatNaira(pro.priceKobo))} a month.`,
     lines(
-      `✓ Unlimited invoices (Free stops at ${free.documentsPerMonth}; you have used ${used})`,
+      `✅ Unlimited invoices (Free stops at ${free.documentsPerMonth}; you have used ${used})`,
       // Stated as the absence of a thing, not as a smaller number. "0.5%
       // instead of 1%" is an argument somebody has to do arithmetic to
       // believe; "no fee" is a fact they can check on the next invoice.
       pro.feePercentBps === 0
-        ? `✓ ${b("No transaction fee")} — Free pays ${free.feePercentBps / 100}%`
-        : `✓ ${pro.feePercentBps / 100}% transaction fee instead of ${free.feePercentBps / 100}%`,
-      `✓ Automatic reminders, so you stop chasing`,
-      `✓ Your logo on every invoice`,
+        ? `✅ ${b("No transaction fee")} — Free pays ${free.feePercentBps / 100}%`
+        : `✅ ${pro.feePercentBps / 100}% transaction fee instead of ${free.feePercentBps / 100}%`,
+      `✅ Automatic reminders, so you stop chasing`,
+      `✅ Your logo on every invoice`,
       // Counted from the registry, so the claim cannot outlive the designs.
-      `✓ All ${availableTo("pro").length} invoice designs`,
+      `✅ All ${availableTo("pro").length} invoice designs`,
     ),
     // One action, named plainly. The deduction is offered underneath rather
     // than beside it, so there is a thing to do and then an alternative —
@@ -94,8 +96,11 @@ export function proStarted(): string {
   return para(
     `🎉 ${b("Pro is active.")}`,
     lines(
-      "Unlimited invoices, a lower fee, and reminders that go out on their own.",
-      `Reply ${b("settings")} to add your logo.`,
+      pro.feePercentBps === 0
+        ? "Unlimited invoices, no transaction fee, and reminders that go out on their own."
+        : "Unlimited invoices, a lower fee, and reminders that go out on their own.",
+      "Send me your logo as a picture and it goes on every invoice from the next one.",
+      `Reply ${b("/design")} to pick how they look.`,
     ),
   );
 }

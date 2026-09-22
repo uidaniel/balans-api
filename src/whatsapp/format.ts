@@ -10,15 +10,19 @@
  * values and actions — the thing to check, and the thing to do — and never a
  * whole sentence of explanation.
  *
- * Emoji follow the same logic, with a budget of exactly one: every message
- * opens with one, no message carries a second, and it is chosen for what that
- * message is rather than decoration. A thread of fifteen messages is then
- * scannable at a glance — the receipt, the warning, the one that means money
- * arrived — because the first character of each says which it is.
+ * Emoji follow the same logic: every message opens with one, chosen for what
+ * that message is rather than for decoration. A thread of fifteen messages is
+ * then scannable at a glance — the receipt, the warning, the one that means
+ * money arrived — because the first character of each says which it is.
  *
- * One per message is the whole discipline. A tick on every line inside a
- * message is the same failure as bold on every line: it stops meaning
- * anything, and the one place it mattered no longer stands out.
+ * What ruins that is variety, not quantity. Five different pictures in one
+ * message and the eye has nothing to catch on. A single character repeated
+ * down a list is the exception, because it is structure rather than emphasis:
+ * a tick against each thing a plan includes reads as a list, and every line
+ * carries the same weight because they are the same mark.
+ *
+ * So: one opener, and at most one marker repeated. Anything past that is the
+ * same failure as bold on every line. `voice.test.ts` enforces it.
  */
 
 /** Bold. WhatsApp uses single asterisks, unlike Markdown's double. */

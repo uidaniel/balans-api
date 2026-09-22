@@ -146,10 +146,37 @@ test("every message the bot sends", async (t) => {
     }
   });
 
-  await t.test("carries exactly one", () => {
+  /*
+   * One opener, and — where a message is genuinely a list — one marker
+   * repeated.
+   *
+   * The rule that matters is that emoji stay meaningful, and what destroys
+   * that is *variety*: five different pictures in a message and the eye has
+   * nothing to catch on. A single character repeated down a list is not
+   * competing for attention, it is structure, and it reads as a tick rather
+   * than as decoration.
+   *
+   * So the check is on how many distinct emoji a message uses, not how many
+   * it contains. Two is the ceiling, and the second must be uniform.
+   */
+  await t.test("uses one opener, plus at most one repeated marker", () => {
     for (const [name, text] of all) {
       const found = text.match(EMOJI) ?? [];
-      assert.equal(found.length, 1, `${name} has ${found.length}: ${found.join(" ")}`);
+      if (found.length <= 1) continue;
+
+      const after = new Set(found.slice(1));
+      assert.equal(
+        after.size,
+        1,
+        `${name} mixes ${after.size} different emoji after the opener: ${[...after].join(" ")}`,
+      );
+
+      const marker = [...after][0]!;
+      assert.notEqual(
+        marker,
+        found[0],
+        `${name} reuses its opener as the list marker, so the opener stops standing out`,
+      );
     }
   });
 

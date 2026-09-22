@@ -18,7 +18,7 @@ import { env, require_ } from "../../config.ts";
 import { db } from "../../db/pool.ts";
 import { verifyMonnifySignature } from "../../lib/crypto.ts";
 import { confirmPayment } from "../../payments/confirm.ts";
-import { notifyPaid } from "../../payments/notify.ts";
+import { notifyPaid, notifyProActive } from "../../payments/notify.ts";
 import { reversePayment } from "../../payments/refund.ts";
 
 /** The part of Monnify's payload we act on. All of it is stored regardless. */
@@ -160,6 +160,12 @@ export async function monnifyRoutes(app: FastifyInstance): Promise<void> {
         // Not awaited: the money is recorded, and a WhatsApp outage must not
         // make Monnify retry a payment that is already applied.
         void notifyPaid(outcome, req.log);
+        return reply.send({ ok: true });
+
+      case "pro_activated":
+        // Somebody paid for Pro rather than an invoice. Same rule as above:
+        // the subscription is already active, so telling them is best effort.
+        void notifyProActive(outcome.userId, outcome.until, req.log);
         return reply.send({ ok: true });
 
       case "unverifiable":

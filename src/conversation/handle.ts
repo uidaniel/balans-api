@@ -62,7 +62,7 @@ import {
   CHANGE_DELAY_HOURS,
 } from "../settings/bank-change.ts";
 import { raiseSecurityAlert } from "../settings/alerts.ts";
-import { openSubscription, stateOf } from "../billing/subscription.ts";
+import { attachPaymentReference, openSubscription, stateOf } from "../billing/subscription.ts";
 import { deductChosen, payLinkMessage, proActive, proOffer } from "../billing/messages.ts";
 import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
 import { sendCta, sendList } from "../whatsapp/client.ts";
@@ -1078,8 +1078,12 @@ async function runEffects(
             break;
           }
 
+          // Without this the webhook has nothing to match the payment to, and
+          // a paid subscription stays pending forever.
+          await attachPaymentReference(opened.id, reference);
           await db().query(
             `UPDATE subscriptions SET status = 'pending' WHERE id = $1`, [opened.id]);
+
           extra.push(payLinkMessage(init.checkoutUrl));
           break;
         }

@@ -15,6 +15,7 @@ import { db } from "../db/pool.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { send } from "../whatsapp/outbound.ts";
 import { renderReceiptPdf } from "../documents/pdf.ts";
+import { proStarted } from "../billing/messages.ts";
 import { b, block, lines, para, row } from "../whatsapp/format.ts";
 
 export type PaidNotice = {
@@ -119,4 +120,48 @@ export async function notifyPaid(n: PaidNotice, log: FastifyBaseLogger): Promise
     { userId: n.userId, documentNumber: n.documentNumber, outcome: outcome.kind },
     "payment notice",
   );
+}
+
+/**
+ * Telling somebody their Pro payment landed (F18).
+ *
+ * Separate from `notifyPaid` because nothing about it is an invoice: there is
+ * no client, no document and no receipt to attach. What matters is that the
+ * subscription is already active by the time this runs — the message is the
+ * courtesy, not the mechanism, so a WhatsApp failure here costs a message and
+ * never a month somebody paid for.
+ */
+export async function notifyProActive(
+  userId: string,
+  until: Date,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  const { rows } = await db()
+    .query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [userId])
+    .catch(() => ({ rows: [] as { wa_phone: string }[] }));
+
+  const phone = rows[0]?.wa_phone;
+  if (!phone) {
+    log.error({ userId }, "pro activated, but the user has no number on file");
+    return;
+  }
+
+  const outcome = await send(
+    {
+      userId,
+      phone,
+      text: proStarted(),
+      // Outside the window this is worth a template: somebody who has just
+      // parted with ₦4,000 should not wait a day to hear it worked.
+      fallback: {
+        template: "pro_renewal",
+        params: [until.toLocaleDateString("en-GB", { day: "numeric", month: "long" })],
+      },
+    },
+    log,
+  );
+
+  if (outcome.kind === "failed") {
+    log.error({ userId, reason: outcome.reason }, "could not confirm Pro activation");
+  }
 }

@@ -21,13 +21,15 @@
 import type { FastifyBaseLogger } from "fastify";
 import { db, tx } from "../db/pool.ts";
 import { verifyTransaction, type VerifiedTransaction } from "./monnify.ts";
-import { collect, deductionFor, stateOf } from "../billing/subscription.ts";
+import { activateByReference, collect, deductionFor, stateOf } from "../billing/subscription.ts";
 import { settleParts } from "../documents/parts.ts";
 
 export type ConfirmOutcome =
   /** Already done. A retry, and the right answer is to do nothing. */
   | { kind: "already_confirmed"; reference: string }
   | { kind: "unknown_reference"; reference: string }
+  /** Somebody paid for Pro rather than an invoice (F18). */
+  | { kind: "pro_activated"; reference: string; userId: string; until: Date }
   /** Verified and applied. Everything needed to tell the user. */
   | {
       kind: "confirmed";
@@ -54,6 +56,78 @@ export type ConfirmOutcome =
 
 /** The states in which Monnify says money actually arrived. */
 const PAID_STATES = new Set(["PAID", "OVERPAID"]);
+
+/**
+ * A payment that turned out to be for Pro, not for an invoice.
+ *
+ * Verified against Monnify first, exactly as an invoice payment is — this
+ * runs on a signed webhook, but a signature says the message came from them,
+ * not that the money arrived. Nothing here trusts the amount in the event.
+ *
+ * Returns null when the reference is not a subscription at all, so the caller
+ * can go on to report it as unknown.
+ */
+async function confirmSubscription(
+  reference: string,
+  transactionReference: string,
+  verify: typeof verifyTransaction,
+  log: FastifyBaseLogger,
+): Promise<ConfirmOutcome | null> {
+  const { rows } = await db().query<{ id: string; price_kobo: string; status: string }>(
+    `SELECT id, price_kobo, status FROM subscriptions WHERE payment_reference = $1`,
+    [reference],
+  );
+  const sub = rows[0];
+  if (!sub) return null;
+
+  if (sub.status === "active") return { kind: "already_confirmed", reference };
+
+  const checked = await verify(transactionReference);
+  if (!checked.ok) {
+    log.error({ reference, message: checked.message }, "could not verify a Pro payment");
+    return { kind: "unverifiable", reference, why: checked.message };
+  }
+
+  const t = checked.transaction;
+  if (!PAID_STATES.has(t.paymentStatus)) {
+    log.info({ reference, status: t.paymentStatus }, "Pro payment not paid");
+    return { kind: "not_paid", reference, status: t.paymentStatus };
+  }
+
+  /*
+   * Underpayment does not buy a month.
+   *
+   * A transfer is typed by hand, so ₦400 instead of ₦4,000 is a real
+   * outcome. Activating on it would give away eleven months of Pro, and
+   * refusing quietly is better than that — the payment is recorded against
+   * the subscription either way, so support can see what arrived.
+   */
+  const price = Number(sub.price_kobo);
+  if (t.amountPaidKobo < price) {
+    log.warn(
+      { reference, paidKobo: t.amountPaidKobo, priceKobo: price },
+      "Pro payment short; not activating",
+    );
+    return { kind: "not_paid", reference, status: "UNDERPAID" };
+  }
+
+  const activated = await activateByReference(
+    reference,
+    t.amountPaidKobo,
+    t.transactionReference,
+    log,
+  );
+
+  // Lost the race to a redelivery that got here first.
+  if (!activated) return { kind: "already_confirmed", reference };
+
+  return {
+    kind: "pro_activated",
+    reference,
+    userId: activated.userId,
+    until: activated.until,
+  };
+}
 
 /**
  * States where the attempt is over and no money came.
@@ -87,9 +161,23 @@ export async function confirmPayment(
 
   const payment = existing.rows[0];
 
-  // A reference we never issued. Not an error on our side, and not something
-  // to act on: somebody else's event, or a probe.
-  if (!payment) return { kind: "unknown_reference", reference };
+  /*
+   * No invoice payment under this reference. It may still be ours.
+   *
+   * Somebody paying for Pro is not paying an invoice: there is no document,
+   * no client and no split, so nothing is written to `payments` and the
+   * reference lives on the subscription instead. Until this branch existed
+   * those payments fell through to `unknown_reference` — the money arrived
+   * and the subscription stayed pending.
+   */
+  if (!payment) {
+    const activated = await confirmSubscription(reference, input.transactionReference, verify, log);
+    if (activated) return activated;
+
+    // A reference we never issued. Not an error on our side, and not
+    // something to act on: somebody else's event, or a probe.
+    return { kind: "unknown_reference", reference };
+  }
 
   // Rule 3, checked before any work: a retry costs one query and stops here.
   if (payment.status === "success") return { kind: "already_confirmed", reference };
