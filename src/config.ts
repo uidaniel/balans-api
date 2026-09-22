@@ -190,6 +190,14 @@ export const defaults = {
     quietHoursStart: 20,
     quietHoursEnd: 8,
     timezone: "Africa/Lagos",
+    /**
+     * The hour in Lagos that Monnify's daily payout run goes out.
+     *
+     * Configurable because it is a claim about somebody else's schedule. It
+     * decides whether a payment notification says "tonight" or "tomorrow
+     * night", which is a promise about the reader's own money.
+     */
+    settlementHour: 22,
     /** Parser text is purged after this many days (section 10). */
     parserTextRetentionDays: 30,
     /** A conversation returns to idle after this long without a message. */

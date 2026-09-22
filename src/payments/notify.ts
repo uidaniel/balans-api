@@ -17,6 +17,7 @@ import { send } from "../whatsapp/outbound.ts";
 import { renderReceiptPdf } from "../documents/pdf.ts";
 import { proStarted } from "../billing/messages.ts";
 import { b, block, lines, para, row } from "../whatsapp/format.ts";
+import { arrivalLine } from "./settlement.ts";
 
 export type PaidNotice = {
   userId: string;
@@ -42,7 +43,7 @@ const METHOD: Record<string, string> = {
   CASH: "cash",
 };
 
-export function paidMessage(n: PaidNotice): string {
+export function paidMessage(n: PaidNotice, at: Date = new Date()): string {
   const label = n.documentType === "quote" ? "Quote" : "Invoice";
   const which = n.documentNumber === null ? label : `${label} ${b(`#${n.documentNumber}`)}`;
   const how = n.method ? METHOD[n.method] ?? n.method.toLowerCase().replace(/_/g, " ") : null;
@@ -55,7 +56,7 @@ export function paidMessage(n: PaidNotice): string {
         row(label, n.documentNumber === null ? "—" : `#${n.documentNumber}`),
         how && row("Method", how.charAt(0).toUpperCase() + how.slice(1)),
       ]),
-      "It is on its way to your bank.",
+      arrivalLine(at),
     );
   }
 
@@ -68,7 +69,7 @@ export function paidMessage(n: PaidNotice): string {
       row(label, n.documentNumber === null ? "—" : `#${n.documentNumber}`),
       how && row("Method", how.charAt(0).toUpperCase() + how.slice(1)),
     ]),
-    "It is on its way to your bank.",
+    arrivalLine(at),
   );
 }
 

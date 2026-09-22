@@ -74,12 +74,28 @@ describe("the message that says you got paid", () => {
     assert.doesNotMatch(m, /PAID/);
   });
 
-  it("does not promise a bank transfer that has not happened", () => {
-    // Settlement is on the processor's schedule, not ours, so the wording is
-    // "on its way" rather than a time we cannot keep.
-    const m = paidMessage(notice());
-    assert.match(m, /on its way/i);
-    assert.doesNotMatch(m, /instantly|immediately|within \d/i);
+  it("names the night the money lands, and never sooner", () => {
+    /*
+     * This used to say "on its way", deliberately vague because the
+     * settlement schedule was unknown. It is known now — Monnify runs once a
+     * day at 22:00 Lagos — so the message names a night instead.
+     *
+     * The time is passed in rather than read from the clock: a test whose
+     * result depends on when it runs would pass all afternoon and fail at
+     * eleven at night.
+     */
+    const lagos = (hour: number) => new Date(Date.UTC(2026, 8, 22, hour - 1, 0));
+
+    const before = paidMessage(notice(), lagos(15));
+    assert.match(before, /arrives in your bank tonight/i);
+
+    const after = paidMessage(notice(), lagos(23));
+    assert.match(after, /arrives in your bank tomorrow night/i);
+
+    // Still nothing that claims the money is already there.
+    for (const m of [before, after]) {
+      assert.doesNotMatch(m, /instantly|immediately|within \d/i);
+    }
   });
 });
 
