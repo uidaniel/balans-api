@@ -1554,18 +1554,52 @@ const forget = (ctx: Context): Context => {
 /* Steps                                                                      */
 /* -------------------------------------------------------------------------- */
 
+/*
+ * Things that are certainly not a business name.
+ *
+ * Deliberately mechanical, and deliberately short. The temptation is to ask a
+ * model whether something "looks like" a business name, and that trades a bug
+ * you can reason about for one you cannot: it would refuse "Xo", "MOTX",
+ * "9ja Prints", or any Yoruba, Igbo or Hausa name it has not seen, and the
+ * person on the other end has no way to argue with it. In Nigeria that is
+ * exactly where a model is weakest.
+ *
+ * The asymmetry decides it. A wrong name that got through is fixed in
+ * /settings in ten seconds. A right name that was refused is somebody who
+ * cannot finish signing up.
+ *
+ * So only what cannot be anybody's name, and each one says which it was —
+ * "that looks like an email address" tells somebody what to do next, where
+ * "that does not look like a business name" tells them nothing.
+ *
+ * Note what is absent: a rule about digits. "9ja Prints", "247 Logistics" and
+ * "Studio 54" are all real, and the letters rule already catches a bare phone
+ * number, because a phone number has none.
+ */
+const NOT_A_NAME: { test: RegExp; why: string }[] = [
+  { test: /^\S+@\S+\.\S+$/, why: "That looks like an email address." },
+  { test: /^(?:https?:\/\/|www\.)/i, why: "That looks like a web address." },
+  // Last, so the two above get to name themselves first.
+  { test: /^\P{L}+$/u, why: "A name needs at least one letter in it." },
+];
+
 function takeBusinessName(text: string, ctx: Context, msg: Inbound): Step {
   const name = text.replace(/\s+/g, " ").trim();
 
   // A slash command is never a business name. `step` refuses these before
   // they reach here; this is the field that was actually corrupted by one, so
   // it does not take that on trust.
-  if (name.length < 2 || name.length > 80 || name.startsWith("/")) {
+  const wrong =
+    name.length < 2 || name.length > 80 || name.startsWith("/")
+      ? "That does not look like a business name."
+      : NOT_A_NAME.find((r) => r.test.test(name))?.why;
+
+  if (wrong) {
     return retry(
       "onboarding:business_name",
       ctx,
       lines(
-        "That does not look like a business name.",
+        wrong,
         `Send the name your clients would recognise — like ${b("Kemi Adeyemi Studio")}.`,
       ),
     );

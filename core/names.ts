@@ -32,14 +32,24 @@ export function titleCaseName(raw: string): string {
   return words
     .map((word, i) => {
       // Already has a capital somewhere: their choice, not ours to change.
-      if (/[A-Z]/.test(word)) return word;
+      //
+      // \p{Lu} rather than A-Z. "Àkàndé" has no A-Z capital, so the ASCII
+      // test read it as something a keyboard had produced and lower-cased it
+      // to "àkàndé" — on an invoice, for a name somebody had typed correctly.
+      if (/\p{Lu}/u.test(word)) return word;
 
       const lower = word.toLowerCase();
       if (i > 0 && MINOR.has(lower)) return lower;
 
       // Capitalise after an apostrophe or a hyphen too: "o'brien" is
       // "O'Brien" and "ada-obi" is "Ada-Obi".
-      return lower.replace(/(^|[''’-])([a-z])/g, (_, sep: string, c: string) => sep + c.toUpperCase());
+      //
+      // \p{Ll} for the same reason: an ASCII class does not match "à" or "ọ",
+      // so those names came back with a lower-case first letter.
+      return lower.replace(
+        /(^|[''’-])(\p{Ll})/gu,
+        (_, sep: string, c: string) => sep + c.toUpperCase(),
+      );
     })
     .join(" ");
 }

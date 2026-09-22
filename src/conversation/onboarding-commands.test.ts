@@ -123,3 +123,81 @@ describe("slash commands during setup", () => {
     assert.doesNotMatch(out.replies.join(" "), /once you are set up/i);
   });
 });
+
+describe("what counts as a business name", () => {
+  const nameFrom = (text: string) => say("onboarding:business_name", text).context.businessName;
+  const refusal = (text: string) => say("onboarding:business_name", text).replies.join(" ");
+
+  /*
+   * The half that matters more.
+   *
+   * A wrong name that got through is fixed in /settings in ten seconds. A
+   * right name that was refused is somebody who cannot finish signing up —
+   * so every one of these has to pass, and the short, the accented and the
+   * digit-leading ones are exactly where a "does this look like a business?"
+   * check would go wrong.
+   */
+  for (const name of [
+    "Kemi Adeyemi Studio",
+    "Xo",
+    "MOTX",
+    "9ja Prints",
+    "247 Logistics",
+    "Studio 54",
+    "Chukwuemeka",
+    "D",  // too short on its own, but see below
+  ].slice(0, -1)) {
+    it(`accepts ${JSON.stringify(name)}`, () => {
+      assert.equal(nameFrom(name), name, `${name} was refused`);
+    });
+  }
+
+  it("refuses an email address, and says so", () => {
+    // Pasted into the wrong field, which is the only way it gets here.
+    assert.equal(nameFrom("danny@balans.ng"), undefined);
+    assert.match(refusal("danny@balans.ng"), /email address/i);
+  });
+
+  it("refuses a web address, and says so", () => {
+    for (const url of ["https://balans.ng", "www.balans.ng"]) {
+      assert.equal(nameFrom(url), undefined, `${url} was accepted`);
+      assert.match(refusal(url), /web address/i);
+    }
+  });
+
+  it("refuses something with no letters in it at all", () => {
+    // This is what catches a phone number: a phone number has no letters.
+    for (const text of ["08012345678", "+234 801 234 5678", "12345", "???", "..."]) {
+      assert.equal(nameFrom(text), undefined, `${text} was accepted`);
+      assert.match(refusal(text), /at least one letter/i);
+    }
+  });
+
+  it("keeps a name's own accents and capitals", () => {
+    /*
+     * `titleCaseName` tested for "already capitalised" with /[A-Z]/, which
+     * does not match "À" — so an accented name looked like something a phone
+     * keyboard had produced and was lower-cased, on an invoice, for a name
+     * somebody had typed correctly. Yoruba and Igbo names are exactly the
+     * ones that hit it.
+     */
+    assert.equal(nameFrom("Àkàndé & Sons"), "Àkàndé & Sons");
+    assert.equal(nameFrom("àkàndé & sons"), "Àkàndé & Sons", "and it still capitalises");
+    assert.equal(nameFrom("ọlá studios"), "Ọlá Studios");
+    assert.equal(nameFrom("MTN"), "MTN", "deliberate capitals survive");
+  });
+
+  it("has no rule about digits, deliberately", () => {
+    // "9ja Prints" and "247 Logistics" are real, and a bare phone number is
+    // already caught by needing a letter. A digits rule would only cost.
+    assert.equal(nameFrom("9ja Prints"), "9ja Prints");
+    assert.equal(nameFrom("247 Logistics"), "247 Logistics");
+  });
+
+  it("still refuses one character and eighty-one", () => {
+    assert.equal(nameFrom("D"), undefined);
+    assert.equal(nameFrom("x".repeat(81)), undefined);
+    // Accepted, and title-cased on the way in like every other name.
+    assert.equal(nameFrom("x".repeat(80)), "X" + "x".repeat(79));
+  });
+});
