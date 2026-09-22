@@ -396,6 +396,9 @@ export const VOICE = {
     "Type it like a text, or tap below.",
   ),
 
+  /** Refusing a command that has nothing to work with yet. */
+  setupBeforeCommands: `\u{1F512} ${b("That one works once you are set up.")}`,
+
   /**
    * Under the cheat sheet, which is the message.
    *
@@ -667,6 +670,35 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       next: state,
       context,
       effects: [{ type: "show_help", fallback: VOICE.helpIdle }],
+    };
+  }
+
+  /*
+   * A slash command, mid-setup.
+   *
+   * "/pro" was taken as a business name and saved — the account came out
+   * called "/pro", because the question asked for a name and the answer was
+   * eighty characters or fewer, which was the whole of the check.
+   *
+   * Nothing behind these commands works yet anyway: there is no bank to be
+   * paid into, no plan to upgrade, nothing owed. So they are refused with the
+   * question repeated, rather than swallowed as an answer to it.
+   *
+   * Only the slash form. Somebody's business really could be called Pro, and
+   * at this exact moment they are being asked for its name — so a bare word
+   * is an answer and a slashed one is a command. The leading slash is the
+   * only thing that tells them apart, which is why `takeBusinessName` refuses
+   * it too rather than trusting this.
+   *
+   * After HELP, so "/help" still explains the question on screen, and after
+   * CANCEL, so somebody can still get out.
+   */
+  if (state.startsWith("onboarding") && text.trim().startsWith("/")) {
+    return {
+      replies: [para(VOICE.setupBeforeCommands, onboardingHelp(state))],
+      next: state,
+      context,
+      effects: [],
     };
   }
 
@@ -1525,7 +1557,10 @@ const forget = (ctx: Context): Context => {
 function takeBusinessName(text: string, ctx: Context, msg: Inbound): Step {
   const name = text.replace(/\s+/g, " ").trim();
 
-  if (name.length < 2 || name.length > 80) {
+  // A slash command is never a business name. `step` refuses these before
+  // they reach here; this is the field that was actually corrupted by one, so
+  // it does not take that on trust.
+  if (name.length < 2 || name.length > 80 || name.startsWith("/")) {
     return retry(
       "onboarding:business_name",
       ctx,
