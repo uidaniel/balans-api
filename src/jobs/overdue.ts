@@ -18,7 +18,7 @@ import { db } from "../db/pool.ts";
 import { defaults, env } from "../config.ts";
 import { formatFriendly, formatISO, todayIn, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { b, i, lines, para } from "../whatsapp/format.ts";
+import { b, block, lines, para, row, rule } from "../whatsapp/format.ts";
 import { send } from "../whatsapp/outbound.ts";
 import { sendMonthlySummaries } from "./monthly-summary.ts";
 import { sweepStaleDrafts } from "../documents/store.ts";
@@ -258,19 +258,40 @@ export function promptMessage(x: {
   today: Civil;
   link: string | null;
 }): string {
-  const which = x.number === null ? "the invoice" : `Invoice ${b(`#${x.number}`)}`;
+  const which = x.number === null ? "INVOICE" : `INVOICE #${x.number}`;
   const when = formatFriendly(x.due, x.today);
 
-  const forward = lines(
-    `Hi ${x.clientName}, just a note that ${x.businessName === "us" ? "our" : `${x.businessName}'s`} invoice for ${formatNaira(x.owedKobo)} was due ${when}.`,
-    x.link ? `You can pay here: ${x.link}` : "",
+  /*
+   * The part meant for the client, kept plain.
+   *
+   * It used to be wrapped in italics to mark it as a quotation. WhatsApp only
+   * italicises within a line, so five lines wrapped in underscores showed the
+   * underscores — "_Hi Joshua Uwak," at the top and "Thank you._" at the
+   * bottom, exactly as typed. Rules above and below do the same job and
+   * survive a line break.
+   *
+   * No possessive either. "Daniel Adventures's invoice" is what a naive
+   * apostrophe-s does to a name already ending in s, and it goes to somebody
+   * else's client.
+   */
+  // "us" is the fallback when the user never named their business. "the
+  // invoice from us" reads like a ransom note, so drop the clause entirely.
+  const from = x.businessName === "us" ? "" : ` from ${x.businessName}`;
+
+  const forward = para(
+    `Hi ${x.clientName} — a quick note that the invoice${from} for ${formatNaira(x.owedKobo)} was due ${when}.`,
+    x.link ? `Pay here: ${x.link}` : "",
     "Thank you.",
   );
 
   return para(
-    `⏰ ${which} — ${b(formatNaira(x.owedKobo))} from ${x.clientName} was due ${when}.`,
-    lines("Forward this to them if you like:", i(forward)),
-    `Reply ${b("stop reminders")} to turn these off for this invoice.`,
+    block(`⏰ ${b(`${which} IS LATE`)}`, [
+      row("Client", x.clientName),
+      row("Amount", b(formatNaira(x.owedKobo))),
+      row("Was due", when),
+    ]),
+    lines(`${b("Send them this")} \u2014 copy from the line below:`, rule(), forward, rule()),
+    `Or reply ${b("stop reminders")} to turn these off for this invoice.`,
   );
 }
 

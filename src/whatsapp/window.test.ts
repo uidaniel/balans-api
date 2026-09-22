@@ -135,7 +135,7 @@ describe("the reminder prompt", () => {
   });
 
   it("includes something ready to forward, with the link in it", () => {
-    assert.match(prompt, /Forward this/i);
+    assert.match(prompt, /Send them this/i);
     assert.match(prompt, /https:\/\/balans\.ng\/i\/abc/);
   });
 
