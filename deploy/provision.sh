@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 #
-# One-time setup for a fresh Ubuntu 24.04 (arm64) EC2 instance in eu-west-1.
+# One-time setup for a fresh Ubuntu LTS (arm64) EC2 instance in eu-west-1.
+#
+# Tested against the 24.04 and 26.04 images. Docker publishes per release and
+# is sometimes behind, so the install checks and falls back rather than dying
+# on a 404 about a codename.
 #
 # Run it once, as ubuntu, on a box that has nothing on it:
 #
@@ -53,11 +57,41 @@ if ! command -v docker >/dev/null 2>&1; then
   sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
   sudo chmod a+r /etc/apt/keyrings/docker.asc
 
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  # Docker publishes per Ubuntu release, and a release can be out for months
+  # before they do. On 26.04 that would fail at `apt-get update` with a 404
+  # about a codename — which reads like a broken script rather than a missing
+  # upstream package, and is the wrong thing to be debugging at this point.
+  #
+  # So: ask whether the repository actually has this release, and fall back to
+  # the previous LTS if not. Docker's packages for 24.04 run fine on a newer
+  # Ubuntu; the dependencies are the same.
+  CODENAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+
+  if ! curl -fsS --head "https://download.docker.com/linux/ubuntu/dists/$CODENAME/Release" >/dev/null 2>&1; then
+    say "Docker has no packages for $CODENAME yet; using the noble (24.04) repository"
+    CODENAME="noble"
+  fi
+
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $CODENAME stable" \
     | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
 
-  sudo apt-get update -qq
-  sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  # A last resort rather than a preference. Ubuntu's own docker.io is older and
+  # ships no compose plugin, so it is what stands between a new Ubuntu and a
+  # dead end — not something to land on quietly.
+  if ! sudo apt-get update -qq \
+     || ! sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then
+    say "Docker's own repository did not work; falling back to Ubuntu's packages"
+    sudo rm -f /etc/apt/sources.list.d/docker.list
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq docker.io docker-compose-v2
+  fi
+
+  # Whatever route got us here, compose has to exist — everything below is
+  # `docker compose`, and the older `docker-compose` is a different command.
+  if ! docker compose version >/dev/null 2>&1; then
+    echo "docker compose is not available after install; cannot continue" >&2
+    exit 1
+  fi
 
   sudo usermod -aG docker "$USER"
   sudo systemctl enable --now docker
