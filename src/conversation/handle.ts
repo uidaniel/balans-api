@@ -1551,9 +1551,29 @@ async function handleDetailsForm(
   }
 
   await setBusinessName(userId, businessName);
+
+  /*
+   * The starting number is clamped rather than refused.
+   *
+   * It is one optional field on a form about something else, and rejecting the
+   * whole submission over it would throw away a business name and an address
+   * somebody had just typed. Out of range it falls back to what is already
+   * stored, which for almost everybody is 1.
+   *
+   * Lowering it is allowed and simply does nothing: allocation takes the
+   * greater of this and the next free number, so nothing can repeat.
+   */
+  const wanted = Number((fields.invoice_start ?? "").toString().replace(/\D/g, ""));
+  const invoiceStart =
+    Number.isInteger(wanted) && wanted >= 1 && wanted <= 2_000_000_000 ? wanted : null;
+
   await db().query(
-    `UPDATE users SET address = NULLIF($2, ''), tin = NULLIF($3, '') WHERE id = $1`,
-    [userId, address, tin],
+    `UPDATE users
+        SET address = NULLIF($2, ''),
+            tin = NULLIF($3, ''),
+            invoice_number_start = COALESCE($4, invoice_number_start)
+      WHERE id = $1`,
+    [userId, address, tin, invoiceStart],
   );
 
   const { rows } = await db().query<{ email: string | null }>(
@@ -1571,6 +1591,7 @@ async function handleDetailsForm(
         row("Business", businessName),
         address ? row("Address", address) : false,
         tin ? row("TIN", tin) : false,
+        invoiceStart && invoiceStart > 1 ? row("Next invoice", `#${invoiceStart}`) : false,
       ),
     ),
   ];
@@ -1826,13 +1847,17 @@ async function flagSetupForReview(
  * Every value is a string because Flow JSON has no null: a field with nothing
  * in it is an empty one, not a missing one.
  */
-async function detailsFor(userId: string): Promise<Record<string, string>> {
+async function detailsFor(userId: string): Promise<Record<string, string | number>> {
   const { rows } = await db().query<{
     business_name: string | null;
     email: string | null;
     address: string | null;
     tin: string | null;
-  }>(`SELECT business_name, email, address, tin FROM users WHERE id = $1`, [userId]);
+    invoice_number_start: number;
+  }>(
+    `SELECT business_name, email, address, tin, invoice_number_start FROM users WHERE id = $1`,
+    [userId],
+  );
 
   const u = rows[0];
   return {
@@ -1840,6 +1865,8 @@ async function detailsFor(userId: string): Promise<Record<string, string>> {
     email: u?.email ?? "",
     address: u?.address ?? "",
     tin: u?.tin ?? "",
+    // A number, because the field it fills is `input-type: "number"`.
+    invoice_start: u?.invoice_number_start ?? 1,
   };
 }
 

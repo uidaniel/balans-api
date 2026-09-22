@@ -252,6 +252,7 @@ const businessDetails: FlowDefinition = {
           email: { type: "string", __example__: "kemi@studio.ng" },
           address: { type: "string", __example__: "Lekki Phase 1, Lagos" },
           tin: { type: "string", __example__: "" },
+          invoice_start: { type: "number", __example__: 1 },
         },
         layout: {
           type: "SingleColumnLayout",
@@ -270,6 +271,7 @@ const businessDetails: FlowDefinition = {
                 email: "${data.email}",
                 address: "${data.address}",
                 tin: "${data.tin}",
+                invoice_start: "${data.invoice_start}",
               },
               children: [
                 {
@@ -307,6 +309,18 @@ const businessDetails: FlowDefinition = {
                   "max-chars": 30,
                 },
                 {
+                  type: "TextInput",
+                  name: "invoice_start",
+                  label: "Invoice no",
+                  // The reason anybody touches this, said plainly. Somebody
+                  // moving from a paper book or another tool needs their
+                  // numbering to carry on rather than restart at 1.
+                  "helper-text": "The number your next invoice takes. Raise it to carry on from another tool.",
+                  required: false,
+                  "input-type": "number",
+                  "max-chars": 10,
+                },
+                {
                   type: "Footer",
                   label: "Save",
                   "on-click-action": {
@@ -316,6 +330,7 @@ const businessDetails: FlowDefinition = {
                       email: "${form.email}",
                       address: "${form.address}",
                       tin: "${form.tin}",
+                      invoice_start: "${form.invoice_start}",
                     },
                   },
                 },

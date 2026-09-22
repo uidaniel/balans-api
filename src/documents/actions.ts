@@ -199,9 +199,15 @@ export async function convertQuote(
       return { ok: false as const, why: `already_converted:${existing[0]!.number ?? "?"}` };
     }
 
+    // GREATEST, so the user's chosen start only ever skips forward. Set below
+    // what has already been issued it changes nothing, and numbers can never
+    // repeat or go backwards whatever is configured.
     const { rows: numbered } = await c.query<{ next: number }>(
-      `SELECT COALESCE(MAX(number), 0) + 1 AS next
-         FROM documents WHERE user_id = $1 AND type = 'invoice'`,
+      `SELECT GREATEST(
+                COALESCE(MAX(d.number), 0) + 1,
+                (SELECT u.invoice_number_start FROM users u WHERE u.id = $1)
+              ) AS next
+         FROM documents d WHERE d.user_id = $1 AND d.type = 'invoice'`,
       [userId],
     );
     const number = numbered[0]!.next;

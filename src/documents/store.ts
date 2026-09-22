@@ -298,16 +298,23 @@ export async function confirmDraft(userId: string, draftId: string): Promise<Con
     const draft = rows[0];
     if (!draft) return null;
 
+    // GREATEST, so the user's chosen start only ever skips forward. A start
+    // set below what has already been issued changes nothing, and numbers
+    // can never repeat or go backwards whatever is configured.
+
     // F8: a payment request is "numbered in the invoice sequence". A client
     // receiving request 4 and invoice 4 from the same person would reasonably
     // think one was a duplicate of the other.
     const sequence = draft.type === "payment_request" ? "invoice" : draft.type;
 
     const { rows: numbered } = await c.query<{ next: number }>(
-      `SELECT COALESCE(MAX(number), 0) + 1 AS next
-         FROM documents
-        WHERE user_id = $1
-          AND type = ANY($2)`,
+      `SELECT GREATEST(
+                COALESCE(MAX(d.number), 0) + 1,
+                (SELECT u.invoice_number_start FROM users u WHERE u.id = $1)
+              ) AS next
+         FROM documents d
+        WHERE d.user_id = $1
+          AND d.type = ANY($2)`,
       [userId, sequence === "invoice" ? ["invoice", "payment_request"] : [sequence]],
     );
     const number = numbered[0]!.next;
