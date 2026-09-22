@@ -151,6 +151,45 @@ describe("every published Flow", () => {
         }
       });
 
+      it("declares a value carried from a form as a string", () => {
+        /*
+         * The other direction, and the one that cost a real phone an error.
+         *
+         * A field declared `input-type: "number"` must be declared a number on
+         * the screen that INITIALISES it — Meta's publish validator insists.
+         * But the value that comes back OUT of that same field, through a
+         * Footer's `${form.x}` payload, arrives at the next screen as a
+         * string. Declaring it a number there passes publish and then fails
+         * when somebody taps Next:
+         *
+         *   [key=data.amount] in object should be of type <number>, but got
+         *   <string>.
+         *
+         * So: anything a screen receives from a previous screen's form is a
+         * string, whatever kind of input produced it.
+         */
+        const byId = new Map(json.screens.map((s) => [String(s.id), s]));
+
+        for (const screen of json.screens) {
+          for (const node of walk(screen.layout)) {
+            if (node.name !== "navigate") continue;
+
+            const target = byId.get(String((node.next as Node | undefined)?.name));
+            if (!target) continue;
+
+            const declared = (target.data as Record<string, Node>) ?? {};
+            for (const [key, ref] of Object.entries((node.payload as Record<string, string>) ?? {})) {
+              if (!/^\$\{form\.[a-z_0-9]+\}$/i.test(ref)) continue;
+              assert.equal(
+                declared[key]?.type,
+                "string",
+                `${String(target.id)}: data.${key} comes from ${ref}, which arrives as a string`,
+              );
+            }
+          }
+        }
+      });
+
       it("puts starting values on the form, not on the inputs", () => {
         // At 7.1 an `init-value` on a TextInput is rejected outright, and the
         // whole Flow fails to publish for it.

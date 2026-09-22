@@ -527,9 +527,24 @@ const invoice: FlowDefinition = {
           client_name: { type: "string", __example__: "Daniel Uwak" },
           client_email: { type: "string", __example__: "" },
           description: { type: "string", __example__: "Website design" },
-          // A number, because the input is `input-type: "number"` and Meta
-          // checks the declared type against the field it initialises.
-          amount: { type: "number", __example__: 250000 },
+          // A string, and not a mistake.
+          //
+          // WORK declares this a number, because it initialises a
+          // `input-type: "number"` field and Meta checks the declared type
+          // against the input it fills. But the value that comes back out of
+          // that same field — ${form.amount} in WORK's Footer payload — is a
+          // string, so this screen receives a string.
+          //
+          // Declaring it a number here passes the publish validator and then
+          // fails on a real phone, at the moment somebody taps Next:
+          //
+          //   Data Validation Error
+          //   [key=data.amount] in object should be of type <number>, but got
+          //   <string>.
+          //
+          // Nothing in the JSON connects those two declarations, which is why
+          // definitions.test.ts now checks this specific direction.
+          amount: { type: "string", __example__: "250000" },
           due_date: { type: "string", __example__: "" },
           plan: { type: "string", __example__: "one" },
           notes: { type: "string", __example__: "" },
