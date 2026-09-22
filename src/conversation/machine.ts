@@ -272,7 +272,11 @@ const site = env.SITE_URL.replace(/[/]$/, "");
  * because an id expires after thirty days and the failure would arrive a month
  * after anybody last looked at this.
  */
-const WELCOME_CARD = `${env.PUBLIC_BASE_URL.replace(/[/]$/, "")}/brand/welcome.png`;
+const brand = (file: string): string =>
+  `${env.PUBLIC_BASE_URL.replace(/[/]$/, "")}/brand/${file}`;
+
+const WELCOME_CARD = brand("welcome.png");
+const SETUP_DONE_CARD = brand("setup-done.png");
 const TERMS_URL = site + "/terms";
 const PRIVACY_URL = site + "/privacy";
 
@@ -371,6 +375,18 @@ export const VOICE = {
     { id: "yes", title: yes },
     { id: "no", title: no },
   ],
+
+  /**
+   * Under the card, which already shows the example and says what to type.
+   *
+   * `done` below is the same message without one, for when the form cannot be
+   * sent — there is no card either in that case, so it has to carry the
+   * example itself.
+   */
+  doneCaption: para(
+    `\u{1F389} ${b("You are set up.")}`,
+    "Type it like a text, or tap below.",
+  ),
 
   done: para(
     `🎉 ${b("You are set up.")}`,
@@ -1611,10 +1627,24 @@ function takeCode(text: string, ctx: Context): Step {
 function takeConsent(text: string, ctx: Context, version: string): Step {
   if (/\b(i agree|agree|agreed|yes|accept|i accept)\b/i.test(text)) {
     return {
-      replies: [VOICE.done],
+      // The card and the button are one message, so a reply here would be a
+      // second bubble saying the same thing.
+      replies: [],
       next: "idle",
       context: { ...ctx, attempts: 0 },
-      effects: [{ type: "record_consent", version }],
+      effects: [
+        { type: "record_consent", version },
+        {
+          type: "send_flow",
+          key: "invoice",
+          body: VOICE.doneCaption,
+          cta: "Create invoice",
+          image: SETUP_DONE_CARD,
+          // Without a published form there is no card either, so the fallback
+          // has to carry the example the card was showing.
+          fallback: { line: VOICE.done, holdAt: "idle" },
+        },
+      ],
     };
   }
   return {

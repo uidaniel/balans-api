@@ -22,6 +22,7 @@ const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../as
 /** Public name -> file on disk. Nothing outside this map is reachable. */
 const FILES: Record<string, { file: string; type: string }> = {
   "welcome.png": { file: "welcome.png", type: "image/png" },
+  "setup-done.png": { file: "setup-done.png", type: "image/png" },
 };
 
 /**
