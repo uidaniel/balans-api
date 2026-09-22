@@ -22,6 +22,7 @@ import { addDays, todayIn } from "../../../core/dates.ts";
 import { defaults } from "../../config.ts";
 import { esc } from "../../documents/page.ts";
 import { legalLines } from "../../documents/pdf.ts";
+import { logoDataUri } from "../../brand/user-logo.ts";
 import { renderDocumentHtml, type DocumentData } from "../../pdf/template.ts";
 import { availableTo, renderTemplate, TEMPLATES, templateById } from "../../pdf/templates.ts";
 
@@ -51,6 +52,7 @@ type Owner = {
   tin: string | null;
   plan: "free" | "pro";
   templateId: string | null;
+  logoUrl: string | null;
 };
 
 async function ownerOf(token: string): Promise<Owner | null> {
@@ -63,8 +65,9 @@ async function ownerOf(token: string): Promise<Owner | null> {
     tin: string | null;
     plan: "free" | "pro";
     template_id: string | null;
+    logo_url: string | null;
   }>(
-    `SELECT id, business_name, email, address, tin, plan, template_id
+    `SELECT id, business_name, email, address, tin, plan, template_id, logo_url
        FROM users WHERE picker_token = $1 AND status <> 'closed'`,
     [token],
   );
@@ -78,9 +81,24 @@ async function ownerOf(token: string): Promise<Owner | null> {
         tin: r.tin,
         plan: r.plan,
         templateId: r.template_id,
+        logoUrl: r.logo_url,
       }
     : null;
 }
+
+/**
+ * A stand-in logo for the previews.
+ *
+ * The logo is the one Pro feature you cannot describe in a sentence — where
+ * it sits, and how much room it takes, is the whole of it. A preview without
+ * one shows a sheet that is not the sheet they would get.
+ *
+ * Drawn as an inline SVG rather than fetched, like everything else on these
+ * sheets, and shown only on the Pro layouts: a Free user seeing it on Classic
+ * would reasonably expect a logo they cannot have.
+ */
+const PLACEHOLDER_LOGO =
+  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMjAgNjQiPjxyZWN0IHg9IjEiIHk9IjEiIHdpZHRoPSIyMTgiIGhlaWdodD0iNjIiIHJ4PSIxMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQjlBRTk3IiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1kYXNoYXJyYXk9IjcgNSIvPjxjaXJjbGUgY3g9IjQwIiBjeT0iMzIiIHI9IjEzIiBmaWxsPSJub25lIiBzdHJva2U9IiNCOUFFOTciIHN0cm9rZS13aWR0aD0iMiIvPjxwYXRoIGQ9Ik0zMyAzN2w2LTcgNSA1IDQtNCA1IDYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0I5QUU5NyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48dGV4dCB4PSI2NiIgeT0iMjkiIGZvbnQtZmFtaWx5PSJTZWdvZSBVSSxBcmlhbCxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEzIiBmb250LXdlaWdodD0iNzAwIiBsZXR0ZXItc3BhY2luZz0iMS42IiBmaWxsPSIjOEE3RjZBIj5ZT1VSIExPR088L3RleHQ+PHRleHQgeD0iNjYiIHk9IjQ1IiBmb250LWZhbWlseT0iU2Vnb2UgVUksQXJpYWwsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMC41IiBmaWxsPSIjQTk5Qzg0Ij5nb2VzIGhlcmUgb24gUHJvPC90ZXh0Pjwvc3ZnPg==";
 
 /**
  * A believable invoice to preview with.
@@ -90,6 +108,9 @@ async function ownerOf(token: string): Promise<Owner | null> {
  * picture using.
  */
 async function sampleFor(owner: Owner): Promise<DocumentData> {
+  // Their own logo when they have one, so the preview is the sheet they get.
+  const mine = await logoDataUri(owner.id, owner.plan, owner.logoUrl);
+
   const { rows } = await db().query<{ name: string }>(
     `SELECT c.name FROM clients c
       WHERE c.user_id = $1 AND c.deleted_at IS NULL
@@ -106,7 +127,7 @@ async function sampleFor(owner: Owner): Promise<DocumentData> {
     businessEmail: owner.email,
     businessAddress: owner.address,
     businessTin: owner.tin,
-    logoDataUri: null,
+    logoDataUri: mine,
     clientName: rows[0]?.name ?? "Zenith Homes",
     clientEmail: null,
     lines: [
@@ -268,7 +289,20 @@ export function pickerPage(opts: {
 
   const cards = TEMPLATES.filter((t) => t.ready)
     .map((t) => {
-      const html = renderTemplate(t.id, opts.sample) ?? renderDocumentHtml(opts.sample);
+      /*
+       * The stand-in goes on the Pro layouts only.
+       *
+       * Where the logo sits, and how much room it takes, is the whole of
+       * that feature — a preview without one is not the sheet they would
+       * get. It is left off the Free layouts because somebody on Free
+       * seeing it there would reasonably expect a logo they cannot have.
+       */
+      const sample =
+        t.pro && !opts.sample.logoDataUri
+          ? { ...opts.sample, logoDataUri: PLACEHOLDER_LOGO }
+          : opts.sample;
+
+      const html = renderTemplate(t.id, sample) ?? renderDocumentHtml(sample);
       const locked = !mine.has(t.id);
       const on = t.id === chosen.id;
 

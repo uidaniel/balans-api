@@ -153,6 +153,27 @@ const legal = (d: DocumentData): string =>
 const madeWith = (d: DocumentData): string =>
   d.showMadeWith ? `<div class="made">Made with Balans &middot; balans.ng</div>` : "";
 
+/**
+ * The user's logo, where a layout has room for it.
+ *
+ * Only Classic rendered one, so a Pro subscriber who picked any of the other
+ * seven paid for a logo and got a blank space. It sits above the business
+ * name everywhere except Atelier, where it stands in for the monogram —
+ * there is one mark at the top of that sheet and it should be theirs.
+ *
+ * Sized in `em` like the rest, so it scales with the sheet rather than
+ * needing a second set of numbers for the picker's thumbnails.
+ */
+const logo = (d: DocumentData, height = "2.2em"): string =>
+  d.logoDataUri
+    ? `<img class="ulogo" src="${d.logoDataUri}" alt="" style="height:${height}">`
+    : "";
+
+/** Shared styling, so eight layouts do not each invent their own. */
+const LOGO_CSS = `
+.ulogo{display:block;width:auto;max-width:15em;object-fit:contain;margin-bottom:.55em}
+`;
+
 /* -------------------------------------------------------------------------- */
 /* Base stylesheet                                                            */
 /* -------------------------------------------------------------------------- */
@@ -190,7 +211,7 @@ td.desc{padding-right:1.4em}
 `;
 
 const page = (css: string, body: string, d: DocumentData): string => `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><style>${BASE}${css}</style></head>
+<html lang="en"><head><meta charset="utf-8"><style>${BASE}${LOGO_CSS}${css}</style></head>
 <body><div class="sheet">
 ${d.variant === "sample" ? `<div class="watermark">SAMPLE</div>` : ""}
 ${body}
@@ -237,7 +258,9 @@ tbody td{padding:.95em 0;border-bottom:1px solid rgba(16,35,28,.09);font-size:.8
   <div class="top">
     <div class="kind">${TITLE[d.variant]}</div>
     <div class="brand">
-      <div class="biz">${esc(d.businessName)}</div>
+      ${logo(d)}
+      ${logo(d)}
+    <div class="biz">${esc(d.businessName)}</div>
       <div class="meta">
         ${d.businessAddress ? `${esc(d.businessAddress)}<br>` : ""}
         ${d.businessEmail ? `${esc(d.businessEmail)}<br>` : ""}
@@ -316,7 +339,9 @@ tbody td{padding:.9em 0;border-bottom:1px solid rgba(16,35,28,.08);font-size:.86
   const body = `<div class="wrap">
   <div class="head">
     <div>
-      <div class="biz">${esc(d.businessName)}</div>
+      ${logo(d)}
+      ${logo(d)}
+    <div class="biz">${esc(d.businessName)}</div>
       <div class="meta">
         ${d.businessAddress ? `${esc(d.businessAddress)}<br>` : ""}
         ${d.businessEmail ? `${esc(d.businessEmail)}<br>` : ""}
@@ -411,6 +436,7 @@ tbody td{padding:.85em 0;border-bottom:1px solid rgba(16,35,28,.08);font-size:.8
 
   const body = `<div class="wrap">
   <div class="masthead">
+    ${logo(d)}
     <div class="biz">${esc(d.businessName)}</div>
     <div class="kind">${TITLE[d.variant]}</div>
   </div>
@@ -562,7 +588,9 @@ tbody td{padding:.9em 1.1em;border-bottom:1px solid rgba(16,35,28,.1);font-size:
         ${d.dueDate ? `${dueLabel(d)} <b>${when(d.dueDate)}</b>` : ""}
       </div>
       <div class="brand">
-        <div class="biz">${esc(d.businessName)}</div>
+        ${logo(d)}
+      ${logo(d)}
+    <div class="biz">${esc(d.businessName)}</div>
         <div class="meta">
           ${d.businessAddress ? `${esc(d.businessAddress)}<br>` : ""}
           ${d.businessEmail ? `${esc(d.businessEmail)}<br>` : ""}
@@ -656,7 +684,9 @@ tbody td{padding:.85em 0;border-bottom:1px solid rgba(16,35,28,.09);font-size:.8
   const body = `<div class="wrap">
   <div class="top">
     <div>
-      <div class="biz">${esc(d.businessName)}</div>
+      ${logo(d)}
+      ${logo(d)}
+    <div class="biz">${esc(d.businessName)}</div>
       <div class="bizmeta">
         ${d.businessEmail ? `${esc(d.businessEmail)}<br>` : ""}
         ${d.businessAddress ? `${esc(d.businessAddress)}` : ""}
@@ -781,7 +811,14 @@ function atelier(d: DocumentData): string {
   };
 
   const body = `<div class="wrap">
-  <div class="mono">${esc(initials(d.businessName))}</div>
+  ${
+    // Their mark instead of ours-by-derivation. The monogram exists
+    // because most people have no logo; when they do, it is the better
+    // thing to put at the top of a centred sheet.
+    d.logoDataUri
+      ? `<img class="ulogo" src="${d.logoDataUri}" alt="" style="height:2.6em;margin:0 auto .2em">`
+      : `<div class="mono">${esc(initials(d.businessName))}</div>`
+  }
   <div class="biz">${esc(d.businessName)}</div>
   <div class="bizmeta">
     ${d.businessAddress ? `${esc(d.businessAddress)}<br>` : ""}
@@ -856,6 +893,7 @@ justify-content:space-between;gap:1.5em;padding:.9em 1.2em}
 
   const body = `<div class="row">
   <div class="margin">
+    ${logo(d)}
     <div class="biz">${esc(d.businessName)}</div>
     <div class="bizmeta">
       ${d.businessAddress ? `${esc(d.businessAddress)}<br>` : ""}
