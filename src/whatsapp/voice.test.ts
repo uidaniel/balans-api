@@ -145,8 +145,26 @@ test("every message the bot sends", async (t) => {
     ...messages.map(([name, f]) => [name, f()] as [string, string]),
   ];
 
+  /*
+   * One message is exempt, deliberately.
+   *
+   * The code step had three emoji across the message and its two buttons —
+   * two of them near-identical envelopes — which is the clutter this whole
+   * rule exists to prevent, arriving through the back door. The rule counts
+   * per message; a message and its buttons are what somebody actually looks
+   * at, and nothing on that screen needs decorating anyway.
+   *
+   * Stated here rather than quietly skipped, and kept to one. A list of
+   * exemptions is how a design rule stops being one.
+   */
+  const NO_EMOJI = new Set(["VOICE.askCode"]);
+
   await t.test("opens with an emoji", () => {
     for (const [name, text] of all) {
+      if (NO_EMOJI.has(name)) {
+        assert.doesNotMatch(text, OPENS_WITH_EMOJI, `${name} is exempt but now has one`);
+        continue;
+      }
       assert.match(text, OPENS_WITH_EMOJI, `${name} opens with ${JSON.stringify(text.slice(0, 40))}`);
     }
   });

@@ -356,13 +356,26 @@ export const VOICE = {
     "Your receipts and invoice copies go there.",
   ),
 
+  /*
+   * The one message with no emoji anywhere on it.
+   *
+   * Three of them landed here — one opening the message and one on each
+   * button — and two were near-identical envelopes stacked on top of each
+   * other. That is the failure the one-emoji rule exists to prevent, arriving
+   * through the back door: the rule counts per message, and a message plus
+   * its buttons is what somebody actually looks at.
+   *
+   * It is also the one screen where nothing needs decorating. Somebody is
+   * copying six digits out of an email. The only thing that matters is which
+   * address they went to, and it is already the only bold thing here.
+   */
   askCode: (email: string) =>
-    para(`📨 Code sent to ${b(email)}.`, lines(b("Send me the 6 digits."), "No code?")),
+    para(`Code sent to ${b(email)}.`, lines(b("Send me the 6 digits."), "No code?")),
 
   /** The two ways out of the code step, as taps. */
   codeButtons: (): ReplyButton[] => [
-    { id: "resend", title: "📨 Send again" },
-    { id: "change", title: "✉️ Other email" },
+    { id: "resend", title: "Send again" },
+    { id: "change", title: "Other email" },
   ],
 
   /** Confirmation, the terms and the thing to reply: one message, not three. */
