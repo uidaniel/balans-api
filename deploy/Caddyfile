@@ -23,23 +23,21 @@
 }
 
 api.balans.ng, payment.balans.ng {
-	/*
-	 * Cloudflare's Origin certificate, not Let's Encrypt.
-	 *
-	 * Caddy's automatic HTTPS is the better default nearly everywhere, and it
-	 * is the wrong one here. Behind Cloudflare's proxy an HTTP-01 challenge
-	 * has to survive the edge — Always Use HTTPS, redirect rules, caching —
-	 * and each failed attempt counts against a rate limit that is per
-	 * hostname per hour. Getting that wrong during a cutover means the site
-	 * is down and the fix is to wait.
-	 *
-	 * Cloudflare is the only thing that ever talks to this box, and it trusts
-	 * its own Origin CA. So the certificate is issued once, by hand, valid
-	 * until 2041, and nothing has to be renewed or negotiated at boot.
-	 *
-	 * The pair lives in /opt/balans/certs, outside the repository, for the
-	 * same reason .env does.
-	 */
+	# Cloudflare's Origin certificate, not Let's Encrypt.
+	#
+	# Caddy's automatic HTTPS is the better default nearly everywhere, and it
+	# is the wrong one here. Behind Cloudflare's proxy an HTTP-01 challenge has
+	# to survive the edge — Always Use HTTPS, redirect rules, caching — and
+	# each failed attempt counts against a rate limit that is per hostname per
+	# hour. Getting that wrong during a cutover means the site is down and the
+	# fix is to wait.
+	#
+	# Cloudflare is the only thing that ever talks to this box, and it trusts
+	# its own Origin CA. So the certificate is issued once, by hand, valid
+	# until 2041, and nothing has to be renewed or negotiated at boot.
+	#
+	# The pair lives in /opt/balans/certs, outside the repository, for the same
+	# reason .env does.
 	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
 
 	reverse_proxy api:4000 {
