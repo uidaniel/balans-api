@@ -125,14 +125,13 @@ export function askFor(missing: string, draft: { clientName?: string }): string 
 /**
  * What goes out once a document is confirmed (F6 step 4).
  *
- * Two messages, and the split is the point. The first is written for the
- * *client*: it carries the PDF and says "click the link to pay", so the user
- * can forward it exactly as it arrived without editing anything out. The
- * second is a private note to the user, which would read as nonsense to a
- * client and must not be part of what they forward.
+ * One message, written for the *client*. It carries the PDF and says "click
+ * the link to pay", so the user can forward it exactly as it arrived without
+ * editing anything out — and a message that has to be edited before it can be
+ * sent is a message that does not get sent.
  *
- * It costs one extra message. Worth it: a message that has to be retyped
- * before it can be sent is a message that does not get sent.
+ * That rule is what decides everything below: no invoice number in the
+ * heading, and nothing addressed to the sender.
  */
 export function sentMessage(
   draft: Draft,
@@ -143,25 +142,38 @@ export function sentMessage(
   const label = SENT_LABEL[draft.type];
   const link = `${baseUrl.replace(/\/$/, "")}/i/${confirmed.publicToken}`;
 
+  /*
+   * A quote keeps its note; an invoice does not.
+   *
+   * "I will tell you the moment it is paid" is reassurance, and the bot does
+   * tell them — so the line only ever reached the client, who has no idea who
+   * is being told what. Nothing is lost by dropping it.
+   *
+   * A quote is different. It is sent expecting an answer, and converting it is
+   * an action only the sender can take and would otherwise have no way to
+   * learn. That instruction is worth one odd-looking line on a forward.
+   */
   const note =
     draft.type === "quote"
       ? `Reply ${b(`convert quote ${confirmed.number}`)} when they accept.`
-      : "I will tell you the moment it is paid.";
+      : "";
 
   /*
-   * The note travels in the caption, not in a message of its own.
+   * No number in the heading.
    *
-   * It used to follow as a second bubble so that nothing the user forwarded
-   * carried it — the caption goes wherever the PDF goes, and "I will tell you
-   * when it is paid" is addressed to the sender, not the client.
+   * It used to read "INVOICE #3", and the whole message is built to be
+   * forwarded to the client untouched — so it told them this was the third
+   * invoice its sender had ever issued. A number that is only ever a count of
+   * how new you are is worse than no number, and the client has no use for
+   * one here: it is on the document itself, where an invoice number belongs.
    *
-   * From 1 October every outbound message is charged, and that separation
-   * costs ₦14.50 on every invoice ever sent. A client reading one line meant
-   * for somebody else is a smaller problem than a quarter of the send cost, so
-   * the note is set below a rule where it plainly belongs to the sender.
+   * PRD-GAP: the payment page still prints "Invoice 3" in its heading and its
+   * title. Hiding it here and not there is half a fix. The real answer is a
+   * starting number the user chooses, which is why every invoicing tool has
+   * one.
    */
   const forward = para(
-    block(`✅ ${b(`${label.toUpperCase()} #${confirmed.number}`)}`, [
+    block(`✅ ${b(label.toUpperCase())}`, [
       row("Client", draft.clientName),
       row("Amount", b(formatNaira(draft.totalKobo))),
       draft.dueDate &&
