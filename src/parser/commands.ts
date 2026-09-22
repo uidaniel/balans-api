@@ -76,6 +76,8 @@ const EXACT: [RegExp, Intent][] = [
   // Advertised on the landing page, so people will ask. Answered honestly
   // rather than steered into settings, which has nothing to do with it.
   [/^(templates?|invoice templates?|change (my )?(invoice |email )?templates?|design|invoice design)$/, "templates"],
+  // F21: offered in the words that confirm a logo was saved, so it has to work.
+  [/^(remove|delete|clear) (my )?logo$/, "remove_logo"],
   [/^(upgrade|go pro|pro|subscribe|premium|upgrade me)$/, "upgrade"],
   [/^(referral|refer|refer a friend|invite|invite a friend|my referral|referral code)$/, "referral"],
   [/^(stop reminders?|no more reminders?|stop reminding me|turn off reminders?|stop chasing)$/, "stop_reminders"],

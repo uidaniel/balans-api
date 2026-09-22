@@ -110,6 +110,23 @@ export function readPeriod(text: string, today: Civil): Period | null {
   return null;
 }
 
+/**
+ * The month that has just ended, named rather than described.
+ *
+ * "September", not "last month": the monthly summary goes out on the 1st, when
+ * "last month" is ambiguous enough to make somebody count backwards.
+ */
+export function previousMonth(today: Civil): Period {
+  const y = today.m === 1 ? today.y - 1 : today.y;
+  const m = today.m === 1 ? 12 : today.m - 1;
+  const from: Civil = { y, m, d: 1 };
+  return {
+    from,
+    to: lastOf(from),
+    label: y === today.y ? MONTH_NAME[m - 1]! : `${MONTH_NAME[m - 1]} ${y}`,
+  };
+}
+
 /** What a bare "summary" means (F15 leads with the month). */
 export const defaultPeriod = (today: Civil): Period => ({
   from: firstOf(today),

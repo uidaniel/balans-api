@@ -102,9 +102,10 @@ const messages: [string, () => string][] = [
   ["ask for description", () => summary.askFor("description", { clientName: "Zenith" })],
   ["ask for due date", () => summary.askFor("due_date", { clientName: "Zenith" })],
   ["ask, fallback", () => summary.askFor("something_else", {})],
-  ["sent, the forwardable part", () => summary.sentMessage(draft, { number: 7, publicToken: "abc" }, URL_, TODAY).forward],
-  ["sent, the note", () => summary.sentMessage(draft, { number: 7, publicToken: "abc" }, URL_, TODAY).note],
-  ["sent, a quote's note", () => summary.sentMessage({ ...(draft as object), type: "quote" } as never, { number: 7, publicToken: "abc" }, URL_, TODAY).note],
+  // The note is part of this message now, not one of its own, so the caption
+  // is what has to obey the one-emoji rule.
+  ["sent, an invoice", () => summary.sentMessage(draft, { number: 7, publicToken: "abc" }, URL_, TODAY).forward],
+  ["sent, a quote", () => summary.sentMessage({ ...(draft as object), type: "quote" } as never, { number: 7, publicToken: "abc" }, URL_, TODAY).forward],
 
   ["paid in full", () => notify.paidMessage(notice as never)],
   ["part payment", () => notify.paidMessage({ ...notice, paidKobo: 2000000, amountPaidKobo: 2000000, fullyPaid: false } as never)],

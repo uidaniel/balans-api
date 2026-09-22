@@ -270,9 +270,9 @@ describe("the messages that go with a document", () => {
     const sent = sentMessage(draft, { number: 7, publicToken: "abc" }, "https://balans.ng", TODAY);
     return [
       draftSummary(draft, TODAY),
-      // Both halves: the part the user forwards and the note that follows it.
+      // One message now: the note travels inside the caption rather than
+      // following as a second bubble, so there are no longer two halves.
       sent.forward,
-      sent.note,
       askFor("client_name", {}),
       askFor("amount", { clientName: "Zenith" }),
       askFor("description", {}),

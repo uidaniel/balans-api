@@ -19,6 +19,7 @@ import { renderPdf, rendererAvailable } from "../pdf/chrome.ts";
 import { renderDocumentHtml, snapshotOf, type DocumentData, type Variant } from "../pdf/template.ts";
 import { renderTemplate, TEMPLATES } from "../pdf/templates.ts";
 import { documentKey, fileName, put, receiptKey } from "../storage/files.ts";
+import { logoDataUri } from "../brand/user-logo.ts";
 
 /** Section 12: both lines appear on everything a client sees. */
 export function legalLines(): [string, string] {
@@ -217,10 +218,9 @@ async function loadForRender(
       businessEmail: r.business_email,
       businessAddress: r.address,
       businessTin: r.tin,
-      // F21 makes the logo a Pro feature. It is a URL today and becomes a data
-      // URI when logo upload exists; the template only takes the latter,
-      // because a render must never fetch anything.
-      logoDataUri: null,
+      // F21: Pro only, and read from storage rather than linked, because a
+      // render must never fetch anything.
+      logoDataUri: await logoDataUri(r.user_id, r.plan, r.logo_url),
       clientName: r.client_name,
       clientEmail: r.client_email,
       lines: items.map((i) => ({

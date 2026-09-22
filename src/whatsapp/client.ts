@@ -224,6 +224,86 @@ export async function uploadDocument(
   return { ok: true, mediaId: body.id };
 }
 
+
+export type DownloadResult =
+  | { ok: true; bytes: Buffer; contentType: string }
+  | { ok: false; reason: string };
+
+/**
+ * Fetches media a user sent, by the id Meta gave us on the webhook.
+ *
+ * Two calls, because Meta will not hand over bytes directly: the first asks
+ * where the file lives, the second collects it. Both need the token, and the
+ * URL from the first is short-lived, so there is no point keeping it.
+ *
+ * Capped at `maxBytes`. The cap is the point of the function as much as the
+ * download is: this is the one place a stranger's phone decides how many bytes
+ * we allocate, and a 40MB video sent by accident should be refused rather than
+ * read into memory to find out.
+ */
+export async function downloadMedia(
+  mediaId: string,
+  opts: { maxBytes?: number; fetchImpl?: Transport } = {},
+): Promise<DownloadResult> {
+  require_("WA_ACCESS_TOKEN");
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const maxBytes = opts.maxBytes ?? 5 * 1024 * 1024;
+  const auth = { authorization: `Bearer ${env.WA_ACCESS_TOKEN}` };
+
+  let where: Response;
+  try {
+    where = await fetchImpl(graphUrl(mediaId), {
+      method: "GET",
+      headers: auth,
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (e) {
+    return { ok: false, reason: `network: ${(e as Error).message}` };
+  }
+
+  const meta = (await where.json().catch(() => ({}))) as {
+    url?: string;
+    mime_type?: string;
+    file_size?: number;
+    error?: { message?: string };
+  };
+
+  if (!where.ok || !meta.url) {
+    return { ok: false, reason: meta.error?.message ?? `HTTP ${where.status}` };
+  }
+
+  // Refused on the size Meta reports, before a byte is transferred.
+  if (typeof meta.file_size === "number" && meta.file_size > maxBytes) {
+    return { ok: false, reason: `too large: ${meta.file_size} bytes` };
+  }
+
+  let file: Response;
+  try {
+    file = await fetchImpl(meta.url, {
+      method: "GET",
+      headers: auth,
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (e) {
+    return { ok: false, reason: `network: ${(e as Error).message}` };
+  }
+
+  if (!file.ok) return { ok: false, reason: `HTTP ${file.status}` };
+
+  const bytes = Buffer.from(await file.arrayBuffer());
+  // Checked again on what actually arrived: the reported size is their claim,
+  // this is the fact.
+  if (bytes.length > maxBytes) {
+    return { ok: false, reason: `too large: ${bytes.length} bytes` };
+  }
+
+  return {
+    ok: true,
+    bytes,
+    contentType: meta.mime_type ?? file.headers.get("content-type") ?? "application/octet-stream",
+  };
+}
+
 /**
  * Sends an already-uploaded document, with a caption.
  *

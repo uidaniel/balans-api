@@ -20,6 +20,7 @@ import { formatFriendly, formatISO, todayIn, type Civil } from "../../core/dates
 import { formatNaira } from "../../core/totals.ts";
 import { b, i, lines, para } from "../whatsapp/format.ts";
 import { send } from "../whatsapp/outbound.ts";
+import { sendMonthlySummaries } from "./monthly-summary.ts";
 import { sweepStaleDrafts } from "../documents/store.ts";
 import { retireSupersededAccounts } from "../settings/bank-change.ts";
 import { expireLapsedSubscriptions, renewalsDue } from "../billing/subscription.ts";
@@ -337,6 +338,9 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
 
     await sendRenewalReminders(log);
     await expireLapsedSubscriptions(log);
+
+    // F15. Returns early on every day but the 1st.
+    await sendMonthlySummaries(today, log);
   } catch (err) {
     // A failed run must not stop the next one.
     log.error({ err }, "daily jobs failed");

@@ -36,6 +36,7 @@ export const INTENTS = [
   "stop_reminders",
   /** Choosing an invoice design. Advertised on the site, not built. */
   "templates",
+  "remove_logo",
   "help",
   "confirm",
   "reject",

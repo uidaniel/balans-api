@@ -122,6 +122,8 @@ export type Effect =
   | { type: "show_settings" }
   /** F24: the link to the design picker. */
   | { type: "show_designs" }
+  /** F21: take the user's logo off their documents. */
+  | { type: "remove_logo" }
   | { type: "show_upgrade" }
   | { type: "show_referral" }
   | { type: "document_action"; intent: Parsed["intent"]; number: number | null }
@@ -788,6 +790,9 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
       // The link is built by the effect, which is the only place that knows
       // the user's own picker token.
       return { replies: [], next: "idle", context: ctx, effects: [{ type: "show_designs" }] };
+
+    case "remove_logo":
+      return { replies: [], next: "idle", context: ctx, effects: [{ type: "remove_logo" }] };
 
     case "status":
     case "stop_reminders":

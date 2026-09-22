@@ -124,6 +124,23 @@ export function sentMessage(
   const label = SENT_LABEL[draft.type];
   const link = `${baseUrl.replace(/\/$/, "")}/i/${confirmed.publicToken}`;
 
+  const note =
+    draft.type === "quote"
+      ? `Reply ${b(`convert quote ${confirmed.number}`)} when they accept.`
+      : "I will tell you the moment it is paid.";
+
+  /*
+   * The note travels in the caption, not in a message of its own.
+   *
+   * It used to follow as a second bubble so that nothing the user forwarded
+   * carried it — the caption goes wherever the PDF goes, and "I will tell you
+   * when it is paid" is addressed to the sender, not the client.
+   *
+   * From 1 October every outbound message is charged, and that separation
+   * costs ₦14.50 on every invoice ever sent. A client reading one line meant
+   * for somebody else is a smaller problem than a quarter of the send cost, so
+   * the note is set below a rule where it plainly belongs to the sender.
+   */
   const forward = para(
     block(`✅ ${b(`${label.toUpperCase()} #${confirmed.number}`)}`, [
       row("Client", draft.clientName),
@@ -132,12 +149,8 @@ export function sentMessage(
         row(draft.type === "quote" ? "Valid until" : "Due", formatFriendly(draft.dueDate, today)),
     ]),
     lines(draft.type === "quote" ? "Click the link to view it:" : "Click the link to pay:", link),
+    note,
   );
-
-  const note =
-    draft.type === "quote"
-      ? `🔁 Reply ${b(`convert quote ${confirmed.number}`)} when they accept.`
-      : "🔔 I will tell you the moment it is paid.";
 
   return { forward, note };
 }

@@ -26,7 +26,7 @@ import { markEmailVerified, setEmail, recordConsent, saveBankAccount, activateBa
 import type { Inbound } from "../whatsapp/inbound.ts";
 import { step, VOICE, type Effect, type State } from "./machine.ts";
 import { forLog, type Parsed } from "../parser/schema.ts";
-import { b, lines, para } from "../whatsapp/format.ts";
+import { b, i, lines, para } from "../whatsapp/format.ts";
 import { parseMessage } from "../parser/parse.ts";
 import { readCorrection } from "../parser/corrections.ts";
 import { asCommand } from "../parser/commands.ts";
@@ -35,6 +35,7 @@ import { defaults, env } from "../config.ts";
 import { confirmDraft, createDraft, discardDraft, getOpenDraft } from "../documents/store.ts";
 import { draftSummary, sentMessage } from "../documents/summary.ts";
 import { pickerUrlFor } from "../http/routes/templates.ts";
+import { clearLogo, saveLogo } from "../brand/user-logo.ts";
 import { debtors, documentsThisMonth, findDocument, planOf, summarise } from "../documents/queries.ts";
 import {
   cancelledMessage,
@@ -112,10 +113,34 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     return;
   }
 
+  /*
+   * An image is a logo (F21).
+   *
+   * Handled before the machine rather than as a state, because it arrives
+   * unannounced: nobody is asked to send a logo, they just send one, and the
+   * only sensible reading of a picture sent to an invoicing bot is "put this
+   * on my invoices". Dealt with here it also cannot disturb a draft somebody
+   * is halfway through confirming.
+   */
+  if (msg.kind === "image" && msg.mediaId) {
+    await handleLogo(user.id, msg.mediaId, msg.from, log);
+    return;
+  }
+
   // Anything else that is not text has no words to act on yet. Say so rather
   // than letting it fall through the machine as an empty message.
   if (msg.kind !== "text" && msg.kind !== "interactive" && !msg.text) {
-    await reply(user.id, msg.from, [b("I can only read text messages at the moment.")], log);
+    await reply(
+      user.id,
+      msg.from,
+      [
+        para(
+          `📎 ${b("I can only read text and images.")}`,
+          "Send me a line like " + i("Invoice Tunde 20k for logo design") + ".",
+        ),
+      ],
+      log,
+    );
     return;
   }
 
@@ -646,32 +671,33 @@ async function runEffects(
           // F6 step 4: one message with the PDF and the link, ready to forward.
           // The caption carries the words, so the file and the message are one
           // bubble rather than two.
-          const { forward, note } = sentMessage(draft, confirmed, env.PUBLIC_BASE_URL, ctx.today);
+          const { forward } = sentMessage(draft, confirmed, env.PUBLIC_BASE_URL, ctx.today);
           const pdf = await renderDocumentPdf(confirmed.id, log);
 
           /*
-           * The note is a message of its own either way, so the offer to restyle
-           * rides on it as a button instead of costing another one.
+           * The design picker, once.
            *
-           * Offered until they have chosen once. Somebody who has picked their
-           * design does not need to be asked again on every invoice they send;
-           * `/design` is there when they want to change it.
+           * It used to ride on the note as a button, which was free because the
+           * note was a message anyway. The note is now in the caption, so this
+           * is the only thing that would cost an extra send — and it is offered
+           * to somebody who has never chosen a design, which happens once in
+           * the life of an account. Afterwards `/design` is the way in.
            */
-          const pushNote = async (): Promise<void> => {
-            if (ctx.phone && !(await hasChosenTemplate(userId))) {
-              const cta = await sendCta(ctx.phone, {
-                body: note,
-                label: "Change design",
-                url: await pickerUrlFor(userId, env.PUBLIC_BASE_URL),
-                footer: "See how each one looks",
-              });
-              if (cta.ok) {
-                await recordOutbound(userId, cta.waMessageId, "sent", { kind: "interactive" });
-                return;
-              }
-              log.warn({ userId, reason: cta.reason }, "could not send the design button");
+          const offerDesigns = async (): Promise<void> => {
+            if (!ctx.phone || (await hasChosenTemplate(userId))) return;
+
+            const cta = await sendCta(ctx.phone, {
+              body: "🎨 Want your invoices to look different? Pick a design.",
+              label: "See designs",
+              url: await pickerUrlFor(userId, env.PUBLIC_BASE_URL),
+              footer: "Takes a moment, and it sticks",
+            });
+
+            if (cta.ok) {
+              await recordOutbound(userId, cta.waMessageId, "sent", { kind: "interactive" });
+              return;
             }
-            extra.push(note);
+            log.warn({ userId, reason: cta.reason }, "could not send the design button");
           };
 
           if (pdf && ctx.phone) {
@@ -680,9 +706,7 @@ async function runEffects(
               const sent = await sendDocument(ctx.phone, up.mediaId, pdf.filename, forward);
               if (sent.ok) {
                 await recordOutbound(userId, sent.waMessageId, "sent", { kind: "document" });
-                // The forwardable part went with the file. The note follows as
-                // its own message, so nothing the user forwards contains it.
-                await pushNote();
+                await offerDesigns();
                 break;
               }
               log.error({ userId, reason: sent.reason }, "could not send the document");
@@ -694,7 +718,7 @@ async function runEffects(
           // No renderer, no upload, or a failed send: the link still works, and
           // that is the part that gets them paid.
           extra.push(forward);
-          await pushNote();
+          await offerDesigns();
           break;
         }
 
@@ -718,7 +742,18 @@ async function runEffects(
           break;
         }
 
-        case "show_designs": {
+        case "remove_logo": {
+        await clearLogo(userId);
+        extra.push(
+          lines(
+            `🧽 ${b("Logo removed.")}`,
+            "Your invoices go out without it from now on. Send an image any time to put one back.",
+          ),
+        );
+        break;
+      }
+
+      case "show_designs": {
           // A button rather than a pasted URL: the picker is the whole point,
           // and it should be one tap from the words describing it.
           if (ctx.phone) {
@@ -777,8 +812,8 @@ async function runEffects(
           ]);
           extra.push(
             effect.days === 0
-              ? `\u2705 New invoices will be ${b("due on receipt")}.`
-              : `\u2705 New invoices will be due in ${b(`${effect.days} days`)}.`,
+              ? `✅ New invoices will be ${b("due on receipt")}.`
+              : `✅ New invoices will be due in ${b(`${effect.days} days`)}.`,
           );
           break;
 
@@ -937,7 +972,7 @@ async function runEffects(
               `🏦 That account is ${b(resolved.account.accountName)} at ${bank.name}.`,
               lines(
                 `Reply ${b("yes")} to move your payouts there.`,
-                `It takes effect in ${b("24 hours")} \u2014 until then, money goes to your current account.`,
+                `It takes effect in ${b("24 hours")} — until then, money goes to your current account.`,
               ),
             ),
           );
@@ -1147,6 +1182,68 @@ async function runEffects(
   }
 
   return { lines: extra, holdAt, failed, resolvedName, draftId, clearDraft, pendingBankChange };
+}
+
+
+/**
+ * Someone sent a picture.
+ *
+ * On Pro it becomes their logo and appears on every invoice from the next one
+ * onwards. On Free it is refused with the reason, because silently ignoring a
+ * file somebody deliberately sent reads as the product being broken — and
+ * because this is the one moment they are actively wanting something Pro gives
+ * them.
+ */
+async function handleLogo(
+  userId: string,
+  mediaId: string,
+  phone: string,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  const plan = await planOf(userId);
+
+  if (plan !== "pro") {
+    await reply(
+      userId,
+      phone,
+      [
+        para(
+          `🎨 ${b("Your own logo is a Pro feature.")}`,
+          lines(
+            "On Pro it replaces the Balans line on every invoice you send.",
+            `Reply ${b("upgrade")} to turn it on, and send the image again.`,
+          ),
+        ),
+      ],
+      log,
+    );
+    return;
+  }
+
+  const saved = await saveLogo(userId, mediaId, log);
+
+  const said =
+    saved.ok
+      ? para(
+          `✅ ${b("Logo saved.")}`,
+          lines(
+            "It goes on every invoice and quote you send from now on.",
+            `Send another image any time to replace it, or reply ${b("remove logo")} to take it off.`,
+          ),
+        )
+      : saved.why === "too_large"
+        ? lines(`📏 ${b("That image is too big.")}`, "Send one under 2MB and I will use it.")
+        : saved.why === "not_an_image"
+          ? lines(
+              `🖼️ ${b("I could not read that as an image.")}`,
+              "A PNG or JPG works best.",
+            )
+          : lines(
+              `⚠️ ${b("I could not fetch that image.")}`,
+              "Try sending it again in a moment.",
+            );
+
+  await reply(userId, phone, [said], log);
 }
 
 /** Seven days from a civil date, without pulling in the date module's clock. */
