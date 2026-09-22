@@ -424,16 +424,41 @@ export function planIdFor(o: { depositPercent?: number | null; instalments?: num
  * is not NGN, so a dropdown offering USD would carry an invoice all the way to
  * a payment that cannot be made.
  */
-const invoice: FlowDefinition = {
-  key: "invoice",
-  name: "Balans invoice",
+/**
+ * What separates a quote from an invoice, which is almost nothing.
+ *
+ * The same four fields, the same terms, the same shape. Only the date means
+ * something different — one is when money is due, the other is when the offer
+ * stops standing — and the words on screen have to say so, because "Due" on a
+ * quote is a promise nobody made.
+ *
+ * One factory rather than two files of near-identical JSON. They are published
+ * as separate Flows because Meta needs a form per entry point, but a change to
+ * the fields has to reach both or they drift, and drift here means a quote
+ * that quietly collects something an invoice does not.
+ */
+type DocumentFlow = {
+  key: "invoice" | "quote";
+  /** Shown in Meta's list of Flows. */
+  name: string;
+  /** The first screen's title. */
+  title: string;
+  /** Ten characters or fewer, or it wraps. See the label test. */
+  dateLabel: string;
+  dateHelp: string;
+};
+
+function documentFlow(o: DocumentFlow): FlowDefinition {
+  return {
+  key: o.key,
+  name: o.name,
   categories: ["OTHER"],
   json: {
     version: VERSION,
     screens: [
       {
         id: "WORK",
-        title: "New invoice",
+        title: o.title,
         terminal: false,
         // Declared so a correction can open the form on what is already there.
         data: {
@@ -498,8 +523,8 @@ const invoice: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "due_date",
-                  label: "Due",
-                  "helper-text": "Optional. Friday, 30 September, in two weeks.",
+                  label: o.dateLabel,
+                  "helper-text": o.dateHelp,
                   required: false,
                   "input-type": "text",
                   "max-chars": 40,
@@ -637,9 +662,139 @@ const invoice: FlowDefinition = {
       },
     ],
   },
+  };
+}
+
+const invoice = documentFlow({
+  key: "invoice",
+  name: "Balans invoice",
+  title: "New invoice",
+  dateLabel: "Due",
+  dateHelp: "Optional. Friday, 30 September, in two weeks.",
+});
+
+const quote = documentFlow({
+  key: "quote",
+  name: "Balans quote",
+  title: "New quote",
+  // "Valid until" is eleven characters and wraps. "Valid to" says the same
+  // thing in eight, and the helper carries the rest.
+  dateLabel: "Valid to",
+  dateHelp: "Optional. How long the price stands — 30 September, in two weeks.",
+});
+
+/**
+ * A payment request: one screen, three fields.
+ *
+ * Not the factory above, because a request is genuinely a different shape
+ * rather than the same one with different words. F8 calls it "a lightweight
+ * payable with no PDF" — there is no due date to set, no VAT to add and no
+ * payment plan to choose, because there is no document for any of it to
+ * print on. Giving it a second screen would be inventing terms for something
+ * whose whole point is not having any.
+ *
+ * The email is here and optional for the same reason it is on an invoice: a
+ * link in a chat is easy to lose, and a copy in an inbox is not.
+ */
+const request: FlowDefinition = {
+  key: "request",
+  name: "Balans payment request",
+  categories: ["OTHER"],
+  json: {
+    version: VERSION,
+    screens: [
+      {
+        id: "WORK",
+        title: "Request a payment",
+        terminal: true,
+        success: true,
+        data: {
+          client_name: { type: "string", __example__: "Daniel Uwak" },
+          client_email: { type: "string", __example__: "" },
+          description: { type: "string", __example__: "Studio session" },
+          amount: { type: "number", __example__: 20000 },
+        },
+        layout: {
+          type: "SingleColumnLayout",
+          children: [
+            {
+              type: "TextSubheading",
+              text: "Who owes it, and what for.",
+            },
+            {
+              type: "Form",
+              name: "request_form",
+              "init-values": {
+                client_name: "${data.client_name}",
+                client_email: "${data.client_email}",
+                description: "${data.description}",
+                amount: "${data.amount}",
+              },
+              children: [
+                {
+                  type: "TextInput",
+                  name: "client_name",
+                  label: "Client",
+                  required: true,
+                  "input-type": "text",
+                  "max-chars": 80,
+                },
+                {
+                  type: "TextInput",
+                  name: "description",
+                  label: "Work",
+                  "helper-text": "What the money is for. This is the line they read.",
+                  required: true,
+                  "input-type": "text",
+                  "max-chars": 100,
+                },
+                {
+                  type: "TextInput",
+                  name: "amount",
+                  label: "Amount",
+                  "helper-text": "Naira. Digits only.",
+                  required: true,
+                  "input-type": "number",
+                  "max-chars": 12,
+                },
+                {
+                  type: "TextInput",
+                  name: "client_email",
+                  label: "Email",
+                  "helper-text": "Optional. They get the link by email too.",
+                  required: false,
+                  "input-type": "email",
+                  "max-chars": 120,
+                },
+                {
+                  type: "Footer",
+                  label: "See the draft",
+                  "on-click-action": {
+                    name: "complete",
+                    payload: {
+                      client_name: "${form.client_name}",
+                      client_email: "${form.client_email}",
+                      description: "${form.description}",
+                      amount: "${form.amount}",
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  },
 };
 
-export const FLOWS: readonly FlowDefinition[] = [onboarding, businessDetails, invoice];
+export const FLOWS: readonly FlowDefinition[] = [
+  onboarding,
+  businessDetails,
+  invoice,
+  quote,
+  request,
+];
 
 export const flowByKey = (key: string): FlowDefinition | undefined =>
   FLOWS.find((f) => f.key === key);

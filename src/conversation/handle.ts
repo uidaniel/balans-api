@@ -134,6 +134,8 @@ const FLOW_SCREEN = {
   onboarding: "BUSINESS",
   business_details: "DETAILS",
   invoice: "WORK",
+  quote: "WORK",
+  request: "WORK",
 } as const;
 import { OTHER_BANK } from "../whatsapp/flows/banks.ts";
 import { sendDocument, uploadDocument } from "../whatsapp/client.ts";
@@ -238,8 +240,9 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
       await handleDetailsForm(user.id, msg.from, msg.flow.fields, log);
       return;
     }
-    if (key === "invoice") {
+    if (key === "invoice" || key === "quote" || key === "request") {
       await handleInvoiceForm(
+        key === "request" ? "payment_request" : key,
         user.id,
         msg.from,
         msg.flow.fields,
@@ -1739,6 +1742,7 @@ async function handleDetailsForm(
  * runs on the client, and what comes back has travelled through it.
  */
 async function handleInvoiceForm(
+  type: "invoice" | "quote" | "payment_request",
   userId: string,
   phone: string,
   fields: Record<string, string>,
@@ -1786,7 +1790,7 @@ async function handleInvoiceForm(
   const { depositPercent, instalments } = splitForPlan(fields.plan);
 
   const doc: PendingDoc = {
-    type: "invoice",
+    type,
     clientName,
     clientEmail: email || null,
     lines: [{ description, qty: 1, unitAmountKobo: totalKobo }],

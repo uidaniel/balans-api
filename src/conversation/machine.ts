@@ -139,7 +139,7 @@ export type Effect =
    */
   | {
       type: "send_flow";
-      key: "onboarding" | "business_details" | "invoice";
+      key: "onboarding" | "business_details" | "invoice" | "quote" | "request";
       body: string;
       cta: string;
       /**
@@ -577,6 +577,18 @@ export const VOICE = {
     i("Or just say it: Invoice Tunde 20k for logo, due Friday"),
   ),
 
+  /**
+   * The message the quote Flow arrives on.
+   *
+   * Same shape as the invoice one. The sentence still works and is still
+   * faster for anything it can express, which is most quotes.
+   */
+  quoteFormBody: para(
+    `\u{1F4C4} ${b("New quote")}`,
+    "Tap below to fill it in.",
+    i("Or just say it: Quote Zenith 350k for renders"),
+  ),
+
   quoteForm: para(
     `📄 ${b("New quote")}`,
     "Copy this, fill it in, and send it back:",
@@ -585,6 +597,13 @@ export const VOICE = {
       `Only ${b("Client")} and ${b("Amount")} are needed.`,
       i("Or just say it: Quote Zenith 350k for renders"),
     ),
+  ),
+
+  /** The message the payment request Flow arrives on. */
+  requestFormBody: para(
+    `\u{1F4B0} ${b("Payment request")}`,
+    "Tap below to fill it in.",
+    i("Or just say it: Collect 20k from Tunde"),
   ),
 
   requestForm: para(
@@ -1236,36 +1255,33 @@ function buildOrAsk(doc: PendingDoc, ctx: Context, now: Civil, askDate = false):
      * only needs the rest. Here there is nothing to build on, and the choice
      * is between four questions and one form.
      *
-     * Quotes and payment requests keep the typed template. They are rarer,
-     * they carry fewer terms, and each published Flow is a thing to keep
-     * working — this one has to earn its place before there are three.
+     * A request gets one screen rather than two: there is no due date, no VAT
+     * and no payment plan on it, because there is no document for any of that
+     * to print on.
      *
      * The state still moves to `awaiting_field:client_name`, because a form
      * on the screen does not stop somebody typing the answer underneath it,
      * and they should not have to open it.
      */
-    if (doc.type === "invoice") {
-      return {
-        replies: [],
-        next: "awaiting_field:client_name",
-        context,
-        effects: [
-          {
-            type: "send_flow",
-            key: "invoice",
-            body: VOICE.invoiceFormBody,
-            cta: "Fill in the invoice",
-            fallback: { line: template, holdAt: "awaiting_field:client_name" },
-          },
-        ],
-      };
-    }
+    const form = {
+      invoice: { key: "invoice", body: VOICE.invoiceFormBody, cta: "Fill in the invoice" },
+      quote: { key: "quote", body: VOICE.quoteFormBody, cta: "Fill in the quote" },
+      payment_request: { key: "request", body: VOICE.requestFormBody, cta: "Fill in the request" },
+    }[doc.type];
 
     return {
-      replies: [template],
+      replies: [],
       next: "awaiting_field:client_name",
       context,
-      effects: [],
+      effects: [
+        {
+          type: "send_flow",
+          key: form.key as "invoice" | "quote" | "request",
+          body: form.body,
+          cta: form.cta,
+          fallback: { line: template, holdAt: "awaiting_field:client_name" },
+        },
+      ],
     };
   }
 

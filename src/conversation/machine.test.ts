@@ -1089,19 +1089,13 @@ describe("asking for a different document mid-flow", () => {
       assert.equal(out.context.doc?.type, wanted, "it kept the old document");
       assert.notEqual(out.context.doc?.clientName, command, "the command became the client");
 
-      // An invoice with nothing in it opens the form; a quote or a payment
-      // request still gets the typed template. Either way the user is asked
-      // for the same things, and either way a typed answer still lands,
-      // because the state is the same.
+      // A document with nothing in it opens the form — all three of them.
+      // The typed template is still the fallback, and a typed answer still
+      // lands either way, because the state is the same.
       const flow = out.effects.find((e) => e.type === "send_flow");
-      if (wanted === "invoice") {
-        assert.ok(flow, "an empty invoice should open the form");
-        assert.equal(flow.key, "invoice");
-        assert.match(flow.fallback?.line ?? "", /Copy this/i, "the template is still the fallback");
-      } else {
-        assert.equal(flow, undefined, `${wanted} keeps the typed template`);
-        assert.match(out.replies.join("\n"), /Copy this|Who is this for/i);
-      }
+      assert.ok(flow, `an empty ${wanted} should open the form`);
+      assert.equal(flow.key, wanted === "payment_request" ? "request" : wanted);
+      assert.match(flow.fallback?.line ?? "", /Copy this/i, "the template is still the fallback");
       assert.equal(out.next, "awaiting_field:client_name", "a typed answer must still land");
     });
   }
