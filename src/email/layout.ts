@@ -172,15 +172,50 @@ export function codeBlock(code: string): string {
   </table>`;
 }
 
-/** A filled button that still looks like one in Outlook. */
+/**
+ * A panel of label-and-value rows.
+ *
+ * The facts of the message, pulled out of the prose so they can be checked at
+ * a glance: what the plan is, when it renews, which number we will message.
+ * Somebody scanning an email reads the bold right-hand column and nothing
+ * else, and this is the shape that rewards that.
+ */
+export function detailCard(rows: { label: string; value: string }[]): string {
+  if (!rows.length) return "";
+
+  const cells = rows
+    .map((r, i) => {
+      const border = i === 0 ? "" : `border-top:1px solid ${C.line};`;
+      return `<tr>
+        <td align="left" style="${border}padding:13px 18px;font-family:${FONT};font-size:14px;
+            line-height:1.45;color:${C.muted};">${esc(r.label)}</td>
+        <td align="right" style="${border}padding:13px 18px;font-family:${FONT};font-size:14px;
+            line-height:1.45;font-weight:700;color:${C.ink};">${esc(r.value)}</td>
+      </tr>`;
+    })
+    .join("");
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+    style="margin:22px 0;background-color:${C.cream};border-radius:14px;">
+    ${cells}
+  </table>`;
+}
+
+/**
+ * A filled button that still looks like one in Outlook.
+ *
+ * Marigold with ink text, and the full width of the card. It is the one thing
+ * on the page anybody is meant to press, and a button the width of its own
+ * label does not read that way on a phone.
+ */
 export function button(label: string, href: string): string {
   return `
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:22px 0;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:22px 0;">
     <tr>
-      <td style="background-color:${C.ink};border-radius:999px;">
+      <td align="center" style="background-color:${C.marigold};border-radius:12px;">
         <a href="${esc(href)}"
-           style="display:inline-block;padding:13px 26px;font-family:${FONT};font-size:15px;
-                  font-weight:600;color:${C.cream};text-decoration:none;">${esc(label)}</a>
+           style="display:block;padding:15px 24px;font-family:${FONT};font-size:16px;
+                  font-weight:700;color:${C.ink};text-decoration:none;">${esc(label)}</a>
       </td>
     </tr>
   </table>`;
