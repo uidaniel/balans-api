@@ -110,7 +110,20 @@ export type PendingDoc = {
  * owns the side effects, which keeps this function pure and testable.
  */
 export type Effect =
-  | { type: "resolve_account"; bankQuery: string; accountNumber: string }
+  | {
+      type: "resolve_account";
+      bankQuery: string;
+      accountNumber: string;
+      /**
+       * Whether an email is already on file for this conversation.
+       *
+       * The setup form collects the email and the bank together. When the bank
+       * half fails — a typo, a bank that will not resolve — the conversation
+       * picks up the bank on its own, and the email it already has must not be
+       * asked for again. The effect writes the message, so it has to be told.
+       */
+      haveEmail?: boolean;
+    }
   | { type: "create_subaccount" }
   | { type: "send_email_code"; email: string }
   /**
@@ -1447,7 +1460,9 @@ function takeBank(text: string, ctx: Context): Step {
     context: { ...ctx, accountNumber: account, bankName: bank, attempts: 0 },
     // The caller resolves the name with the provider. We never take the user's
     // word for whose account it is (F17).
-    effects: [{ type: "resolve_account", bankQuery: bank, accountNumber: account }],
+    effects: [
+      { type: "resolve_account", bankQuery: bank, accountNumber: account, haveEmail: Boolean(ctx.email) },
+    ],
   };
 }
 
@@ -1470,6 +1485,18 @@ function confirmAccount(text: string, ctx: Context): Step {
   }
 
   if (/^(yes|yeah|yep|correct|that is right|na me|ok|okay)\b/i.test(text)) {
+    // The form already gave us one. Asking again for something somebody has
+    // typed once is the single most irritating thing software does, and it
+    // reads as though nothing they did was saved.
+    if (ctx.email) {
+      return {
+        replies: [VOICE.askCode(ctx.email)],
+        buttons: VOICE.codeButtons(),
+        next: "onboarding:verify_email",
+        context: { ...ctx, attempts: 0 },
+        effects: [{ type: "create_subaccount" }, { type: "send_email_code", email: ctx.email }],
+      };
+    }
     return {
       replies: [VOICE.askEmail],
       next: "onboarding:email",
@@ -1485,15 +1512,16 @@ function confirmAccount(text: string, ctx: Context): Step {
       effects: [],
     };
   }
+  const confirm = ctx.email
+    ? `Reply ${b("yes")} if it is, or ${b("no")} to send different details.`
+    : `Send your email address if it is, or reply ${b("no")}.`;
+
   return retry(
     "onboarding:confirm_account",
     ctx,
     ctx.resolvedAccountName
-      ? lines(
-          `Is ${b(ctx.resolvedAccountName)} the right account?`,
-          `Send your email address if it is, or reply ${b("no")}.`,
-        )
-      : `Send your email address if that account is right, or reply ${b("no")}.`,
+      ? lines(`Is ${b(ctx.resolvedAccountName)} the right account?`, confirm)
+      : confirm,
   );
 }
 

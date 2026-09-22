@@ -556,15 +556,23 @@ async function runEffects(
           });
 
           resolvedName = resolved.account.accountName;
+
+          // Asking for the email here is how the conversation collects it in
+          // one turn instead of two. But when the setup form already has it —
+          // which is every time the form was filled and only the bank failed —
+          // asking again reads as though nothing they typed was kept.
           extra.push(
             para(
               `🏦 That account is ${b(resolved.account.accountName)} at ${bank.name}.`,
-              lines(
-                `If that is right, ${b("send your email address")} — receipts and invoice copies go there.`,
-                `If it is not, reply ${b("no")}.`,
-              ),
+              effect.haveEmail
+                ? "Is that you?"
+                : lines(
+                    `If that is right, ${b("send your email address")} — receipts and invoice copies go there.`,
+                    `If it is not, reply ${b("no")}.`,
+                  ),
             ),
           );
+          if (effect.haveEmail) buttons = VOICE.yesNo("✅ That's me", "❌ Not me");
           break;
         }
 
