@@ -72,6 +72,32 @@ import { sendCta, sendFlow, sendList } from "../whatsapp/client.ts";
 import { mainMenuList } from "./menu.ts";
 import { flowId } from "../whatsapp/flows/register.ts";
 
+/**
+ * The menu, tappable, with the typed one as its fallback.
+ *
+ * Both callers go through here. The first version of this lived only inside
+ * the `show_help` effect, which meant a greeting and an opened chat — the two
+ * moments somebody is most likely to be seeing this product for the first
+ * time — still got a wall of slash commands nobody can tap.
+ */
+async function sendMenu(
+  userId: string,
+  phone: string | undefined,
+  fallback: string,
+  log: FastifyBaseLogger,
+): Promise<string | null> {
+  if (!phone) return fallback;
+
+  const sent = await sendList(phone, mainMenuList());
+  if (sent.ok) {
+    await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+    return null;
+  }
+
+  log.warn({ userId, reason: sent.reason }, "menu list failed, sending it as words");
+  return fallback;
+}
+
 /** The screen each Flow opens on. */
 const FLOW_SCREEN = {
   onboarding: "BUSINESS",
@@ -135,7 +161,12 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
    * who was probably just handed the number by somebody else.
    */
   if (msg.kind === "welcome") {
-    await reply(user.id, msg.from, [state === "new" ? VOICE.askBusinessName : VOICE.helpIdle], log);
+    if (state === "new") {
+      await reply(user.id, msg.from, [VOICE.askBusinessName], log);
+      return;
+    }
+    const words = await sendMenu(user.id, msg.from, VOICE.helpIdle, log);
+    if (words) await reply(user.id, msg.from, [words], log);
     return;
   }
 
@@ -458,18 +489,8 @@ async function runEffects(
            * no phone on the context, or Meta refusing it. Somebody asking what
            * this thing does must never be met with nothing.
            */
-          if (!ctx.phone) {
-            extra.push(effect.fallback);
-            break;
-          }
-
-          const sent = await sendList(ctx.phone, mainMenuList());
-          if (sent.ok) {
-            await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
-          } else {
-            log.warn({ userId, reason: sent.reason }, "menu list failed, sending it as words");
-            extra.push(effect.fallback);
-          }
+          const words = await sendMenu(userId, ctx.phone, effect.fallback, log);
+          if (words) extra.push(words);
           break;
         }
 

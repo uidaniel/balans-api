@@ -16,6 +16,8 @@ import { describe, it } from "node:test";
 
 import { mainMenuList } from "./menu.ts";
 import { asCommand } from "../parser/commands.ts";
+import { step, VOICE } from "./machine.ts";
+import type { Parsed } from "../parser/schema.ts";
 
 const list = mainMenuList();
 const rows = list.sections.flatMap((s) => s.rows);
@@ -89,5 +91,82 @@ describe("the menu list", () => {
       Object.keys(PROMISED).sort(),
       "the list and what it promises have drifted apart",
     );
+  });
+});
+
+describe("everything that offers the menu offers the tappable one", () => {
+  const V = "2026-09-draft-1";
+  const ask = (text: string) => step("idle", {}, { text }, V);
+
+  /** What the parser hands over for "/" and the other help commands. */
+  const helpParse: Parsed = {
+    intent: "help",
+    clientName: null,
+    clientEmail: null,
+    lineItems: [],
+    totalKobo: null,
+    dueDate: null,
+    dueDatePhrase: null,
+    documentNumber: null,
+    options: {
+      depositPercent: null,
+      instalments: null,
+      passFeesToClient: null,
+      vatPercent: null,
+      notes: null,
+    },
+    confidence: 1,
+    source: "command",
+    missing: [],
+  };
+
+  /*
+   * The bug this is here for.
+   *
+   * The list was wired into the `show_help` effect and nowhere else, so "/"
+   * was tappable and a plain "hey" was not — and "hey" is what somebody sends
+   * when they have just been handed the number and have no idea what this is.
+   * It went out as a wall of slash commands on a real phone.
+   *
+   * So the rule is stated as a rule: the typed menu may be a fallback, never
+   * a reply. Anything that puts VOICE.helpIdle in `replies` has skipped the
+   * list, whatever else it got right.
+   */
+  for (const text of ["hey", "hi", "how far", "help", "menu", "what can you do"]) {
+    it(`"${text}" asks for the list`, () => {
+      const out = ask(text);
+
+      const effect = out.effects.find((e) => e.type === "show_help");
+      assert.ok(effect, `"${text}" produced no show_help effect`);
+      assert.equal(effect.fallback, VOICE.helpIdle, "the typed menu is the fallback");
+
+      assert.ok(
+        !out.replies.some((r) => r === VOICE.helpIdle),
+        `"${text}" sent the typed menu as a reply, so the list was never tried`,
+      );
+    });
+  }
+
+  it('"/" gets there too, by the command reader rather than the machine', () => {
+    // "/" is not matched by the machine's HELP pattern — `asCommand` reads it
+    // and hands the machine a help intent, which is the path handle.ts takes
+    // in production. Testing it without the parse would prove nothing about
+    // either half.
+    assert.equal(asCommand("/")?.intent, "help");
+
+    const out = step("idle", {}, { text: "/", parsed: helpParse }, V);
+    const effect = out.effects.find((e) => e.type === "show_help");
+    assert.ok(effect, "a help intent must ask for the list");
+    assert.equal(effect.fallback, VOICE.helpIdle);
+    assert.ok(!out.replies.includes(VOICE.helpIdle), "not as words");
+  });
+
+  it("still answers about the question on screen mid-onboarding", () => {
+    // The whole menu there would invite somebody to wander off a form they
+    // are three fields into, so this one is deliberately not a list.
+    const out = step("onboarding:bank", {}, { text: "help" }, V);
+    assert.equal(out.effects.find((e) => e.type === "show_help"), undefined);
+    assert.ok(out.replies.length > 0, "it must still say something");
+    assert.notEqual(out.replies[0], VOICE.helpIdle, "and it must be about the bank question");
   });
 });

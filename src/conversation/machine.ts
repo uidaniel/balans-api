@@ -655,7 +655,16 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
 
     case "idle": {
       if (GREETING.test(text)) {
-        return { replies: [VOICE.helpIdle], next: "idle", context, effects: [] };
+        // "hey" is somebody opening the chat with nothing particular in mind.
+        // It deserves the same tappable menu as "/", for the same reason: the
+        // answer to "what is this" should be something you can act on rather
+        // than a list of words to retype.
+        return {
+          replies: [],
+          next: "idle",
+          context,
+          effects: [{ type: "show_help", fallback: VOICE.helpIdle }],
+        };
       }
       // Answers to the Pro offer. Read here rather than by the model, because
       // "pay now" is a decision about money and its meaning is fixed.
