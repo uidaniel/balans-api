@@ -99,43 +99,40 @@ font-size:13.5px;color:#4a5d54;font-weight:550;flex-wrap:wrap}
 .files a{color:#5c6f66;text-decoration:underline;text-underline-offset:3px}
 .foot{max-width:640px;margin:18px auto 0;text-align:center;font-size:13px;color:#7d8d85}
 .foot a{color:#7d8d85}
-.transfer .tlead{font-size:16px;color:#4a5d54;text-align:center;margin-bottom:16px}
-.transfer .tlead strong{color:var(--ink);font-weight:700}
-.tbox{border:1px solid var(--sand-2);border-radius:14px;overflow:hidden;background:var(--cream)}
+/* The transfer step is the one thing on this page that is an action rather
+   than a document, so it sits on ink and everything above it stays paper. */
+.tcard{background:var(--ink);border-radius:18px;padding:26px 22px 22px;text-align:center}
+.teyebrow{font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;
+font-weight:650;color:#7f918a}
+.tamt{font-size:17px;font-weight:700;letter-spacing:-.02em}
+.tbox{margin-top:18px;background:#18302a;border-radius:13px;overflow:hidden;text-align:left}
 .trow{display:flex;align-items:center;justify-content:space-between;gap:14px;
-padding:13px 16px;border-bottom:1px solid var(--sand-2);font-size:15px}
-.trow:last-child{border-bottom:0}
-.tk{color:#6b7d74;font-size:13.5px;flex:none}
-.tv{font-weight:650;text-align:right;display:flex;align-items:center;gap:10px;min-width:0}
-.tv .acct{font-variant-numeric:tabular-nums;letter-spacing:.09em;font-size:19.5px;
-font-weight:700;-webkit-user-select:all;user-select:all}
-button.copy{border:1px solid var(--sand-2);background:#fff;color:#4a5d54;
-border-radius:8px;padding:5px 10px;font-size:12px;font-weight:650;cursor:pointer;
-font-family:inherit;flex:none}
-button.copy:hover{background:var(--sand)}
-button.copy.done{background:#e4f2e9;color:#256b41;border-color:#cfe5d8}
-/* A short list, not a paragraph: each line is one thing to do or know, and
-   a wall of grey text on a payment screen reads as small print. */
-.tnote{margin-top:16px;padding-left:0;list-style:none;font-size:13.5px;line-height:1.6;color:#6b7d74}
-.tnote li{position:relative;padding-left:18px}
-.tnote li+li{margin-top:7px}
-.tnote li:before{content:"";position:absolute;left:5px;top:.62em;
-width:5px;height:5px;border-radius:50%;background:var(--sand-2)}
-.tnote strong{color:var(--ink);font-weight:650}
-/* Not a flex row: the bare text between the dot and the countdown becomes its
-   own flex item and wraps onto a line of its own the moment the box is narrow,
-   which is every phone. Inline keeps the sentence a sentence. */
-.twait{margin-top:18px;font-size:13.5px;color:#6b7d74;text-align:center;line-height:1.7}
-.twait .dot{display:inline-block;vertical-align:baseline;width:8px;height:8px;
-margin-right:7px;border-radius:50%;background:var(--marigold);
-animation:pulse 1.4s ease-in-out infinite}
-.twait .tleft{color:#8a9a92}
+padding:13px 16px;border-top:1px solid #254236}
+.trow:first-child{border-top:0}
+.trow.wide{display:block}
+.tk{color:#869790;font-size:13px;flex:none}
+.tv{font-weight:650;text-align:right;color:var(--cream);min-width:0;font-size:14.5px}
+.trow.wide .tv{text-align:left;margin-top:5px}
+.tv .acct{display:block;font-variant-numeric:tabular-nums;letter-spacing:.1em;
+font-size:26px;font-weight:700;color:var(--cream);line-height:1.1}
+button.tcopy{display:block;width:100%;margin-top:18px;padding:15px;border:0;
+border-radius:13px;background:var(--marigold);color:var(--ink);font-size:16px;
+font-weight:700;letter-spacing:-.01em;cursor:pointer;font-family:inherit}
+button.tcopy:hover{background:var(--marigold-deep)}
+button.tcopy.done{background:#2f6b47;color:#e8f5ed}
+.tfine{margin:16px 4px 0;font-size:13.5px;line-height:1.65;color:#6b7d74;text-align:center}
+.tfine strong{color:var(--ink);font-weight:650}
+.twait{margin-top:16px;font-size:13px;color:#8fa199;text-align:center;line-height:1.7}
+.twait .dot{display:inline-block;vertical-align:baseline;width:7px;height:7px;
+border-radius:50%;background:var(--marigold);margin-right:8px;animation:pulse 1.8s ease-in-out infinite}
+.twait .tleft{color:#6d807a}
 @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
 @media(prefers-reduced-motion:reduce){.twait .dot{animation:none;opacity:.8}}
 .tussd{margin-top:12px;text-align:center;font-size:13.5px;color:#6b7d74}
 @media(max-width:520px){
-  .trow{padding:12px 13px;font-size:14.5px}
-  .tv .acct{font-size:17px}
+  .tcard{padding:22px 16px 18px}
+  .trow{padding:12px 13px}
+  .tv .acct{font-size:23px}
 }
 @media(max-width:520px){
   body{padding:14px 10px 48px}
@@ -196,12 +193,12 @@ const TRANSFER_JS = `
     if (!left) return;
     if (ms <= 0) {
       left.hidden = false;
-      left.textContent = '\u2014 these details have expired, refresh for new ones';
+      left.textContent = ' \u2014 these details have expired, refresh for new ones';
       return;
     }
     var mins = Math.floor(ms / 60000), secs = Math.floor((ms % 60000) / 1000);
     left.hidden = false;
-    left.textContent = '\u2014 ' + mins + ':' + (secs < 10 ? '0' : '') + secs + ' left';
+    left.textContent = ' \u2014 ' + mins + ':' + (secs < 10 ? '0' : '') + secs + ' left';
     setTimeout(tick, 1000);
   }
   tick();
@@ -439,48 +436,36 @@ function payBlock(
 function transferBlock(doc: PublicDocument, t: TransferPanel, token: string): string {
   const amount = formatNaira(t.amountKobo);
 
-  const row = (k: string, v: string, copy?: string) =>
-    `<div class="trow">
-      <span class="tk">${k}</span>
-      <span class="tv">${v}${
-        copy
-          ? `<button class="copy" type="button" data-copy="${esc(copy)}" aria-label="Copy ${k.toLowerCase()}">Copy</button>`
-          : ""
-      }</span>
-    </div>`;
+  const row = (k: string, v: string, cls = "") =>
+    `<div class="trow${cls ? ` ${cls}` : ""}"><span class="tk">${k}</span><span class="tv">${v}</span></div>`;
 
   return `<div class="pay transfer" data-token="${esc(token)}" data-expires="${t.expiresInMs}">
-  <p class="tlead">Transfer <strong>${amount}</strong> to this account</p>
+  <div class="tcard">
+    <p class="teyebrow">Pay by bank transfer</p>
 
-  <div class="tbox">
-    ${row("Bank", esc(t.bankName))}
-    ${row("Account number", `<span class="acct">${esc(t.accountNumber)}</span>`, t.accountNumber)}
-    ${t.accountName ? row("Account name", esc(t.accountName)) : ""}
-    ${row("Amount", `<strong>${amount}</strong>`, String(t.amountKobo / 100))}
+    <div class="tbox">
+      ${row("Bank", esc(t.bankName))}
+      ${row("Account number", `<span class="acct">${esc(t.accountNumber)}</span>`, "wide")}
+      ${t.accountName ? row("Account name", esc(t.accountName)) : ""}
+      ${row("Amount", `<span class="tamt">${amount}</span>`)}
+    </div>
+
+    <button class="tcopy copy" type="button" data-copy="${esc(t.accountNumber)}">Copy account number</button>
+
+    <p class="twait" role="status">
+      <span class="dot"></span>Waiting for your transfer<span class="tleft" hidden></span>
+    </p>
   </div>
 
-  <ul class="tnote">
-    <li>Send <strong>exactly ${amount}</strong> from your bank app.</li>
-    <li>This account belongs to this ${LABEL[doc.type].toLowerCase()} alone${
-      t.accountName
-        ? `, so it is named <strong>${esc(t.accountName)}</strong> rather than ${esc(doc.businessName)}`
-        : ""
-    }.</li>
-    <li>Nothing else is needed &mdash; no reference, no sign-up.</li>
-  </ul>
-
-  <p class="twait" role="status">
-    <span class="dot"></span>Waiting for your transfer. This page updates itself
-    <span class="tleft" hidden></span>
+  <p class="tfine">
+    Send <strong>exactly ${amount}</strong>. This account is for this ${LABEL[doc.type].toLowerCase()} alone${
+      t.accountName ? `, which is why it reads <strong>${esc(t.accountName)}</strong>` : ""
+    } &mdash; no reference needed.
   </p>
 
-  ${
-    t.ussd
-      ? `<p class="tussd">On your phone: <strong>${esc(t.ussd)}</strong></p>`
-      : ""
-  }
+  ${t.ussd ? `<p class="tfine">On your phone: <strong>${esc(t.ussd)}</strong></p>` : ""}
 
-  <noscript><p class="tnote">Refresh this page after sending, to see it confirmed.</p></noscript>
+  <noscript><p class="tfine">Refresh this page after sending, to see it confirmed.</p></noscript>
 </div>`;
 }
 
