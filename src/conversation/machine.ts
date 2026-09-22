@@ -568,12 +568,23 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
     return { replies: [VOICE.paused], next: state, context, effects: [] };
   }
 
-  // Commands come before the pending question, so nobody gets stuck.
-  if (HELP.test(text)) {
-    if (state !== "idle") {
+  /*
+   * Commands come before the pending question, so nobody gets stuck.
+   *
+   * Keyed off the parsed intent as well as the pattern, because the pattern
+   * knows "help" and "menu" and the command reader knows "/" — and "/" is the
+   * one people actually try. It only worked from idle before, which meant it
+   * failed precisely when somebody was part-way through a draft and looking
+   * for a way out. That is the situation the menu exists for.
+   *
+   * `context` and `state` are both passed through untouched: asking what this
+   * thing can do must never cost somebody the draft they were halfway through.
+   */
+  if (HELP.test(text) || msg.parsed?.intent === "help") {
+    if (state.startsWith("onboarding")) {
       // Mid-onboarding, help is about the question on the screen. Offering the
       // whole menu there invites somebody to wander off a form they are three
-      // fields into.
+      // fields into — and half of that menu needs an account to work.
       return { replies: [onboardingHelp(state)], next: state, context, effects: [] };
     }
     return {

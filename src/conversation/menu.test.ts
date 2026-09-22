@@ -161,6 +161,35 @@ describe("everything that offers the menu offers the tappable one", () => {
     assert.ok(!out.replies.includes(VOICE.helpIdle), "not as words");
   });
 
+  it("works from wherever somebody is stuck, keeping their draft", () => {
+    /*
+     * The bug this is here for.
+     *
+     * "/" only produced the menu from idle. Part-way through a draft it did
+     * nothing at all — which is precisely when somebody reaches for it,
+     * because that is when they are stuck and looking for a way out.
+     *
+     * And it must not cost them the draft. Asking what this thing can do is
+     * not the same as abandoning what you were doing.
+     */
+    const doc = {
+      type: "invoice" as const,
+      clientName: "Tunde",
+      lines: [{ description: "logo", qty: 1, unitAmountKobo: 20_000_00 }],
+    };
+
+    for (const state of ["awaiting_confirm", "awaiting_field:amount", "awaiting_field:client_name"] as const) {
+      const out = step(state, { doc }, { text: "/", parsed: helpParse }, V);
+
+      assert.ok(
+        out.effects.some((e) => e.type === "show_help"),
+        `"/" did nothing at ${state}`,
+      );
+      assert.equal(out.next, state, `${state}: help moved the conversation`);
+      assert.deepEqual(out.context.doc, doc, `${state}: help lost the draft`);
+    }
+  });
+
   it("still answers about the question on screen mid-onboarding", () => {
     // The whole menu there would invite somebody to wander off a form they
     // are three fields into, so this one is deliberately not a list.
