@@ -47,6 +47,9 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Read-only, and outside the repository so a `git pull` cannot touch the
+      # private key and a stray `git add -A` cannot stage it.
+      - /opt/balans/certs:/etc/caddy/certs:ro
       # Certificates live here. Losing this volume means re-issuing them, and
       # Let's Encrypt rate-limits that, so it is a named volume rather than
       # anything that gets cleaned up with the containers.

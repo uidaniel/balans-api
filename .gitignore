@@ -10,3 +10,9 @@ node_modules/
 
 # Scratch: the quick-tunnel URL changes every restart
 .tunnel-url
+
+# Cloudflare Origin certificate. Lives on the server, never in the repo.
+origin.pem
+origin.key
+*.pem
+*.key
