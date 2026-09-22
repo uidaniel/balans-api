@@ -105,6 +105,52 @@ describe("every published Flow", () => {
         }
       });
 
+      it("declares data with the type of the field it fills", () => {
+        /*
+         * Meta refuses the whole Flow for this, and it is invisible here:
+         *
+         *   Expected property 'amount' to be of type 'number' but found
+         *   'string'.
+         *
+         * The amount input is `input-type: "number"`, so the `data` entry
+         * that initialises it has to be a number too. Nothing in the JSON
+         * says those two belong together, which is exactly why it was wrong.
+         */
+        const WANTS: Record<string, string> = {
+          number: "number",
+          text: "string",
+          email: "string",
+          password: "string",
+          passcode: "string",
+          phone: "string",
+        };
+
+        for (const screen of json.screens) {
+          const declared = (screen.data as Record<string, Node>) ?? {};
+
+          for (const form of walk(screen.layout).filter((n) => n.type === "Form")) {
+            const init = (form["init-values"] as Record<string, string>) ?? {};
+            const inputs = new Map(
+              walk(form.children)
+                .filter((c) => typeof c.name === "string")
+                .map((c) => [c.name as string, c]),
+            );
+
+            for (const [field, ref] of Object.entries(init)) {
+              const name = /^\$\{data\.([a-z_0-9]+)\}$/i.exec(ref)?.[1];
+              if (!name) continue;
+
+              const wanted = WANTS[String(inputs.get(field)?.["input-type"] ?? "text")];
+              assert.equal(
+                declared[name]?.type,
+                wanted,
+                `${String(screen.id)}: data.${name} fills ${field}, which wants a ${wanted}`,
+              );
+            }
+          }
+        }
+      });
+
       it("puts starting values on the form, not on the inputs", () => {
         // At 7.1 an `init-value` on a TextInput is rejected outright, and the
         // whole Flow fails to publish for it.

@@ -1532,7 +1532,8 @@ async function handleInvoiceForm(
   const notes = (fields.notes ?? "").trim();
   const duePhrase = (fields.due_date ?? "").trim();
 
-  const totalKobo = parseAmountToKobo((fields.amount ?? "").trim());
+  // The amount field is a number in the Flow, so it can arrive as one.
+  const totalKobo = parseAmountToKobo(String(fields.amount ?? "").trim());
 
   // Required in the form, so an empty one means the form was not the thing
   // that sent this. Saying which field rather than "something went wrong"

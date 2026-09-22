@@ -425,7 +425,9 @@ const invoice: FlowDefinition = {
           client_name: { type: "string", __example__: "Daniel Uwak" },
           client_email: { type: "string", __example__: "" },
           description: { type: "string", __example__: "Website design" },
-          amount: { type: "string", __example__: "250000" },
+          // A number, because the input is `input-type: "number"` and Meta
+          // checks the declared type against the field it initialises.
+          amount: { type: "number", __example__: 250000 },
           due_date: { type: "string", __example__: "" },
           plan: { type: "string", __example__: "one" },
           notes: { type: "string", __example__: "" },
@@ -525,7 +527,9 @@ const invoice: FlowDefinition = {
           client_name: { type: "string", __example__: "Daniel Uwak" },
           client_email: { type: "string", __example__: "" },
           description: { type: "string", __example__: "Website design" },
-          amount: { type: "string", __example__: "250000" },
+          // A number, because the input is `input-type: "number"` and Meta
+          // checks the declared type against the field it initialises.
+          amount: { type: "number", __example__: 250000 },
           due_date: { type: "string", __example__: "" },
           plan: { type: "string", __example__: "one" },
           notes: { type: "string", __example__: "" },
