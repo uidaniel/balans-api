@@ -81,9 +81,16 @@ export function layout({ preheader, heading, body }: LayoutOptions): string {
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
                style="width:100%;max-width:600px;">
 
-          <!-- Wordmark -->
+          <!-- Wordmark.
+               The cell carries an explicit background as well as a colour, and
+               it has to. Gmail's dark mode rewrites a colour it considers too
+               dark to read, but it decides that by looking at the background
+               declared on the same element — and a cell with only a colour on
+               it has none to look at. So the page behind the wordmark went
+               dark and the ink stayed put, leaving #10231C on near-black:
+               legible as nothing but its green cast. -->
           <tr>
-            <td style="padding:0 4px 20px;">
+            <td style="padding:0 4px 20px;background-color:${C.cream};">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td style="vertical-align:middle;">
@@ -92,7 +99,8 @@ export function layout({ preheader, heading, body }: LayoutOptions): string {
                                 text-decoration:none;border-radius:17px;">
                   </td>
                   <td style="padding-left:10px;font-family:${FONT};font-size:19px;
-                             font-weight:700;letter-spacing:-0.02em;color:${C.ink};
+                             font-weight:700;letter-spacing:-0.02em;
+                             background-color:${C.cream};color:${C.ink};
                              vertical-align:middle;">balans</td>
                 </tr>
               </table>
