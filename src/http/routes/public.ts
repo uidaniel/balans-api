@@ -133,6 +133,13 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     const doc = await findByToken(req.params.token);
     if (!doc) return reply.status(404).type(HTML).send(renderNotFound());
 
+    // A payment request has no document (F8). The page has never offered this
+    // link for one; typing it by hand should not produce a file the rest of
+    // the product says does not exist.
+    if (doc.type === "payment_request") {
+      return reply.status(404).type(HTML).send(renderNotFound());
+    }
+
     const key = await pdfKeyFor(doc.id);
     let file = key ? await getFile(key) : null;
 

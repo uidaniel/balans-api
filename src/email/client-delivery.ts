@@ -32,6 +32,24 @@ const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /**
+ * The last line of the email — where to find it, and whether a file came with it.
+ *
+ * Its own function because it is the one sentence in here that can lie. A
+ * payment request carries no attachment (F8: "a lightweight payable with no
+ * PDF"), and an email that says one is attached when none is sends the client
+ * looking for a file that does not exist, then asking the user about it.
+ *
+ * Exported so the rule can be tested by asking it rather than by reading the
+ * source around it.
+ */
+export function closingLine(type: string, label: string, link: string | null): string {
+  const where = esc(link ?? "the link above");
+  return type === "payment_request"
+    ? `You can always see it at ${where}.`
+    : `The ${label.toLowerCase()} is attached, and you can always see it at ${where}.`;
+}
+
+/**
  * Emails a document to the client it is for.
  *
  * Client delivery is a Pro feature (F21). A Free user's invoice still has a
@@ -97,15 +115,15 @@ export async function emailDocumentToClient(
     d.notes ? paragraph(esc(d.notes), true) : "",
     link && d.type !== "quote" ? button(`Pay ${formatNaira(d.total_kobo)}`, link) : "",
     link && d.type === "quote" ? button("View quote", link) : "",
-    paragraph(
-      `The ${label.toLowerCase()} is attached, and you can always see it at ${esc(link ?? "the link above")}.`,
-      true,
-    ),
+    paragraph(closingLine(d.type, label, link), true),
   ]
     .filter(Boolean)
     .join("\n");
 
-  const pdf = await renderDocumentPdf(documentId, log);
+  // Nothing to attach for a payment request, and the body must not promise
+  // one either — see the line about it being attached, below.
+  const pdf =
+    d.type === "payment_request" ? null : await renderDocumentPdf(documentId, log);
 
   const sent = await sendEmail(
     {

@@ -952,7 +952,26 @@ async function runEffects(
           // The caption carries the words, so the file and the message are one
           // bubble rather than two.
           const { forward } = sentMessage(draft, confirmed, env.PUBLIC_BASE_URL, ctx.today);
-          const pdf = await renderDocumentPdf(confirmed.id, log);
+
+          /*
+           * A payment request has no PDF, and that is the whole of what it is.
+           *
+           * F8 calls it "a lightweight payable with no PDF". The payment page
+           * has always honoured that — it deliberately offers no download for
+           * one, because "there is nothing itemised to render, and offering
+           * one implies there is". The send path did not, so WhatsApp attached
+           * a document the page then refused to hand over, and the file itself
+           * was a one-line page carrying a number and a link, which is the
+           * paperwork a request exists to skip.
+           *
+           * So an invoice and a quote arrive as a document to forward, and a
+           * request arrives as a message with a link in it. That difference is
+           * the reason to have three of them.
+           */
+          const pdf =
+            confirmed.type === "payment_request"
+              ? null
+              : await renderDocumentPdf(confirmed.id, log);
 
           /*
            * The design picker, once or twice and then never again.
