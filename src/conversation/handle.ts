@@ -81,6 +81,15 @@ import { TEMPLATES } from "../pdf/templates.ts";
 import { flowId } from "../whatsapp/flows/register.ts";
 
 /**
+ * What counts as STOP when a payout change is waiting.
+ *
+ * Deliberately close to the bare word. "stop reminders" is a different and
+ * far less urgent request, and reading it as this one would quietly leave
+ * somebody's reminders on while telling them their bank change was cancelled.
+ */
+const STOPS_A_CHANGE = /^(stop|stop it|cancel|cancel it|stop the change|cancel the change)[.!]?$/i;
+
+/**
  * How many sent documents still carry the "pick a design" offer.
  *
  * Two, because the first invoice is a busy moment and the offer is easy to
@@ -297,6 +306,49 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
    * me" still means it, so the free command check runs even there.
    */
   const escaping = !needsParse ? asCommand(text) : null;
+
+  /*
+   * STOP, while a bank change is waiting to take effect.
+   *
+   * This is the one message in the product that has to work. The security
+   * notice says "reply STOP on WhatsApp and we will cancel it", and the
+   * twenty-four hour delay exists so that somebody whose WhatsApp has been
+   * taken over has a window to use it.
+   *
+   * It did not work. "stop" reads as a rejection — it is on the same list as
+   * "no" and "cancel" — so at idle it answered "there is no draft waiting"
+   * and the change went ahead. The cancel branch existed, but only on the
+   * confirmation question, which is before the change is scheduled and not
+   * the moment anybody needs it.
+   *
+   * Handled here rather than in the machine because the machine is pure and
+   * cannot ask whether a change is pending. It runs before everything: a
+   * scheduled payout change is the only thing on this number where being a
+   * few seconds late matters, and nothing else it might have meant is worth
+   * more than getting it wrong.
+   *
+   * Narrow on purpose. Only a message that is essentially the word itself —
+   * not "stop reminders", which is a different and much less urgent thing.
+   */
+  if (STOPS_A_CHANGE.test(text.trim()) && (await cancelPendingChange(user.id))) {
+    log.warn({ userId: user.id }, "scheduled bank change cancelled by STOP");
+    await reply(
+      user.id,
+      msg.from,
+      [
+        para(
+          `\u{1F6D1} ${b("Stopped.")}`,
+          lines(
+            "Your payout account has not changed and nothing is scheduled.",
+            "Money keeps going where it was going.",
+          ),
+          i("If you did not ask for that change, email hello@balans.ng now."),
+        ),
+      ],
+      log,
+    );
+    return;
+  }
 
   const result = step(
     state,
