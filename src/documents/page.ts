@@ -66,7 +66,7 @@ font-size:20px;color:var(--ink);font-weight:700;letter-spacing:-.02em}
 .row.paidoff{color:var(--moss)}
 .note{margin:20px 28px 0;padding:14px 16px;background:var(--cream);
 border-radius:12px;font-size:14px;color:#4a5d54;white-space:pre-wrap}
-.pay{padding:26px 28px 30px}
+.pay{padding:26px 16px 30px}
 button.pay-btn,a.pay-btn{display:block;width:100%;padding:16px;border:0;border-radius:14px;
 background:var(--marigold);color:var(--ink);font-size:17px;font-weight:700;
 letter-spacing:-.01em;cursor:pointer;text-align:center;text-decoration:none;
@@ -110,11 +110,14 @@ font-weight:650;color:#7f918a}
 padding:13px 16px;border-top:1px solid #254236}
 .trow:first-child{border-top:0}
 .trow.wide{display:block}
+/* The account number reads as one of the four details, on its line, in the
+   same shape as the rest. It was on a line of its own at 26px, which made it
+   look like a different kind of thing from the bank and the amount beside it. */
 .tk{color:#869790;font-size:13px;flex:none}
 .tv{font-weight:650;text-align:right;color:var(--cream);min-width:0;font-size:14.5px}
 .trow.wide .tv{text-align:left;margin-top:5px}
-.tv .acct{display:block;font-variant-numeric:tabular-nums;letter-spacing:.1em;
-font-size:26px;font-weight:700;color:var(--cream);line-height:1.1}
+.tv .acct{font-variant-numeric:tabular-nums;letter-spacing:.04em;
+font-size:20px;font-weight:700;color:var(--cream);line-height:1.2}
 button.tcopy{display:block;width:100%;margin-top:18px;padding:15px;border:0;
 border-radius:13px;background:var(--marigold);color:var(--ink);font-size:16px;
 font-weight:700;letter-spacing:-.01em;cursor:pointer;font-family:inherit}
@@ -132,7 +135,7 @@ border-radius:50%;background:var(--marigold);margin-right:8px;animation:pulse 1.
 @media(max-width:520px){
   .tcard{padding:22px 16px 18px}
   .trow{padding:12px 13px}
-  .tv .acct{font-size:23px}
+  .tv .acct{font-size:18px;letter-spacing:.03em}
 }
 @media(max-width:520px){
   body{padding:14px 10px 48px}
@@ -142,7 +145,7 @@ border-radius:50%;background:var(--marigold);margin-right:8px;animation:pulse 1.
   th{padding:0 18px 10px}
   td{padding:12px 18px}
   .totals{padding:16px 18px 0}
-  .pay,.banner{padding:20px 18px 24px;margin-left:18px;margin-right:18px}
+  .pay,.banner{padding:20px 10px 24px;margin-left:8px;margin-right:8px}
   .trust{margin-left:18px;margin-right:18px;padding:14px 14px}
   .note{margin-left:18px;margin-right:18px}
 }
@@ -445,7 +448,7 @@ function transferBlock(doc: PublicDocument, t: TransferPanel, token: string): st
 
     <div class="tbox">
       ${row("Bank", esc(t.bankName))}
-      ${row("Account number", `<span class="acct">${esc(t.accountNumber)}</span>`, "wide")}
+      ${row("Account number", `<span class="acct">${esc(t.accountNumber)}</span>`)}
       ${t.accountName ? row("Account name", esc(t.accountName)) : ""}
       ${row("Amount", `<span class="tamt">${amount}</span>`)}
     </div>
