@@ -15,8 +15,23 @@ export function settingsMenu(x: {
   account: ActiveAccount | null;
   pending: { bankName: string; last4: string; accountName: string; effectiveAt: Date } | null;
 }): string {
+  /*
+   * The name, then the bank and the last four.
+   *
+   * The number itself is encrypted at rest and only its last four digits are
+   * kept in the clear (section 11), so there is nothing here to show even if
+   * it were wise to — and it is not: this screen gets screenshotted and
+   * forwarded like any other.
+   *
+   * The name is what answers the question somebody opens this to ask. "Is
+   * that my account?" is settled instantly by "ADA OKON" and barely at all by
+   * four digits, and it is already loaded.
+   */
   const now = x.account
-    ? `Paid into ${b(`${x.account.bankName} ••${x.account.last4}`)}`
+    ? lines(
+        `Paid into ${b(x.account.accountName)}`,
+        `${x.account.bankName} ••${x.account.last4}`,
+      )
     : b("No payout account yet");
 
   const scheduled = x.pending
@@ -104,7 +119,8 @@ export function settingsList(x: {
   footer?: string;
 } {
   const now = x.account
-    ? `Paid into ${x.account.bankName} ••${x.account.last4}`
+    ? `Paid into ${x.account.accountName}
+${x.account.bankName} ••${x.account.last4}`
     : "No payout account yet";
 
   const scheduled = x.pending
