@@ -7,6 +7,7 @@ import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { env, isProd } from "../config.ts";
 import { healthRoutes } from "./routes/health.ts";
+import { brandRoutes } from "./routes/brand.ts";
 import { whatsappRoutes } from "./routes/whatsapp.ts";
 import { publicRoutes } from "./routes/public.ts";
 import { monnifyRoutes } from "./routes/monnify.ts";
@@ -109,6 +110,7 @@ export function buildServer(): FastifyInstance {
   });
 
   app.register(healthRoutes);
+  app.register(brandRoutes);
   app.register(whatsappRoutes, { prefix: "/webhooks/whatsapp" });
   // No prefix: /i/{token} is a link people paste into WhatsApp, and every
   // character of it is one more chance to mistype.

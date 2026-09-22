@@ -678,6 +678,7 @@ async function runEffects(
           const sent = await sendFlow(ctx.phone, {
             body: effect.body,
             cta: effect.cta,
+            headerImage: effect.image,
             flowId: id,
             // Ties the submission back to this person. Read on the way in, and
             // never trusted for anything the sender could have chosen.

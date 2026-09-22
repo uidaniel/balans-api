@@ -141,6 +141,15 @@ export type Effect =
       body: string;
       cta: string;
       /**
+       * A picture above the message.
+       *
+       * Only the setup invitation has one. It is somebody's first sight of
+       * this product, usually after a friend sent them a number and nothing
+       * else, and one message that shows what this is beats three that
+       * describe it.
+       */
+      image?: string;
+      /**
        * What to say instead when there is no published Flow.
        *
        * Every Flow needs one, because "no form" is the normal state of this
@@ -255,6 +264,15 @@ export type Inbound = {
  * tapped is not reachable on a phone.
  */
 const site = env.SITE_URL.replace(/[/]$/, "");
+
+/**
+ * The card that rides on top of the setup invitation.
+ *
+ * Fetched by Meta, from this same API. A URL rather than an uploaded media id
+ * because an id expires after thirty days and the failure would arrive a month
+ * after anybody last looked at this.
+ */
+const WELCOME_CARD = `${env.PUBLIC_BASE_URL.replace(/[/]$/, "")}/brand/welcome.png`;
 const TERMS_URL = site + "/terms";
 const PRIVACY_URL = site + "/privacy";
 
@@ -273,21 +291,17 @@ const GREETING = /^(hi|hello|hey|good (morning|afternoon|evening)|hola|howfa|how
  */
 export const VOICE = {
   /** The invitation that carries the setup form. */
-  setupInvite: para(
-    "👋 Welcome to Balans.",
-    lines(
-      b("Four quick things and you are set up."),
-      "Your business name, your email, and the account your money should land in.",
-    ),
-  ),
+  /*
+   * Short on purpose: the card above it already says welcome, and already
+   * lists the three things. Saying them again underneath is the same sentence
+   * twice, and the only thing left to say is what to do next.
+   */
+  setupInvite: para(`\u{1F44B} ${b("Tap below to set up.")}`, "It takes about a minute."),
 
   /** The same, for somebody whose first message was an instruction. */
   setupFirst: para(
     "👋 Let us get you set up first, then I can do that.",
-    lines(
-      b("Four quick things."),
-      "Your business name, your email, and the account your money should land in.",
-    ),
+    b("Tap below. It takes about a minute."),
   ),
 
   /** They closed the form, or would rather type. Both are fine. */
@@ -639,6 +653,7 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
             key: "onboarding",
             body: GREETING.test(text) ? VOICE.setupInvite : VOICE.setupFirst,
             cta: "Set up Balans",
+            image: WELCOME_CARD,
           },
         ],
       };

@@ -456,6 +456,17 @@ export function sendFlow(
     /** Values the first screen starts with, for an edit form. */
     data?: Record<string, string>;
     header?: string;
+    /**
+     * A picture above the message, by URL.
+     *
+     * Meta fetches it itself, which is why this is a link rather than an
+     * uploaded media id: an id expires after thirty days and the failure
+     * arrives a month after anybody last looked at this. The URL is served by
+     * this same API from a file in the repository.
+     *
+     * Takes precedence over `header`. A header is one thing or the other.
+     */
+    headerImage?: string;
     footer?: string;
     /** Draft flows can be opened by the developer before publishing. */
     draft?: boolean;
@@ -476,7 +487,11 @@ export function sendFlow(
       type: "interactive",
       interactive: {
         type: "flow",
-        ...(content.header ? { header: { type: "text", text: content.header.slice(0, 60) } } : {}),
+        ...(content.headerImage
+          ? { header: { type: "image", image: { link: content.headerImage } } }
+          : content.header
+            ? { header: { type: "text", text: content.header.slice(0, 60) } }
+            : {}),
         body: { text: content.body.slice(0, 1024) },
         ...(content.footer ? { footer: { text: content.footer.slice(0, 60) } } : {}),
         action: {
