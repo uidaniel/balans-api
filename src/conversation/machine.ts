@@ -12,7 +12,7 @@
  * question repeated at them.
  */
 
-import { normalisePhone } from "../whatsapp/client.ts";
+import { normalisePhone, type ReplyButton } from "../whatsapp/client.ts";
 import { b, field, i, lines, para } from "../whatsapp/format.ts";
 import type { Civil } from "../../core/dates.ts";
 import { isDocumentIntent, type Parsed } from "../parser/schema.ts";
@@ -155,6 +155,18 @@ export type Step = {
   ack?: string[];
   /** Sent once the effects are done, and dropped if one of them held. */
   replies: string[];
+  /**
+   * Tappable answers under the last message of the turn.
+   *
+   * "Reply *yes* to send it" asks somebody to read the instruction, remember
+   * the word, open the keyboard, spell it and send. Each of those is a place
+   * where a person stops, and the last is where they type "yeah" and get asked
+   * again. A button is one tap and cannot be mistyped.
+   *
+   * Dropped along with `replies` when an effect holds the conversation, since
+   * the question they answered no longer stands.
+   */
+  buttons?: ReplyButton[];
   next: State;
   context: Context;
   effects: Effect[];
@@ -238,25 +250,38 @@ export const VOICE = {
   ),
 
   askCode: (email: string) =>
-    para(
-      `📨 Code sent to ${b(email)}.`,
-      lines(
-        b("Send me the 6 digits."),
-        `No code? Reply ${b("resend")}, or ${b("change")} to use another address.`,
-      ),
-    ),
+    para(`📨 Code sent to ${b(email)}.`, lines(b("Send me the 6 digits."), "No code?")),
+
+  /** The two ways out of the code step, as taps. */
+  codeButtons: (): ReplyButton[] => [
+    { id: "resend", title: "📨 Send again" },
+    { id: "change", title: "✉️ Other email" },
+  ],
 
   /** Confirmation, the terms and the thing to reply: one message, not three. */
   confirmedAskConsent: para(
     "✅ Email confirmed.",
     lines("One last thing — our terms and privacy notice:", TERMS_URL, PRIVACY_URL),
-    `Reply ${b("I agree")} to finish.`,
+    b("Agree to finish?"),
   ),
 
   askConsent: para(
     lines("📄 Our terms and privacy notice:", TERMS_URL, PRIVACY_URL),
-    `Reply ${b("I agree")} to finish.`,
+    b("Agree to finish?"),
   ),
+
+  /*
+   * One button, not two. There is no "decline" that leads anywhere — refusing
+   * the terms means no account — so offering it would be a door into a room
+   * that does not exist. Somebody who does not agree simply stops.
+   */
+  consentButtons: (): ReplyButton[] => [{ id: "I agree", title: "✅ I agree" }],
+
+  /** Yes and no, wherever a question has exactly those two answers. */
+  yesNo: (yes = "✅ Yes", no = "❌ No"): ReplyButton[] => [
+    { id: "yes", title: yes },
+    { id: "no", title: no },
+  ],
 
   done: para(
     `🎉 ${b("You are set up.")}`,
@@ -718,13 +743,16 @@ function confirmNewBank(text: string, ctx: Context, msg: Inbound): Step {
   const escape = commandEscape(msg, forget(ctx), today(msg));
   if (escape) return escape;
 
-  return retry(
-    "settings:bank_confirm",
-    ctx,
-    ctx.changing?.accountName
-      ? lines(`Is ${b(ctx.changing.accountName)} the right account?`, `Reply ${b("yes")} or ${b("no")}.`)
-      : `Reply ${b("yes")} or ${b("no")}.`,
-  );
+  return {
+    ...retry(
+      "settings:bank_confirm",
+      ctx,
+      ctx.changing?.accountName
+        ? `🤔 Is ${b(ctx.changing.accountName)} the right account?`
+        : "🤔 Is that the right account?",
+    ),
+    buttons: VOICE.yesNo("✅ That's me", "❌ Not me"),
+  };
 }
 
 /** F17: "confirm twice". This is the second. */
@@ -1077,6 +1105,23 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
     return buildOrAsk(applyCorrection(doc, msg.correction), ctx, now);
   }
 
+  /*
+   * The "Change it" button, which says what they want to do without saying
+   * what to change. Matched on the exact button id rather than loosely, so a
+   * typed sentence that happens to contain the word "change" still goes to the
+   * correction parser where it belongs.
+   */
+  if (/^change something$/i.test(text.trim())) {
+    return retry(
+      "awaiting_confirm",
+      ctx,
+      lines(
+        `✏️ ${b("What should I change?")}`,
+        `Say it however you like — ${b("make it 400k")}, ${b("due next Friday")}, ${b("client is Zenith Homes")}.`,
+      ),
+    );
+  }
+
   /* A whole new document replaces this one. -------------------------------- */
   if (
     msg.parsed &&
@@ -1092,8 +1137,8 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
     "awaiting_confirm",
     ctx,
     lines(
-      `Reply ${b("yes")} to send it, or ${b("no")} to drop it.`,
-      `To change it, say something like ${b("make it 400k")} or ${b("due next Friday")}.`,
+      `🤔 I did not catch that. Tap a button above, or tell me what to change —`,
+      `something like ${b("make it 400k")} or ${b("due next Friday")}.`,
     ),
   );
 }
@@ -1245,6 +1290,7 @@ function confirmAccount(text: string, ctx: Context): Step {
   if (EMAIL.test(email) && email.length <= 254) {
     return {
       replies: [VOICE.askCode(email)],
+      buttons: VOICE.codeButtons(),
       next: "onboarding:verify_email",
       context: { ...ctx, email, attempts: 0 },
       effects: [{ type: "create_subaccount" }, { type: "send_email_code", email }],
@@ -1293,6 +1339,7 @@ function takeEmail(text: string, ctx: Context): Step {
   }
   return {
     replies: [VOICE.askCode(email)],
+    buttons: VOICE.codeButtons(),
     next: "onboarding:verify_email",
     context: { ...ctx, email, attempts: 0 },
     effects: [{ type: "send_email_code", email }],
@@ -1309,6 +1356,7 @@ function takeCode(text: string, ctx: Context): Step {
       // The effect says nothing when it works, so without this a "resend"
       // answers with silence — exactly what the person was complaining about.
       replies: [VOICE.askCode(ctx.email ?? "")],
+      buttons: VOICE.codeButtons(),
       next: "onboarding:verify_email",
       context: { ...ctx, attempts: 0 },
       effects: [{ type: "send_email_code", email: ctx.email ?? "" }],
@@ -1354,14 +1402,17 @@ function takeConsent(text: string, ctx: Context, version: string): Step {
       effects: [{ type: "record_consent", version }],
     };
   }
-  return retry(
-    "onboarding:consent",
-    ctx,
-    lines(
-      "I need your agreement before we can create documents.",
-      `Reply ${b("I agree")} to finish, or email hello@balans.ng with any question.`,
+  return {
+    ...retry(
+      "onboarding:consent",
+      ctx,
+      lines(
+        "📄 I need your agreement before we can create documents.",
+        "Any question first, email hello@balans.ng.",
+      ),
     ),
-  );
+    buttons: VOICE.consentButtons(),
+  };
 }
 
 /* -------------------------------------------------------------------------- */

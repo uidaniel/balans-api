@@ -64,11 +64,23 @@ export function draftSummary(draft: Draft, today: Civil): string {
   if (draft.passFeesToClient) rows.push(row("Fees", "Client pays the transaction fee"));
   if (draft.clientEmail) rows.push(row("Email to", draft.clientEmail));
 
-  return para(
-    block(`🧾 ${b(`${LABEL[draft.type].toUpperCase()} DRAFT`)}`, rows),
-    `${b("Send it?")}  yes  /  tell me what to change`,
-  );
+  // Just the question. The three answers arrive as buttons under it, so
+  // spelling them out here would print the instructions twice.
+  return para(block(`🧾 ${b(`${LABEL[draft.type].toUpperCase()} DRAFT`)}`, rows), b("Send it?"));
 }
+
+
+/**
+ * The three answers to "Send it?".
+ *
+ * Ids are the words the parser already reads, so a tap and a typed reply take
+ * exactly the same path through the machine and neither needs a special case.
+ */
+export const draftButtons = (): { id: string; title: string }[] => [
+  { id: "yes", title: "✅ Send it" },
+  { id: "change something", title: "✏️ Change it" },
+  { id: "no", title: "🗑️ Discard" },
+];
 
 /**
  * What to say when one thing is missing (F6 step 1, F3's "ask for that one

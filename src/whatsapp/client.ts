@@ -428,6 +428,81 @@ export function sendCta(
   );
 }
 
+export type ReplyButton = {
+  /**
+   * Comes back as the message text when tapped, so it is written as something
+   * the parser already understands — "yes", "I agree", "resend". At most 256
+   * characters, though nothing here is near that.
+   */
+  id: string;
+  /** At most 20 characters. Meta rejects the whole message for a longer one. */
+  title: string;
+};
+
+/**
+ * Up to three tappable replies under a message.
+ *
+ * The difference between this and "Reply *yes* to send it" is the difference
+ * between one tap and: read the instruction, remember the word, open the
+ * keyboard, spell it, send. Every one of those steps is somewhere a person
+ * stops, and the last one is where they type "yeah" and get asked again.
+ *
+ * Three is Meta's limit. Anything with more answers than that wants `sendList`
+ * instead, which holds ten.
+ *
+ * Costs exactly what a text message costs, so it replaces one rather than
+ * following it.
+ */
+export function sendButtons(
+  to: string,
+  content: { body: string; buttons: ReplyButton[]; header?: string; footer?: string },
+  opts: { fetchImpl?: Transport } = {},
+): Promise<SendResult> {
+  const phone = normalisePhone(to);
+  if (!phone) {
+    return Promise.resolve({ ok: false, retryable: false, reason: `unusable phone number: ${to}` });
+  }
+
+  // Caught here rather than discovered in production: Meta rejects the whole
+  // message for one bad button, which would swallow the words as well.
+  if (content.buttons.length < 1 || content.buttons.length > 3) {
+    return Promise.resolve({
+      ok: false,
+      retryable: false,
+      reason: `a message may carry one to three buttons, not ${content.buttons.length}`,
+    });
+  }
+
+  // Duplicate ids make the reply ambiguous, and Meta does not check.
+  const ids = new Set(content.buttons.map((b) => b.id));
+  if (ids.size !== content.buttons.length) {
+    return Promise.resolve({ ok: false, retryable: false, reason: "button ids must differ" });
+  }
+
+  return call(
+    `${env.WA_PHONE_NUMBER_ID}/messages`,
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: phone,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        ...(content.header ? { header: { type: "text", text: content.header.slice(0, 60) } } : {}),
+        body: { text: content.body.slice(0, 1024) },
+        ...(content.footer ? { footer: { text: content.footer.slice(0, 60) } } : {}),
+        action: {
+          buttons: content.buttons.map((b) => ({
+            type: "reply",
+            reply: { id: b.id.slice(0, 256), title: b.title.slice(0, 20) },
+          })),
+        },
+      },
+    },
+    opts.fetchImpl ?? fetch,
+  );
+}
+
 export type ListRow = {
   /** Comes back as the message text when tapped, so it is read like a command. */
   id: string;

@@ -40,16 +40,23 @@ export function proOffer(used: number): string {
       // Counted from the registry, so the claim cannot outlive the designs.
       `✅ All ${availableTo("pro").length} invoice designs`,
     ),
-    // One action, named plainly. The deduction is offered underneath rather
-    // than beside it, so there is a thing to do and then an alternative —
-    // not two options of equal weight to choose between.
-    `Reply ${b("pay now")} for a payment link.`,
-    lines(
-      `Or reply ${b("from my invoices")} and we take it from your next paid invoice.`,
-      i("That way costs you nothing until a client pays you."),
-    ),
+    // The two ways to pay arrive as buttons under this. The alternative is
+    // still described here rather than left to a 20-character label, so the
+    // thing that costs nothing up front is understood before it is tapped.
+    i("Paying from your next invoice costs you nothing until a client pays you."),
   );
 }
+
+/**
+ * The two ways to start Pro.
+ *
+ * Ids are the phrases the parser already reads, so a tap and a typed reply
+ * take the same path and neither needs a special case.
+ */
+export const proOfferButtons = (): { id: string; title: string }[] => [
+  { id: "pay now", title: "💳 Pay now" },
+  { id: "from my invoices", title: "🧾 From invoices" },
+];
 
 /** Deduct-from-invoice, confirmed. The cap is the reassurance, so it is said. */
 export function deductChosen(): string {

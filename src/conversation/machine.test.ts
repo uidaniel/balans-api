@@ -262,9 +262,12 @@ describe("what setup costs to run", () => {
 });
 
 describe("how the messages read", () => {
-  const every = Object.values(VOICE).map((v) =>
-    typeof v === "function" ? v("kemi@studio.ng") : v,
-  );
+  const rendered = Object.values(VOICE).map((v) => (typeof v === "function" ? v("kemi@studio.ng") : v));
+
+  // The prose. Button sets live in VOICE too and are audited below against
+  // their own rules, which are Meta's, not the design system's.
+  const every = rendered.filter((v): v is string => typeof v === "string");
+  const buttonSets = rendered.filter((v): v is { id: string; title: string }[] => Array.isArray(v));
 
   it("bolds something in every message", () => {
     // A message with no emphasis gives the eye nothing to land on, which is
@@ -300,6 +303,25 @@ describe("how the messages read", () => {
           m.startsWith(found[0]!),
           `an emoji must lead the message, not hide in it: ${firstLine(m)}`,
         );
+      }
+    }
+  });
+
+  it("keeps button titles inside Meta's limit", () => {
+    // Twenty characters. Meta does not truncate a longer title, it rejects the
+    // whole message — so an over-long one takes the words with it and the
+    // person is answered with silence.
+    for (const set of buttonSets) {
+      assert.ok(set.length >= 1 && set.length <= 3, `a message may carry 1-3 buttons, not ${set.length}`);
+      const ids = new Set(set.map((btn) => btn.id));
+      assert.equal(ids.size, set.length, "button ids must differ or the reply is ambiguous");
+
+      for (const btn of set) {
+        assert.ok(
+          [...btn.title].length <= 20,
+          `button title over 20 characters: ${btn.title}`,
+        );
+        assert.ok(btn.id.trim().length > 0, "a button id is what comes back when tapped");
       }
     }
   });
@@ -454,6 +476,59 @@ const PRICED = {
   lines: [{ description: "logo", qty: 1, unitAmountKobo: 20_000_00 }],
 };
 const DRAFTED: Context = { doc: PRICED, draftId: "00000000-0000-0000-0000-000000000001" };
+
+describe("a tapped button", () => {
+  /*
+   * A button's id arrives as the message text, which is why every id is a
+   * phrase the machine already reads. These assert that a tap and a typed
+   * reply take the same path, so the buttons never need a branch of their own.
+   */
+
+  it("sends the draft when Send it is tapped", () => {
+    const out = doc("awaiting_confirm", DRAFTED, "yes", { parsed: parse({ intent: "confirm" }) });
+    assert.equal(out.effects[0]?.type, "send_document");
+  });
+
+  it("discards the draft when Discard is tapped", () => {
+    const out = doc("awaiting_confirm", DRAFTED, "no", { parsed: parse({ intent: "reject" }) });
+    assert.equal(out.effects[0]?.type, "discard_draft");
+  });
+
+  it("asks what to change when Change it is tapped, and keeps the draft", () => {
+    const out = doc("awaiting_confirm", DRAFTED, "change something", {
+      parsed: parse({ intent: "unknown" }),
+      correction: null,
+    });
+    assert.equal(out.next, "awaiting_confirm", "the draft is still on screen");
+    assert.deepEqual(out.effects, [], "nothing is sent or thrown away");
+    assert.match(out.replies.join(" "), /what should i change/i);
+  });
+
+  it("does not mistake a sentence about changing for the button", () => {
+    // "change something" is matched whole. A correction that happens to use
+    // the word belongs to the correction parser, not to the button branch.
+    const out = doc("awaiting_confirm", DRAFTED, "change something about the amount, make it 40k", {
+      parsed: parse({ intent: "unknown" }),
+      correction: { totalKobo: 40_000_00 } as Correction,
+    });
+    assert.doesNotMatch(out.replies.join(" "), /what should i change/i);
+  });
+
+  it("finishes onboarding when I agree is tapped", () => {
+    const out = doc("onboarding:consent", { email: "kemi@studio.ng" }, "I agree");
+    assert.equal(out.effects[0]?.type, "record_consent");
+  });
+
+  it("offers the same two taps again when the code step is retried", () => {
+    const out = doc("onboarding:verify_email", { email: "kemi@studio.ng" }, "resend");
+    assert.equal(out.effects[0]?.type, "send_email_code");
+    assert.deepEqual(
+      out.buttons?.map((btn) => btn.id),
+      ["resend", "change"],
+      "a code that never arrives twice still needs a way out",
+    );
+  });
+});
 
 describe("a message becomes a draft", () => {
   it("goes straight to the confirm step when nothing is missing", () => {

@@ -11,7 +11,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { randomUUID } from "node:crypto";
 import { legalConsentVersion } from "../config.ts";
 import { db, tx } from "../db/pool.ts";
-import { markRead, sendText } from "../whatsapp/client.ts";
+import { markRead, sendButtons, sendText, type ReplyButton } from "../whatsapp/client.ts";
 import {
   createSubAccount,
   initTransaction,
@@ -33,7 +33,7 @@ import { asCommand } from "../parser/commands.ts";
 import { todayIn, type Civil } from "../../core/dates.ts";
 import { defaults, env } from "../config.ts";
 import { confirmDraft, createDraft, discardDraft, getOpenDraft } from "../documents/store.ts";
-import { draftSummary, sentMessage } from "../documents/summary.ts";
+import { draftButtons, draftSummary, sentMessage } from "../documents/summary.ts";
 import { pickerUrlFor } from "../http/routes/templates.ts";
 import { clearLogo, saveLogo } from "../brand/user-logo.ts";
 import { debtors, documentsThisMonth, findDocument, planOf, summarise } from "../documents/queries.ts";
@@ -63,7 +63,7 @@ import {
 } from "../settings/bank-change.ts";
 import { raiseSecurityAlert } from "../settings/alerts.ts";
 import { attachPaymentReference, openSubscription, stateOf } from "../billing/subscription.ts";
-import { deductChosen, payLinkMessage, proActive, proOffer } from "../billing/messages.ts";
+import { deductChosen, payLinkMessage, proActive, proOffer, proOfferButtons } from "../billing/messages.ts";
 import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
 import { sendCta, sendList } from "../whatsapp/client.ts";
 import { sendDocument, uploadDocument } from "../whatsapp/client.ts";
@@ -245,8 +245,14 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     context = rest;
   }
 
+  // The effect owns the last message when it added lines, so its buttons win.
+  // When an effect held or faulted, the machine's question was never asked and
+  // its buttons would answer nothing.
+  const buttons =
+    outcome.buttons ?? (outcome.holdAt || outcome.failed ? undefined : result.buttons);
+
   await saveConversation(user.id, next, context);
-  await reply(user.id, msg.from, replies, log);
+  await reply(user.id, msg.from, replies, log, buttons);
 
   log.info(
     { userId: user.id, from: state, to: next, effects: result.effects.map((e) => e.type) },
@@ -278,6 +284,14 @@ type EffectOutcome = {
   draftId?: string;
   /** Set once a draft is gone, so the conversation stops pointing at it. */
   clearDraft?: boolean;
+  /**
+   * Tappable answers for the last line this effect produced.
+   *
+   * Needed here as well as on the machine's `Step` because an effect's lines
+   * come after the machine's, so an effect that ends in a question — the draft
+   * summary asking "Send it?" — owns the last message of the turn.
+   */
+  buttons?: ReplyButton[];
   /** A resolved bank change, waiting on the user's yes. */
   pendingBankChange?: {
     bankCode: string;
@@ -347,6 +361,8 @@ async function runEffects(
   // The bank's answer, so the machine's context carries it into the next turn.
   let resolvedName: string | undefined;
   let draftId: string | undefined;
+  /** Tappable answers for the last line an effect pushed into `extra`. */
+  let buttons: ReplyButton[] | undefined;
   let clearDraft: boolean | undefined;
 
   for (const effect of effects) {
@@ -565,6 +581,7 @@ async function runEffects(
             // this branch knows the code was right. Without this the flow ends in
             // silence at the last step.
             extra.push(VOICE.confirmedAskConsent);
+            buttons = VOICE.consentButtons();
             break;
           }
 
@@ -572,24 +589,27 @@ async function runEffects(
           holdAt = "onboarding:verify_email";
           switch (check.reason) {
             case "expired":
-              extra.push(`⌛ That code has expired. Reply ${b("resend")} and I will send another.`);
+              extra.push(`⌛ ${b("That code has expired.")}`);
               break;
             case "too_many_attempts":
-              extra.push(`🛑 Too many tries on that code. Reply ${b("resend")} for a new one.`);
+              extra.push(`🛑 ${b("Too many tries on that code.")}`);
               break;
             case "no_code":
-              extra.push(`🤔 I have no code waiting for that address. Reply ${b("resend")}.`);
+              extra.push(`🤔 ${b("I have no code waiting for that address.")}`);
               break;
             default:
               extra.push(
                 check.left
                   ? lines(
-                      b("That code is not right."),
-                      `${check.left} ${check.left === 1 ? "try" : "tries"} left, or reply ${b("resend")} for a new one.`,
+                      `❌ ${b("That code is not right.")}`,
+                      `${check.left} ${check.left === 1 ? "try" : "tries"} left.`,
                     )
-                  : `${b("That code is not right.")} Reply ${b("resend")} for a new one.`,
+                  : `❌ ${b("That code is not right.")}`,
               );
           }
+          // Every branch here is a dead end without a way out, and the way out
+          // is the same two taps in all of them.
+          buttons = VOICE.codeButtons();
           break;
         }
 
@@ -631,6 +651,7 @@ async function runEffects(
           });
           draftId = draft.id;
           extra.push(draftSummary(draft, ctx.today));
+          buttons = draftButtons();
           log.info({ userId, draftId: draft.id, totalKobo: draft.totalKobo }, "draft saved");
           break;
         }
@@ -971,11 +992,12 @@ async function runEffects(
             para(
               `🏦 That account is ${b(resolved.account.accountName)} at ${bank.name}.`,
               lines(
-                `Reply ${b("yes")} to move your payouts there.`,
+                `Move your payouts there?`,
                 `It takes effect in ${b("24 hours")} — until then, money goes to your current account.`,
               ),
             ),
           );
+          buttons = VOICE.yesNo("✅ Move it", "❌ Keep current");
           break;
         }
 
@@ -1045,6 +1067,7 @@ async function runEffects(
           }
           const used = await documentsThisMonth(userId, ctx.today);
           extra.push(proOffer(used));
+          buttons = proOfferButtons();
           break;
         }
 
@@ -1185,7 +1208,7 @@ async function runEffects(
     );
   }
 
-  return { lines: extra, holdAt, failed, resolvedName, draftId, clearDraft, pendingBankChange };
+  return { lines: extra, holdAt, failed, resolvedName, draftId, clearDraft, pendingBankChange, buttons };
 }
 
 
@@ -1339,6 +1362,11 @@ async function reply(
   to: string,
   lines: string[],
   log: FastifyBaseLogger,
+  /**
+   * Tappable answers. They go on the last line, because that is the one
+   * carrying the question — the lines before it are context.
+   */
+  buttons?: ReplyButton[],
 ): Promise<void> {
   const send = lines.filter((l) => l.trim());
 
@@ -1352,9 +1380,16 @@ async function reply(
     // when there is actually something to wait for.
     if (i > 0) await new Promise((r) => setTimeout(r, PAUSE_BETWEEN_LINES_MS));
 
-    const res = await sendText(to, body);
+    // An interactive message costs the same as a text one, so this replaces
+    // the last line rather than following it.
+    const last = i === send.length - 1;
+    const withButtons = last && buttons && buttons.length > 0 && buttons.length <= 3;
+
+    const res = withButtons
+      ? await sendButtons(to, { body, buttons })
+      : await sendText(to, body);
     if (res.ok) {
-      await recordOutbound(userId, res.waMessageId, "sent");
+      await recordOutbound(userId, res.waMessageId, "sent", withButtons ? { kind: "interactive" } : undefined);
     } else {
       // Outside the 24-hour window is a product condition, not an outage: it
       // needs an approved template, and retrying free text cannot help.

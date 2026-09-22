@@ -136,7 +136,12 @@ const renderVoice = (key: string, value: unknown): string =>
 
 test("every message the bot sends", async (t) => {
   const all: [string, string][] = [
-    ...Object.entries(VOICE).map(([k, v]) => [`VOICE.${k}`, renderVoice(k, v)] as [string, string]),
+    // Only the prose. VOICE also holds button sets, which are not messages:
+    // a two-word button title cannot open with an emoji and carry bold, and
+    // machine.test.ts audits them against Meta's limits instead.
+    ...Object.entries(VOICE)
+      .map(([k, v]) => [`VOICE.${k}`, renderVoice(k, v)] as [string, unknown])
+      .filter((pair): pair is [string, string] => typeof pair[1] === "string"),
     ...messages.map(([name, f]) => [name, f()] as [string, string]),
   ];
 
