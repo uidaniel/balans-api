@@ -529,14 +529,62 @@ describe("a tapped button", () => {
     assert.equal(out.effects[0]?.type, "discard_draft");
   });
 
-  it("asks what to change when Change it is tapped, and keeps the draft", () => {
+  it("reopens the form on the draft when Change it is tapped", () => {
     const out = doc("awaiting_confirm", DRAFTED, "change something", {
       parsed: parse({ intent: "unknown" }),
       correction: null,
     });
+
     assert.equal(out.next, "awaiting_confirm", "the draft is still on screen");
-    assert.deepEqual(out.effects, [], "nothing is sent or thrown away");
-    assert.match(out.replies.join(" "), /what should i change/i);
+
+    const flow = out.effects.find((e) => e.type === "send_flow");
+    assert.ok(flow, "Change it should open the form");
+    assert.equal(flow.key, "invoice");
+
+    // The point of it. An edit that opens blank is a re-type.
+    assert.ok(flow.data, "the form must open on what is already there");
+    assert.equal(flow.data.client_name, DRAFTED.doc?.clientName);
+
+    // And it still works without one.
+    assert.match(flow.fallback?.line ?? "", /what should i change/i);
+  });
+
+  it("carries every field into the form, including the second screen", () => {
+    // A value that is not carried is a value the edit silently clears, and
+    // somebody who loses their VAT by opening a form to fix a name will never
+    // work out why.
+    const out = doc(
+      "awaiting_confirm",
+      {
+        draftId: DRAFTED.draftId,
+        doc: {
+          type: "invoice",
+          clientName: "Zenith Homes",
+          clientEmail: "pay@zenith.ng",
+          lines: [{ description: "duplex render", qty: 1, unitAmountKobo: 350_000_00 }],
+          dueDate: { y: 2026, m: 10, d: 8 },
+          vatPercent: 7.5,
+          depositPercent: 50,
+          passFeesToClient: true,
+          notes: "half now",
+        },
+      },
+      "change something",
+      { parsed: parse({ intent: "unknown" }), correction: null },
+    );
+
+    const data = out.effects.find((e) => e.type === "send_flow")?.data;
+    assert.deepEqual(data, {
+      client_name: "Zenith Homes",
+      client_email: "pay@zenith.ng",
+      description: "duplex render",
+      amount: 350_000,
+      due_date: "8 October 2026",
+      plan: "deposit_50",
+      notes: "half now",
+      vat: true,
+      pass_fees: true,
+    });
   });
 
   it("does not mistake a sentence about changing for the button", () => {

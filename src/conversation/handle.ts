@@ -700,7 +700,12 @@ async function runEffects(
             // never trusted for anything the sender could have chosen.
             token: `${effect.key}:${userId}`,
             screen: FLOW_SCREEN[effect.key],
-            data: effect.key === "business_details" ? await detailsFor(userId) : undefined,
+            // The invoice form carries its starting values on the effect;
+            // business details are read here because only this side has a
+            // database.
+            data:
+              effect.data ??
+              (effect.key === "business_details" ? await detailsFor(userId) : undefined),
             // A draft flow opens for anyone with developer access to the app,
             // which is how this is tested before verification comes through.
             draft: env.WA_FLOWS_DRAFT === "true",

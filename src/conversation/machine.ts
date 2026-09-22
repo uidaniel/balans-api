@@ -20,6 +20,7 @@ import type { Correction } from "../parser/corrections.ts";
 import { parseAmountToKobo } from "../../core/amount.ts";
 import { resolveDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
+import { planIdFor } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
 
@@ -149,6 +150,13 @@ export type Effect =
        * describe it.
        */
       image?: string;
+      /**
+       * Values the form opens on.
+       *
+       * What makes "Change it" an edit rather than a re-type. Sent as the
+       * screen's `data`, which its Form reads through `init-values`.
+       */
+      data?: Record<string, string | number | boolean>;
       /**
        * What to say instead when there is no published Flow.
        *
@@ -386,6 +394,18 @@ export const VOICE = {
   doneCaption: para(
     `\u{1F389} ${b("You are set up.")}`,
     "Type it like a text, or tap below.",
+  ),
+
+  /** Under the form invitation, which is the whole message. */
+  changeInvite: para(
+    `✏️ ${b("Change anything you like.")}`,
+    "Or just say it: make it 400k, due next Friday.",
+  ),
+
+  /** The same moment, with no form to open. */
+  changeByHand: lines(
+    `✏️ ${b("What should I change?")}`,
+    `Say it however you like — ${b("make it 400k")}, ${b("due next Friday")}, ${b("client is Zenith Homes")}.`,
   ),
 
   done: para(
@@ -1174,6 +1194,38 @@ function withDefaults(doc: PendingDoc, now: Civil): PendingDoc {
   };
 }
 
+/**
+ * A draft, as the invoice form's starting values.
+ *
+ * Names match the Flow's `data` keys exactly; anything misspelled here is a
+ * field that silently opens blank. The amount is naira and a number, because
+ * that is what the WORK screen declares and what its input expects.
+ *
+ * The date goes across as words rather than a calendar value: the field takes
+ * words, and the same reader handles "8 October 2026" as handles "Friday".
+ */
+function formValues(doc: PendingDoc): Record<string, string | number | boolean> {
+  return {
+    client_name: doc.clientName ?? "",
+    client_email: doc.clientEmail ?? "",
+    description: doc.lines[0]?.description ?? "",
+    amount: Math.round(totalOf(doc) / 100),
+    due_date: doc.dueDate ? formatLongDate(doc.dueDate) : "",
+    plan: planIdFor({ depositPercent: doc.depositPercent, instalments: doc.instalments }),
+    notes: doc.notes ?? "",
+    vat: doc.vatPercent != null,
+    pass_fees: doc.passFeesToClient === true,
+  };
+}
+
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** "8 October 2026" — readable in a form, and readable back by the parser. */
+const formatLongDate = (c: Civil): string => `${c.d} ${MONTHS[c.m - 1]} ${c.y}`;
+
 const totalOf = (doc: PendingDoc): number =>
   doc.lines.length
     ? doc.lines.reduce((t, l) => t + l.unitAmountKobo * l.qty, 0)
@@ -1327,14 +1379,35 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
    * correction parser where it belongs.
    */
   if (/^change something$/i.test(text.trim())) {
-    return retry(
-      "awaiting_confirm",
-      ctx,
-      lines(
-        `✏️ ${b("What should I change?")}`,
-        `Say it however you like — ${b("make it 400k")}, ${b("due next Friday")}, ${b("client is Zenith Homes")}.`,
-      ),
-    );
+    /*
+     * The form, opened on what is already there.
+     *
+     * Typing the change is still the faster road for "make it 400k", and it
+     * still works — the state stays on the draft, so a typed correction lands
+     * exactly as it did before. What the form adds is everything that is
+     * awkward to say: swapping the payment plan, adding VAT, fixing three
+     * things at once without three round trips.
+     *
+     * Every field goes across, including the two on the second screen. A value
+     * that is not carried is a value an edit quietly clears, and somebody who
+     * loses their VAT setting by opening a form to fix a client name will not
+     * work out why.
+     */
+    return {
+      replies: [],
+      next: "awaiting_confirm",
+      context: { ...ctx, attempts: 0 },
+      effects: [
+        {
+          type: "send_flow",
+          key: "invoice",
+          body: VOICE.changeInvite,
+          cta: "Change the invoice",
+          data: formValues(doc),
+          fallback: { line: VOICE.changeByHand, holdAt: "awaiting_confirm" },
+        },
+      ],
+    };
   }
 
   /* A whole new document replaces this one. -------------------------------- */

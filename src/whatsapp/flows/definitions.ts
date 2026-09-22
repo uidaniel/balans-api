@@ -431,6 +431,8 @@ const invoice: FlowDefinition = {
           due_date: { type: "string", __example__: "" },
           plan: { type: "string", __example__: "one" },
           notes: { type: "string", __example__: "" },
+          vat: { type: "boolean", __example__: false },
+          pass_fees: { type: "boolean", __example__: false },
         },
         layout: {
           type: "SingleColumnLayout",
@@ -510,6 +512,8 @@ const invoice: FlowDefinition = {
                       due_date: "${form.due_date}",
                       plan: "${data.plan}",
                       notes: "${data.notes}",
+                      vat: "${data.vat}",
+                      pass_fees: "${data.pass_fees}",
                     },
                   },
                 },
@@ -548,6 +552,8 @@ const invoice: FlowDefinition = {
           due_date: { type: "string", __example__: "" },
           plan: { type: "string", __example__: "one" },
           notes: { type: "string", __example__: "" },
+          vat: { type: "boolean", __example__: false },
+          pass_fees: { type: "boolean", __example__: false },
         },
         layout: {
           type: "SingleColumnLayout",
@@ -562,6 +568,8 @@ const invoice: FlowDefinition = {
               "init-values": {
                 plan: "${data.plan}",
                 notes: "${data.notes}",
+                vat: "${data.vat}",
+                pass_fees: "${data.pass_fees}",
               },
               children: [
                 {

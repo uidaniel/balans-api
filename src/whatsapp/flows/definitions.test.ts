@@ -140,7 +140,13 @@ describe("every published Flow", () => {
               const name = /^\$\{data\.([a-z_0-9]+)\}$/i.exec(ref)?.[1];
               if (!name) continue;
 
-              const wanted = WANTS[String(inputs.get(field)?.["input-type"] ?? "text")];
+              const input = inputs.get(field);
+              // An OptIn is a checkbox: it has no input-type and its value is
+              // a boolean, which is also what it has to be initialised with.
+              const wanted =
+                input?.type === "OptIn"
+                  ? "boolean"
+                  : WANTS[String(input?.["input-type"] ?? "text")];
               assert.equal(
                 declared[name]?.type,
                 wanted,
