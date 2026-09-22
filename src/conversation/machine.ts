@@ -397,10 +397,22 @@ export const VOICE = {
    * the terms means no account — so offering it would be a door into a room
    * that does not exist. Somebody who does not agree simply stops.
    */
-  consentButtons: (): ReplyButton[] => [{ id: "I agree", title: "✅ I agree" }],
+  consentButtons: (): ReplyButton[] => [{ id: "I agree", title: "I agree" }],
 
-  /** Yes and no, wherever a question has exactly those two answers. */
-  yesNo: (yes = "✅ Yes", no = "❌ No"): ReplyButton[] => [
+  /**
+   * Yes and no, wherever a question has exactly those two answers.
+   *
+   * No emoji on either. A button is already unmistakably a button — WhatsApp
+   * draws it as one — so a tick in front of the word decorates something that
+   * was never ambiguous, and three of them in a row is noise.
+   *
+   * The exception is "That's me" / "Not me", on the account-name check. That
+   * is the one question in the product where tapping the wrong button sends
+   * somebody's money to the wrong bank account, and the tick and cross are
+   * doing work there: they separate the two answers at a glance, for someone
+   * reading quickly.
+   */
+  yesNo: (yes = "Yes", no = "No"): ReplyButton[] => [
     { id: "yes", title: yes },
     { id: "no", title: no },
   ],

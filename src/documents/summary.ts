@@ -84,9 +84,9 @@ export function draftSummary(draft: Draft, today: Civil): string {
  * exactly the same path through the machine and neither needs a special case.
  */
 export const draftButtons = (): { id: string; title: string }[] => [
-  { id: "yes", title: "✅ Send it" },
-  { id: "change something", title: "✏️ Change it" },
-  { id: "no", title: "🗑️ Discard" },
+  { id: "yes", title: "Send it" },
+  { id: "change something", title: "Change it" },
+  { id: "no", title: "Discard" },
 ];
 
 /**

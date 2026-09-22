@@ -1340,7 +1340,7 @@ async function runEffects(
               ),
             ),
           );
-          buttons = VOICE.yesNo("✅ Move it", "❌ Keep current");
+          buttons = VOICE.yesNo("Move it", "Keep current");
           break;
         }
 

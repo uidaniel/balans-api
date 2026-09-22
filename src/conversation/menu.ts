@@ -45,7 +45,7 @@ import type { ReplyButton } from "../whatsapp/client.ts";
  * Everything else is on the picture above and in the "/" popup.
  */
 export const helpButtons = (): ReplyButton[] => [
-  { id: "/invoice", title: "🧾 New invoice" },
-  { id: "/owed", title: "💰 Who owes me" },
-  { id: "/summary", title: "📊 This month" },
+  { id: "/invoice", title: "New invoice" },
+  { id: "/owed", title: "Who owes me" },
+  { id: "/summary", title: "This month" },
 ];
