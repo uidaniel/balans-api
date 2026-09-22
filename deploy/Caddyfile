@@ -10,8 +10,11 @@
 # thinks it is.
 
 {
-	# No ACME. See the tls directive below.
-	auto_https off
+	# No `auto_https off` here, deliberately. An explicit `tls` directive on a
+	# site already stops Caddy managing certificates for it, which is the part
+	# that has to stop. Turning automatic HTTPS off wholesale would also drop
+	# the port 80 listener and the redirect that goes with it, so a plain HTTP
+	# request would hit nothing at all.
 
 	# Caddy's own logs stay quiet; the API does the logging that matters.
 	log {
