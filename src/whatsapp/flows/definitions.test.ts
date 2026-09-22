@@ -190,6 +190,33 @@ describe("every published Flow", () => {
         }
       });
 
+      it("keeps input labels short enough not to wrap", () => {
+        /*
+         * An input's label sits in a narrow left column, and a long one wraps
+         * onto two lines while the field beside it stays on one. It looks
+         * broken rather than long.
+         *
+         * "Business name" wrapped on a real phone; "Email address" did not, at
+         * the same character count. So the column is roughly twelve characters
+         * of ordinary text and the exact point depends on the glyphs — which
+         * means the limit here is deliberately well under it rather than up
+         * against it.
+         *
+         * OptIn is excluded: a checkbox label runs the full width of the
+         * screen, so length is not a problem there. Footer is a button.
+         */
+        const NARROW = new Set(["TextInput", "TextArea", "Dropdown", "DatePicker"]);
+
+        for (const node of walk(json.screens)) {
+          if (!NARROW.has(String(node.type))) continue;
+          const label = String(node.label ?? "");
+          assert.ok(
+            label.length <= 10,
+            `${String(node.name)}: "${label}" is ${label.length} characters and will wrap`,
+          );
+        }
+      });
+
       it("puts starting values on the form, not on the inputs", () => {
         // At 7.1 an `init-value` on a TextInput is rejected outright, and the
         // whole Flow fails to publish for it.

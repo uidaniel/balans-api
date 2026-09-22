@@ -120,7 +120,7 @@ const onboarding: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "business_name",
-                  label: "Business name",
+                  label: "Business",
                   "helper-text": "Or your own name, if that is how you bill.",
                   required: true,
                   "input-type": "text",
@@ -129,7 +129,7 @@ const onboarding: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "email",
-                  label: "Email address",
+                  label: "Email",
                   "helper-text": "Receipts and copies of your invoices go here.",
                   required: true,
                   "input-type": "email",
@@ -183,7 +183,7 @@ const onboarding: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "account_number",
-                  label: "Account number",
+                  label: "Account",
                   "helper-text": "The 10 digits on your account.",
                   required: true,
                   "input-type": "number",
@@ -192,8 +192,8 @@ const onboarding: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "other_bank",
-                  label: "If you chose Other, which bank?",
-                  "helper-text": "Leave this empty otherwise.",
+                  label: "Other bank",
+                  "helper-text": "Only if you chose Other above. Leave it empty otherwise.",
                   required: false,
                   "input-type": "text",
                   "max-chars": 60,
@@ -275,7 +275,7 @@ const businessDetails: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "business_name",
-                  label: "Business name",
+                  label: "Business",
                   required: true,
                   "input-type": "text",
                   "max-chars": 80,
@@ -283,7 +283,7 @@ const businessDetails: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "email",
-                  label: "Email address",
+                  label: "Email",
                   required: true,
                   "input-type": "email",
                   "max-chars": 120,
@@ -300,8 +300,8 @@ const businessDetails: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "tin",
-                  label: "Tax identification number",
-                  "helper-text": "Optional. Some clients ask for it.",
+                  label: "Tax ID",
+                  "helper-text": "Optional. Your TIN, if clients ask for it.",
                   required: false,
                   "input-type": "text",
                   "max-chars": 30,
@@ -463,8 +463,8 @@ const invoice: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "description",
-                  label: "What is the work?",
-                  "helper-text": "Short. This is the line they read.",
+                  label: "Work",
+                  "helper-text": "What you are billing for. This is the line they read.",
                   required: true,
                   "input-type": "text",
                   "max-chars": 100,
@@ -490,7 +490,7 @@ const invoice: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "client_email",
-                  label: "Their email",
+                  label: "Email",
                   "helper-text": "Optional. They get a copy by email too.",
                   required: false,
                   "input-type": "email",
