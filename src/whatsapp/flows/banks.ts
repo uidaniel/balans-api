@@ -7,9 +7,17 @@
  * improvement on typing four letters.
  *
  * So this is the list a Nigerian freelancer actually gets paid into: the
- * commercial banks, then the fintechs that have become normal to be paid
- * through. Ordered by how likely somebody is to want it, not alphabetically,
- * because the first five cover most people and a dropdown is read top-down.
+ * commercial banks, and the fintechs that have become normal to be paid
+ * through.
+ *
+ * Shown alphabetically. It was ordered by popularity once, on the reasoning
+ * that the first five cover most people — but that only helps somebody whose
+ * bank is in the first five. Everybody else is left scanning an order they
+ * cannot predict, and a dropdown of forty is a thing you look your own bank up
+ * in, not a thing you read from the top.
+ *
+ * `bankOptions` does the sorting rather than this list being kept in order by
+ * hand, so a bank added anywhere below still appears in the right place.
  *
  * The values are display names, not codes. They are matched back to a live
  * Monnify code by `matchBank`, which already knows the aliases — so a bank
@@ -23,7 +31,8 @@
 export const OTHER_BANK = "Other";
 
 export const FLOW_BANKS: readonly string[] = [
-  // The big commercial banks, in rough order of how many people use them.
+  // Order here does not matter; `bankOptions` sorts. Kept grouped so it is
+  // obvious what the list is for when somebody comes to add to it.
   "Access bank",
   "GTBank",
   "Zenith bank",
@@ -66,6 +75,20 @@ export const FLOW_BANKS: readonly string[] = [
   OTHER_BANK,
 ];
 
-/** What the Flow's Dropdown wants: an id and a title for each row. */
-export const bankOptions = (): { id: string; title: string }[] =>
-  FLOW_BANKS.map((name) => ({ id: name, title: name }));
+/**
+ * What the Flow's Dropdown wants: an id and a title for each row.
+ *
+ * Alphabetical, except that "Other" stays at the bottom. Sorted into the O's
+ * it reads as a bank called Other sitting between Optimus and Palmpay, and
+ * somebody scanning for their own bank would tap it by accident. It is not a
+ * bank; it is the way out of the list.
+ */
+export const bankOptions = (): { id: string; title: string }[] => {
+  const named = FLOW_BANKS.filter((name) => name !== OTHER_BANK).sort((a, b) =>
+    // Case-insensitive, so "FCMB" and "Fidelity bank" sort against each other
+    // on their letters rather than on capitals coming first.
+    a.localeCompare(b, "en", { sensitivity: "base" }),
+  );
+
+  return [...named, OTHER_BANK].map((name) => ({ id: name, title: name }));
+};

@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { FLOWS, PLANS, planIdFor, splitForPlan } from "./definitions.ts";
+import { FLOW_BANKS, OTHER_BANK, bankOptions } from "./banks.ts";
 import { shapeFor } from "../../documents/parts.ts";
 
 type Node = Record<string, unknown>;
@@ -162,5 +163,44 @@ describe("the payment plans a form can offer", () => {
     for (const plan of PLANS) {
       assert.equal(planIdFor(splitForPlan(plan.id)), plan.id);
     }
+  });
+});
+
+describe("the bank dropdown", () => {
+  const rows = bankOptions();
+
+  it("offers every bank on the list, once", () => {
+    assert.equal(rows.length, FLOW_BANKS.length);
+    assert.equal(new Set(rows.map((r) => r.id)).size, rows.length, "a bank appears twice");
+  });
+
+  it("is alphabetical, ignoring capitals", () => {
+    // Ignoring capitals matters: a plain sort puts every all-caps name
+    // (FCMB, GTBank, UBA) in a block before the lower-case ones, which is not
+    // alphabetical to anyone looking for their bank.
+    const names = rows.slice(0, -1).map((r) => r.title);
+    const sorted = [...names].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
+    assert.deepEqual(names, sorted);
+  });
+
+  it("keeps Other at the bottom", () => {
+    // Sorted into the O's it sits between Optimus and Palmpay and gets tapped
+    // by somebody scanning for their own bank.
+    assert.equal(rows.at(-1)?.id, OTHER_BANK);
+    assert.equal(rows.filter((r) => r.id === OTHER_BANK).length, 1);
+  });
+
+  it("does not reorder the source list", () => {
+    // `sort` mutates. If it ever reached FLOW_BANKS itself, the grouping that
+    // makes the list readable to edit would quietly disappear.
+    const before = [...FLOW_BANKS];
+    bankOptions();
+    assert.deepEqual([...FLOW_BANKS], before);
+  });
+
+  it("uses the display name as the id", () => {
+    // What comes back from the form is matched to a live Monnify code by
+    // `matchBank`, so the value has to be something it can read.
+    for (const r of rows) assert.equal(r.id, r.title);
   });
 });
