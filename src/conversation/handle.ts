@@ -69,6 +69,7 @@ import { attachPaymentReference, openSubscription, stateOf } from "../billing/su
 import { deductChosen, payLinkMessage, proActive, proOffer, proOfferButtons } from "../billing/messages.ts";
 import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
 import { sendCta, sendFlow, sendList } from "../whatsapp/client.ts";
+import { mainMenuList } from "./menu.ts";
 import { flowId } from "../whatsapp/flows/register.ts";
 
 /** The screen each Flow opens on. */
@@ -445,8 +446,32 @@ async function runEffects(
      */
     try {
       switch (effect.type) {
-        case "show_help":
+        case "show_help": {
+          /*
+           * The menu, tappable.
+           *
+           * Nine rows and nine commands, and each row's id is the command it
+           * stands for — so a tap and a typed "/invoice" are the same message
+           * by the time anything reads them.
+           *
+           * The typed menu is still the answer whenever the list cannot go:
+           * no phone on the context, or Meta refusing it. Somebody asking what
+           * this thing does must never be met with nothing.
+           */
+          if (!ctx.phone) {
+            extra.push(effect.fallback);
+            break;
+          }
+
+          const sent = await sendList(ctx.phone, mainMenuList());
+          if (sent.ok) {
+            await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+          } else {
+            log.warn({ userId, reason: sent.reason }, "menu list failed, sending it as words");
+            extra.push(effect.fallback);
+          }
           break;
+        }
 
         case "resolve_account": {
           // F17: the name comes from the bank, never from the user. It is what

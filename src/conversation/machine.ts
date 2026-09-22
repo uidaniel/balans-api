@@ -139,7 +139,17 @@ export type Effect =
     }
   | { type: "verify_email_code"; email: string; code: string }
   | { type: "record_consent"; version: string }
-  | { type: "show_help" }
+  | {
+      type: "show_help";
+      /**
+       * The typed menu, for when the list cannot be sent.
+       *
+       * Same shape as `send_flow`'s fallback and for the same reason: an
+       * interactive message is a thing that can fail, and "what can you do?"
+       * is the worst question in the product to answer with silence.
+       */
+      fallback: string;
+    }
   /** Write the draft and show its summary (F6 step 2). */
   | { type: "save_draft"; doc: PendingDoc }
   /** Number it, make the link, send it (F6 step 4). */
@@ -560,11 +570,17 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
 
   // Commands come before the pending question, so nobody gets stuck.
   if (HELP.test(text)) {
+    if (state !== "idle") {
+      // Mid-onboarding, help is about the question on the screen. Offering the
+      // whole menu there invites somebody to wander off a form they are three
+      // fields into.
+      return { replies: [onboardingHelp(state)], next: state, context, effects: [] };
+    }
     return {
-      replies: [state === "idle" ? VOICE.helpIdle : onboardingHelp(state)],
+      replies: [],
       next: state,
       context,
-      effects: [{ type: "show_help" }],
+      effects: [{ type: "show_help", fallback: VOICE.helpIdle }],
     };
   }
 
@@ -893,7 +909,12 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
       return startDocument(p, ctx, now);
 
     case "help":
-      return { replies: [VOICE.helpIdle], next: "idle", context: ctx, effects: [{ type: "show_help" }] };
+      return {
+        replies: [],
+        next: "idle",
+        context: ctx,
+        effects: [{ type: "show_help", fallback: VOICE.helpIdle }],
+      };
 
     case "debtors":
       return { replies: [], next: "idle", context: ctx, effects: [{ type: "show_debtors" }] };
