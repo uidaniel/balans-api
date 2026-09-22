@@ -108,7 +108,7 @@ export function readTemplate(
     total_amount: fields.description ? null : (fields.amount ?? null),
     due_date: fields.due ?? null,
     document_number: null,
-    options: { deposit_percent: null, pass_fees_to_client: null, vat_percent: null, notes: null },
+    options: { deposit_percent: null, instalments: null, pass_fees_to_client: null, vat_percent: null, notes: null },
     // A form is explicit. There is nothing to be unsure about except whether
     // the values parse, which `normalise` decides.
     confidence: 1,

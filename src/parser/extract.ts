@@ -19,6 +19,7 @@
 
 import type { Civil } from "../../core/dates.ts";
 import { normalise, type Intent, type Parsed, type RawParse } from "./schema.ts";
+import { MAX_INSTALMENTS, MIN_INSTALMENTS } from "../documents/parts.ts";
 
 /**
  * The verb decides the document type, so it is required.
@@ -62,8 +63,49 @@ const DEPOSIT = /[,;]?\s*\b(?:(\d{1,3})\s*%\s*(?:deposit|upfront|down|advance)|(
 const VAT = /[,;]?\s*\b(?:add\s+|with\s+|plus\s+|include\s+)?vat\b(?:\s*(?:at\s*)?(\d{1,2}(?:\.\d)?)\s*%)?/i;
 const PASS_FEES = /[,;]?\s*\b(?:client|customer|they|he|she|them)\s+(?:should\s+|will\s+|go\s+|dey\s+)?pays?\s+(?:the\s+)?(?:fees?|charges?|transaction\s+fees?)\b/i;
 
+/*
+ * Instalments, in the two shapes people write them.
+ *
+ * SPREAD leads with a verb — "split into 3", "spread over four payments" — and
+ * so can afford a loose noun, because "into 3 parts" is unambiguous once
+ * something has been split. COUNT leads with the number and cannot: "3 parts"
+ * on its own is far more likely to be three parts of a logo than a payment
+ * plan, so it insists on a noun that can only mean money.
+ *
+ * Both are cut before the amount is read. "3 payments" is not money-shaped and
+ * would not be mistaken for a total, but "within 4 instalments" would be read
+ * as a due date by the clause below, and the description would lose the rest
+ * of the sentence with it.
+ */
+const COUNT = String.raw`(\d{1,2}|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)`;
+
+/** "instalment" and "installment" are both right; Nigerians write both. */
+const PLAN = String.raw`(?:payments?|install?ments?|milestones?|tranches?)`;
+
+export const SPREAD = new RegExp(
+  String.raw`[,;]?\s*\b(?:split|spread|shared?|divided?|payable|paid|pay)\s+(?:it\s+)?(?:in|into|over|across)\s+${COUNT}\s*(?:equal\s+)?(?:${PLAN}|parts?)?\b`,
+  "i",
+);
+
+export const COUNTED = new RegExp(
+  String.raw`[,;]?\s*\b${COUNT}\s+(?:equal\s+)?${PLAN}(?:\s+(?:shared?\s+|split\s+|divided?\s+)?equally)?\b`,
+  "i",
+);
+
+const WORDS: Record<string, number> = {
+  two: 2, three: 3, four: 4, five: 5, six: 6,
+  seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+};
+
+/** The count someone wrote, in digits or in words, or null if it is neither. */
+export function countOf(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const n = WORDS[raw.toLowerCase()] ?? Number(raw);
+  return Number.isInteger(n) && n >= MIN_INSTALMENTS && n <= MAX_INSTALMENTS ? n : null;
+}
+
 /** Nigeria's rate. Named rather than inlined so there is one place to change it. */
-const VAT_PERCENT = 7.5;
+export const VAT_PERCENT = 7.5;
 
 export function extractDocument(text: string, today: Civil): Parsed | null {
   const norm = text.replace(/\s+/g, " ").trim();
@@ -89,6 +131,7 @@ export function extractDocument(text: string, today: Civil): Parsed | null {
   /* Options come off first: each is a fixed phrase that would otherwise end up
      inside the description. ------------------------------------------------ */
   let depositPercent: number | null = null;
+  let instalments: number | null = null;
   let vatPercent: number | null = null;
   let passFees: boolean | null = null;
 
@@ -103,6 +146,16 @@ export function extractDocument(text: string, today: Civil): Parsed | null {
   cut(DEPOSIT, (m) => {
     depositPercent = Number(m[1] ?? m[2]);
   });
+  // Only cut the phrase when the count inside it is one we can honour. A
+  // half-removed "spread over 20 payments" would leave "payments" sitting in
+  // the description with the number gone.
+  for (const re of [SPREAD, COUNTED]) {
+    if (instalments !== null) break;
+    cut(re, (m) => {
+      instalments = countOf(m[1]);
+    });
+    if (instalments === null) continue;
+  }
   cut(PASS_FEES, () => {
     passFees = true;
   });
@@ -160,6 +213,7 @@ export function extractDocument(text: string, today: Civil): Parsed | null {
     document_number: null,
     options: {
       deposit_percent: depositPercent,
+      instalments,
       pass_fees_to_client: passFees,
       vat_percent: vatPercent,
       notes: null,

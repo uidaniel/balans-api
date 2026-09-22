@@ -35,7 +35,7 @@ const empty = (intent: RawParse["intent"], confidence: number): RawParse => ({
   total_amount: null,
   due_date: null,
   document_number: null,
-  options: { deposit_percent: null, pass_fees_to_client: null, vat_percent: null, notes: null },
+  options: { deposit_percent: null, instalments: null, pass_fees_to_client: null, vat_percent: null, notes: null },
   confidence,
 });
 
@@ -163,6 +163,7 @@ function recoverAmount(parsed: Parsed, text: string, today: Civil): Parsed {
       document_number: parsed.documentNumber,
       options: {
         deposit_percent: parsed.options.depositPercent,
+        instalments: parsed.options.instalments,
         pass_fees_to_client: parsed.options.passFeesToClient,
         vat_percent: parsed.options.vatPercent,
         notes: parsed.options.notes,

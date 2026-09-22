@@ -237,6 +237,23 @@ export async function convertQuote(
       [invoiceId, quote.id],
     );
 
+    /*
+     * The payment plan comes across with the work.
+     *
+     * A quote that said "50% deposit" is the thing the client agreed to, and
+     * the invoice that comes of it has to ask for the same thing. Copied with
+     * every part reset to its starting state: the quote was never payable, so
+     * nothing on it can have been paid, and the first part opens here exactly
+     * as it would on a fresh invoice.
+     */
+    await c.query(
+      `INSERT INTO payment_parts (document_id, position, label, amount_kobo, status)
+       SELECT $1, position, label, amount_kobo,
+              CASE WHEN position = 0 THEN 'payable' ELSE 'pending' END::part_status
+         FROM payment_parts WHERE document_id = $2 ORDER BY position`,
+      [invoiceId, quote.id],
+    );
+
     await c.query(`UPDATE documents SET status = 'converted' WHERE id = $1`, [quote.id]);
 
     return {

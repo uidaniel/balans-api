@@ -10,6 +10,7 @@
 import { randomBytes } from "node:crypto";
 import type { PoolClient } from "pg";
 import { db, tx } from "../db/pool.ts";
+import { createParts, partsFor, shapeFor, type Part } from "./parts.ts";
 import { formatISO, type Civil } from "../../core/dates.ts";
 import { totalsFor, type Line } from "../../core/totals.ts";
 
@@ -29,6 +30,8 @@ export type DraftInput = {
   dueDate: Civil | null;
   vatPercent: number | null;
   depositPercent: number | null;
+  /** Equal payments, when the work is billed in stages rather than up front. */
+  instalments: number | null;
   passFeesToClient: boolean;
   notes: string | null;
 };
@@ -92,6 +95,32 @@ export async function findOrCreateClient(
 
 /* -------------------------------------------------------------------------- */
 /* Drafts                                                                     */
+/**
+ * Reads a document's split back off its parts.
+ *
+ * Same principle as `vatPercent` above: recovered from what was stored rather
+ * than kept as a second copy of the answer, because two records of one number
+ * are two things that can disagree.
+ *
+ * The deposit case is the pair `createParts` writes for `depositShape` — a
+ * first part and a "Balance". Anything else with more than one part is a set
+ * of equal instalments, and its count is the whole of what there is to know.
+ */
+function splitOf(
+  parts: Part[],
+  totalKobo: number,
+): { depositPercent: number | null; instalments: number | null } {
+  if (parts.length < 2 || totalKobo <= 0) {
+    return { depositPercent: null, instalments: null };
+  }
+
+  if (parts.length === 2 && parts[1]!.label === "Balance") {
+    return { depositPercent: round1((parts[0]!.amountKobo / totalKobo) * 100), instalments: null };
+  }
+
+  return { depositPercent: null, instalments: parts.length };
+}
+
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -136,6 +165,20 @@ export async function createDraft(userId: string, input: DraftInput): Promise<Dr
         [id, i, line.description, line.qty, line.unitAmountKobo, totals.lineTotalsKobo[i]!],
       );
     }
+
+    /*
+     * A deposit or a set of instalments becomes rows, here, in the same
+     * transaction as the document.
+     *
+     * For a long time it did not. The deposit was parsed, shown on the draft
+     * as "Deposit — 50% up front", confirmed by the user, and then dropped on
+     * the floor: nothing ever called `createParts`, so the payment page found
+     * no parts and asked the client for the whole amount. The user had been
+     * told one thing and their client was shown another, which is the worst
+     * shape a bug in this product can take.
+     */
+    const shape = shapeFor(input);
+    if (shape) await createParts(id, totals.totalKobo, shape, c);
 
     return {
       ...input,
@@ -191,6 +234,8 @@ export async function getOpenDraft(userId: string): Promise<Draft | null> {
     [row.id],
   );
 
+  const parts = await partsFor(row.id);
+
   return {
     id: row.id,
     clientId: row.client_id,
@@ -208,7 +253,7 @@ export async function getOpenDraft(userId: string): Promise<Draft | null> {
     // Recovered from the stored money rather than kept as a second copy: two
     // sources for one number is how they end up disagreeing.
     vatPercent: row.vat_kobo > 0 ? round1((row.vat_kobo / row.subtotal_kobo) * 100) : null,
-    depositPercent: null,
+    ...splitOf(parts, row.total_kobo),
     passFeesToClient: row.pass_fees_to_client,
     notes: row.notes,
     subtotalKobo: row.subtotal_kobo,

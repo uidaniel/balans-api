@@ -24,13 +24,16 @@ import { checkCode, issueCode } from "../lib/codes.ts";
 import { sendEmail, transport, verificationEmail } from "../email/send.ts";
 import { markEmailVerified, setEmail, recordConsent, saveBankAccount, activateBankAccount, getPendingBank } from "./store.ts";
 import type { Inbound } from "../whatsapp/inbound.ts";
-import { step, VOICE, type Effect, type State } from "./machine.ts";
+import { step, VOICE, type Effect, type PendingDoc, type State } from "./machine.ts";
+import { splitForPlan } from "../whatsapp/flows/definitions.ts";
+import { VAT_PERCENT } from "../parser/extract.ts";
+import { parseAmountToKobo } from "../../core/amount.ts";
 import { forLog, type Parsed } from "../parser/schema.ts";
 import { b, i, lines, para, row } from "../whatsapp/format.ts";
 import { parseMessage } from "../parser/parse.ts";
 import { readCorrection } from "../parser/corrections.ts";
 import { asCommand } from "../parser/commands.ts";
-import { todayIn, type Civil } from "../../core/dates.ts";
+import { resolveDueDate, todayIn, type Civil } from "../../core/dates.ts";
 import { defaults, env } from "../config.ts";
 import { confirmDraft, createDraft, discardDraft, getOpenDraft } from "../documents/store.ts";
 import { draftButtons, draftSummary, sentMessage } from "../documents/summary.ts";
@@ -67,6 +70,13 @@ import { deductChosen, payLinkMessage, proActive, proOffer, proOfferButtons } fr
 import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
 import { sendCta, sendFlow, sendList } from "../whatsapp/client.ts";
 import { flowId } from "../whatsapp/flows/register.ts";
+
+/** The screen each Flow opens on. */
+const FLOW_SCREEN = {
+  onboarding: "BUSINESS",
+  business_details: "DETAILS",
+  invoice: "WORK",
+} as const;
 import { OTHER_BANK } from "../whatsapp/flows/banks.ts";
 import { sendDocument, uploadDocument } from "../whatsapp/client.ts";
 import {
@@ -163,6 +173,17 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     }
     if (key === "business_details") {
       await handleDetailsForm(user.id, msg.from, msg.flow.fields, log);
+      return;
+    }
+    if (key === "invoice") {
+      await handleInvoiceForm(
+        user.id,
+        msg.from,
+        msg.flow.fields,
+        user.businessName ?? undefined,
+        log,
+        todayIn(defaults.behaviour.timezone),
+      );
       return;
     }
     log.warn({ userId: user.id, key }, "a form we do not know");
@@ -586,15 +607,17 @@ async function runEffects(
            */
           if (!id) {
             log.warn({ userId, key: effect.key }, "no published flow, asking in words");
-            extra.push(VOICE.setupByHand);
-            holdAt = effect.key === "onboarding" ? "onboarding:business_name" : "idle";
+            extra.push(effect.fallback?.line ?? VOICE.setupByHand);
+            holdAt =
+              effect.fallback?.holdAt ??
+              (effect.key === "onboarding" ? "onboarding:business_name" : "idle");
             break;
           }
 
           if (!ctx.phone) {
             log.error({ userId }, "no phone on the effect context, cannot send a flow");
-            extra.push(VOICE.setupByHand);
-            holdAt = "onboarding:business_name";
+            extra.push(effect.fallback?.line ?? VOICE.setupByHand);
+            holdAt = effect.fallback?.holdAt ?? "onboarding:business_name";
             break;
           }
 
@@ -605,7 +628,7 @@ async function runEffects(
             // Ties the submission back to this person. Read on the way in, and
             // never trusted for anything the sender could have chosen.
             token: `${effect.key}:${userId}`,
-            screen: effect.key === "onboarding" ? "BUSINESS" : "DETAILS",
+            screen: FLOW_SCREEN[effect.key],
             data: effect.key === "business_details" ? await detailsFor(userId) : undefined,
             // A draft flow opens for anyone with developer access to the app,
             // which is how this is tested before verification comes through.
@@ -616,8 +639,10 @@ async function runEffects(
             await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
           } else {
             log.error({ userId, reason: sent.reason }, "flow send failed");
-            extra.push(VOICE.setupByHand);
-            holdAt = effect.key === "onboarding" ? "onboarding:business_name" : "idle";
+            extra.push(effect.fallback?.line ?? VOICE.setupByHand);
+            holdAt =
+              effect.fallback?.holdAt ??
+              (effect.key === "onboarding" ? "onboarding:business_name" : "idle");
           }
           break;
         }
@@ -742,6 +767,7 @@ async function runEffects(
             dueDate: doc.dueDate ?? null,
             vatPercent: doc.vatPercent ?? null,
             depositPercent: doc.depositPercent ?? null,
+            instalments: doc.instalments ?? null,
             passFeesToClient: doc.passFeesToClient ?? false,
             notes: doc.notes ?? null,
           });
@@ -1481,6 +1507,97 @@ async function handleDetailsForm(
   await reply(userId, phone, said, log);
 }
 
+/**
+ * A submitted invoice form becomes an ordinary draft.
+ *
+ * Everything after this point is the path a typed sentence takes: the same
+ * plan limits, the same summary, the same "Send it?" with the same three
+ * buttons. The form replaces the reading of the message, and nothing else —
+ * F6 still stands, and nothing leaves without the user confirming it.
+ *
+ * The fields are checked here rather than trusted. A Flow's own validation
+ * runs on the client, and what comes back has travelled through it.
+ */
+async function handleInvoiceForm(
+  userId: string,
+  phone: string,
+  fields: Record<string, string>,
+  businessName: string | undefined,
+  log: FastifyBaseLogger,
+  today: Civil,
+): Promise<void> {
+  const clientName = (fields.client_name ?? "").trim();
+  const description = (fields.description ?? "").trim();
+  const email = (fields.client_email ?? "").trim().toLowerCase();
+  const notes = (fields.notes ?? "").trim();
+  const duePhrase = (fields.due_date ?? "").trim();
+
+  const totalKobo = parseAmountToKobo((fields.amount ?? "").trim());
+
+  // Required in the form, so an empty one means the form was not the thing
+  // that sent this. Saying which field rather than "something went wrong"
+  // leaves them somewhere they can act.
+  if (!clientName || !description || totalKobo === null || totalKobo <= 0) {
+    log.warn({ userId, hasClient: Boolean(clientName), totalKobo }, "invoice form was incomplete");
+    await reply(
+      userId,
+      phone,
+      [
+        para(
+          `🤔 ${b("That form came back missing something.")}`,
+          "A client, what the work is, and an amount. Try again, or just tell me in a sentence.",
+        ),
+      ],
+      log,
+    );
+    return;
+  }
+
+  // The date is words, on purpose, and the same reader handles it here as in
+  // a sentence. A phrase we cannot read is not worth refusing the whole
+  // invoice over — the draft goes out without a due date and the user can say
+  // "due Friday" to the summary, which already works.
+  const resolved = duePhrase ? resolveDueDate(duePhrase, today) : null;
+  if (duePhrase && !resolved) {
+    log.info({ userId, duePhrase }, "unreadable due date from the invoice form");
+  }
+
+  const { depositPercent, instalments } = splitForPlan(fields.plan);
+
+  const doc: PendingDoc = {
+    type: "invoice",
+    clientName,
+    clientEmail: email || null,
+    lines: [{ description, qty: 1, unitAmountKobo: totalKobo }],
+    dueDate: resolved?.date ?? null,
+    // An OptIn comes back as the string "true", not a boolean.
+    vatPercent: fields.vat === "true" ? VAT_PERCENT : null,
+    depositPercent,
+    instalments,
+    passFeesToClient: fields.pass_fees === "true",
+    notes: notes || null,
+  };
+
+  const outcome = await runEffects([{ type: "save_draft", doc }], userId, businessName, log, {
+    today,
+    phone,
+  });
+
+  const context: Record<string, unknown> = { doc };
+  if (outcome.draftId) context.draftId = outcome.draftId;
+
+  // An effect that held — the monthly limit — never wrote a draft, and there
+  // is nothing for a "yes" to refer to.
+  await saveConversation(
+    userId,
+    outcome.holdAt ?? (outcome.draftId ? "awaiting_confirm" : "idle"),
+    outcome.draftId ? context : {},
+  );
+  await reply(userId, phone, outcome.lines, log, outcome.buttons);
+
+  log.info({ userId, draftId: outcome.draftId, depositPercent, instalments }, "draft from a form");
+}
+
 async function handleLogo(
   userId: string,
   mediaId: string,
@@ -1556,7 +1673,13 @@ function commandAsParsed(c: { intent: Parsed["intent"]; documentNumber?: number 
     dueDate: null,
     dueDatePhrase: null,
     documentNumber: c.documentNumber ?? null,
-    options: { depositPercent: null, passFeesToClient: null, vatPercent: null, notes: null },
+    options: {
+      depositPercent: null,
+      instalments: null,
+      passFeesToClient: null,
+      vatPercent: null,
+      notes: null,
+    },
     confidence: 1,
     source: "command",
     missing: [],

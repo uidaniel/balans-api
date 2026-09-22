@@ -8,7 +8,14 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { depositShape, equalShape, nextPayable, type Part } from "./parts.ts";
+import {
+  MAX_INSTALMENTS,
+  depositShape,
+  equalShape,
+  nextPayable,
+  shapeFor,
+  type Part,
+} from "./parts.ts";
 import { splitInto } from "../../core/totals.ts";
 
 const N = (naira: number) => naira * 100;
@@ -87,5 +94,50 @@ describe("only the next unpaid part is payable", () => {
     // Defensive: if a later part were somehow paid first, the earlier one is
     // still what is owed and still what the page must ask for.
     assert.equal(nextPayable(parts(["pending", "paid"]))?.position, 0);
+  });
+});
+
+describe("which shape a document's options ask for", () => {
+  it("gives one payment when nothing was asked for", () => {
+    assert.equal(shapeFor({}), null);
+    assert.equal(shapeFor({ depositPercent: null, instalments: null }), null);
+  });
+
+  it("reads a deposit", () => {
+    assert.deepEqual(shapeFor({ depositPercent: 50 }), depositShape(50));
+  });
+
+  it("reads instalments", () => {
+    assert.deepEqual(shapeFor({ instalments: 3 }), equalShape(3));
+  });
+
+  it("prefers the deposit when somehow both are set", () => {
+    // They are two answers to one question. The correction reader already
+    // clears one when the other is given; this is the backstop.
+    assert.deepEqual(shapeFor({ depositPercent: 40, instalments: 3 }), depositShape(40));
+  });
+
+  it("does not treat 100% as a deposit", () => {
+    // depositShape(100) would make a balance worth nothing, and payment_parts
+    // rejects a part of zero — a client cannot pay it, so it is not a part.
+    assert.equal(shapeFor({ depositPercent: 100 }), null);
+    assert.equal(shapeFor({ depositPercent: 0 }), null);
+  });
+
+  it("refuses a count outside what can be paid", () => {
+    assert.equal(shapeFor({ instalments: 1 }), null);
+    assert.equal(shapeFor({ instalments: MAX_INSTALMENTS + 1 }), null);
+    assert.notEqual(shapeFor({ instalments: MAX_INSTALMENTS }), null);
+  });
+
+  it("never produces a part worth nothing", () => {
+    // Every shape that survives has to be writable: the table insists on it.
+    for (const n of [2, 3, 5, 7, MAX_INSTALMENTS]) {
+      const shape = shapeFor({ instalments: n })!;
+      const amounts = splitInto(N(1_000), shape.map((x) => x.percent));
+      assert.equal(amounts.length, n);
+      assert.ok(amounts.every((a) => a > 0), `${n} parts of the smallest invoice`);
+      assert.equal(amounts.reduce((a, b) => a + b, 0), N(1_000));
+    }
   });
 });

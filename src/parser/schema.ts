@@ -89,12 +89,14 @@ export const rawParse = z.object({
   options: z
     .object({
       deposit_percent: z.number().min(1).max(100).nullish().transform((v) => v ?? null),
+      /** "three payments", "in 4 instalments". The count, never the amounts. */
+      instalments: z.number().int().min(2).max(12).nullish().transform((v) => v ?? null),
       pass_fees_to_client: z.boolean().nullish().transform((v) => v ?? null),
       vat_percent: z.number().min(0).max(100).nullish().transform((v) => v ?? null),
       notes: z.string().trim().max(500).nullish().transform((v) => v ?? null),
     })
     .nullish()
-    .transform((v) => v ?? { deposit_percent: null, pass_fees_to_client: null, vat_percent: null, notes: null }),
+    .transform((v) => v ?? { deposit_percent: null, instalments: null, pass_fees_to_client: null, vat_percent: null, notes: null }),
   confidence: z.number().min(0).max(1),
 });
 
@@ -119,6 +121,7 @@ export type Parsed = {
   documentNumber: number | null;
   options: {
     depositPercent: number | null;
+    instalments: number | null;
     passFeesToClient: boolean | null;
     vatPercent: number | null;
     notes: string | null;
@@ -199,6 +202,7 @@ export function normalise(raw: RawParse, today: Civil, source: Parsed["source"])
     documentNumber: raw.document_number,
     options: {
       depositPercent: raw.options.deposit_percent,
+      instalments: raw.options.instalments,
       passFeesToClient: raw.options.pass_fees_to_client,
       vatPercent: raw.options.vat_percent,
       notes: raw.options.notes,

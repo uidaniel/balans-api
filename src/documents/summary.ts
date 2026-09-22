@@ -61,6 +61,13 @@ export function draftSummary(draft: Draft, today: Civil): string {
     rows.push(row(draft.type === "quote" ? "Valid until" : "Due", formatFriendly(draft.dueDate, today)));
   }
   if (draft.depositPercent) rows.push(row("Deposit", `${draft.depositPercent}% up front`));
+  if (draft.instalments) {
+    // The figure, not just the count. "3 payments" leaves somebody working out
+    // what each one is worth, and this is the line they check before sending.
+    rows.push(
+      row("Payments", `${draft.instalments} x ${formatNaira(Math.round(draft.totalKobo / draft.instalments))}`),
+    );
+  }
   if (draft.passFeesToClient) rows.push(row("Fees", "Client pays the transaction fee"));
   if (draft.clientEmail) rows.push(row("Email to", draft.clientEmail));
 

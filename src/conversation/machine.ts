@@ -99,6 +99,8 @@ export type PendingDoc = {
   dueDate?: Civil | null;
   vatPercent?: number | null;
   depositPercent?: number | null;
+  /** Equal payments. Never set alongside `depositPercent`; see `shapeFor`. */
+  instalments?: number | null;
   passFeesToClient?: boolean;
   notes?: string | null;
 };
@@ -120,7 +122,21 @@ export type Effect =
    * words if the flow is missing, so a Flow that was never published cannot
    * strand somebody at their first message.
    */
-  | { type: "send_flow"; key: "onboarding" | "business_details"; body: string; cta: string }
+  | {
+      type: "send_flow";
+      key: "onboarding" | "business_details" | "invoice";
+      body: string;
+      cta: string;
+      /**
+       * What to say instead when there is no published Flow.
+       *
+       * Every Flow needs one, because "no form" is the normal state of this
+       * account until Meta verifies the business — and the answer differs by
+       * Flow. Losing the invoice form should leave somebody with the typed
+       * template, not with an apology about payouts.
+       */
+      fallback?: { line: string; holdAt: State };
+    }
   | { type: "verify_email_code"; email: string; code: string }
   | { type: "record_consent"; version: string }
   | { type: "show_help" }
@@ -434,6 +450,22 @@ export const VOICE = {
       i("With an email, I send it to them for you."),
       i("Or just say it: Invoice Tunde 20k for logo, due Friday"),
     ),
+  ),
+
+  /**
+   * The message the invoice Flow arrives on.
+   *
+   * Short, because the form is the message. Everything the template spells
+   * out is a label inside it, and repeating them here would have somebody
+   * reading the invoice twice before they have written it once.
+   *
+   * The sentence is still offered, and still works. It is the faster road for
+   * most invoices, and the form must not look like it replaced one.
+   */
+  invoiceFormBody: para(
+    `\u{1F9FE} ${b("New invoice")}`,
+    "Tap below to fill it in.",
+    i("Or just say it: Invoice Tunde 20k for logo, due Friday"),
   ),
 
   quoteForm: para(
@@ -926,6 +958,7 @@ function startDocument(p: Parsed, ctx: Context, now: Civil): Step {
     dueDate: p.dueDate,
     vatPercent: p.options.vatPercent,
     depositPercent: p.options.depositPercent,
+    instalments: p.options.depositPercent == null ? p.options.instalments : null,
     passFeesToClient: p.options.passFeesToClient ?? false,
     notes: p.options.notes,
   };
@@ -954,14 +987,47 @@ function buildOrAsk(doc: PendingDoc, ctx: Context, now: Civil, askDate = false):
    * two facts. The form collects both, and everything else, in one.
    */
   if (!doc.clientName && !totalOf(doc) && !doc.lines.length) {
+    const template =
+      doc.type === "quote"
+        ? VOICE.quoteForm
+        : doc.type === "payment_request"
+          ? VOICE.requestForm
+          : VOICE.invoiceForm;
+
+    /*
+     * An invoice with nothing in it is the one place a form beats a sentence.
+     *
+     * Everywhere else the sentence has already said something and the machine
+     * only needs the rest. Here there is nothing to build on, and the choice
+     * is between four questions and one form.
+     *
+     * Quotes and payment requests keep the typed template. They are rarer,
+     * they carry fewer terms, and each published Flow is a thing to keep
+     * working — this one has to earn its place before there are three.
+     *
+     * The state still moves to `awaiting_field:client_name`, because a form
+     * on the screen does not stop somebody typing the answer underneath it,
+     * and they should not have to open it.
+     */
+    if (doc.type === "invoice") {
+      return {
+        replies: [],
+        next: "awaiting_field:client_name",
+        context,
+        effects: [
+          {
+            type: "send_flow",
+            key: "invoice",
+            body: VOICE.invoiceFormBody,
+            cta: "Fill in the invoice",
+            fallback: { line: template, holdAt: "awaiting_field:client_name" },
+          },
+        ],
+      };
+    }
+
     return {
-      replies: [
-        doc.type === "quote"
-          ? VOICE.quoteForm
-          : doc.type === "payment_request"
-            ? VOICE.requestForm
-            : VOICE.invoiceForm,
-      ],
+      replies: [template],
       next: "awaiting_field:client_name",
       context,
       effects: [],
@@ -1214,6 +1280,7 @@ function applyCorrection(doc: PendingDoc, c: Correction): PendingDoc {
   if (c.dueDate) next.dueDate = c.dueDate;
   if (c.vatPercent !== undefined) next.vatPercent = c.vatPercent;
   if (c.depositPercent !== undefined) next.depositPercent = c.depositPercent;
+  if (c.instalments !== undefined) next.instalments = c.instalments;
   if (c.passFeesToClient !== undefined) next.passFeesToClient = c.passFeesToClient;
 
   if (c.description) {

@@ -482,7 +482,13 @@ function parse(over: Partial<Parsed>): Parsed {
     dueDate: null,
     dueDatePhrase: null,
     documentNumber: null,
-    options: { depositPercent: null, passFeesToClient: null, vatPercent: null, notes: null },
+    options: {
+      depositPercent: null,
+      instalments: null,
+      passFeesToClient: null,
+      vatPercent: null,
+      notes: null,
+    },
     confidence: 0.95,
     source: "pattern",
     missing: [],
@@ -1006,7 +1012,21 @@ describe("asking for a different document mid-flow", () => {
 
       assert.equal(out.context.doc?.type, wanted, "it kept the old document");
       assert.notEqual(out.context.doc?.clientName, command, "the command became the client");
-      assert.match(out.replies.join("\n"), /Copy this|Who is this for/i);
+
+      // An invoice with nothing in it opens the form; a quote or a payment
+      // request still gets the typed template. Either way the user is asked
+      // for the same things, and either way a typed answer still lands,
+      // because the state is the same.
+      const flow = out.effects.find((e) => e.type === "send_flow");
+      if (wanted === "invoice") {
+        assert.ok(flow, "an empty invoice should open the form");
+        assert.equal(flow.key, "invoice");
+        assert.match(flow.fallback?.line ?? "", /Copy this/i, "the template is still the fallback");
+      } else {
+        assert.equal(flow, undefined, `${wanted} keeps the typed template`);
+        assert.match(out.replies.join("\n"), /Copy this|Who is this for/i);
+      }
+      assert.equal(out.next, "awaiting_field:client_name", "a typed answer must still land");
     });
   }
 

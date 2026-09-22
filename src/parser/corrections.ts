@@ -13,6 +13,7 @@
 
 import { parseAmountToKobo } from "../../core/amount.ts";
 import { resolveDueDate, type Civil } from "../../core/dates.ts";
+import { COUNTED, SPREAD, countOf } from "./extract.ts";
 
 export type Correction = {
   totalKobo?: number;
@@ -23,6 +24,7 @@ export type Correction = {
   description?: string;
   vatPercent?: number | null;
   depositPercent?: number | null;
+  instalments?: number | null;
   passFeesToClient?: boolean;
 };
 
@@ -47,6 +49,8 @@ const ADD_VAT = /\b(?:add|include|with|plus)\s+vat(?:\s*(?:at\s*)?(\d{1,2}(?:\.\
 const NO_VAT = /\b(?:no|remove|without|drop|take off)\s+(?:the\s+)?vat\b/i;
 const DEPOSIT = /\b(?:(\d{1,3})\s*%\s*(?:deposit|upfront|down)|(?:deposit|upfront)\s*(?:of\s*)?(\d{1,3})\s*%)\b/i;
 const NO_DEPOSIT = /\b(?:no|remove|without|drop)\s+(?:the\s+)?deposit\b/i;
+const NO_INSTALMENTS =
+  /\b(?:no|remove|without|drop|forget|cancel)\s+(?:the\s+)?(?:instal|install|milestone|payment plan)\w*\b|\b(?:one|1|single|full)\s+payments?\b/i;
 const PASS_FEES = /\b(?:client|customer|they|them)\s+(?:should\s+|will\s+|go\s+|dey\s+)?pays?\s+(?:the\s+)?(?:fees?|charges?)\b/i;
 const NO_PASS_FEES = /\bi(?:'| a)?ll?\s+pay\s+(?:the\s+)?(?:fees?|charges?)\b|\bi\s+pay\s+(?:the\s+)?fees?\b/i;
 
@@ -99,6 +103,30 @@ export function readCorrection(text: string, today: Civil): Correction | null {
       rest = rest.replace(DEPOSIT, "").trim();
     }
   }
+
+  /*
+   * A deposit and instalments are two answers to one question.
+   *
+   * So asking for either clears the other. Without that, "actually make it 3
+   * payments" would leave an earlier 50% deposit in place, and `shapeFor`
+   * prefers the deposit — the draft would come back showing a split the user
+   * had just replaced.
+   */
+  if (NO_INSTALMENTS.test(rest)) {
+    out.instalments = null;
+    rest = rest.replace(NO_INSTALMENTS, "").trim();
+  } else {
+    for (const re of [SPREAD, COUNTED]) {
+      const m = re.exec(rest);
+      const n = m ? countOf(m[1]) : null;
+      if (n === null) continue;
+      out.instalments = n;
+      out.depositPercent = null;
+      rest = rest.replace(re, "").trim();
+      break;
+    }
+  }
+  if (out.depositPercent != null) out.instalments = null;
 
   if (NO_PASS_FEES.test(rest)) {
     out.passFeesToClient = false;

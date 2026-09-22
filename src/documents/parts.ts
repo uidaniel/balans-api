@@ -11,6 +11,8 @@
  * leave the user chasing the smaller half.
  */
 
+import type pg from "pg";
+
 import { db, tx } from "../db/pool.ts";
 import { splitInto } from "../../core/totals.ts";
 
@@ -33,14 +35,22 @@ export type Part = {
 export async function createParts(
   documentId: string,
   totalKobo: number,
-  shape: { label: string; percent: number }[],
+  shape: Shape,
+  /**
+   * An open transaction to write inside.
+   *
+   * The parts and the document they belong to are written together or not at
+   * all: a draft that exists with no parts is an invoice for the full amount,
+   * which is the failure this whole file is meant to prevent.
+   */
+  client?: pg.PoolClient,
 ): Promise<Part[]> {
   const amounts = splitInto(
     totalKobo,
     shape.map((s) => s.percent),
   );
 
-  return tx(async (c) => {
+  const write = async (c: pg.PoolClient): Promise<Part[]> => {
     await c.query(`DELETE FROM payment_parts WHERE document_id = $1`, [documentId]);
 
     const made: Part[] = [];
@@ -60,17 +70,57 @@ export async function createParts(
       });
     }
     return made;
-  });
+  };
+
+  return client ? write(client) : tx(write);
 }
 
+/** How a total is broken up. The percentages always add to 100. */
+export type Shape = { label: string; percent: number }[];
+
+/**
+ * The shape a document's options ask for, or null for one single payment.
+ *
+ * This is the only place that answers the question, so the draft summary, the
+ * stored parts and the payment page cannot disagree about whether an invoice
+ * is paid in one go.
+ *
+ * A deposit wins over instalments when both are somehow set. They are two
+ * answers to the same question and the deposit is the one the user is far more
+ * likely to have said out loud.
+ *
+ * 100% is not a deposit. It is the whole invoice, and `depositShape` would
+ * make a second part worth nothing — which `payment_parts` rejects outright,
+ * because a part worth zero is not something a client can pay.
+ */
+export function shapeFor(o: {
+  depositPercent?: number | null;
+  instalments?: number | null;
+}): Shape | null {
+  const deposit = o.depositPercent;
+  if (deposit != null && deposit > 0 && deposit < 100) return depositShape(deposit);
+
+  const n = o.instalments;
+  if (n != null && n >= MIN_INSTALMENTS && n <= MAX_INSTALMENTS) return equalShape(n);
+
+  return null;
+}
+
+/**
+ * Two is the fewest that means anything, and twelve is where it stops being a
+ * payment plan and starts being a subscription we do not do.
+ */
+export const MIN_INSTALMENTS = 2;
+export const MAX_INSTALMENTS = 12;
+
 /** A deposit, as F7 writes it: "50% deposit" is deposit then balance. */
-export const depositShape = (percent: number): { label: string; percent: number }[] => [
+export const depositShape = (percent: number): Shape => [
   { label: `${percent}% deposit`, percent },
   { label: "Balance", percent: 100 - percent },
 ];
 
 /** "three equal parts", with the rounding remainder on the last one. */
-export function equalShape(n: number): { label: string; percent: number }[] {
+export function equalShape(n: number): Shape {
   const each = Math.floor((100 / n) * 100) / 100;
   const shape = Array.from({ length: n }, (_, i) => ({
     label: `Part ${i + 1} of ${n}`,
