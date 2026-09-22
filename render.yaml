@@ -1,0 +1,88 @@
+# Render blueprint.
+#
+# Frankfurt, because the database is Supabase in eu-west-1 (Ireland). From a
+# laptop in Lagos a query costs ~160ms and a single bot turn makes several;
+# from Frankfurt it is ~25ms. Dublin would be ~5ms, but no push-button host
+# offers it and 20ms is not worth a harder deploy.
+#
+# `starter`, not `free`. A free service sleeps after inactivity, and the first
+# request after it wakes takes tens of seconds. This service exists to answer
+# WhatsApp webhooks, which arrive without warning and time out — a sleeping
+# instance is a silently broken bot, which is worse than no bot.
+#
+# Secrets are `sync: false`: Render creates the blank and asks for the value in
+# the dashboard, so nothing sensitive is ever committed here.
+
+services:
+  - type: web
+    name: balans-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: frankfurt
+    plan: starter
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+
+    envVars:
+      # Known values. These differ from .env.local on purpose.
+      - key: NODE_ENV
+        value: production
+      # `debug` fills the log retention in hours and makes the one line that
+      # matters unfindable.
+      - key: LOG_LEVEL
+        value: info
+      # Draft Flows open only for people with a role on the Meta app. A real
+      # user would tap the form and get nothing at all, so production sends
+      # published Flows or falls back to the typed questions.
+      - key: WA_FLOWS_DRAFT
+        value: "false"
+
+      # Everything below is set in the dashboard.
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+      - key: WA_ACCESS_TOKEN
+        sync: false
+      - key: WA_APP_SECRET
+        sync: false
+      - key: WA_VERIFY_TOKEN
+        sync: false
+      - key: WA_PHONE_NUMBER_ID
+        sync: false
+      - key: WA_BUSINESS_ACCOUNT_ID
+        sync: false
+
+      - key: MONNIFY_BASE_URL
+        sync: false
+      - key: MONNIFY_API_KEY
+        sync: false
+      - key: MONNIFY_SECRET_KEY
+        sync: false
+      - key: MONNIFY_CONTRACT_CODE
+        sync: false
+
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+
+      # The origin in every /i/{token} link a client opens. Not a secret, and
+      # getting it wrong sends clients to a page that does not exist, so it is
+      # written down here rather than left to a dashboard field.
+      - key: PUBLIC_BASE_URL
+        value: https://payment.balans.ng
+
+      # These match config.ts's defaults. Stated anyway: a default is a thing
+      # nobody sees, and these three print on documents people are asked to pay.
+      - key: SITE_URL
+        value: https://balans.ng
+      - key: LEGAL_ENTITY_NAME
+        value: MOTX Studios
+      - key: SUPPORT_EMAIL
+        value: hello@balans.ng
