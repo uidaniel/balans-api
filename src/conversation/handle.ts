@@ -77,6 +77,7 @@ import { deductChosen, payLinkMessage, proActive, proOffer, proOfferButtons } fr
 import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
 import { sendCta, sendFlow, sendList } from "../whatsapp/client.ts";
 import { helpButtons } from "./menu.ts";
+import { TEMPLATES } from "../pdf/templates.ts";
 import { flowId } from "../whatsapp/flows/register.ts";
 
 /**
@@ -1011,15 +1012,39 @@ async function runEffects(
         }
 
         case "show_settings": {
-          const [account, pending] = await Promise.all([
+          // Every row says what that setting is now, so they are all read
+          // together rather than one query per row.
+          const [account, pending, prefs] = await Promise.all([
             accountInForce(userId),
             pendingChange(userId),
+            db().query<{
+              default_due_days: number | null;
+              template_id: string | null;
+              invoice_number_start: number;
+            }>(
+              `SELECT default_due_days, template_id, invoice_number_start
+                 FROM users WHERE id = $1`,
+              [userId],
+            ),
           ]);
+
+          const p = prefs.rows[0];
+          const design = TEMPLATES.find((t) => t.id === p?.template_id);
 
           // A tappable list rather than "reply with a number". One tap cannot be
           // mistyped, and it shows what each option does without a wall of text.
           if (ctx.phone) {
-            const sent = await sendList(ctx.phone, settingsList({ businessName, account, pending }));
+            const sent = await sendList(
+              ctx.phone,
+              settingsList({
+                businessName,
+                account,
+                pending,
+                dueDays: p?.default_due_days ?? defaults.behaviour.defaultDueDays,
+                designName: design?.name ?? null,
+                invoiceStart: p?.invoice_number_start ?? 1,
+              }),
+            );
             if (sent.ok) {
               await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
               break;
@@ -1050,6 +1075,37 @@ async function runEffects(
               : `✅ New invoices will be due in ${b(`${effect.days} days`)}.`,
           );
           break;
+
+        case "set_invoice_start": {
+          await db().query(`UPDATE users SET invoice_number_start = $2 WHERE id = $1`, [
+            userId,
+            effect.start,
+          ]);
+
+          // What it will actually be, not what was asked for. The two differ
+          // whenever somebody sets a number below one already issued, and
+          // saying "done" over a change that did nothing is how they end up
+          // sending it again.
+          const { rows } = await db().query<{ next: number }>(
+            `SELECT GREATEST(
+                      COALESCE(MAX(d.number), 0) + 1,
+                      (SELECT u.invoice_number_start FROM users u WHERE u.id = $1)
+                    ) AS next
+               FROM documents d WHERE d.user_id = $1 AND d.type <> 'sample'`,
+            [userId],
+          );
+          const next = rows[0]?.next ?? effect.start;
+
+          extra.push(
+            next === effect.start
+              ? `✅ Your next invoice will be ${b(`#${next}`)}.`
+              : lines(
+                  `✅ Your next invoice will be ${b(`#${next}`)}.`,
+                  `Numbers only go forward, and you have already issued past ${b(`#${effect.start}`)}.`,
+                ),
+          );
+          break;
+        }
 
         case "send_bank_change_code": {
           // The code goes to the verified email, which is the factor the phone

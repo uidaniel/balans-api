@@ -48,7 +48,8 @@ export function settingsMenu(x: {
       "2  Change your payout bank",
       "3  Change your default due days",
       "4  Change your invoice design",
-      "5  Close your account",
+      "5  Change your invoice number",
+      "6  Close your account",
     ),
     `Reply with a number, or ${b("cancel")}.`,
   );
@@ -111,6 +112,12 @@ export function settingsList(x: {
   businessName: string | null | undefined;
   account: ActiveAccount | null;
   pending: { bankName: string; last4: string; accountName: string; effectiveAt: Date } | null;
+  /** How long clients get to pay, in days. */
+  dueDays: number;
+  /** The chosen invoice design, by name. Null while it is still the default. */
+  designName: string | null;
+  /** The number the next invoice will take, when it is not simply the next one. */
+  invoiceStart: number;
 }): {
   body: string;
   button: string;
@@ -127,35 +134,67 @@ ${x.account.bankName} ••${x.account.last4}`
     ? `\nA change to ${x.pending.bankName} ••${x.pending.last4} takes effect ${whenWords(x.pending.effectiveAt)}.`
     : "";
 
+  /*
+   * The body is what somebody sees before tapping anything, so it carries the
+   * whole picture rather than only the bank.
+   *
+   * The rows repeat these values, and that is fine — the rows are behind a
+   * tap and are where you go to change one. This is the glance.
+   */
+  const design = x.designName ?? "Classic";
+  const numbering = x.invoiceStart > 1 ? ` · next #${x.invoiceStart}` : "";
+  const rest = `${design} design · ${x.dueDays} ${x.dueDays === 1 ? "day" : "days"} to pay${numbering}`;
+
   return {
     header: x.businessName ?? "Your account",
-    body: `${now}${scheduled}`,
+    body: `${now}${scheduled}
+
+${rest}`,
     button: "Change something",
     footer: "Nothing changes until you confirm it",
+    /*
+     * Each row says what that setting is *now*.
+     *
+     * It used to describe what the setting was for — "the name your clients
+     * see on every invoice" — which the title already says in two words. So
+     * the screen could tell you everything you were able to change and
+     * nothing about what any of it was set to, which is the question somebody
+     * opens settings to answer.
+     *
+     * Closing the account keeps its warning. That one is not a value.
+     */
     sections: [
       {
         rows: [
           {
             id: "change business name",
             title: "Business name",
-            description: "The name your clients see on every invoice",
+            description: x.businessName ?? "Not set yet",
           },
           {
             id: "change bank",
             title: "Payout bank",
-            description: "Where your money lands. Needs an email code",
+            description: x.account
+              ? `${x.account.bankName} ••${x.account.last4} — ${x.account.accountName}`
+              : "Not set up yet",
           },
           {
             id: "due days",
             title: "Default due days",
-            description: "How long clients get to pay, by default",
+            description: `${x.dueDays} ${x.dueDays === 1 ? "day" : "days"} to pay`,
           },
           {
             // Reads as a command, like every other row, so tapping it goes
             // through the same path as typing it.
             id: "invoice design",
             title: "Invoice design",
-            description: "How your invoices look. Eight to choose from",
+            description: x.designName ?? "Classic, the default",
+          },
+          {
+            id: "invoice number",
+            title: "Invoice number",
+            description:
+              x.invoiceStart > 1 ? `Starting at ${x.invoiceStart}` : "Counting from 1",
           },
           {
             id: "delete my account",

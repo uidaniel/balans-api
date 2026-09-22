@@ -46,6 +46,7 @@ export type State =
   | "settings:menu"
   | "settings:business_name"
   | "settings:due_days"
+  | "settings:invoice_number"
   | "settings:bank_code"
   | "settings:bank_details"
   | "settings:bank_confirm"
@@ -198,6 +199,7 @@ export type Effect =
   /* -- Settings (F17) ---------------------------------------------------- */
   | { type: "set_business_name"; name: string }
   | { type: "set_due_days"; days: number }
+  | { type: "set_invoice_start"; start: number }
   /** A code to the verified email before anything about the bank moves. */
   | { type: "send_bank_change_code" }
   | { type: "verify_bank_change_code"; code: string }
@@ -597,6 +599,11 @@ export const VOICE = {
     "This changes the name on every invoice from now on.",
   ),
 
+  askInvoiceStart: lines(
+    `\u{1F522} ${b("What number should your next invoice be?")}`,
+    `Useful if you are carrying on from another tool — send ${b("1047")} and the next one is #1047.`,
+  ),
+
   askDueDays: lines(
     `📅 ${b("How many days should invoices be due in?")}`,
     `A number between 0 and 180. Most people use ${b("7")}.`,
@@ -854,6 +861,9 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
     case "settings:business_name":
       return takeNewBusinessName(text, context);
 
+    case "settings:invoice_number":
+      return takeInvoiceNumber(text, context);
+
     case "settings:due_days":
       return takeDueDays(text, context);
 
@@ -914,7 +924,16 @@ function atSettingsMenu(text: string, ctx: Context, msg: Inbound): Step {
     return { replies: [], next: "idle", context: forget(ctx), effects: [{ type: "show_designs" }] };
   }
 
-  if (/^(5|delete|close|delete my account|close my account)\b/.test(s)) {
+  if (/^(5|invoice number|invoice no|numbering|number)\b/.test(s)) {
+    return {
+      replies: [VOICE.askInvoiceStart],
+      next: "settings:invoice_number",
+      context: ctx,
+      effects: [],
+    };
+  }
+
+  if (/^(6|delete|close|delete my account|close my account)\b/.test(s)) {
     return { replies: [VOICE.confirmDelete], next: "settings:delete_confirm", context: ctx, effects: [] };
   }
 
@@ -939,6 +958,28 @@ function takeNewBusinessName(text: string, ctx: Context): Step {
     next: "idle",
     context: { ...ctx, businessName: titleCaseName(name), attempts: 0 },
     effects: [{ type: "set_business_name", name: titleCaseName(name) }],
+  };
+}
+
+/**
+ * The number the next invoice takes.
+ *
+ * Only ever forward: allocation takes the greater of this and the next free
+ * number, so a value below what has been issued changes nothing rather than
+ * colliding with an invoice already sent. Said out loud in the confirmation,
+ * because somebody who types 5 after issuing 40 needs to know why nothing
+ * appeared to happen.
+ */
+function takeInvoiceNumber(text: string, ctx: Context): Step {
+  const start = Number(text.trim().replace(/[^0-9]/g, ""));
+  if (!Number.isInteger(start) || start < 1 || start > 2_000_000_000) {
+    return retry("settings:invoice_number", ctx, VOICE.askInvoiceStart);
+  }
+  return {
+    replies: [],
+    next: "idle",
+    context: { ...ctx, attempts: 0 },
+    effects: [{ type: "set_invoice_start", start }],
   };
 }
 

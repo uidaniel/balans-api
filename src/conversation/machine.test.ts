@@ -4,6 +4,7 @@ import { step, VOICE, type Context, type State } from "./machine.ts";
 import type { Parsed } from "../parser/schema.ts";
 import type { Civil } from "../../core/dates.ts";
 import type { Correction } from "../parser/corrections.ts";
+import { settingsMenu } from "../settings/messages.ts";
 
 const V = "2026-09-draft-1";
 const go = (state: State, ctx: Context, text: string) => step(state, ctx, { text }, V);
@@ -937,13 +938,34 @@ describe("the settings menu", () => {
   });
 
   it("keeps the numbers in step with the rows they are printed beside", () => {
-    // The design row was inserted above "close my account", which moved that
-    // one from 4 to 5. A number that opens the wrong row closes an account.
-    const four = doc("settings:menu", {}, "4", { parsed: parse({ intent: "templates" }) });
-    assert.notEqual(four.next, "settings:delete_confirm", "4 must no longer start a deletion");
+    /*
+     * A number that opens the wrong row closes an account.
+     *
+     * This has now drifted twice — the design row pushed "close" from 4 to 5,
+     * and the invoice number row pushed it again to 6. So rather than pinning
+     * the number, this reads it off the menu somebody is actually shown and
+     * checks that it goes where the menu says. Insert another row anywhere and
+     * it keeps working; print one number and answer to another and it fails.
+     */
+    const menu = settingsMenu({ businessName: "Ada Studio", account: null, pending: null });
 
-    const five = doc("settings:menu", {}, "5", { parsed: parse({ intent: "unknown" }) });
-    assert.equal(five.next, "settings:delete_confirm");
+    const numberFor = (label: RegExp): string => {
+      const line = menu.split(String.fromCharCode(10)).find((l: string) => label.test(l));
+      assert.ok(line, `no row matching ${label} on the menu`);
+      const n = /^\s*(\d+)/.exec(line.replace(/[*_]/g, ""))?.[1];
+      assert.ok(n, `no number on "${line}"`);
+      return n;
+    };
+
+    const closing = numberFor(/close your account/i);
+    const out = doc("settings:menu", {}, closing, { parsed: parse({ intent: "unknown" }) });
+    assert.equal(out.next, "settings:delete_confirm", `"${closing}" should be the closing row`);
+
+    // And nothing else on the menu may reach it.
+    for (const n of ["1", "2", "3", "4", "5", "6"].filter((n) => n !== closing)) {
+      const other = doc("settings:menu", {}, n, { parsed: parse({ intent: "unknown" }) });
+      assert.notEqual(other.next, "settings:delete_confirm", `"${n}" must not start a deletion`);
+    }
   });
 
   it("closes on cancel", () => {
