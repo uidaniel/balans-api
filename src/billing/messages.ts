@@ -40,10 +40,6 @@ export function proOffer(used: number): string {
       // Counted from the registry, so the claim cannot outlive the designs.
       `✅ All ${availableTo("pro").length} invoice designs`,
     ),
-    // The two ways to pay arrive as buttons under this. The alternative is
-    // still described here rather than left to a 20-character label, so the
-    // thing that costs nothing up front is understood before it is tapped.
-    i("Paying from your next invoice costs you nothing until a client pays you."),
   );
 }
 
@@ -54,8 +50,21 @@ export function proOffer(used: number): string {
  * take the same path and neither needs a special case.
  */
 export const proOfferButtons = (): { id: string; title: string }[] => [
-  { id: "pay now", title: "💳 Pay now" },
-  { id: "from my invoices", title: "🧾 From invoices" },
+  /*
+   * One button, and no picture on it.
+   *
+   * Deduct-from-invoice is gone from the offer. Two ways to pay is a decision
+   * to make before the one that matters — whether to upgrade at all — and the
+   * second one needed a line of explanation above it to be understood, which
+   * is a lot of message for an alternative most people were never going to
+   * take.
+   *
+   * The id stays the phrase the parser reads, so a tap and a typed "pay now"
+   * are the same message. `asProChoice` still understands "from my invoices"
+   * for anybody who knows to ask, and the billing path behind it is untouched
+   * — this removes the offer, not the feature.
+   */
+  { id: "pay now", title: "Pay Now" },
 ];
 
 /** Deduct-from-invoice, confirmed. The cap is the reassurance, so it is said. */
