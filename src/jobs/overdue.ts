@@ -18,7 +18,7 @@ import { db } from "../db/pool.ts";
 import { defaults, env } from "../config.ts";
 import { formatFriendly, formatISO, todayIn, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { b, block, lines, para, row, rule } from "../whatsapp/format.ts";
+import { b, block, lines, para, row } from "../whatsapp/format.ts";
 import { send } from "../whatsapp/outbound.ts";
 import { sendMonthlySummaries } from "./monthly-summary.ts";
 import { sweepStaleDrafts } from "../documents/store.ts";
@@ -290,7 +290,12 @@ export function promptMessage(x: {
       row("Amount", b(formatNaira(x.owedKobo))),
       row("Was due", when),
     ]),
-    lines(`${b("Send them this")} \u2014 copy from the line below:`, rule(), forward, rule()),
+    // The rules here were doing real work rather than decorating \u2014 they
+    // marked where the copyable message stopped. Its own paragraph says the
+    // same thing: a blank line above and below it, and the instruction
+    // naming what to copy.
+    `${b("Send them this")} \u2014 copy the message below:`,
+    forward,
     `Or reply ${b("stop reminders")} to turn these off for this invoice.`,
   );
 }

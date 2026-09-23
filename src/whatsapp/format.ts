@@ -90,18 +90,23 @@ export const rule = (width = 18): string => "─".repeat(width);
 export const row = (label: string, value: string): string => `${label}: ${value}`;
 
 /**
- * A titled block with a rule above and below its rows.
+ * A titled block: a heading, a blank line, then its rows.
  *
  *   🧾 *INVOICE DRAFT*
- *   ──────────────────
+ *
  *   Client: Zenith Homes
  *   Amount: *₦350,000*
- *   ──────────────────
  *
- * The footer sits outside the rules, because it is the instruction rather
- * than part of the record.
+ * It used to carry a rule above and below the rows. Every card in the
+ * product had two, so a thread of them — a draft, a reminder, a payment
+ * — was mostly horizontal lines, and past the second or third the eye
+ * stopped reading them as separators and started reading them as noise.
+ *
+ * The blank line does the same work. WhatsApp already gives a bubble
+ * generous line spacing, and a heading with air under it reads as a
+ * heading without anything being drawn.
  */
 export function block(title: string, rows: (string | false | null | undefined)[]): string {
   const body = rows.filter(Boolean) as string[];
-  return [title, rule(), ...body, rule()].join("\n");
+  return [title, "", ...body].join("\n");
 }

@@ -12,7 +12,7 @@
 
 import { formatFriendly, formatDayMonth, firstOfNextMonth, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { b, block, i, lines, para, row, rule } from "../whatsapp/format.ts";
+import { b, block, i, lines, para, row } from "../whatsapp/format.ts";
 import { bucketOf, type Bucket, type Debtors, type DocumentStatus, type Summary } from "./queries.ts";
 
 const BUCKET_TITLE: Record<Bucket, string> = {
@@ -56,11 +56,11 @@ export function debtorsMessage(d: Debtors, today: Civil): string {
       ? `and ${b(`${d.more} more`)} worth ${formatNaira(d.moreKobo)}. Reply ${b("dashboard")} to see all.`
       : "";
 
-  // A one-row block is two rules around a single line, which reads as heavy.
-  // The total belongs in the title here, and the rule separates it from the
-  // groups underneath.
+  // A one-row block would be a heading over a single line, which reads as
+  // heavy. The total belongs in the title here, and the blank line `para`
+  // leaves after it separates it from the groups underneath.
   return para(
-    lines(`⏳ ${b("OWED TO YOU")} — ${b(formatNaira(d.totalKobo))}`, rule()),
+    `⏳ ${b("OWED TO YOU")} — ${b(formatNaira(d.totalKobo))}`,
     ...groups,
     tail,
   );
