@@ -252,6 +252,7 @@ const FLOW_SCREEN = {
   consent: "TERMS",
   request: "WORK",
 } as const;
+import { draftCard } from "../documents/receipt-card.ts";
 import { invoiceableKobo } from "../../core/amount.ts";
 import { totalsFor } from "../../core/totals.ts";
 import { OTHER_BANK } from "../whatsapp/flows/banks.ts";
@@ -1145,9 +1146,26 @@ async function runEffects(
             notes: doc.notes ?? null,
           }, ctx.today);
           draftId = draft.id;
-          extra.push(draftSummary(draft, ctx.today, gate.plan));
+
+          /*
+           * The receipt above the words, when it can be drawn.
+           *
+           * The card itemises the fees, so the summary drops its PS line
+           * when one is going out — the same arithmetic drawn and written is
+           * one of them too many. Everything else stays in words underneath,
+           * because a picture cannot be searched in a chat or read aloud,
+           * and because it is what arrives if Chrome is busy or Meta's
+           * upload fails.
+           */
+          const card = await draftCard(draft, gate.plan, ctx.today, log);
+          extra.push(draftSummary(draft, ctx.today, gate.plan, card === null));
           buttons = draftButtons();
-          log.info({ userId, draftId: draft.id, totalKobo: draft.totalKobo }, "draft saved");
+          if (card) buttonsImage = card;
+
+          log.info(
+            { userId, draftId: draft.id, totalKobo: draft.totalKobo, card: card !== null },
+            "draft saved",
+          );
           break;
         }
 

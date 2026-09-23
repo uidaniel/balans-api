@@ -97,6 +97,19 @@ export function planLines(
  * comes out of the user's share is only our own fee. That falls out of
  * `settle`; there is no separate branch for it here.
  */
+/** Every figure a receipt needs, in the order somebody reads them. */
+export type Payout = {
+  /** What the client is charged. Above the invoice when fees are passed on. */
+  clientPaysKobo: number;
+  processorFeeKobo: number;
+  balansFeeKobo: number;
+  /** What lands in the bank. */
+  receivesKobo: number;
+  /** The invoice minus what lands, which is not the sum of the two fees when
+   * the client is paying the processor's. */
+  feesKobo: number;
+};
+
 export function payout(
   draft: {
     totalKobo: number;
@@ -105,23 +118,56 @@ export function payout(
     passFeesToClient: boolean;
   },
   plan: "free" | "pro",
-): { receivesKobo: number; feesKobo: number } {
+): Payout {
   const p = defaults.plans[plan];
   const rates = { percentBps: p.feePercentBps, minKobo: p.feeMinKobo, capKobo: p.feeCapKobo };
 
   const shape = shapeFor(draft, draft.totalKobo);
   const payments = shape?.length ? shape.map((s) => s.amountKobo) : [draft.totalKobo];
 
-  const receivesKobo = payments.reduce(
-    (sum, amountKobo) =>
-      sum + settle(amountKobo, rates, { passToClient: draft.passFeesToClient }).userReceivesKobo,
-    0,
-  );
+  /*
+   * Summed per payment, and the two fees kept apart.
+   *
+   * They are not ours to blur: Monnify's cut comes out whoever we are, and
+   * the Balans fee is the one the user is choosing between plans about. A
+   * receipt that showed one number called "fees" would be hiding the only
+   * line Pro changes.
+   */
+  let clientPaysKobo = 0;
+  let processorFeeKobo = 0;
+  let balansFeeKobo = 0;
+  let receivesKobo = 0;
 
-  return { receivesKobo, feesKobo: draft.totalKobo - receivesKobo };
+  for (const amountKobo of payments) {
+    const part = settle(amountKobo, rates, { passToClient: draft.passFeesToClient });
+    clientPaysKobo += part.clientPaysKobo;
+    processorFeeKobo += part.processorFeeKobo;
+    balansFeeKobo += part.balansFeeKobo;
+    receivesKobo += part.userReceivesKobo;
+  }
+
+  return {
+    clientPaysKobo,
+    processorFeeKobo,
+    balansFeeKobo,
+    receivesKobo,
+    feesKobo: draft.totalKobo - receivesKobo,
+  };
 }
 
-export function draftSummary(draft: Draft, today: Civil, plan: "free" | "pro"): string {
+export function draftSummary(
+  draft: Draft,
+  today: Civil,
+  plan: "free" | "pro",
+  /**
+   * False when a receipt card is going above this message.
+   *
+   * The card itemises the fees, so the PS would be the same arithmetic twice
+   * — once drawn and once written. Everything else stays in words, because a
+   * picture cannot be searched in a chat or read aloud.
+   */
+  fees = true,
+): string {
   const rows: (string | false)[] = [row("Client", draft.clientName)];
 
   // One line reads as a single "Work" row. Several deserve their own lines,
@@ -170,6 +216,7 @@ export function draftSummary(draft: Draft, today: Civil, plan: "free" | "pro"): 
    * it — a fee line there is a number about a client who does not exist.
    */
   const ps =
+    fees &&
     draft.type !== "sample" &&
     `PS: you receive ${b(formatNaira(payout(draft, plan).receivesKobo))} of this after fees.`;
 

@@ -247,6 +247,9 @@ export type UploadResult = { ok: true; mediaId: string } | { ok: false; reason: 
  * once, and re-sending re-uploads, which costs a second and removes a whole
  * class of "why is this document missing" problems.
  */
+/** A hosted brand file, as opposed to something uploaded for one message. */
+const isUrl = (s: string): boolean => /^https?:[/][/]/.test(s);
+
 export async function uploadDocument(
   bytes: Buffer,
   filename: string,
@@ -523,7 +526,23 @@ export function sendCta(
       interactive: {
         type: "cta_url",
         ...(content.headerImage
-          ? { header: { type: "image", image: { link: content.headerImage } } }
+          ? {
+              header: {
+                type: "image",
+                /*
+                 * A URL for the brand artwork, a media id for anything drawn
+                 * for one person. The brand files are public and cacheable by
+                 * Meta; a draft receipt carries a client's name and a figure,
+                 * and putting that behind a URL — however unguessable — is a
+                 * public page for private money. An upload has no address at
+                 * all, and its thirty-day expiry cannot matter to an image
+                 * used once, seconds later.
+                 */
+                image: isUrl(content.headerImage)
+                  ? { link: content.headerImage }
+                  : { id: content.headerImage },
+              },
+            }
           : content.header
             ? { header: { type: "text", text: content.header.slice(0, 60) } }
             : {}),
@@ -599,7 +618,23 @@ export function sendFlow(
       interactive: {
         type: "flow",
         ...(content.headerImage
-          ? { header: { type: "image", image: { link: content.headerImage } } }
+          ? {
+              header: {
+                type: "image",
+                /*
+                 * A URL for the brand artwork, a media id for anything drawn
+                 * for one person. The brand files are public and cacheable by
+                 * Meta; a draft receipt carries a client's name and a figure,
+                 * and putting that behind a URL — however unguessable — is a
+                 * public page for private money. An upload has no address at
+                 * all, and its thirty-day expiry cannot matter to an image
+                 * used once, seconds later.
+                 */
+                image: isUrl(content.headerImage)
+                  ? { link: content.headerImage }
+                  : { id: content.headerImage },
+              },
+            }
           : content.header
             ? { header: { type: "text", text: content.header.slice(0, 60) } }
             : {}),
@@ -702,7 +737,23 @@ export function sendButtons(
       interactive: {
         type: "button",
         ...(content.headerImage
-          ? { header: { type: "image", image: { link: content.headerImage } } }
+          ? {
+              header: {
+                type: "image",
+                /*
+                 * A URL for the brand artwork, a media id for anything drawn
+                 * for one person. The brand files are public and cacheable by
+                 * Meta; a draft receipt carries a client's name and a figure,
+                 * and putting that behind a URL — however unguessable — is a
+                 * public page for private money. An upload has no address at
+                 * all, and its thirty-day expiry cannot matter to an image
+                 * used once, seconds later.
+                 */
+                image: isUrl(content.headerImage)
+                  ? { link: content.headerImage }
+                  : { id: content.headerImage },
+              },
+            }
           : content.header
             ? { header: { type: "text", text: content.header.slice(0, 60) } }
             : {}),

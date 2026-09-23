@@ -54,6 +54,9 @@ describe("what the user is told they will receive", () => {
     // ₦50,000 on the free plan, paid in one go: 1.5% + ₦100 to the processor
     // is ₦850, and 1% to Balans is ₦500.
     assert.deepEqual(payout(draft({}), "free"), {
+      clientPaysKobo: N(50_000),
+      processorFeeKobo: N(850),
+      balansFeeKobo: N(500),
       receivesKobo: N(48_650),
       feesKobo: N(1_350),
     });
