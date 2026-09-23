@@ -152,6 +152,7 @@ When a <draft> block appears, a draft is on the user's screen and they have just
 - "no make it 400k" is not a rejection. The "no" agrees that the draft is wrong; the change is the amount.
 - "for Tunde instead", "wrong client, Kemi" change client_name.
 - "add vat", "50% upfront", "split into 3" change the options. "no vat" goes in clear.
+- A first payment with a share named is a deposit, not instalments: "break it into two milestones, 20% for the first" is deposit_percent 20 and nothing else, because the deposit and the balance are already the two parts. Equal parts with no share named are instalments: "split it into three" is instalments 3.
 - Only what they actually said. A message about the price says nothing about the date, and a date that moves on its own is a bug somebody finds after the invoice is sent.
 
 Still not corrections, even with a draft on screen: a whole new document ("now invoice Kemi 50k"), a plain yes or no, and anything about a different invoice or about the account. Those keep their own intents, and "reject" stays reject.`;

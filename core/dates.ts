@@ -150,7 +150,15 @@ export function resolveDueDate(phrase: string, today: Civil): Resolved | null {
   }
   if (/^(tonight|end of (?:the )?day|cob|eod)$/.test(s)) return { date: today, kind: "immediate" };
   if (/^tomorrow$/.test(s)) return { date: addDays(today, 1), kind: "relative" };
-  if (/^(day after tomorrow|overmorrow)$/.test(s)) return { date: addDays(today, 2), kind: "relative" };
+  /*
+   * "next tomorrow" is the day after tomorrow, everywhere in Nigeria.
+   *
+   * Read as "tomorrow" it is a day early, and read as nothing it is the bot
+   * saying it did not catch a phrase that every single person here uses.
+   */
+  if (/^(day after tomorrow|overmorrow|next tomorrow)$/.test(s)) {
+    return { date: addDays(today, 2), kind: "relative" };
+  }
 
   /* Month and week ends. --------------------------------------------------- */
   let m: RegExpExecArray | null;
@@ -197,16 +205,43 @@ export function resolveDueDate(phrase: string, today: Civil): Resolved | null {
   }
 
   /* "next week", "next month". --------------------------------------------- */
-  if (/^(?:the )?(?:next|following) week$/.test(s)) return { date: addDays(today, 7), kind: "relative" };
-  if (/^(?:the )?(?:next|following) month$/.test(s)) return { date: addMonths(today, 1), kind: "relative" };
+  if (/^(?:the )?(?:next|following|upper) week$/.test(s)) return { date: addDays(today, 7), kind: "relative" };
+  if (/^(?:the )?(?:next|following|upper) month$/.test(s)) return { date: addMonths(today, 1), kind: "relative" };
+
+  /*
+   * "next week Monday", "upper week Monday", "Monday next week".
+   *
+   * How a date is actually said here, and none of it parsed: "due upper week
+   * monday" was answered with "I did not catch that". "Upper week" is next
+   * week in Nigerian English, and naming the week before the day — "next week
+   * Monday" rather than "Monday next week" — is the ordinary way round, not a
+   * mistake to be tolerated.
+   *
+   * Every one of these means the named day in the week after this one, which
+   * is `nextWeekday` with the jump, exactly as "next Monday" already resolved.
+   * "This week Monday" is the nearer one and does not jump.
+   */
+  if (
+    (m =
+      /^(?:the )?(next|following|upper|coming|this) week,? ([a-z]+)$/.exec(s) ??
+      /^([a-z]+),? (?:the )?(next|following|upper|coming|this) week$/.exec(s))
+  ) {
+    // The two shapes put the words in opposite orders; whichever matched, one
+    // of the pair is a weekday and the other is the qualifier.
+    const [when, name] = WEEKDAYS[m[1]!] === undefined ? [m[1]!, m[2]!] : [m[2]!, m[1]!];
+    const day = WEEKDAYS[name];
+    if (day !== undefined) {
+      return { date: dayOfWeek(today, day, when === "this" ? 0 : 1), kind: "weekday" };
+    }
+  }
 
   /* Weekdays. -------------------------------------------------------------- */
-  if ((m = /^(this|next|coming|following)? ?([a-z]+)$/.exec(s))) {
+  if ((m = /^(this|next|coming|following|upper)? ?([a-z]+)$/.exec(s))) {
     const day = WEEKDAYS[m[2]!];
     if (day !== undefined) {
       // "next Friday" is the Friday of the week after this one, which is what
       // people mean when they bother to say "next" at all.
-      const jumpAWeek = m[1] === "next" || m[1] === "following";
+      const jumpAWeek = m[1] === "next" || m[1] === "following" || m[1] === "upper";
       return { date: nextWeekday(today, day, jumpAWeek), kind: "weekday" };
     }
   }
@@ -222,6 +257,25 @@ export function resolveDueDate(phrase: string, today: Civil): Resolved | null {
  * Somebody who means today has the word "today", and reading it as today would
  * make an invoice overdue the moment it was sent.
  */
+/**
+ * A named day in a calendar week, counted from the week today falls in.
+ *
+ * Only for phrases that name the week out loud — "next week Monday", "this
+ * week Friday". Those are not the same question as "next Monday": naming the
+ * week fixes which seven days are meant, so the answer is a position in a
+ * block rather than a count forward from today. Said on a Wednesday, "next
+ * week Monday" is five days away and "next Monday" is twelve, and only one of
+ * those readings can be had from counting.
+ *
+ * The week starts on Monday, which is how a week is drawn on every calendar
+ * here and how anybody saying "next week" is dividing up the month.
+ */
+function dayOfWeek(today: Civil, target: number, weeksAhead: number): Civil {
+  const mondayThisWeek = addDays(today, -((weekdayOf(today) + 6) % 7));
+  // Sunday is 0 in the weekday table and last in the week as it is lived.
+  return addDays(mondayThisWeek, weeksAhead * 7 + ((target + 6) % 7));
+}
+
 function nextWeekday(today: Civil, target: number, jumpAWeek: boolean): Civil {
   const delta = (target - weekdayOf(today) + 7) % 7 || 7;
   return addDays(today, delta + (jumpAWeek ? 7 : 0));

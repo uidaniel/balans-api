@@ -58,8 +58,17 @@ const AMOUNT_LABELLED =
 const DUE = /\b(?:due|deadline|payable|pay(?:able)? by)\s*:?\s*(.+)$/i;
 const DUE_CHANGE = new RegExp(String.raw`\b(?:${CHANGE})\s*due\s*:?\s*(.+)$`, "i");
 
+/**
+ * Changing who the document is for.
+ *
+ * A bare "for" used to be enough, and it is the wrong word to trust: in a
+ * correction, "for" introduces the work at least as often as the person.
+ * "make it 400k for the logo" renamed the client to "The Logo", and "20% for
+ * the first milestone" renamed one to "The First Milestone" on a live draft.
+ * What is left are phrases that can only mean a person.
+ */
 const CLIENT =
-  /\b(?:(?:client|name|customer)\s+(?:should be|is|to)|it(?:'|’)?s for|for)\s+([A-Za-z][A-Za-z0-9 .'&-]{1,60})$/i;
+  /\b(?:(?:client|name|customer)\s+(?:should be|is|to)|it(?:'|’)?s for|send it to|bill it to)\s+([A-Za-z][A-Za-z0-9 .'&-]{1,60})$/i;
 
 /**
  * What people call the thing being billed for.
@@ -185,6 +194,29 @@ export function readCorrection(text: string, today: Civil): Correction | null {
 
   rest = tidy(rest);
 
+  /* Whatever is left may name the client or the work. ---------------------- */
+  if (rest) {
+    const described =
+      DESCRIPTION_LABELLED.exec(rest) ?? DESCRIPTION.exec(rest) ?? DESCRIPTION_FOR.exec(rest);
+    if (described) {
+      const d = clean(described[1]!);
+      if (d) {
+        out.description = d;
+        rest = tidy(rest.slice(0, described.index));
+      }
+    } else {
+      const client = CLIENT.exec(rest);
+      if (client) {
+        const name = clean(client[1]!);
+        // Names are short. Anything longer is a sentence we misread.
+        if (name && name.split(" ").length <= 5) {
+          out.clientName = name;
+          rest = tidy(rest.slice(0, client.index));
+        }
+      }
+    }
+  }
+
   /* Then the amount, which is the change that matters most. ---------------- */
   const labelled = AMOUNT_LABELLED.exec(rest);
   const bare = labelled ? null : AMOUNT_ONLY.exec(rest);
@@ -199,22 +231,31 @@ export function readCorrection(text: string, today: Civil): Correction | null {
     }
   }
 
-  /* Whatever is left may name the client or the work. ---------------------- */
-  if (rest) {
-    const described =
-      DESCRIPTION_LABELLED.exec(rest) ?? DESCRIPTION.exec(rest) ?? DESCRIPTION_FOR.exec(rest);
-    if (described) {
-      const d = clean(described[1]!);
-      if (d) out.description = d;
-    } else {
-      const client = CLIENT.exec(rest);
-      if (client) {
-        const name = clean(client[1]!);
-        // Names are short. Anything longer is a sentence we misread.
-        if (name && name.split(" ").length <= 5) out.clientName = name;
-      }
-    }
-  }
+  /*
+   * Everything, or nothing.
+   *
+   * This is the rule the file was missing, and the one that did the damage.
+   * Each rule above cuts its own phrase out and the leftovers fall through to
+   * the next, so a message this reader only half understood still came back
+   * looking like an answer. Sent to a ₦30,000 draft for Temi:
+   *
+   *   "make it 200k and break it down in two milestones, 20% for the first
+   *    milestone"
+   *
+   * it read the two milestones, lost the ₦200,000 because the amount rule is
+   * anchored and there were words either side of it, ignored the 20%, and
+   * then handed "for the first milestone" to the client rule. The draft came
+   * back addressed to "The First Milestone", still priced at ₦30,000, and
+   * split into two equal halves nobody asked for. Three fields wrong, and no
+   * sign anywhere that anything had gone wrong.
+   *
+   * So a leftover is now a refusal. Text this reader cannot account for means
+   * it did not understand the message, and a message it did not understand
+   * goes to the model with the draft attached — which can read all four parts
+   * of that sentence at once. Being certain is the only thing a regex has
+   * over a model, and a regex that guesses has nothing.
+   */
+  if (unexplained(rest)) return null;
 
   return Object.keys(out).length ? out : null;
 }
@@ -232,6 +273,26 @@ const tidy = (s: string): string =>
     .replace(/^(?:and|also|plus|then)\b[,;]?\s*/i, "")
     .replace(/[,;]?\s*\b(?:and|also|plus|then)$/i, "")
     .trim();
+
+/**
+ * What is left once the words that carry no content are taken out.
+ *
+ * Every rule above cuts out the phrase it matched and leaves the scaffolding:
+ * "make it 3 payments" becomes "make it" once the plan is read, and that is
+ * not a message anybody failed to understand. What matters is whether
+ * anything with meaning in it survived — a price, a name, a percentage, a
+ * word like "milestone" — because that is the part that was about to be
+ * thrown away silently.
+ *
+ * Deliberately a list of noise rather than a list of meaning. A word nobody
+ * thought about ends up counting as content, which costs a model call; the
+ * other way round it would end up ignored, which costs a wrong invoice.
+ */
+const NOISE =
+  /\b(?:no|nope|nah|ok|okay|abeg|please|pls|actually|sorry|and|also|plus|then|instead|now|make|makes|change|changed|set|update|correct|fix|edit|put|do|split|break|down|into|in|it|this|that|the|a|an|to|be|been|should|shd|is|are|was|for|of|on|at|as|so|just|abi|na|invoice|quote|draft|document|bill)\b/gi;
+
+const unexplained = (rest: string): boolean =>
+  tidy(rest).replace(NOISE, "").replace(/[^a-z0-9]+/gi, "") !== "";
 
 const clean = (s: string): string | null => {
   const t = s.trim().replace(/^["'“]|["'”]$/g, "").replace(/[,;:]+$/, "").trim();

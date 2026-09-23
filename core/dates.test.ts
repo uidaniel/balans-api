@@ -52,6 +52,24 @@ describe("dates people actually write", () => {
     ["monday", "2026-09-28"],
     ["mon", "2026-09-28"],
     ["next monday", "2026-10-05"],
+    // How a date is said here. "Upper week" is next week, and naming the week
+    // before the day is the ordinary word order, not a mistake to tolerate:
+    // "due upper week monday" was answered with "I did not catch that".
+    //
+    // Naming the week is a different question from "next Monday". It fixes
+    // which seven days are meant, so said on this Wednesday it is five days
+    // out — where "next monday" above, which names no week, is twelve.
+    ["upper week monday", "2026-09-28"],
+    ["next week monday", "2026-09-28"],
+    ["monday next week", "2026-09-28"],
+    ["due next week tuesday", "2026-09-29"],
+    ["upper week friday", "2026-10-02"],
+    ["this week friday", "2026-09-25"],
+    ["upper week", "2026-09-30"],
+    ["upper monday", "2026-10-05"],
+    // The day after tomorrow, to everybody in the country.
+    ["next tomorrow", "2026-09-25"],
+
     ["sunday", "2026-09-27"],
     ["saturday", "2026-09-26"],
     ["tues", "2026-09-29"],
