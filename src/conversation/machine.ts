@@ -386,11 +386,11 @@ const GREETING =
 /**
  * "Set me up", the first of the four suggestions above an empty chat.
  *
- * It arrives with the emoji it is offered with, which is why the pattern
- * allows one on the front. Without that it is an eleven-character message
- * that does not match anything — and at `onboarding:form` anything that is
- * not a greeting is taken as a business name, so the account would have come
- * out called "👋 Set me up".
+ * An emoji is allowed on the front although the suggestion no longer carries
+ * one — Meta replaces emoji in ice breakers with U+FFFD, so ours is plain
+ * text. People type them anyway, and a leading wave must not stop this
+ * matching: at `onboarding:form` anything that is not a greeting is taken as
+ * a business name, so the account would come out called "👋 Set me up".
  */
 const SETUP_ME =
   /^(?:\p{Extended_Pictographic}\uFE0F?\s*)?(?:set (?:me )?up|setup|sign me up|get me started|let'?s (?:start|go|do it)|start)[.!]*$/iu;

@@ -72,6 +72,22 @@ describe("the four things offered above an empty chat", () => {
     for (const p of PROMPTS) assert.ok(p.length <= 80, `${p} is ${p.length} characters`);
   });
 
+  it("carries no emoji, because Meta will not keep one", () => {
+    /*
+     * "👋 Set me up" was written as correct UTF-8 and came back from Meta as
+     * "\ufffd Set me up" — the replacement character. Two emoji from the
+     * basic plane fared no better, so this is not about astral characters:
+     * ice breakers hold plain text.
+     *
+     * It matters more here than anywhere else in the product. This is the
+     * first thing a stranger sees, and a black diamond with a question mark
+     * in it is the whole first impression.
+     */
+    for (const p of PROMPTS) {
+      assert.doesNotMatch(p, /\p{Extended_Pictographic}|\uFFFD/u, `${p} will arrive broken`);
+    }
+  });
+
   it("offers nothing that answers with nothing", () => {
     /*
      * The bug this replaced. A stranger tapping "Who owes me?" is told they

@@ -57,9 +57,15 @@ export const COMMANDS: { command_name: string; command_description: string }[] =
  * before they will do either. The money one is there because in Nigeria it
  * is the first question about anything touching a bank account, and the
  * people who will not ask it out loud are the ones who quietly leave.
+ *
+ * No emoji on any of them, which is not a style choice. Meta replaces every
+ * emoji in an ice breaker with U+FFFD, the replacement character — proved by
+ * writing "👋 Set me up" as correct UTF-8 and reading back "\ufffd Set me
+ * up", and again with two emoji from the basic plane, which fare no better.
+ * So a waving hand here is a black diamond on a stranger's first screen.
  */
 export const PROMPTS: string[] = [
-  "\u{1F44B} Set me up",
+  "Set me up",
   "Invoice Tunde 20k for logo design, due Friday",
   "How does Balans work?",
   "Is my money safe?",
