@@ -9,12 +9,12 @@
  * to be scanned, not read.
  */
 
-import { formatFriendly, type Civil } from "../../core/dates.ts";
+import { formatFriendly, type Civil, compare } from "../../core/dates.ts";
 import { settle } from "../../core/fees.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { defaults } from "../config.ts";
 import { b, block, lines, para, row } from "../whatsapp/format.ts";
-import { shapeFor, stagesFor, type Stage } from "./parts.ts";
+import { shapeFor, stagesFor, type Stage, dueDateWithStages } from "./parts.ts";
 import type { Draft } from "./store.ts";
 
 /** F6: description defaults to "Services" if absent, and the draft says so. */
@@ -56,6 +56,7 @@ export function planLines(
     depositPercent: number | null;
     instalments: number | null;
     dueDate: Civil | null;
+    stageDueDates?: (Civil | null)[] | null;
   },
   today: Civil,
 ): string[] {
@@ -63,15 +64,19 @@ export function planLines(
   if (!stages) return [];
 
   /*
-   * "Due now" on the first, a date on the rest.
+   * "Due now" only while it really is now.
    *
-   * The first part's date is today, so printing it would say what the tag
-   * already says and in more words. Every part after it had nothing at all —
-   * "Balance — ₦25,000" and no answer to the only question a payment plan
-   * raises, which is when.
+   * The first part's date is normally today, so printing it would say what
+   * the tag already says and in more words \u2014 but it is not always today any
+   * more. "Let the 50% deposit be due on Friday" sets it, and this said "due
+   * now" regardless, which made the draft look like the change had been
+   * ignored even though it had been applied.
    */
-  const when = (s: Stage, i: number): string =>
-    i === 0 ? " (due now)" : s.dueOn ? ` (due ${formatFriendly(s.dueOn, today)})` : "";
+  const when = (s: Stage, i: number): string => {
+    if (!s.dueOn) return i === 0 ? " (due now)" : "";
+    const isToday = compare(s.dueOn, today) === 0;
+    return isToday && i === 0 ? " (due now)" : ` (due ${formatFriendly(s.dueOn, today)})`;
+  };
 
   return [
     "Payment plan:",
@@ -210,8 +215,18 @@ export function draftSummary(
 
   rows.push(row("Amount", b(formatNaira(draft.totalKobo))));
 
-  if (draft.dueDate) {
-    rows.push(row(draft.type === "quote" ? "Valid until" : "Due", formatFriendly(draft.dueDate, today)));
+  /*
+   * The date the last money is expected, which is not always the date on the
+   * draft.
+   *
+   * A part moved past the end pushes the end out with it (see `scheduleFor`).
+   * Reading `draft.dueDate` straight would put one date in this row and a
+   * later one on the last line of the plan, three rows below it, on the same
+   * card.
+   */
+  const due = dueDateWithStages(draft, draft.totalKobo, today) ?? draft.dueDate;
+  if (due) {
+    rows.push(row(draft.type === "quote" ? "Valid until" : "Due", formatFriendly(due, today)));
   }
   rows.push(...planLines(draft, today));
   if (draft.passFeesToClient) rows.push(row("Fees", "Client pays the transaction fee"));

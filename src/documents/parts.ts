@@ -173,17 +173,63 @@ export function equalShape(totalKobo: number, n: number): Shape {
  * bug, so the middle parts collapse onto the issue date and the last still
  * lands where it was put. Nothing here refuses to produce an answer.
  */
-export function scheduleFor(count: number, issuedOn: Civil, dueOn: Civil | null): (Civil | null)[] {
-  if (dueOn === null) return Array.from({ length: count }, () => null);
-  if (count <= 1) return [dueOn];
+export function scheduleFor(
+  count: number,
+  issuedOn: Civil,
+  dueOn: Civil | null,
+  /**
+   * Dates somebody has set for particular parts, by position.
+   *
+   * The spacing above is a guess — a good one, and still a guess. "let the
+   * 50% deposit be due on Friday this week" is not a guess, and before this
+   * there was nowhere for that sentence to go: the first part was always the
+   * issue date, so the draft came back looking exactly as it had, which reads
+   * as the bot ignoring you.
+   *
+   * A sparse array. Anything not named here is spaced as before.
+   */
+  fixed: (Civil | null | undefined)[] = [],
+): (Civil | null)[] {
+  if (dueOn === null && !fixed.some(Boolean)) return Array.from({ length: count }, () => null);
+  if (count <= 1) return [fixed[0] ?? dueOn];
 
-  const days = Math.max(0, Math.round(compare(dueOn, issuedOn) / 86_400_000));
+  const days = dueOn ? Math.max(0, Math.round(compare(dueOn, issuedOn) / 86_400_000)) : 0;
 
-  return Array.from({ length: count }, (_, i) => {
+  const when = Array.from({ length: count }, (_, i) => {
+    const set = fixed[i];
+    if (set) return set;
+    if (!dueOn) return null;
     if (i === 0) return issuedOn;
     if (i === count - 1) return dueOn;
     return addDays(issuedOn, Math.round((i * days) / (count - 1)));
   });
+
+  /*
+   * In order, once somebody has set a date by hand.
+   *
+   * A balance cannot fall due before the deposit in front of it, so a part
+   * moved past a later one pushes that later one along — and since the last
+   * part is the document's own due date, the summary shows the move rather
+   * than hiding it.
+   *
+   * Only the dates this function invented are moved, and only forwards. The
+   * ones somebody typed stay exactly where they put them, which is also why
+   * the pass does not run at all when nothing was set: an invoice dated
+   * before it was issued is somebody’s odd invoice, not a bug, and the
+   * spacing above already has an answer for it.
+   */
+  if (fixed.some(Boolean)) {
+    for (let i = 1; i < when.length; i++) {
+      // A date somebody typed stays exactly where they put it. Only the ones
+      // this function invented move, and only forwards.
+      if (fixed[i]) continue;
+      const prev = when[i - 1];
+      const here = when[i];
+      if (prev && here && compare(here, prev) < 0) when[i] = prev;
+    }
+  }
+
+  return when;
 }
 
 /**
@@ -201,6 +247,8 @@ export function stagesFor(
     depositPercent?: number | null;
     instalments?: number | null;
     dueDate?: Civil | null;
+    /** Dates set for particular parts, by position. See `scheduleFor`. */
+    stageDueDates?: (Civil | null | undefined)[] | null;
   },
   totalKobo: number,
   issuedOn: Civil,
@@ -208,8 +256,29 @@ export function stagesFor(
   const shape = shapeFor(o, totalKobo);
   if (!shape) return null;
 
-  const when = scheduleFor(shape.length, issuedOn, o.dueDate ?? null);
+  const when = scheduleFor(shape.length, issuedOn, o.dueDate ?? null, o.stageDueDates ?? []);
   return shape.map((s, i) => ({ ...s, dueOn: when[i] ?? null }));
+}
+
+/**
+ * The document's own due date, once the parts have had their say.
+ *
+ * The date on an invoice is the date the last money is expected, so a part
+ * that has been pushed past it takes it along. Without this the header would
+ * say one thing and the last line of the plan another, on the same card.
+ */
+export function dueDateWithStages(
+  o: {
+    depositPercent?: number | null;
+    instalments?: number | null;
+    dueDate?: Civil | null;
+    stageDueDates?: (Civil | null | undefined)[] | null;
+  },
+  totalKobo: number,
+  issuedOn: Civil,
+): Civil | null {
+  const stages = stagesFor(o, totalKobo, issuedOn);
+  return stages?.[stages.length - 1]?.dueOn ?? o.dueDate ?? null;
 }
 
 /** A DATE column as a calendar day, with no timezone in the middle of it. */

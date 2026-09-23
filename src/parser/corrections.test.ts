@@ -251,3 +251,48 @@ describe("adding and removing whole lines", () => {
     assert.equal(read("add the photoshoot"), null, "named, but not priced");
   });
 });
+
+/**
+ * Moving one payment without moving the invoice.
+ *
+ * "let the 50% deposit be due on Friday this week" came back as the draft,
+ * unchanged, because every date in a payment plan was worked out from the
+ * issue date and the document's due date \u2014 the first part was always "due
+ * now" and there was nowhere for that sentence to land. A draft that returns
+ * identical reads as the bot ignoring you.
+ */
+describe("a date for one part of the payment plan", () => {
+  const today = { y: 2026, m: 9, d: 23 } as const;
+  const read = (s: string) => readCorrection(s, today);
+
+  it("reads which part, however it is named", () => {
+    for (const [said, which] of [
+      ["let the 50% deposit be due on Friday this week", "first"],
+      ["the deposit is due friday", "first"],
+      ["make the balance due 30 october", "last"],
+      ["make the final payment due 1 november", "last"],
+      ["part 2 due oct 15", 2],
+      ["the second payment should be due next monday", 2],
+    ] as const) {
+      assert.equal(read(said)?.stageDue?.which, which, said);
+    }
+  });
+
+  it("puts the date on the part and not on the invoice", () => {
+    /*
+     * The two rules both begin at the word "due", and the document rule
+     * takes everything after it. Left in that order, this sentence moved the
+     * whole invoice to Friday and said nothing about the deposit \u2014 wrong in
+     * a way the summary would have shown as right.
+     */
+    const c = read("let the 50% deposit be due on Friday this week");
+    assert.deepEqual(c?.stageDue?.date, { y: 2026, m: 9, d: 25 });
+    assert.equal(c?.dueDate, undefined, "the invoice's own date must not move");
+  });
+
+  it("still reads a date for the whole document", () => {
+    const c = read("due next friday");
+    assert.deepEqual(c?.dueDate, { y: 2026, m: 10, d: 2 });
+    assert.equal(c?.stageDue, undefined);
+  });
+});

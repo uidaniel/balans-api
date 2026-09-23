@@ -128,6 +128,21 @@ export const rawCorrection = z.object({
   add_lines: z.array(rawLineItem).max(10).nullish().transform((v) => v ?? []),
   /** Words naming a line to take off, or its number: "the SEO line", "2". */
   remove_line: z.string().trim().min(1).max(120).nullish().transform((v) => v ?? null),
+  /**
+   * A date for one part of the payment plan, rather than for the document.
+   *
+   * "deposit" and "balance" rather than a number, because which number they
+   * are depends on the plan: the balance is part two of a deposit and part
+   * five of five instalments, and only the machine holding the draft knows
+   * which. The date is a phrase, like every other date the model returns.
+   */
+  stage_due: z
+    .object({
+      stage: z.union([z.enum(["deposit", "balance"]), z.number().int().min(1).max(12)]),
+      due_date: z.string().trim().min(1).max(60),
+    })
+    .nullish()
+    .transform((v) => v ?? null),
   clear: z
     .array(z.enum(["vat", "deposit", "instalments"]))
     .max(3)
@@ -329,6 +344,22 @@ function asCorrection(raw: RawCorrection | null, today: Civil): Correction | nul
     }))
     .filter((l): l is { description: string; unitAmountKobo: number } => (l.unitAmountKobo ?? 0) > 0);
   if (added.length) out.addLines = added;
+
+  if (raw.stage_due) {
+    const when = resolveDueDate(raw.stage_due.due_date, today);
+    if (when) {
+      out.stageDue = {
+        which:
+          raw.stage_due.stage === "deposit"
+            ? "first"
+            : raw.stage_due.stage === "balance"
+              ? "last"
+              : raw.stage_due.stage,
+        date: when.date,
+        phrase: raw.stage_due.due_date,
+      };
+    }
+  }
 
   if (raw.remove_line) {
     const position = /^(?:item|line|number|no\.?)?\s*(\d{1,2})(?:st|nd|rd|th)?$/i.exec(raw.remove_line);

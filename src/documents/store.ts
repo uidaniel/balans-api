@@ -32,6 +32,15 @@ export type DraftInput = {
   depositPercent: number | null;
   /** Equal payments, when the work is billed in stages rather than up front. */
   instalments: number | null;
+  /**
+   * Dates set for particular parts, by position.
+   *
+   * Without this the plan was rebuilt from the issue date and the due date
+   * when the document was written, so a deposit somebody had moved to Friday
+   * went back to "due now" the moment they tapped Send — the summary would
+   * have been right and the invoice wrong.
+   */
+  stageDueDates?: (Civil | null)[] | null;
   passFeesToClient: boolean;
   notes: string | null;
 };

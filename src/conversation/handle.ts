@@ -1169,6 +1169,7 @@ async function runEffects(
             dueDate: doc.dueDate ?? null,
             vatPercent: doc.vatPercent ?? null,
             depositPercent: doc.depositPercent ?? null,
+            stageDueDates: doc.stageDueDates ?? null,
             instalments: doc.instalments ?? null,
             passFeesToClient: doc.passFeesToClient ?? false,
             notes: doc.notes ?? null,

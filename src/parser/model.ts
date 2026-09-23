@@ -120,6 +120,19 @@ const TOOL = {
               'A line to take OFF, named as they named it: "the SEO line" -> "SEO", ' +
               '"remove item 2" -> "2". Not for VAT, a deposit or instalments, which go in clear.',
           },
+          stage_due: {
+            type: ["object", "null"],
+            description:
+              "A date for ONE PART of the payment plan, not for the invoice. " +
+              '"let the 50% deposit be due on Friday" is {stage: "deposit", due_date: "Friday"}. ' +
+              '"make the balance due 30 October" is {stage: "balance", ...}; a numbered part is ' +
+              "{stage: 2, ...}. Use the top-level due_date only when they mean the whole invoice.",
+            properties: {
+              stage: { description: '"deposit", "balance", or the part number.' },
+              due_date: { type: "string", description: "The PHRASE, copied as written." },
+            },
+            required: ["stage", "due_date"],
+          },
           clear: {
             type: ["array", "null"],
             items: { type: "string", enum: ["vat", "deposit", "instalments"] },
@@ -177,6 +190,9 @@ When a <draft> block appears, a draft is on the user's screen and they have just
   five items; a sentence has no limit, so this is how a long invoice gets built.
 - "remove the SEO line", "take off item 2", "drop the hosting" go in remove_line. Taking off
   VAT or a deposit is not this — that is clear.
+- A date attached to ONE PART of the plan goes in stage_due, never in due_date: "let the 50%
+  deposit be due on Friday this week" moves the deposit and leaves the invoice's own date
+  alone. "due next Friday", with no part named, is the invoice's date.
 - A first payment with a share named is a deposit, not instalments: "break it into two milestones, 20% for the first" is deposit_percent 20 and nothing else, because the deposit and the balance are already the two parts. Equal parts with no share named are instalments: "split it into three" is instalments 3.
 - Only what they actually said. A message about the price says nothing about the date, and a date that moves on its own is a bug somebody finds after the invoice is sent.
 

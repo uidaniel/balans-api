@@ -40,6 +40,21 @@ export type Correction = {
   dueDate?: Civil;
   /** The phrase, so the summary can echo how they said it. */
   duePhrase?: string;
+  /**
+   * A date for one part of the payment plan.
+   *
+   * "let the 50% deposit be due on Friday this week". The plan's dates were
+   * worked out entirely from the issue date and the document's due date, so
+   * there was nowhere for that sentence to land: the first part was always
+   * "due now" and the draft came back looking exactly as it had — which
+   * reads as the bot ignoring you, and is the thing that made this worth
+   * building.
+   *
+   * `which` is resolved against the draft, because only the machine knows how
+   * many parts there are: "the balance" is part two of a deposit and part
+   * five of five instalments.
+   */
+  stageDue?: { which: "first" | "last" | number; date: Civil; phrase: string };
   clientName?: string;
   description?: string;
   vatPercent?: number | null;
@@ -116,6 +131,20 @@ const REMOVE_LINE =
 /** "item 2", "line 3", "the 2nd one" — a position rather than a name. */
 const BY_POSITION = /^(?:item|line|number|no\.?)?\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s+one)?$/i;
 
+/**
+ * Naming one part of a payment plan.
+ *
+ * Every way somebody refers to a single instalment: the words the labels use
+ * ("50% deposit", "Balance", "Part 2 of 3"), and the words people use instead.
+ */
+const STAGE =
+  /\b(?:the\s+)?(?:(?:\d{1,3}\s*%\s*)?(deposit|upfront|down ?payment)|(balance|final|last)(?:\s+payment)?|(?:part|payment|instal?ment|milestone)\s*(\d{1,2})|(first|second|third|fourth|fifth)\s+(?:part|payment|instal?ment|milestone))/i;
+
+/** The words that come before a date in "... be due on Friday". */
+const STAGE_DUE = /\b(?:be\s+)?due\s*(?:on|by)?\s*:?\s*(.+)$/i;
+
+const ORDINALS = ["first", "second", "third", "fourth", "fifth"];
+
 const DUE = /\b(?:due|deadline|payable|pay(?:able)? by)\s*:?\s*(.+)$/i;
 const DUE_CHANGE = new RegExp(String.raw`\b(?:${CHANGE})\s*due\s*:?\s*(.+)$`, "i");
 
@@ -186,9 +215,39 @@ export function readCorrection(text: string, today: Civil): Correction | null {
   const out: Correction = {};
   let rest = s;
 
-  /* The date first: it owns everything after "due", which would otherwise be
+  /*
+   * A date for one part of the plan, before the document's own date.
+   *
+   * Both start from the word "due", and the document rule takes everything
+   * after it — so "let the 50% deposit be due on Friday" would set the
+   * invoice's date and quietly drop the part it was actually about. This runs
+   * first and only fires when a part is named, which the document rule never
+   * does.
+   */
+  const stage = STAGE.exec(rest);
+  if (stage) {
+    const when = STAGE_DUE.exec(rest.slice(stage.index + stage[0]!.length));
+    const resolved = when ? resolveDueDate(when[1]!, today) : null;
+    if (resolved) {
+      const ordinal = stage[4] ? ORDINALS.indexOf(stage[4].toLowerCase()) + 1 : 0;
+      out.stageDue = {
+        which: stage[1]
+          ? "first"
+          : stage[2]
+            ? "last"
+            : stage[3]
+              ? Number(stage[3])
+              : ordinal || "first",
+        date: resolved.date,
+        phrase: when![1]!.trim(),
+      };
+      rest = tidy(rest.slice(0, stage.index));
+    }
+  }
+
+  /* The date next: it owns everything after "due", which would otherwise be
      read as a description. ------------------------------------------------- */
-  const dueMatch = DUE_CHANGE.exec(rest) ?? DUE.exec(rest);
+  const dueMatch = out.stageDue ? null : (DUE_CHANGE.exec(rest) ?? DUE.exec(rest));
   if (dueMatch) {
     const resolved = resolveDueDate(dueMatch[1]!, today);
     if (resolved) {
@@ -403,7 +462,7 @@ const tidy = (s: string): string =>
  * other way round it would end up ignored, which costs a wrong invoice.
  */
 const NOISE =
-  /\b(?:no|nope|nah|ok|okay|abeg|please|pls|actually|sorry|and|also|plus|then|instead|now|make|makes|change|changed|set|update|correct|fix|edit|put|do|split|break|down|into|in|it|this|that|the|a|an|to|be|been|should|shd|is|are|was|for|of|on|at|as|so|just|abi|na|invoice|quote|draft|document|bill|add|adds|remove|delete|include|drop)\b/gi;
+  /\b(?:no|nope|nah|ok|okay|abeg|please|pls|actually|sorry|and|also|plus|then|instead|now|make|makes|change|changed|set|update|correct|fix|edit|put|do|split|break|down|into|in|it|this|that|the|a|an|to|be|been|should|shd|is|are|was|for|of|on|at|as|so|just|abi|na|invoice|quote|draft|document|bill|add|adds|remove|delete|include|drop|let|lets|have|has|want|wants|i|me|my|we|us)\b/gi;
 
 const unexplained = (rest: string): boolean =>
   tidy(rest).replace(NOISE, "").replace(/[^a-z0-9]+/gi, "") !== "";

@@ -18,7 +18,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { scheduleFor, stagesFor } from "./parts.ts";
+import { scheduleFor, stagesFor, dueDateWithStages } from "./parts.ts";
 import { planLines } from "./summary.ts";
 import { formatISO, type Civil } from "../../core/dates.ts";
 
@@ -183,5 +183,94 @@ describe("what the user reads before they send it", () => {
       "  · 50% deposit — ₦25,000 (due now)",
       "  · Balance — ₦25,000",
     ]);
+  });
+});
+
+describe("a part with a date somebody set", () => {
+  const today: Civil = { y: 2026, m: 9, d: 23 };
+  const iso2 = (when: (Civil | null)[]) => when.map((d) => d && formatISO(d));
+
+  it("uses it instead of the spacing", () => {
+    // The deposit was always the issue date, whatever anybody said.
+    const when = scheduleFor(2, today, { y: 2026, m: 9, d: 29 }, [{ y: 2026, m: 9, d: 25 }]);
+    assert.deepEqual(iso2(when), ["2026-09-25", "2026-09-29"]);
+  });
+
+  it("pushes the later parts along rather than reading backwards", () => {
+    /*
+     * A balance cannot fall due before the deposit in front of it. The last
+     * part is the document's own due date, so the move is visible on the
+     * summary rather than hidden inside the plan.
+     */
+    const when = scheduleFor(2, today, { y: 2026, m: 9, d: 29 }, [{ y: 2026, m: 10, d: 20 }]);
+    assert.deepEqual(iso2(when), ["2026-10-20", "2026-10-20"]);
+  });
+
+  it("never moves a date somebody typed", () => {
+    // Both set, and out of order: they asked for both, so they get both.
+    // Silently moving one would hide the mistake on the one screen where it
+    // could still be caught.
+    const when = scheduleFor(
+      2,
+      today,
+      { y: 2026, m: 9, d: 29 },
+      [{ y: 2026, m: 10, d: 20 }, { y: 2026, m: 9, d: 29 }],
+    );
+    assert.deepEqual(iso2(when), ["2026-10-20", "2026-09-29"]);
+  });
+
+  it("leaves a backdated invoice exactly as it was", () => {
+    // No date was set by hand, so the ordering pass must not run at all.
+    assert.deepEqual(
+      iso2(scheduleFor(3, today, { y: 2026, m: 9, d: 1 })),
+      ["2026-09-23", "2026-09-23", "2026-09-01"],
+    );
+  });
+});
+
+describe("what a moved payment reads as", () => {
+  const today: Civil = { y: 2026, m: 9, d: 23 };
+  const draft = {
+    type: "invoice" as const,
+    totalKobo: N(698_750),
+    depositPercent: 50,
+    instalments: null,
+    dueDate: { y: 2026, m: 9, d: 29 } as Civil | null,
+  };
+
+  it('says "due now" only while it really is now', () => {
+    /*
+     * This line was hard-coded to "due now" on the first part, on the
+     * reasoning that the first part is always today. It is not any more, and
+     * the result was a draft that had applied the change and then printed
+     * the old answer \u2014 which looks exactly like a change that was ignored,
+     * and is the reason any of this exists.
+     */
+    assert.match(
+      planLines({ ...draft }, today).join("\n"),
+      /50% deposit .* \(due now\)/,
+    );
+
+    const moved = planLines(
+      { ...draft, stageDueDates: [{ y: 2026, m: 9, d: 25 }] },
+      today,
+    ).join("\n");
+    assert.match(moved, /50% deposit .* \(due Fri, 25 Sep\)/);
+    assert.match(moved, /Balance .* \(due Tue, 29 Sep\)/);
+    assert.ok(!moved.includes("due now"), moved);
+  });
+
+  it("keeps the invoice's own date in step with the last part", () => {
+    // A deposit pushed past the end takes the end with it. Reading the draft
+    // date straight would put one date in the Due row and a later one three
+    // lines below it, on the same card.
+    assert.deepEqual(
+      dueDateWithStages(
+        { ...draft, stageDueDates: [{ y: 2026, m: 10, d: 20 }] },
+        draft.totalKobo,
+        today,
+      ),
+      { y: 2026, m: 10, d: 20 },
+    );
   });
 });

@@ -17,6 +17,7 @@ import { b, field, i, lines, para } from "../whatsapp/format.ts";
 import type { Civil } from "../../core/dates.ts";
 import { isDocumentIntent, type Parsed } from "../parser/schema.ts";
 import type { Correction } from "../parser/corrections.ts";
+import { shapeFor } from "../documents/parts.ts";
 import { asCommand, socialKind, type SocialKind } from "../parser/commands.ts";
 import { SETTINGS_ROW_IDS } from "../settings/messages.ts";
 
@@ -124,6 +125,15 @@ export type PendingDoc = {
   depositPercent?: number | null;
   /** Equal payments. Never set alongside `depositPercent`; see `shapeFor`. */
   instalments?: number | null;
+  /**
+   * Dates set for particular parts of the plan, by position.
+   *
+   * Sparse. The schedule spaces the parts it has not been told about, which
+   * is nearly always the right answer — but "let the 50% deposit be due on
+   * Friday" is not a guess anybody should override, and there was previously
+   * nowhere to put it.
+   */
+  stageDueDates?: (Civil | null)[] | null;
   passFeesToClient?: boolean;
   notes?: string | null;
 };
@@ -2130,6 +2140,34 @@ function applyCorrection(doc: PendingDoc, c: Correction): PendingDoc {
 
   if (c.clientName) next.clientName = c.clientName;
   if (c.dueDate) next.dueDate = c.dueDate;
+
+  /*
+   * A date for one part of the payment plan.
+   *
+   * Resolved here rather than in the reader because only this side knows how
+   * many parts there are: "the balance" is part two of a deposit and part
+   * five of five instalments. A date set for a part that does not exist —
+   * "part 4" of a two-part plan — is left alone rather than guessed at.
+   */
+  if (c.stageDue) {
+    const count = shapeFor(next, totalOf(next))?.length ?? 0;
+    const at =
+      c.stageDue.which === "first"
+        ? 0
+        : c.stageDue.which === "last"
+          ? count - 1
+          : c.stageDue.which - 1;
+
+    if (count > 0 && at >= 0 && at < count) {
+      const dates = [...(next.stageDueDates ?? [])];
+      dates[at] = c.stageDue.date;
+      next.stageDueDates = dates;
+
+      // The last part IS the document's due date; they are one fact with two
+      // names, and letting them drift apart puts two dates on one card.
+      if (at === count - 1) next.dueDate = c.stageDue.date;
+    }
+  }
   if (c.vatPercent !== undefined) next.vatPercent = c.vatPercent;
   if (c.depositPercent !== undefined) next.depositPercent = c.depositPercent;
   if (c.instalments !== undefined) next.instalments = c.instalments;
