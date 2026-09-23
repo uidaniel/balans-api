@@ -22,7 +22,7 @@ import { formatNaira } from "../../core/totals.ts";
 import { logoAvailable, logoSvg } from "../brand/logo.ts";
 import { fontFaces, FONT } from "../pdf/fonts.ts";
 import { renderPng } from "../pdf/chrome.ts";
-import { uploadDocument } from "../whatsapp/client.ts";
+import { publishCard } from "./card-link.ts";
 import { esc } from "./page.ts";
 import type { Debtors } from "./queries.ts";
 
@@ -115,6 +115,7 @@ ${hidden > 0 ? `<p class="more">and ${hidden} more — tap View Summary for all 
  * page for private money however unguessable the path.
  */
 export async function owedCard(
+  userId: string,
   owed: Debtors,
   today: Civil,
   log: FastifyBaseLogger,
@@ -126,15 +127,10 @@ export async function owedCard(
   const started = Date.now();
   try {
     const png = await renderPng(owedHtml(owed, today), CARD, CARD);
-    const up = await uploadDocument(png, "owed.png", "image/png");
+    const url = await publishCard(userId, png, log);
 
-    if (!up.ok) {
-      log.warn({ reason: up.reason }, "owed card could not be uploaded, sending the words");
-      return null;
-    }
-
-    log.info({ ms: Date.now() - started, bytes: png.length }, "owed card drawn");
-    return up.mediaId;
+    log.info({ ms: Date.now() - started, bytes: png.length, parked: Boolean(url) }, "owed card drawn");
+    return url;
   } catch (e) {
     log.warn({ err: (e as Error).message }, "owed card could not be drawn, sending the words");
     return null;

@@ -32,7 +32,7 @@ import { summaryFor, userForSummaryToken } from "../../documents/queries.ts";
 import { renderDocumentPdf } from "../../documents/pdf.ts";
 import { confirmPayment } from "../../payments/confirm.ts";
 import { notifyPaid } from "../../payments/notify.ts";
-import { get as getFile } from "../../storage/files.ts";
+import { get as getFile, getCard } from "../../storage/files.ts";
 import { fileName } from "../../storage/files.ts";
 import { db } from "../../db/pool.ts";
 
@@ -148,6 +148,36 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       .header("x-content-type-options", "nosniff")
       .header("x-robots-tag", "noindex, nofollow")
       .send(renderSummary(data, today));
+  });
+
+  /**
+   * A card drawn for one person, for Meta to come and fetch.
+   *
+   * The only reason this exists: a `cta_url` message — the one with the link
+   * button — takes an image header as a URL and refuses an uploaded id, so
+   * the picture on /owed and /summary cannot travel the way every other
+   * picture in this product does. See src/documents/card-link.ts.
+   *
+   * The token is 32 bytes from a CSPRNG and the row is refused an hour after
+   * it was written, which is an hour longer than Meta needs. Nothing about
+   * the response is cacheable by anything shared, and an unknown or dead
+   * token is a flat 404 rather than a page explaining what it would have
+   * been.
+   */
+  app.get<{ Params: { file: string } }>("/c/:file", async (req, reply) => {
+    const token = req.params.file.replace(/\.png$/i, "");
+    if (!/^[0-9a-f]{64}$/.test(token)) return reply.status(404).send();
+
+    const bytes = await getCard(token);
+    if (!bytes) return reply.status(404).send();
+
+    return reply
+      .type("image/png")
+      .header("cache-control", "no-store, private")
+      .header("referrer-policy", "no-referrer")
+      .header("x-content-type-options", "nosniff")
+      .header("x-robots-tag", "noindex, nofollow")
+      .send(bytes);
   });
 
   /* -- The file ------------------------------------------------------------ */

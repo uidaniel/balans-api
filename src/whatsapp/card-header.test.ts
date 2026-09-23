@@ -19,10 +19,15 @@
  * payload with a link is accepted; with an id it is not; and the same id in
  * an ordinary image message is fine.
  *
- * A URL is the thing these cards must not have. They are drawn for one person
- * and carry what they are owed and by whom, so they are uploaded — an upload
- * has no address for anyone to visit. That is why the card is its own message
- * now and the button follows it.
+ * Every other picture in this product is uploaded for a reason: these are
+ * drawn for one person and carry what they are owed and by whom, and an
+ * upload has no address for anyone to visit. So the card got the smallest
+ * address that will do — 32 random bytes, dead within the hour, never cached
+ * and never indexed — rather than the message being split in two.
+ *
+ * It was split in two for a while: the picture, and then a button underneath
+ * saying "See the whole year?" about a card that had just shown the year.
+ * Two bubbles for one thought.
  */
 
 import assert from "node:assert/strict";
@@ -123,27 +128,63 @@ describe("a card in a message of its own", () => {
 
 describe("the two commands that draw one", () => {
   const source = readFileSync(new URL("../conversation/handle.ts", import.meta.url), "utf8");
+  const owed = source.slice(source.indexOf('case "show_debtors"'), source.indexOf('case "show_summary"'));
+  const after = source.slice(source.indexOf('case "show_summary"'));
+  const summary = after.slice(0, after.indexOf('case "remove_logo"'));
 
-  it("sends the card and then the button, and never as a header", () => {
-    // Both branches go through the one helper, so there is a single place
-    // that knows the rule. A `headerImage` on either would be the bug back.
-    const owed = source.slice(source.indexOf('case "show_debtors"'), source.indexOf('case "show_summary"'));
-    const summary = source.slice(source.indexOf('case "show_summary"'));
-
-    for (const [name, branch] of [["/owed", owed], ["/summary", summary.slice(0, 2000)]] as const) {
-      assert.match(branch, /cardThenLink\(/, `${name} no longer sends the card`);
-      assert.ok(!/headerImage/.test(branch), `${name} is putting a card back in the header`);
+  it("sends one message, not a picture and then a button", () => {
+    /*
+     * It was two for a while, because of the refusal above: the card as its
+     * own image, then a second message carrying the link. Two bubbles for
+     * one thought, the second of which said nothing the first had not —
+     * "See the whole year?" under a card that had just shown the year.
+     *
+     * One message is right. The card is the header, the figures are the
+     * body, the button is underneath, and the card gets a URL of its own to
+     * make that possible.
+     */
+    for (const [name, branch] of [["/owed", owed], ["/summary", summary]] as const) {
+      assert.match(branch, /headerImage: card/, `${name} lost its card`);
+      assert.equal(
+        (branch.match(/await send(Cta|Image|Text)\(/g) ?? []).length,
+        1,
+        `${name} sends more than one message`,
+      );
     }
   });
 
-  it("says the words once, not under a picture of themselves", () => {
-    // The caption carries them when there is a card; the button message
-    // carries them only when there is not.
-    assert.match(source, /body: said \? o\.prompt : o\.words/);
+  it("gives the card an address that is short-lived and unguessable", () => {
+    const link = readFileSync(new URL("../documents/card-link.ts", import.meta.url), "utf8");
+    // 32 bytes of CSPRNG, which is not guessed, and hex so the route can
+    // recognise it without decoding anything.
+    assert.match(link, /randomBytes\(32\)\.toString\("hex"\)/);
+    assert.match(link, /\/c\/\$\{token\}\.png/);
+
+    const files = readFileSync(new URL("../storage/files.ts", import.meta.url), "utf8");
+    // Refused by age in the query, so a row the sweep has not reached is
+    // still dead, and swept on the way past so the table does not grow.
+    assert.match(files, /created_at > now\(\) - \(\$2 \|\| ' minutes'\)::interval/);
+    assert.match(files, /DELETE FROM stored_files\s*\n\s*WHERE key LIKE 'cards\/%'/);
   });
 
-  it("falls back to the words alone when both messages fail", () => {
-    // `/owed` answering with nothing at all is worse than answering plainly.
-    assert.match(source, /if \(delivered\) break;\s*\}\s*extra\.push\(words\);/);
+  it("serves it to nobody but the fetcher of that exact address", () => {
+    const routes = readFileSync(new URL("../http/routes/public.ts", import.meta.url), "utf8");
+    const route = routes.slice(routes.indexOf('app.get<{ Params: { file: string } }>("/c/:file"'));
+    const handler = route.slice(0, route.indexOf("/* -- The file"));
+
+    assert.match(handler, /\^\[0-9a-f\]\{64\}\$/, "anything else is not even looked up");
+    assert.match(handler, /no-store, private/, "a card must never sit in a shared cache");
+    assert.match(handler, /noindex, nofollow/);
+    assert.match(handler, /status\(404\)/, "a dead card is a 404, not an explanation");
+  });
+
+  it("still says everything in words when the card cannot be drawn", () => {
+    // Chrome can fail and the write can fail. The words are the message; the
+    // picture is an addition to it.
+    for (const [name, branch] of [["/owed", owed], ["/summary", summary]] as const) {
+      assert.match(branch, /\.\.\.\(card \? \{ headerImage: card \} : \{\}\)/, `${name} needs its card`);
+      assert.match(branch, /body: words/, `${name} stopped saying it in words`);
+    }
+    assert.match(source, /extra\.push\(words\);/);
   });
 });

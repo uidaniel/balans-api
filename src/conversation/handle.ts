@@ -103,7 +103,7 @@ import {
   proOfferButtons,
 } from "../billing/messages.ts";
 import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
-import { sendCta, sendFlow, sendImage, sendList } from "../whatsapp/client.ts";
+import { sendCta, sendFlow, sendList } from "../whatsapp/client.ts";
 import { helpButtons } from "./menu.ts";
 import { TEMPLATES } from "../pdf/templates.ts";
 import { flowId } from "../whatsapp/flows/register.ts";
@@ -244,69 +244,6 @@ async function sendConsentForm(
 
   await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
   return true;
-}
-
-/**
- * A drawn card, then the words and the button under it.
- *
- * Two messages, because Meta leaves no way to make it one. A `cta_url`
- * message takes an image header only as a URL — an uploaded id is refused
- * outright, with the whole message, words and button and all:
- *
- *     (#131008) Required parameter is missing
- *     details: "header image must contain link."
- *
- * And a URL is the one thing these cards must not have. They are drawn for
- * one person and carry what they are owed and by whom; a link is an address,
- * however unguessable, and an upload has no address at all.
- *
- * So the card goes first as its own image, with the words as its caption, and
- * the button follows with the sentence that says what is behind it. The order
- * matters: the picture and the numbers arrive together, and the offer to go
- * deeper comes after the thing it is offering to go deeper into.
- *
- * The words are never lost. If Chrome cannot draw the card, or Meta refuses
- * the upload, they are sent with the button in a single message instead —
- * which is what this command was before it had a picture at all.
- *
- * Returns whether the words were delivered, so the caller knows not to say
- * the same thing again in plain text.
- */
-async function cardThenLink(
-  userId: string,
-  phone: string,
-  log: FastifyBaseLogger,
-  o: { card: string | null; words: string; label: string; url: string; prompt: string; footer: string },
-): Promise<boolean> {
-  let said = false;
-
-  if (o.card) {
-    const picture = await sendImage(phone, o.card, o.words);
-    if (picture.ok) {
-      await recordOutbound(userId, picture.waMessageId, "sent", { kind: "image" });
-      said = true;
-    } else {
-      log.error({ userId, reason: picture.reason }, "could not send the card");
-    }
-  }
-
-  const link = await sendCta(phone, {
-    // Without a card this message is the whole answer, so it carries the
-    // words. With one they have just been said, and saying them twice under
-    // a picture of themselves is the worst version of this.
-    body: said ? o.prompt : o.words,
-    label: o.label,
-    url: o.url,
-    footer: o.footer,
-  });
-
-  if (link.ok) {
-    await recordOutbound(userId, link.waMessageId, "sent", { kind: "interactive" });
-    return true;
-  }
-
-  log.error({ userId, reason: link.reason }, "could not send the summary link");
-  return said;
 }
 
 /** The screen each Flow opens on. */
@@ -1464,23 +1401,23 @@ async function runEffects(
            */
           if (ctx.phone && owed.rows.length) {
             const [card, token] = await Promise.all([
-              owedCard(owed, ctx.today, log),
+              owedCard(userId, owed, ctx.today, log),
               issueSummaryToken(userId),
             ]);
 
-            const delivered = await cardThenLink(userId, ctx.phone, log, {
-              card,
-              words,
+            const sent = await sendCta(ctx.phone, {
+              body: words,
               label: "View Summary",
               url: `${env.PUBLIC_BASE_URL}/s/${token}`,
-              prompt: para(
-                `📊 ${b("Want the detail?")}`,
-                "Every invoice, who owes what, how late it is, and how the year is going.",
-              ),
+              ...(card ? { headerImage: card } : {}),
               footer: "Everything you have invoiced",
             });
 
-            if (delivered) break;
+            if (sent.ok) {
+              await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+              break;
+            }
+            log.error({ userId, reason: sent.reason }, "could not send the owed card");
           }
 
           extra.push(words);
@@ -1504,23 +1441,23 @@ async function runEffects(
            */
           if (ctx.phone && summary.documents > 0) {
             const [card, token] = await Promise.all([
-              periodCard(summary, log),
+              periodCard(userId, summary, log),
               issueSummaryToken(userId),
             ]);
 
-            const delivered = await cardThenLink(userId, ctx.phone, log, {
-              card,
-              words,
+            const sent = await sendCta(ctx.phone, {
+              body: words,
               label: "View Full Summary",
               url: `${env.PUBLIC_BASE_URL}/s/${token}`,
-              prompt: para(
-                `📈 ${b("See the whole year?")}`,
-                "Month by month, everyone who owes you, and your best clients.",
-              ),
+              ...(card ? { headerImage: card } : {}),
               footer: "Everything you have invoiced",
             });
 
-            if (delivered) break;
+            if (sent.ok) {
+              await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+              break;
+            }
+            log.error({ userId, reason: sent.reason }, "could not send the summary card");
           }
 
           extra.push(words);

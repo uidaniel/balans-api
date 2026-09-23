@@ -354,21 +354,32 @@ const civil = (d: Date): Civil => ({ y: d.getFullYear(), m: d.getMonth() + 1, d:
 /**
  * A private link to somebody's own numbers, and the numbers themselves.
  *
- * Reissued on every request rather than kept, so the newest link always works
- * and the older ones expire on their own. The threat here is not an attacker
- * guessing 128 bits \u2014 it is somebody scrolling their invoice thread in front
- * of a friend, and a link that lives for ever is a permanent window into their
- * earnings.
+ * The threat is not an attacker guessing 128 bits — it is somebody scrolling
+ * their invoice thread in front of a friend, so the link dies after a day.
+ *
+ * A live one is reused rather than replaced. Issuing a fresh token on every
+ * request looked tidier and broke the product: /summary and /owed each ask
+ * for one, so running both — which is the ordinary thing to do — left the
+ * first message's button pointing at a token that had been overwritten
+ * seconds earlier. Tapping it said "Nothing here. This link has expired",
+ * which was true and unexplainable to the person it happened to.
+ *
+ * So: one live link per person at a time, and every message that carries it
+ * keeps working. The day starts again on each issue, because the only thing
+ * that should end it is time since it was last handed out.
  */
 export async function issueSummaryToken(userId: string): Promise<string> {
-  const token = randomBytes(16).toString("hex");
-  await db().query(
+  const { rows } = await db().query<{ summary_token: string }>(
     `UPDATE users
-        SET summary_token = $2, summary_token_expires_at = now() + interval '1 day'
-      WHERE id = $1`,
-    [userId, token],
+        SET summary_token = COALESCE(
+              CASE WHEN summary_token_expires_at > now() THEN summary_token END,
+              $2),
+            summary_token_expires_at = now() + interval '1 day'
+      WHERE id = $1
+      RETURNING summary_token`,
+    [userId, randomBytes(16).toString("hex")],
   );
-  return token;
+  return rows[0]!.summary_token;
 }
 
 /** The user a live summary link belongs to, or null. */
@@ -435,12 +446,22 @@ export async function summaryFor(userId: string, today: Civil): Promise<SummaryD
               ) AS m
      )
      SELECT to_char(span.m, 'Mon')                     AS label,
-            COALESCE(SUM(p.amount_kobo), 0)            AS paid
+            COALESCE(SUM(mine.amount_kobo), 0)         AS paid
        FROM span
-       LEFT JOIN payments p
-         ON p.user_id = $1
-        AND p.status = 'success'
-        AND date_trunc('month', p.created_at) = span.m
+       LEFT JOIN (
+              /*
+               * A payment belongs to a user through the document it paid.
+               * payments.user_id does not exist and never has — this query
+               * asked for it, and the whole page answered 500 the first time
+               * anybody opened it.
+               */
+              SELECT p.amount_kobo, COALESCE(p.paid_at, p.created_at) AS arrived
+                FROM payments p
+                JOIN documents d ON d.id = p.document_id
+               WHERE d.user_id = $1
+                 AND p.status = 'success'
+            ) mine
+         ON date_trunc('month', mine.arrived) = span.m
       GROUP BY span.m
       ORDER BY span.m`,
     [userId, formatISO(today)],

@@ -23,7 +23,7 @@ import { formatNaira } from "../../core/totals.ts";
 import { logoAvailable, logoSvg } from "../brand/logo.ts";
 import { fontFaces, FONT } from "../pdf/fonts.ts";
 import { renderPng } from "../pdf/chrome.ts";
-import { uploadDocument } from "../whatsapp/client.ts";
+import { publishCard } from "./card-link.ts";
 import { esc } from "./page.ts";
 import type { Summary } from "./queries.ts";
 
@@ -105,6 +105,7 @@ ${
  * cost somebody a picture, never their answer.
  */
 export async function periodCard(
+  userId: string,
   s: Summary,
   log: FastifyBaseLogger,
 ): Promise<string | null> {
@@ -115,15 +116,10 @@ export async function periodCard(
   const started = Date.now();
   try {
     const png = await renderPng(periodHtml(s), CARD, CARD);
-    const up = await uploadDocument(png, "summary.png", "image/png");
+    const url = await publishCard(userId, png, log);
 
-    if (!up.ok) {
-      log.warn({ reason: up.reason }, "summary card could not be uploaded, sending the words");
-      return null;
-    }
-
-    log.info({ ms: Date.now() - started, bytes: png.length }, "summary card drawn");
-    return up.mediaId;
+    log.info({ ms: Date.now() - started, bytes: png.length, parked: Boolean(url) }, "summary card drawn");
+    return url;
   } catch (e) {
     log.warn({ err: (e as Error).message }, "summary card could not be drawn, sending the words");
     return null;

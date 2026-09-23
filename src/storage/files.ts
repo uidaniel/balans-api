@@ -25,6 +25,60 @@ export const documentKey = (documentId: string, version: number): string =>
 
 export const receiptKey = (paymentId: string): string => `receipts/${paymentId}.pdf`;
 
+/**
+ * A card drawn for one person, parked where Meta can come and fetch it.
+ *
+ * Every other picture in this product is uploaded to Meta and referred to by
+ * id, because an upload has no address and these carry somebody's figures.
+ * One message type leaves no choice: a `cta_url` header — the message with
+ * the link button on it — takes an image only as a URL, and refuses an id
+ * along with the whole message.
+ *
+ * So the card gets an address, and the address is built to be worth as little
+ * as possible to anyone who finds it: 32 random bytes, served with no-store
+ * and noindex, and dead within the hour. Meta fetches it within seconds of
+ * the send. The same message already carries a link to the summary page,
+ * which shows strictly more than the card does and lives a day.
+ */
+export const cardKey = (token: string): string => `cards/${token}.png`;
+
+/** How long a card's address is worth anything. Meta fetches it at once. */
+const CARD_MINUTES = 60;
+
+export async function putCard(token: string, png: Buffer, userId: string): Promise<void> {
+  await put(cardKey(token), png, "image/png", userId);
+
+  /*
+   * Sweep on the way past, rather than in a job.
+   *
+   * These are 40KB each and one is made every time somebody runs /owed or
+   * /summary, so without this the table grows for ever with pictures nobody
+   * can fetch any more. Doing it here means the cleanup cannot be forgotten
+   * and cannot fail separately from the thing it cleans up after.
+   */
+  await db().query(
+    `DELETE FROM stored_files
+      WHERE key LIKE 'cards/%' AND created_at < now() - ($1 || ' minutes')::interval`,
+    [String(CARD_MINUTES)],
+  );
+}
+
+/**
+ * A card, if the address is still worth something.
+ *
+ * Expiry is enforced in the query rather than by the sweep above, so a row
+ * the sweep has not reached yet is still refused. An expired card is a 404
+ * and not an "expired" page, for the same reason the summary link is.
+ */
+export async function getCard(token: string): Promise<Buffer | null> {
+  const { rows } = await db().query<{ bytes: Buffer }>(
+    `SELECT bytes FROM stored_files
+      WHERE key = $1 AND created_at > now() - ($2 || ' minutes')::interval`,
+    [cardKey(token), String(CARD_MINUTES)],
+  );
+  return rows[0]?.bytes ?? null;
+}
+
 export async function put(
   key: string,
   bytes: Buffer,
