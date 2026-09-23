@@ -374,14 +374,18 @@ export async function downloadMedia(
 /**
  * A picture with words under it.
  *
- * By URL, which Meta fetches: an uploaded media id expires after thirty days
- * and these are the same few files on every send. The caption is the message —
- * with images turned off, or slow to load, it is all somebody sees, so it has
- * to stand on its own.
+ * Either a URL, which Meta fetches, or the id of something uploaded first.
+ * Which one depends on whose picture it is: the brand files are the same few
+ * images on every send and are public anyway, so a link lets Meta cache them.
+ * Anything drawn for one person — what they are owed, what a month came to —
+ * is uploaded, because an upload has no address for anyone to visit.
+ *
+ * The caption is the message. With images turned off, or slow to load, it is
+ * all somebody sees, so it has to stand on its own.
  */
 export function sendImage(
   to: string,
-  link: string,
+  linkOrMediaId: string,
   caption: string,
   opts: { fetchImpl?: Transport } = {},
 ): Promise<SendResult> {
@@ -389,8 +393,8 @@ export function sendImage(
   if (!phone) {
     return Promise.resolve({ ok: false, retryable: false, reason: `unusable phone number: ${to}` });
   }
-  if (!/^https?:\/\//i.test(link)) {
-    return Promise.resolve({ ok: false, retryable: false, reason: `image needs an absolute URL: ${link}` });
+  if (!linkOrMediaId) {
+    return Promise.resolve({ ok: false, retryable: false, reason: "no image to send" });
   }
 
   return call(
@@ -400,7 +404,10 @@ export function sendImage(
       recipient_type: "individual",
       to: phone,
       type: "image",
-      image: { link, caption: caption.slice(0, 1024) },
+      image: {
+        ...(isUrl(linkOrMediaId) ? { link: linkOrMediaId } : { id: linkOrMediaId }),
+        caption: caption.slice(0, 1024),
+      },
     },
     opts.fetchImpl ?? fetch,
   );
@@ -493,12 +500,22 @@ export function sendCta(
     url: string;
     header?: string;
     /**
-     * A picture above the message.
+     * A picture above the message, by URL and only by URL.
      *
      * Takes precedence over `header`: a header is one thing or the other.
-     * Meta documents image headers on `cta_url`, and documents them on
-     * `list` too where they are refused outright — so the caller is expected
-     * to cope with this being rejected rather than to trust the docs.
+     *
+     * Meta refuses an uploaded media id here, which cost this product two
+     * broken commands. `/owed` and `/summary` each drew a card, uploaded it
+     * and sent it as this header; the card was fine and the whole message
+     * was refused:
+     *
+     *     (#131008) Required parameter is missing
+     *     details: "header image must contain link."
+     *
+     * Proved by probe against a throwaway send: the same payload with a URL
+     * is accepted, the same payload with an id is not. So anything drawn for
+     * one person cannot travel in this header at all — it goes as its own
+     * image message, which does take an id, and the button follows it.
      */
     headerImage?: string;
     footer?: string;
@@ -525,23 +542,16 @@ export function sendCta(
       type: "interactive",
       interactive: {
         type: "cta_url",
-        ...(content.headerImage
+        ...(content.headerImage && isUrl(content.headerImage)
           ? {
-              header: {
-                type: "image",
-                /*
-                 * A URL for the brand artwork, a media id for anything drawn
-                 * for one person. The brand files are public and cacheable by
-                 * Meta; a draft receipt carries a client's name and a figure,
-                 * and putting that behind a URL — however unguessable — is a
-                 * public page for private money. An upload has no address at
-                 * all, and its thirty-day expiry cannot matter to an image
-                 * used once, seconds later.
-                 */
-                image: isUrl(content.headerImage)
-                  ? { link: content.headerImage }
-                  : { id: content.headerImage },
-              },
+              /*
+               * A URL, because Meta accepts nothing else in this one header
+               * — see the comment on `headerImage`. A media id is dropped
+               * rather than sent, because sending it loses the whole message:
+               * the words and the button go with it, and the words are the
+               * part that matters.
+               */
+              header: { type: "image", image: { link: content.headerImage } },
             }
           : content.header
             ? { header: { type: "text", text: content.header.slice(0, 60) } }
