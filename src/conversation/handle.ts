@@ -445,6 +445,9 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
           : undefined,
       parseFailed: reading && !reading.ok ? reading.reason : undefined,
       correction,
+      // A tap is unambiguous in a way typing is not, and the machine cannot
+      // tell from the text alone: a row id arrives as ordinary words.
+      tapped: msg.kind === "interactive",
     },
     legalConsentVersion,
   );

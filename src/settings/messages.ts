@@ -108,6 +108,23 @@ function whenWords(at: Date): string {
  * an ordinary message and travels the same path as somebody typing it. Nothing
  * downstream has to know the difference between a tap and a sentence.
  */
+/**
+ * What each row sends when it is tapped.
+ *
+ * Exported because the machine has to recognise a tap as a tap: a row id
+ * arrives as plain text, so while the conversation was waiting for a typed
+ * answer — a new business name — a tapped row became the answer. One account
+ * is called "Delete My Account" because of exactly that.
+ */
+export const SETTINGS_ROW_IDS = [
+  "change business name",
+  "change bank",
+  "due days",
+  "invoice design",
+  "invoice number",
+  "close my account",
+] as const;
+
 export function settingsList(x: {
   businessName: string | null | undefined;
   account: ActiveAccount | null;
@@ -197,7 +214,17 @@ ${rest}`,
               x.invoiceStart > 1 ? `Starting at ${x.invoiceStart}` : "Counting from 1",
           },
           {
-            id: "delete my account",
+            /*
+             * Not "delete my account", which is the phrase that CONFIRMS a
+             * deletion. It was both, so tapping this row asked "send exactly:
+             * delete my account" and tapping the same row again sent exactly
+             * that — the typed confirmation defeated by a second tap, one tap
+             * from irreversible.
+             *
+             * This one opens the question. Only typing the other phrase
+             * answers it, which is the whole point of asking for it.
+             */
+            id: "close my account",
             title: "Close my account",
             description: "Cancels unpaid invoices and disconnects payouts",
           },

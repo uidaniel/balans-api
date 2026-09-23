@@ -18,6 +18,9 @@ import type { Civil } from "../../core/dates.ts";
 import { isDocumentIntent, type Parsed } from "../parser/schema.ts";
 import type { Correction } from "../parser/corrections.ts";
 import { asCommand, socialKind, type SocialKind } from "../parser/commands.ts";
+import { SETTINGS_ROW_IDS } from "../settings/messages.ts";
+
+type SettingsRowId = (typeof SETTINGS_ROW_IDS)[number];
 import { parseAmountToKobo } from "../../core/amount.ts";
 import { resolveDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
@@ -272,6 +275,16 @@ export type Inbound = {
   correction?: Correction | null;
   /** Set when nothing could read the message (F3, section 15). */
   parseFailed?: "too_long" | "unavailable";
+  /**
+   * True when this came from tapping a button or a list row.
+   *
+   * A row id arrives as ordinary text, so the machine could not tell the
+   * difference — and while the conversation was waiting for a typed answer,
+   * a tapped row became the answer. Somebody tapped "Close my account" while
+   * being asked for a new business name, and their business was renamed
+   * "Delete My Account".
+   */
+  tapped?: boolean;
   /** Today in Lagos, for the default due date. */
   today?: Civil;
 };
@@ -787,6 +800,22 @@ export const VOICE = {
 export function step(state: State, context: Context, msg: Inbound, consentVersion: string): Step {
   const text = msg.text.trim();
 
+  /*
+   * A tapped settings row wins over whatever question is open.
+   *
+   * Section 5 already says "a new command always wins over a pending
+   * question, so users are never trapped", and a tap is the least ambiguous
+   * command in the product — there is no chance it was meant as prose. But a
+   * row id arrives as plain text, so the free-text steps could not tell, and
+   * one of them wrote "Delete My Account" into a business name.
+   *
+   * Only these six, and only when tapped. Typing the same words still reads
+   * as words, which matters: a business can be called almost anything.
+   */
+  if (msg.tapped && SETTINGS_ROW_IDS.includes(text.toLowerCase().trim() as SettingsRowId)) {
+    return atSettingsMenu(text, { ...context, attempts: 0 }, msg);
+  }
+
   // A paused account can still ask for help, and nothing else (section 5).
   if (state === "paused") {
     return { replies: [VOICE.paused], next: state, context, effects: [] };
@@ -1034,7 +1063,7 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       return confirmNewBank(text, context, msg);
 
     case "settings:delete_confirm":
-      return confirmDeletion(text, context);
+      return confirmDeletion(text, context, msg);
   }
 }
 
@@ -1257,8 +1286,24 @@ function confirmNewBank(text: string, ctx: Context, msg: Inbound): Step {
 }
 
 /** F17: "confirm twice". This is the second. */
-function confirmDeletion(text: string, ctx: Context): Step {
+function confirmDeletion(text: string, ctx: Context, msg: Inbound): Step {
   const s = text.trim().toLowerCase();
+
+  /*
+   * Typed, never tapped.
+   *
+   * The settings row used to carry this exact phrase as its id, so tapping
+   * it asked "send exactly: delete my account" and tapping the same row
+   * again sent exactly that — one tap from irreversible, with the typing
+   * requirement defeated by the thing it was protecting against.
+   *
+   * The id has changed, but a list sent before that change is still sitting
+   * in people's chats and its rows are still tappable. So this refuses a tap
+   * whatever it says. Asking somebody to type four words is the entire
+   * protection here; a tap is not typing.
+   */
+  if (msg.tapped) return retry("settings:delete_confirm", ctx, VOICE.confirmDelete);
+
   if (s === "delete my account") {
     return { replies: [], next: "idle", context: forget(ctx), effects: [{ type: "delete_account" }] };
   }
