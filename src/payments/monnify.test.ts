@@ -1,4 +1,4 @@
-import { describe, it, beforeEach } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.MONNIFY_BASE_URL = "https://sandbox.monnify.com";
@@ -20,6 +20,7 @@ const {
   payoutBlocked,
   resetAuth,
 } = await import("./monnify.ts");
+const { env } = await import("../config.ts");
 
 /** Responses shaped exactly as the sandbox returned them. */
 const envelope = (body: unknown, ok = true) =>
@@ -174,22 +175,57 @@ describe("resolveAccount", () => {
  * Moniepoint fails the name check itself. Saying so up front is the whole
  * point — the alternative is a user confirming their own name and then being
  * told to "try again in a moment", forever.
+ *
+ * None of which is true in production. Monnify confirmed in writing on
+ * 23 September 2026 that all three are supported there, so the block belongs
+ * to the sandbox and has to leave with it. OPay and PalmPay are what a great
+ * many Nigerian freelancers actually get paid into, and refusing them over an
+ * artefact of the test environment would be the most expensive mistake in
+ * this file.
  */
 describe("banks that cannot receive a payout", () => {
-  it("names the wallets we know Monnify will not settle into", () => {
+  const BASE = env.MONNIFY_BASE_URL;
+  afterEach(() => {
+    env.MONNIFY_BASE_URL = BASE;
+  });
+
+  it("names the wallets the sandbox will not settle into", () => {
+    env.MONNIFY_BASE_URL = "https://sandbox.monnify.com";
     assert.equal(payoutBlocked("305"), "OPay");
     assert.equal(payoutBlocked("999992"), "OPay");
     assert.equal(payoutBlocked("100033"), "PalmPay");
     assert.equal(payoutBlocked("50515"), "Moniepoint");
   });
 
-  it("lets every ordinary bank through", () => {
-    for (const code of ["044", "058", "011", "033", "057", "090267"]) {
-      assert.equal(payoutBlocked(code), null, `${code} must not be blocked`);
+  it("blocks none of them in production", () => {
+    // The line that decides whether a large share of Nigerian freelancers
+    // can sign up at all.
+    env.MONNIFY_BASE_URL = "https://api.monnify.com";
+    for (const code of ["305", "999992", "100033", "50515"]) {
+      assert.equal(payoutBlocked(code), null, `${code} is still refused in production`);
+    }
+  });
+
+  it("reads the base URL each time rather than at import", () => {
+    // Captured at module load, the value would be whichever test file
+    // imported this one first.
+    env.MONNIFY_BASE_URL = "https://api.monnify.com";
+    assert.equal(payoutBlocked("305"), null);
+    env.MONNIFY_BASE_URL = "https://sandbox.monnify.com";
+    assert.equal(payoutBlocked("305"), "OPay");
+  });
+
+  it("lets every ordinary bank through, wherever it is pointed", () => {
+    for (const base of ["https://sandbox.monnify.com", "https://api.monnify.com"]) {
+      env.MONNIFY_BASE_URL = base;
+      for (const code of ["044", "058", "011", "033", "057", "090267"]) {
+        assert.equal(payoutBlocked(code), null, `${code} must not be blocked on ${base}`);
+      }
     }
   });
 
   it("does not care whether the code arrives as a string or a number", () => {
+    env.MONNIFY_BASE_URL = "https://sandbox.monnify.com";
     assert.equal(payoutBlocked(305 as unknown as string), "OPay");
   });
 });

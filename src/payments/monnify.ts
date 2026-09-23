@@ -176,10 +176,23 @@ export async function resolveAccount(
  * that says "try again in a moment" — which will never come true. Told up
  * front, they can go and find an account that works.
  *
- * This is a sandbox finding. The first thing to re-run once the business is
- * activated is whether production still refuses them; if it does not, delete
- * this list, because OPay and PalmPay are what a great many Nigerian
- * freelancers actually get paid into.
+ * It was a sandbox finding, and it stayed one. Monnify's integration support
+ * confirmed in writing on 23 September 2026 that OPay, PalmPay and Moniepoint
+ * are all supported and working in production — the same answer they had
+ * already given for Moniepoint's failing name check, which was also sandbox
+ * only.
+ *
+ * So the list is kept and scoped rather than deleted. It is a true statement
+ * about the sandbox: those banks really do fail there, and somebody testing
+ * against it should be told up front rather than after confirming their own
+ * name. It is not a true statement about production, and leaving it applied
+ * there would turn away a great many Nigerian freelancers over an artefact of
+ * the test environment.
+ *
+ * What this is not is an observation. It is what Monnify says, and the proof
+ * is the first live OPay onboarding. The cost of being wrong is bounded: a
+ * failed creation already retries twice and then hands the person to a human
+ * — which is a far better outcome than refusing the account outright.
  */
 const NO_PAYOUT: Record<string, string> = {
   "305": "OPay",
@@ -188,9 +201,18 @@ const NO_PAYOUT: Record<string, string> = {
   "50515": "Moniepoint",
 };
 
+/**
+ * Whether we are pointed at the sandbox.
+ *
+ * Read at call time, not at import. The base URL is the one setting that
+ * changes what this whole file means, and a value captured at module load
+ * would make the tests depend on import order.
+ */
+const onSandbox = (): boolean => /sandbox/i.test(env.MONNIFY_BASE_URL);
+
 /** The wallet's name when it cannot receive payouts, or null when it can. */
 export const payoutBlocked = (bankCode: string): string | null =>
-  NO_PAYOUT[String(bankCode)] ?? null;
+  onSandbox() ? (NO_PAYOUT[String(bankCode)] ?? null) : null;
 
 /* -------------------------------------------------------------------------- */
 /* Sub accounts                                                               */
