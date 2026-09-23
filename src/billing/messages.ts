@@ -79,6 +79,24 @@ export function deductChosen(): string {
   );
 }
 
+/**
+ * The same offer, as the words above a button.
+ *
+ * No URL in it. A bare link in WhatsApp is a grey line of text somebody has
+ * to decide to trust, and tapping it throws them out of the chat into
+ * whatever browser their phone opens \u2014 where they are then paying, on a page
+ * that arrived with no context. The button opens in WhatsApp's own browser
+ * and says what it does before they press it.
+ */
+export function payLinkCaption(): string {
+  return para(
+    `\u2b50 ${b(`Pro is ${formatNaira(pro.priceKobo)} for a month.`)}`,
+    "It starts the moment the payment clears.",
+    i("Card, transfer or USSD."),
+  );
+}
+
+/** Words only, for when the button will not send. The link has to be in it. */
 export function payLinkMessage(url: string): string {
   return para(
     `⭐ ${b(`Pro is ${formatNaira(pro.priceKobo)} for a month.`)}`,

@@ -52,6 +52,7 @@ import {
   convertedForward,
 } from "../documents/summary.ts";
 import { partsFor } from "../documents/parts.ts";
+import { formatNaira } from "../../core/totals.ts";
 import { pickerUrlFor } from "../http/routes/templates.ts";
 import { clearLogo, saveLogo } from "../brand/user-logo.ts";
 import {
@@ -91,6 +92,7 @@ import { raiseSecurityAlert } from "../settings/alerts.ts";
 import { attachPaymentReference, openSubscription, stateOf } from "../billing/subscription.ts";
 import {
   deductChosen,
+  payLinkCaption,
   payLinkMessage,
   proActive,
   proOffer,
@@ -1643,6 +1645,31 @@ async function runEffects(
           await db().query(
             `UPDATE subscriptions SET status = 'pending' WHERE id = $1`, [opened.id]);
 
+          /*
+           * A button, not a bare link.
+           *
+           * Tapping a URL in WhatsApp hands the person to whatever browser
+           * their phone opens, and they then pay on a page that arrived with
+           * no context. A cta_url opens in WhatsApp's own browser, so the
+           * chat is still behind it and the payment finishes where it
+           * started. It costs the same as the text message it replaces.
+           */
+          const button = ctx.phone
+            ? await sendCta(ctx.phone, {
+                body: payLinkCaption(),
+                label: `Pay ${formatNaira(opened.priceKobo)}`,
+                url: init.checkoutUrl,
+              })
+            : null;
+
+          if (button?.ok) {
+            await recordOutbound(userId, button.waMessageId, "sent", { kind: "interactive" });
+            break;
+          }
+
+          if (button) {
+            log.warn({ userId, reason: button.reason }, "pay button failed, sending the link");
+          }
           extra.push(payLinkMessage(init.checkoutUrl));
           break;
         }

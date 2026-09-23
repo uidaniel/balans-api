@@ -25,7 +25,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 
-import { proOffer, proOfferButtons } from "./messages.ts";
+import { proOffer, proOfferButtons, payLinkCaption, payLinkMessage } from "./messages.ts";
 import { LIMIT_CARD, UPGRADE_CARD, PRO_CARD } from "../conversation/machine.ts";
 import { defaults } from "../config.ts";
 import { availableTo } from "../pdf/templates.ts";
@@ -125,6 +125,43 @@ describe("the card reaching the message", () => {
     // A card is the header of one specific message. If the machine's buttons
     // won, the message the card belongs above was never sent.
     assert.match(handle, /const buttonsImage = outcome\.buttons \? outcome\.buttonsImage : undefined;/);
+  });
+});
+
+describe("paying for it", () => {
+  const handle = read("../conversation/handle.ts");
+  const start = handle.slice(handle.indexOf('case "start_pro"'));
+  const branch = start.slice(0, 3000);
+
+  it("opens the checkout in WhatsApp, not in a browser tab", () => {
+    /*
+     * Tapping a bare URL hands the person to whatever browser their phone
+     * opens, and they then pay on a page that arrived with no context. A
+     * cta_url opens in WhatsApp's own browser, so the chat is still behind
+     * it. It costs the same as the text message it replaces.
+     */
+    assert.match(branch, /sendCta\(/, "the link goes out as a button");
+    const cta = branch.slice(branch.indexOf("sendCta("));
+    assert.match(cta.slice(0, 400), /url: init\.checkoutUrl/);
+  });
+
+  it("keeps the price on the button", () => {
+    const label = `Pay ${"\u20a64,000"}`;
+    assert.ok(label.length <= 20, "a reply button title is capped at twenty");
+    assert.match(branch, /label: `Pay \$\{formatNaira/);
+  });
+
+  it("does not put the URL in the words above it", () => {
+    // Otherwise the message carries both, and the bare one is the one that
+    // throws them out of the chat.
+    assert.doesNotMatch(payLinkCaption(), /https?:\/\//);
+    assert.match(payLinkCaption(), /4,000/, "but it still says the price");
+  });
+
+  it("falls back to the link when the button will not send", () => {
+    // Words only, so the link has to be in them.
+    assert.match(payLinkMessage("https://pay.example/x"), /https:\/\/pay\.example\/x/);
+    assert.match(branch, /extra\.push\(payLinkMessage\(init\.checkoutUrl\)\)/);
   });
 });
 
