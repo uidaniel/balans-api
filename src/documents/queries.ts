@@ -11,7 +11,9 @@
  * query, and these are small tables per user.
  */
 
+import { randomBytes } from "node:crypto";
 import { db } from "../db/pool.ts";
+import type { SummaryData } from "./summary-page.ts";
 import { GRACE_DAYS } from "../billing/subscription.ts";
 import { formatISO, type Civil } from "../../core/dates.ts";
 import type { Period } from "../../core/period.ts";
@@ -344,3 +346,138 @@ export async function planOf(userId: string): Promise<"free" | "pro"> {
 /* -------------------------------------------------------------------------- */
 
 const civil = (d: Date): Civil => ({ y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() });
+
+/* -------------------------------------------------------------------------- */
+/* The summary page                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A private link to somebody's own numbers, and the numbers themselves.
+ *
+ * Reissued on every request rather than kept, so the newest link always works
+ * and the older ones expire on their own. The threat here is not an attacker
+ * guessing 128 bits \u2014 it is somebody scrolling their invoice thread in front
+ * of a friend, and a link that lives for ever is a permanent window into their
+ * earnings.
+ */
+export async function issueSummaryToken(userId: string): Promise<string> {
+  const token = randomBytes(16).toString("hex");
+  await db().query(
+    `UPDATE users
+        SET summary_token = $2, summary_token_expires_at = now() + interval '1 day'
+      WHERE id = $1`,
+    [userId, token],
+  );
+  return token;
+}
+
+/** The user a live summary link belongs to, or null. */
+export async function userForSummaryToken(token: string): Promise<string | null> {
+  const { rows } = await db().query<{ id: string }>(
+    `SELECT id FROM users
+      WHERE summary_token = $1
+        AND summary_token_expires_at > now()
+        AND status = 'active'`,
+    [token],
+  );
+  return rows[0]?.id ?? null;
+}
+
+/**
+ * Everything the summary page shows, in one round trip per section.
+ *
+ * Separate queries rather than one clever join: the four questions have
+ * different grains \u2014 one row, twelve rows, one row per unpaid document, one
+ * row per client \u2014 and forcing them together produces a query nobody can read
+ * and a result somebody has to un-fan-out in JavaScript.
+ */
+export async function summaryFor(userId: string, today: Civil): Promise<SummaryData | null> {
+  const { rows: who } = await db().query<{ business_name: string | null }>(
+    `SELECT business_name FROM users WHERE id = $1`,
+    [userId],
+  );
+  if (!who.length) return null;
+
+  const { rows: totals } = await db().query<{
+    sent: number;
+    paid: string;
+    outstanding: string;
+    overdue: string;
+  }>(
+    `SELECT count(*)::int                                            AS sent,
+            COALESCE(SUM(d.amount_paid_kobo), 0)                     AS paid,
+            COALESCE(SUM(d.total_kobo - d.amount_paid_kobo)
+                     FILTER (WHERE d.status = ANY($3)), 0)           AS outstanding,
+            COALESCE(SUM(d.total_kobo - d.amount_paid_kobo)
+                     FILTER (WHERE d.status = ANY($3)
+                             AND d.due_date < $2::date), 0)          AS overdue
+       FROM documents d
+      WHERE d.user_id = $1
+        AND d.type = ANY($4)
+        AND d.status <> 'draft'`,
+    [userId, formatISO(today), OWING as unknown as string[], BILLABLE as unknown as string[]],
+  );
+
+  /*
+   * Money in by month, counted when it arrived rather than when it was
+   * invoiced. A chart of invoices raised flatters a month nobody paid in.
+   *
+   * generate_series so a month with no payments is a gap in the bars rather
+   * than a month missing from the axis, which would compress the gap out of
+   * existence and make a quiet quarter look busy.
+   */
+  const { rows: months } = await db().query<{ label: string; paid: string }>(
+    `WITH span AS (
+       SELECT generate_series(
+                date_trunc('month', $2::date) - interval '11 months',
+                date_trunc('month', $2::date),
+                interval '1 month'
+              ) AS m
+     )
+     SELECT to_char(span.m, 'Mon')                     AS label,
+            COALESCE(SUM(p.amount_kobo), 0)            AS paid
+       FROM span
+       LEFT JOIN payments p
+         ON p.user_id = $1
+        AND p.status = 'success'
+        AND date_trunc('month', p.created_at) = span.m
+      GROUP BY span.m
+      ORDER BY span.m`,
+    [userId, formatISO(today)],
+  );
+
+  const owed = await debtors(userId, today);
+
+  const { rows: clients } = await db().query<{ name: string; paid: string }>(
+    `SELECT c.name, SUM(d.amount_paid_kobo) AS paid
+       FROM documents d
+       JOIN clients c ON c.id = d.client_id
+      WHERE d.user_id = $1
+        AND d.amount_paid_kobo > 0
+      GROUP BY c.name
+      ORDER BY SUM(d.amount_paid_kobo) DESC
+      LIMIT 5`,
+    [userId],
+  );
+
+  const t = totals[0]!;
+
+  return {
+    businessName: who[0]!.business_name ?? "Your business",
+    invoicesSent: t.sent,
+    paidKobo: Number(t.paid),
+    outstandingKobo: Number(t.outstanding),
+    overdueKobo: Number(t.overdue),
+    months: months.map((m) => ({ label: m.label, paidKobo: Number(m.paid) })),
+    // The page lists everybody, not the five the chat message has room for.
+    owing: owed.rows.map((r) => ({
+      clientName: r.clientName,
+      ref: null,
+      number: r.number,
+      outstandingKobo: r.outstandingKobo,
+      dueDate: r.dueDate,
+      daysLate: r.daysLate,
+    })),
+    clients: clients.map((c) => ({ name: c.name, paidKobo: Number(c.paid) })),
+  };
+}

@@ -60,6 +60,7 @@ import { pickerUrlFor } from "../http/routes/templates.ts";
 import { clearLogo, saveLogo } from "../brand/user-logo.ts";
 import {
   debtors,
+  issueSummaryToken,
   documentsEverSent,
   documentsThisMonth,
   findDocument,
@@ -255,6 +256,8 @@ const FLOW_SCREEN = {
   request: "WORK",
 } as const;
 import { draftCard } from "../documents/receipt-card.ts";
+import { owedCard } from "../documents/owed-card.ts";
+import { periodCard } from "../documents/period-card.ts";
 import { invoiceableKobo } from "../../core/amount.ts";
 import { totalsFor } from "../../core/totals.ts";
 import { OTHER_BANK } from "../whatsapp/flows/banks.ts";
@@ -1322,7 +1325,44 @@ async function runEffects(
         /* -- Not built yet, and said so rather than left silent -------------- */
 
         case "show_debtors": {
-          extra.push(debtorsMessage(await debtors(userId, ctx.today), ctx.today));
+          const owed = await debtors(userId, ctx.today);
+          const words = debtorsMessage(owed, ctx.today);
+
+          /*
+           * The card and the link, with the words as the body.
+           *
+           * The words are never replaced. A picture cannot be searched in a
+           * chat, copied or read aloud, Chrome can fail, and Meta can refuse
+           * an upload \u2014 so every branch below still says the same thing, and
+           * the card and the button are additions to it.
+           *
+           * The button is worth the round trip to Meta that a plain text
+           * message avoids: /owed shows five debts and a total, and the
+           * question it always raises next is "which ones, and how late" \u2014
+           * which is a page, not another message.
+           */
+          if (ctx.phone && owed.rows.length) {
+            const [card, token] = await Promise.all([
+              owedCard(owed, ctx.today, log),
+              issueSummaryToken(userId),
+            ]);
+
+            const sent = await sendCta(ctx.phone, {
+              body: words,
+              label: "View Summary",
+              url: `${env.PUBLIC_BASE_URL}/s/${token}`,
+              ...(card ? { headerImage: card } : {}),
+              footer: "Everything you have invoiced",
+            });
+
+            if (sent.ok) {
+              await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+              break;
+            }
+            log.error({ userId, reason: sent.reason }, "could not send the owed card");
+          }
+
+          extra.push(words);
           break;
         }
 
@@ -1330,7 +1370,39 @@ async function runEffects(
           // The period comes from their words, not the model: a summary that
           // adds up the wrong days is worse than one that asks.
           const period = readPeriod(ctx.text ?? "", ctx.today) ?? defaultPeriod(ctx.today);
-          extra.push(summaryMessage(await summarise(userId, period, ctx.today)));
+          const summary = await summarise(userId, period, ctx.today);
+          const words = summaryMessage(summary);
+
+          /*
+           * The card and the link, with the words as the body — the same
+           * shape as /owed, and never a replacement for the words.
+           *
+           * The button goes further than the card can: a month is four
+           * figures, and the question it raises is how this month compares
+           * and who is sitting on the outstanding part. That is a page.
+           */
+          if (ctx.phone && summary.documents > 0) {
+            const [card, token] = await Promise.all([
+              periodCard(summary, log),
+              issueSummaryToken(userId),
+            ]);
+
+            const sent = await sendCta(ctx.phone, {
+              body: words,
+              label: "View Full Summary",
+              url: `${env.PUBLIC_BASE_URL}/s/${token}`,
+              ...(card ? { headerImage: card } : {}),
+              footer: "Everything you have invoiced",
+            });
+
+            if (sent.ok) {
+              await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+              break;
+            }
+            log.error({ userId, reason: sent.reason }, "could not send the summary card");
+          }
+
+          extra.push(words);
           break;
         }
 

@@ -27,6 +27,8 @@ import {
   recordTransferAccount,
   type LiveTransfer,
 } from "../../documents/payments.ts";
+import { renderSummary } from "../../documents/summary-page.ts";
+import { summaryFor, userForSummaryToken } from "../../documents/queries.ts";
 import { renderDocumentPdf } from "../../documents/pdf.ts";
 import { confirmPayment } from "../../payments/confirm.ts";
 import { notifyPaid } from "../../payments/notify.ts";
@@ -113,6 +115,39 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
           transfer: live ? panelFor(live) : null,
         }),
       );
+  });
+
+  /* -- Their own numbers ---------------------------------------------------- */
+
+  /**
+   * The summary, opened from the "View Summary" button on /owed.
+   *
+   * The most sensitive page here: one person's entire invoicing history, and
+   * it opens inside WhatsApp's web view where there is nobody to log in as.
+   * The token is the credential and it expires after a day, so a forwarded
+   * chat is not a permanent window into somebody's earnings.
+   *
+   * An expired link is a 404 and not a "your link expired" page, which would
+   * confirm to anybody holding one that it had been real.
+   */
+  app.get<{ Params: { token: string } }>("/s/:token", async (req, reply) => {
+    const userId = await userForSummaryToken(req.params.token);
+    if (!userId) return reply.status(404).type(HTML).send(renderNotFound());
+
+    const today = todayIn(defaults.behaviour.timezone);
+    const data = await summaryFor(userId, today);
+    if (!data) return reply.status(404).type(HTML).send(renderNotFound());
+
+    return reply
+      .type(HTML)
+      // Somebody's earnings. Never a shared cache, never a referrer, and
+      // never indexed — the page says noindex as well, because a link
+      // pasted anywhere is a link a crawler may follow.
+      .header("cache-control", "no-store, private")
+      .header("referrer-policy", "no-referrer")
+      .header("x-content-type-options", "nosniff")
+      .header("x-robots-tag", "noindex, nofollow")
+      .send(renderSummary(data, today));
   });
 
   /* -- The file ------------------------------------------------------------ */
