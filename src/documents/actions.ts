@@ -253,9 +253,10 @@ export async function convertQuote(
      * as it would on a fresh invoice.
      */
     await c.query(
-      `INSERT INTO payment_parts (document_id, position, label, amount_kobo, status)
+      `INSERT INTO payment_parts (document_id, position, label, amount_kobo, status, due_date)
        SELECT $1, position, label, amount_kobo,
-              CASE WHEN position = 0 THEN 'payable' ELSE 'pending' END::part_status
+              CASE WHEN position = 0 THEN 'payable' ELSE 'pending' END::part_status,
+              due_date
          FROM payment_parts WHERE document_id = $2 ORDER BY position`,
       [invoiceId, quote.id],
     );

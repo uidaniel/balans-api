@@ -89,6 +89,9 @@ padding:11px 0;border-bottom:1px solid #f0ece3;font-size:14.5px}
 .part.phead .who{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#7b8b83}
 .part .tag{font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;
 color:#8a9a92;margin-left:8px;font-weight:600}
+/* The date sits under the label rather than beside it: three things on one
+   line wraps badly at 320px, and the label is what is being scanned. */
+.part .on{display:block;font-size:12.5px;color:#8a9a92;margin-top:3px}
 .trust{margin:24px 28px 0;padding:18px 20px;background:var(--cream);
 border:1px solid var(--sand);border-radius:14px}
 .tline{display:flex;align-items:center;justify-content:center;gap:9px;
@@ -318,7 +321,7 @@ export function renderDocument(
     }
   </div>
 
-  ${partsBlock(doc)}
+  ${partsBlock(doc, today)}
   ${doc.notes ? `<div class="note">${esc(doc.notes)}</div>` : ""}
   ${payBlock(doc, can, payableNowKobo(doc), opts, payableLabel(doc))}
   ${trustBlock(doc)}
@@ -361,7 +364,7 @@ function statusPill(doc: PublicDocument, today: Civil, overdue: boolean): string
  * Shown even once they are paid, because the point of a deposit is that the
  * client can see the shape of the whole arrangement and what is left of it.
  */
-function partsBlock(doc: PublicDocument): string {
+function partsBlock(doc: PublicDocument, today: Civil): string {
   if (!doc.parts.length) return "";
 
   /*
@@ -381,11 +384,22 @@ function partsBlock(doc: PublicDocument): string {
   const quote = doc.type === "quote";
 
   const rows = doc.parts
-    .map((p) => {
+    .map((p, i) => {
       const done = p.status === "paid";
       const tag = quote ? "" : done ? "Paid" : p.status === "payable" ? "Due now" : "Later";
+      /*
+       * The date, for every part but the first.
+       *
+       * "Later" is not an answer to when, and it was the only thing a client
+       * with a deposit invoice had. The first part is tagged "Due now", which
+       * says today more plainly than today's date would — and on a quote
+       * there are no tags at all, so every row carries its date.
+       */
+      const on = p.dueOn && (quote || i > 0) ? formatFriendly(p.dueOn, today) : null;
       return `<div class="part${done && !quote ? " done" : ""}">
-        <span class="who">${esc(p.label)}${tag ? `<span class="tag">${tag}</span>` : ""}</span>
+        <span class="who">${esc(p.label)}${tag ? `<span class="tag">${tag}</span>` : ""}${
+          on ? `<span class="on">${esc(on)}</span>` : ""
+        }</span>
         <span class="amt">${formatNaira(p.amountKobo)}</span>
       </div>`;
     })

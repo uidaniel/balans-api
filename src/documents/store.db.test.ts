@@ -18,6 +18,9 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 
+/** The day these drafts are written on, so the payment dates are fixed. */
+const TODAY = { y: 2026, m: 9, d: 23 };
+
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 
 const { db, closeDb } = await import("../db/pool.ts");
@@ -66,7 +69,7 @@ describe("saving a draft with a payment plan", { skip: !HAS_DB && "no DATABASE_U
     ).rows.map((r) => ({ ...r, amount_kobo: Number(r.amount_kobo) }));
 
   it("writes a deposit as two parts, only the first payable", async () => {
-    const draft = await createDraft(userId, { ...base, depositPercent: 50 });
+    const draft = await createDraft(userId, { ...base, depositPercent: 50 }, TODAY);
     const parts = await partsOf(draft.id);
 
     assert.equal(parts.length, 2, "a deposit is two payments, not one");
@@ -82,7 +85,7 @@ describe("saving a draft with a payment plan", { skip: !HAS_DB && "no DATABASE_U
   it("writes instalments, and they add up to the total exactly", async () => {
     // 250,000 over 3 does not divide. The remainder has to land somewhere, and
     // a client who pays every part must have paid the invoice.
-    const draft = await createDraft(userId, { ...base, instalments: 3 });
+    const draft = await createDraft(userId, { ...base, instalments: 3 }, TODAY);
     const parts = await partsOf(draft.id);
 
     assert.equal(parts.length, 3);
@@ -95,15 +98,15 @@ describe("saving a draft with a payment plan", { skip: !HAS_DB && "no DATABASE_U
   });
 
   it("writes nothing when the invoice is paid in one go", async () => {
-    const draft = await createDraft(userId, base);
+    const draft = await createDraft(userId, base, TODAY);
     assert.deepEqual(await partsOf(draft.id), []);
   });
 
   it("replaces the plan when the draft is replaced", async () => {
     // A correction rebuilds the draft. The old parts must not survive it, or a
     // draft corrected from 3 payments to 2 would go out asking for five.
-    await createDraft(userId, { ...base, instalments: 3 });
-    const after = await createDraft(userId, { ...base, depositPercent: 25 });
+    await createDraft(userId, { ...base, instalments: 3 }, TODAY);
+    const after = await createDraft(userId, { ...base, depositPercent: 25 }, TODAY);
 
     const parts = await partsOf(after.id);
     assert.equal(parts.length, 2);
@@ -113,10 +116,10 @@ describe("saving a draft with a payment plan", { skip: !HAS_DB && "no DATABASE_U
   it("reads the plan back off the draft", async () => {
     // What the summary re-renders from. Recovered from the parts rather than
     // stored twice, so the two cannot disagree.
-    await createDraft(userId, { ...base, depositPercent: 40 });
+    await createDraft(userId, { ...base, depositPercent: 40 }, TODAY);
     assert.equal((await getOpenDraft(userId))?.depositPercent, 40);
 
-    await createDraft(userId, { ...base, instalments: 4 });
+    await createDraft(userId, { ...base, instalments: 4 }, TODAY);
     const back = await getOpenDraft(userId);
     assert.equal(back?.instalments, 4);
     assert.equal(back?.depositPercent, null);

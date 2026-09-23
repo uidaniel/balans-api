@@ -17,6 +17,9 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 
+/** The day these drafts are written on, so the payment dates are fixed. */
+const TODAY = { y: 2026, m: 9, d: 23 };
+
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 
 const { db, closeDb } = await import("../db/pool.ts");
@@ -54,7 +57,7 @@ describe("invoice numbering", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
 
   /** Draft one and send it, returning the number it was given. */
   const issue = async (): Promise<number> => {
-    const draft = await createDraft(userId, base);
+    const draft = await createDraft(userId, base, TODAY);
     const done = await confirmDraft(userId, draft.id);
     assert.ok(done, "the draft should confirm");
     return done.number;

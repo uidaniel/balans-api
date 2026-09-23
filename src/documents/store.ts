@@ -10,7 +10,7 @@
 import { randomBytes } from "node:crypto";
 import type { PoolClient } from "pg";
 import { db, tx } from "../db/pool.ts";
-import { createParts, partsFor, shapeFor, type Part } from "./parts.ts";
+import { createParts, partsFor, stagesFor, type Part } from "./parts.ts";
 import { formatISO, type Civil } from "../../core/dates.ts";
 import { totalsFor, type Line } from "../../core/totals.ts";
 
@@ -129,7 +129,17 @@ function splitOf(
  * One open draft per user, by construction. Two drafts in a chat window is a
  * question about which one "yes" meant, and there is no good answer to it.
  */
-export async function createDraft(userId: string, input: DraftInput): Promise<Draft> {
+export async function createDraft(
+  userId: string,
+  input: DraftInput,
+  /**
+   * The day this is being written, which is the day the first payment falls
+   * due. A draft has no `issue_date` yet — that is set when it is sent — and
+   * the plan's dates have to be decided before anybody approves them, not
+   * after.
+   */
+  issuedOn: Civil,
+): Promise<Draft> {
   const totals = totalsFor(input.lines, input.vatPercent);
 
   return tx(async (c) => {
@@ -177,8 +187,8 @@ export async function createDraft(userId: string, input: DraftInput): Promise<Dr
      * told one thing and their client was shown another, which is the worst
      * shape a bug in this product can take.
      */
-    const shape = shapeFor(input, totals.totalKobo);
-    if (shape) await createParts(id, shape, c);
+    const stages = stagesFor(input, totals.totalKobo, issuedOn);
+    if (stages) await createParts(id, stages, c);
 
     return {
       ...input,

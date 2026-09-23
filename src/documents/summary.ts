@@ -14,7 +14,7 @@ import { settle } from "../../core/fees.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { defaults } from "../config.ts";
 import { b, block, lines, para, row } from "../whatsapp/format.ts";
-import { shapeFor } from "./parts.ts";
+import { shapeFor, stagesFor, type Stage } from "./parts.ts";
 import type { Draft } from "./store.ts";
 
 /** F6: description defaults to "Services" if absent, and the draft says so. */
@@ -50,19 +50,32 @@ const SENT_LABEL: Record<Draft["type"], string> = {
  * at a deposit invoice is asking exactly one question — how much do I pay
  * today — and the total at the top is not the answer.
  */
-export function planLines(draft: {
-  totalKobo: number;
-  depositPercent: number | null;
-  instalments: number | null;
-}): string[] {
-  const shape = shapeFor(draft, draft.totalKobo);
-  if (!shape) return [];
+export function planLines(
+  draft: {
+    totalKobo: number;
+    depositPercent: number | null;
+    instalments: number | null;
+    dueDate: Civil | null;
+  },
+  today: Civil,
+): string[] {
+  const stages = stagesFor(draft, draft.totalKobo, today);
+  if (!stages) return [];
+
+  /*
+   * "Due now" on the first, a date on the rest.
+   *
+   * The first part's date is today, so printing it would say what the tag
+   * already says and in more words. Every part after it had nothing at all —
+   * "Balance — ₦25,000" and no answer to the only question a payment plan
+   * raises, which is when.
+   */
+  const when = (s: Stage, i: number): string =>
+    i === 0 ? " (due now)" : s.dueOn ? ` (due ${formatFriendly(s.dueOn, today)})` : "";
 
   return [
     "Payment plan:",
-    ...shape.map(
-      (p, i) => `  · ${p.label} — ${formatNaira(p.amountKobo)}${i === 0 ? " (due now)" : ""}`,
-    ),
+    ...stages.map((s, i) => `  · ${s.label} — ${formatNaira(s.amountKobo)}${when(s, i)}`),
   ];
 }
 
@@ -136,7 +149,7 @@ export function draftSummary(draft: Draft, today: Civil, plan: "free" | "pro"): 
   if (draft.dueDate) {
     rows.push(row(draft.type === "quote" ? "Valid until" : "Due", formatFriendly(draft.dueDate, today)));
   }
-  rows.push(...planLines(draft));
+  rows.push(...planLines(draft, today));
   if (draft.passFeesToClient) rows.push(row("Fees", "Client pays the transaction fee"));
   if (draft.clientEmail) rows.push(row("Email to", draft.clientEmail));
 
@@ -316,7 +329,7 @@ export function sentMessage(
       // one who has to be told. Without this the forward says "₦300,000, click
       // to pay" and the page it opens asks for ₦75,000, which reads as an
       // error in the sender's favour.
-      ...planLines(draft),
+      ...planLines(draft, today),
     ]),
     lines(draft.type === "quote" ? "Click the link to view it:" : "Click the link to pay:", link),
     note,

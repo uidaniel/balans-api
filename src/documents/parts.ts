@@ -14,6 +14,7 @@
 import type pg from "pg";
 
 import { db, tx } from "../db/pool.ts";
+import { addDays, compare, formatISO, type Civil } from "../../core/dates.ts";
 import { depositSplit, equalSplit } from "../../core/totals.ts";
 
 export type Part = {
@@ -23,6 +24,8 @@ export type Part = {
   amountKobo: number;
   status: "pending" | "payable" | "paid";
   paidAt: Date | null;
+  /** Null on every part written before parts had dates, and on a quote. */
+  dueOn: Civil | null;
 };
 
 /**
@@ -34,8 +37,8 @@ export type Part = {
  */
 export async function createParts(
   documentId: string,
-  /** Labels and exact figures. The arithmetic was done in `shapeFor`. */
-  shape: Shape,
+  /** Labels, exact figures and dates. The working out was done in `stagesFor`. */
+  shape: Stage[],
   /**
    * An open transaction to write inside.
    *
@@ -51,9 +54,16 @@ export async function createParts(
     const made: Part[] = [];
     for (const [i, s] of shape.entries()) {
       const { rows } = await c.query<{ id: string }>(
-        `INSERT INTO payment_parts (document_id, position, label, amount_kobo, status)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [documentId, i, s.label, s.amountKobo, i === 0 ? "payable" : "pending"],
+        `INSERT INTO payment_parts (document_id, position, label, amount_kobo, status, due_date)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [
+          documentId,
+          i,
+          s.label,
+          s.amountKobo,
+          i === 0 ? "payable" : "pending",
+          s.dueOn ? formatISO(s.dueOn) : null,
+        ],
       );
       made.push({
         id: rows[0]!.id,
@@ -62,6 +72,7 @@ export async function createParts(
         amountKobo: s.amountKobo,
         status: i === 0 ? "payable" : "pending",
         paidAt: null,
+        dueOn: s.dueOn,
       });
     }
     return made;
@@ -143,6 +154,68 @@ export function equalShape(totalKobo: number, n: number): Shape {
   }));
 }
 
+/**
+ * When each part falls due.
+ *
+ * The document's due date is the last payment's date, the first is due on
+ * issue, and anything in between is spaced evenly. The rule invents nothing:
+ * both ends are dates the user already gave, and it reads the way people
+ * actually say it — "half now, half by the 25th" is a deposit and a due date,
+ * and nothing else needs asking.
+ *
+ * It is not monthly, which was the other candidate. "Invoice Daniel 250k for
+ * a site, project runs 1 October to the third week, 3 payments" would put the
+ * last payment in December under a monthly rule — two months after the work
+ * finished and after the date on the invoice. Spacing to the date they gave
+ * cannot contradict the date they gave.
+ *
+ * A due date before the issue date is somebody's odd invoice rather than a
+ * bug, so the middle parts collapse onto the issue date and the last still
+ * lands where it was put. Nothing here refuses to produce an answer.
+ */
+export function scheduleFor(count: number, issuedOn: Civil, dueOn: Civil | null): (Civil | null)[] {
+  if (dueOn === null) return Array.from({ length: count }, () => null);
+  if (count <= 1) return [dueOn];
+
+  const days = Math.max(0, Math.round(compare(dueOn, issuedOn) / 86_400_000));
+
+  return Array.from({ length: count }, (_, i) => {
+    if (i === 0) return issuedOn;
+    if (i === count - 1) return dueOn;
+    return addDays(issuedOn, Math.round((i * days) / (count - 1)));
+  });
+}
+
+/**
+ * A payment plan with its dates: what every surface shows and what gets
+ * written to `payment_parts`.
+ *
+ * `shapeFor` stays money-only above, because the arithmetic has its own
+ * reasons to be exact and none of them involve a calendar. This is the pair
+ * of them, and the only thing anything outside this file should need.
+ */
+export type Stage = { label: string; amountKobo: number; dueOn: Civil | null };
+
+export function stagesFor(
+  o: {
+    depositPercent?: number | null;
+    instalments?: number | null;
+    dueDate?: Civil | null;
+  },
+  totalKobo: number,
+  issuedOn: Civil,
+): Stage[] | null {
+  const shape = shapeFor(o, totalKobo);
+  if (!shape) return null;
+
+  const when = scheduleFor(shape.length, issuedOn, o.dueDate ?? null);
+  return shape.map((s, i) => ({ ...s, dueOn: when[i] ?? null }));
+}
+
+/** A DATE column as a calendar day, with no timezone in the middle of it. */
+const civilOf = (d: Date | null): Civil | null =>
+  d ? { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() } : null;
+
 export async function partsFor(documentId: string): Promise<Part[]> {
   const { rows } = await db().query<{
     id: string;
@@ -151,8 +224,9 @@ export async function partsFor(documentId: string): Promise<Part[]> {
     amount_kobo: number;
     status: Part["status"];
     paid_at: Date | null;
+    due_date: Date | null;
   }>(
-    `SELECT id, position, label, amount_kobo, status, paid_at
+    `SELECT id, position, label, amount_kobo, status, paid_at, due_date
        FROM payment_parts WHERE document_id = $1 ORDER BY position`,
     [documentId],
   );
@@ -164,6 +238,7 @@ export async function partsFor(documentId: string): Promise<Part[]> {
     amountKobo: r.amount_kobo,
     status: r.status,
     paidAt: r.paid_at,
+    dueOn: civilOf(r.due_date),
   }));
 }
 
@@ -189,8 +264,9 @@ export async function settleParts(
       label: string;
       amount_kobo: number;
       status: Part["status"];
+      due_date: Date | null;
     }>(
-      `SELECT id, position, label, amount_kobo, status
+      `SELECT id, position, label, amount_kobo, status, due_date
          FROM payment_parts WHERE document_id = $1 ORDER BY position
          FOR UPDATE`,
       [documentId],
@@ -219,6 +295,7 @@ export async function settleParts(
         amountKobo: p.amount_kobo,
         status: "paid",
         paidAt: new Date(),
+        dueOn: civilOf(p.due_date),
       });
     }
 

@@ -92,6 +92,7 @@ describe("only the next unpaid part is payable", () => {
       amountKobo: N(1_000),
       status,
       paidAt: status === "paid" ? new Date() : null,
+      dueOn: null,
     }));
 
   it("offers the first one when nothing is paid", () => {

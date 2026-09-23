@@ -1120,7 +1120,7 @@ async function runEffects(
             instalments: doc.instalments ?? null,
             passFeesToClient: doc.passFeesToClient ?? false,
             notes: doc.notes ?? null,
-          });
+          }, ctx.today);
           draftId = draft.id;
           extra.push(draftSummary(draft, ctx.today, gate.plan));
           buttons = draftButtons();

@@ -88,7 +88,7 @@ describe("a payment plan reaches both messages", () => {
 
   it("stays quiet when there is no plan", () => {
     // One payment needs no schedule, and printing one would invent a stage.
-    assert.deepEqual(planLines(draft({})), []);
+    assert.deepEqual(planLines(draft({}), today), []);
     assert.doesNotMatch(sent(draft({})), /Payment plan/);
     assert.doesNotMatch(draftSummary(draft({}), today, "free"), /Payment plan/);
   });
