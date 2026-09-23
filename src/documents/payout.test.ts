@@ -137,6 +137,17 @@ describe("where it appears on the draft", () => {
     assert.ok(line.includes("*₦48,650*"), `the figure carries it: ${line}`);
   });
 
+  it("calls the line what the form calls it", () => {
+    // The form asks for an "Item" and the draft used to answer with "Work".
+    // One field, two names, and no way for a reader to know it was the same
+    // one they had just filled in.
+    const m = draftSummary(draft({}), today, "free");
+    assert.match(m, /Item: mobile app design/);
+    assert.ok(!m.includes("Work:"), `the old label is still there:
+
+${m}`);
+  });
+
   it("says nothing about fees on a sample", () => {
     // A sample is a demonstration invoice with nobody's money in it. A fee
     // line there is a number about a client who does not exist.

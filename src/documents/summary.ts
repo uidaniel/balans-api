@@ -170,13 +170,17 @@ export function draftSummary(
 ): string {
   const rows: (string | false)[] = [row("Client", draft.clientName)];
 
-  // One line reads as a single "Work" row. Several deserve their own lines,
+  // One line reads as a single "Item" row. Several deserve their own lines,
   // because the itemisation is the part a client queries.
+  //
+  // "Item" rather than "Work" because that is what the form calls this field
+  // now, and a draft that answers a question in a different word than the one
+  // it was asked in reads like a different field.
   if (draft.lines.length === 1) {
     const only = draft.lines[0]!;
-    rows.push(row("Work", `${only.description}${only.qty === 1 ? "" : ` x${only.qty}`}`));
+    rows.push(row("Item", `${only.description}${only.qty === 1 ? "" : ` x${only.qty}`}`));
   } else {
-    rows.push("Work:");
+    rows.push("Items:");
     for (const line of draft.lines) {
       const each = line.qty === 1 ? "" : ` x${line.qty}`;
       rows.push(`  · ${line.description}${each} — ${formatNaira(line.unitAmountKobo * line.qty)}`);

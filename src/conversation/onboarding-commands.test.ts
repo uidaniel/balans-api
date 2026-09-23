@@ -33,6 +33,7 @@ const say = (state: State, text: string, parsed?: Parsed) =>
  */
 const helpParse: Parsed = {
   intent: "help",
+  correction: null,
   clientName: null,
   clientEmail: null,
   lineItems: [],

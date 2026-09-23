@@ -413,3 +413,190 @@ describe("an amount the model dropped", () => {
     assert.equal(out.parsed.totalKobo, 356_000_00);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+describe("a correction the free reader could not read", () => {
+  /*
+   * The message behind this block, typed at a real draft:
+   *
+   *   "correct the work, it is photography"
+   *
+   * It came back as "I did not catch that. Tap a button above, or tell me
+   * what to change" — the bot asking somebody to guess the phrasing it wants,
+   * about a sentence that is not ambiguous in any way.
+   *
+   * The regexes in `corrections.ts` got wider, and they will keep missing
+   * things, because people do not write in five shapes. So the model now gets
+   * the draft alongside the message and can say what changed. The rule that
+   * matters is unchanged: it returns "400k" and "oct 1st", and our own code
+   * turns those into money and a date.
+   */
+  const DRAFT = "kind: invoice\nclient: Daniel\nitem: 3d design\namount: ₦20,000\ndue: 2026-10-01";
+
+  it("sends the draft with the message, so 'it' has a subject", async () => {
+    const { impl, calls } = stub(toolUse(GOOD));
+    await parseWithModel("correct the work, it is photography", TODAY, impl, DRAFT);
+
+    const prompt: string = calls[0]!.body.messages[0].content;
+    assert.match(prompt, /<draft>[\s\S]*item: 3d design[\s\S]*<\/draft>/);
+    // Its own block, above the message and below the instructions: context we
+    // wrote, kept apart from words the user wrote.
+    assert.ok(prompt.indexOf("</draft>") < prompt.indexOf("<message>"));
+  });
+
+  it("says nothing about a draft when there is none", async () => {
+    const { impl, calls } = stub(toolUse(GOOD));
+    await parseWithModel("invoice Tunde 20k for logo", TODAY, impl);
+    assert.ok(!String(calls[0]!.body.messages[0].content).includes("<draft>"));
+  });
+
+  it("offers the intent and the fields it needs", () => {
+    assert.ok(_internal.TOOL.input_schema.properties.correction, "no correction in the tool");
+    assert.match(_internal.SYSTEM, /correct_draft/);
+    // The one instruction that keeps a correction from becoming a rewrite.
+    assert.match(_internal.SYSTEM, /Only what they actually said/i);
+    assert.match(_internal.SYSTEM, /"no make it 400k" is not a rejection/i);
+  });
+
+  it("converts what it returns, rather than trusting it", async () => {
+    const { impl } = stub(
+      toolUse({
+        intent: "correct_draft",
+        confidence: 0.95,
+        correction: { description: "photography", amount: "400k", due_date: "oct 1st" },
+      }),
+    );
+    const out = await parseMessage("correct the work, it is photography and 400k due oct 1st", {
+      today: TODAY,
+      fetchImpl: impl,
+      onScreen: DRAFT,
+    });
+
+    assert.ok(out.ok);
+    assert.equal(out.parsed.correction?.description, "photography");
+    // Kobo we worked out from "400k", and a date we worked out from "oct 1st".
+    assert.equal(out.parsed.correction?.totalKobo, 400_000_00);
+    assert.deepEqual(out.parsed.correction?.dueDate, { y: 2026, m: 10, d: 1 });
+  });
+
+  it("drops an amount it cannot read instead of guessing at one", async () => {
+    // The same rule as everywhere else here: a number nobody can check is
+    // worse than a question.
+    const { impl } = stub(
+      toolUse({
+        intent: "correct_draft",
+        confidence: 0.9,
+        correction: { amount: "a bit more", description: "photography" },
+      }),
+    );
+    const out = await parseMessage("make it a bit more", {
+      today: TODAY,
+      fetchImpl: impl,
+      onScreen: DRAFT,
+    });
+
+    assert.ok(out.ok);
+    assert.equal(out.parsed.correction?.totalKobo, undefined);
+    assert.equal(out.parsed.correction?.description, "photography");
+  });
+
+  it("moves nothing the message did not mention", async () => {
+    /*
+     * The failure this guards is the expensive one. A correction about the
+     * price that also quietly carries a date changes an invoice in a way
+     * nobody reads back, because the summary looks the same either way.
+     */
+    const { impl } = stub(
+      toolUse({ intent: "correct_draft", confidence: 0.9, correction: { amount: "400k" } }),
+    );
+    const out = await parseMessage("make it 400k", {
+      today: TODAY,
+      fetchImpl: impl,
+      onScreen: DRAFT,
+    });
+
+    assert.ok(out.ok);
+    assert.deepEqual(Object.keys(out.parsed.correction ?? {}), ["totalKobo"]);
+  });
+
+  it("is null when the model fills nothing in", async () => {
+    const { impl } = stub(toolUse({ intent: "correct_draft", confidence: 0.4, correction: {} }));
+    const out = await parseMessage("hmm", { today: TODAY, fetchImpl: impl, onScreen: DRAFT });
+
+    assert.ok(out.ok);
+    assert.equal(out.parsed.correction, null);
+  });
+
+  it("keeps a deposit and instalments from both landing on one draft", async () => {
+    // Two answers to one question. `shapeFor` prefers the deposit, so a
+    // leftover one beats the split that was just asked for.
+    const { impl } = stub(
+      toolUse({
+        intent: "correct_draft",
+        confidence: 0.9,
+        correction: { instalments: 3, deposit_percent: null },
+      }),
+    );
+    const out = await parseMessage("split it into three", {
+      today: TODAY,
+      fetchImpl: impl,
+      onScreen: DRAFT,
+    });
+
+    assert.ok(out.ok);
+    assert.equal(out.parsed.correction?.instalments, 3);
+    assert.equal(out.parsed.correction?.depositPercent, null, "the deposit is cleared, not left");
+  });
+
+  it("takes things off the draft when asked to", async () => {
+    const { impl } = stub(
+      toolUse({ intent: "correct_draft", confidence: 0.9, correction: { clear: ["vat"] } }),
+    );
+    const out = await parseMessage("take the vat off", {
+      today: TODAY,
+      fetchImpl: impl,
+      onScreen: DRAFT,
+    });
+
+    assert.ok(out.ok);
+    assert.equal(out.parsed.correction?.vatPercent, null);
+  });
+});
+
+describe("what a message pays for", () => {
+  /*
+   * A schema is prompt, and prompt is money. The balance behind this is small
+   * enough that it is measured in messages: roughly 1,300 parses at the time
+   * of writing, and every one that cannot be read is a person told "I did not
+   * catch that".
+   *
+   * So the correction rules and the correction schema — about 450 tokens
+   * together — go out only on the messages that can use them, which are
+   * replies to a draft. Everything else is billed as it was before.
+   */
+  it("does not send the correction rules when there is no draft", async () => {
+    const { impl, calls } = stub(toolUse(GOOD));
+    await parseWithModel("invoice Tunde 20k for logo", TODAY, impl);
+
+    const body = calls[0]!.body;
+    assert.ok(!String(body.system).includes("<draft>"), "the draft rules went out anyway");
+    assert.equal(
+      body.tools[0].input_schema.properties.correction,
+      undefined,
+      "the correction schema went out anyway",
+    );
+    // The intent stays on the list either way: the enum is one line, and a
+    // model that returns it without a draft is handled by the parser.
+    assert.match(body.system, /correct_draft/);
+  });
+
+  it("sends them when there is one", async () => {
+    const { impl, calls } = stub(toolUse(GOOD));
+    await parseWithModel("make it 400k", TODAY, impl, "kind: invoice\nclient: Daniel");
+
+    const body = calls[0]!.body;
+    assert.match(String(body.system), /<draft> block appears/);
+    assert.ok(body.tools[0].input_schema.properties.correction, "no correction schema");
+  });
+});

@@ -16,6 +16,9 @@ import { z } from "zod";
 import { parseAmountToKobo } from "../../core/amount.ts";
 import { formatISO, resolveDueDate, type Civil } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
+// Type only: `corrections.ts` reaches back into this file's neighbours, and a
+// value import here would close the ring.
+import type { Correction } from "./corrections.ts";
 
 export const INTENTS = [
   "create_invoice",
@@ -40,6 +43,16 @@ export const INTENTS = [
   "help",
   "confirm",
   "reject",
+  /**
+   * A change to the draft that is on screen right now.
+   *
+   * Only offered to the model when there is one, and only reached when the
+   * deterministic reader in `corrections.ts` could not do it for free. That
+   * reader knows five shapes and people write in more than five: "correct the
+   * work, it is photography" was answered with "I did not catch that", which
+   * is the bot asking somebody to guess the phrasing it wants.
+   */
+  "correct_draft",
   /**
    * Somebody being a person: "thank you", "good morning", "this is nice".
    *
@@ -85,6 +98,35 @@ export const rawLineItem = z.object({
   unit_amount: z.string().trim().min(1).max(40).nullish().transform((v) => v ?? null),
 });
 
+/**
+ * A change to the draft on screen, in the model's words.
+ *
+ * Same discipline as everything else here: the amount comes back as it was
+ * written and the date comes back as a phrase, and both are converted below.
+ * A model that returns 40000000 has done arithmetic nobody can test.
+ *
+ * Every field is "leave this alone" when it is null, which is why removing
+ * something needs its own list — "no VAT" and "say nothing about VAT" are
+ * different instructions and JSON has one null for both.
+ */
+export const rawCorrection = z.object({
+  amount: z.string().trim().min(1).max(40).nullish().transform((v) => v ?? null),
+  due_date: z.string().trim().min(1).max(60).nullish().transform((v) => v ?? null),
+  client_name: z.string().trim().min(1).max(200).nullish().transform((v) => v ?? null),
+  description: z.string().trim().min(1).max(200).nullish().transform((v) => v ?? null),
+  vat_percent: z.number().min(0).max(100).nullish().transform((v) => v ?? null),
+  deposit_percent: z.number().min(1).max(100).nullish().transform((v) => v ?? null),
+  instalments: z.number().int().min(2).max(12).nullish().transform((v) => v ?? null),
+  pass_fees_to_client: z.boolean().nullish().transform((v) => v ?? null),
+  clear: z
+    .array(z.enum(["vat", "deposit", "instalments"]))
+    .max(3)
+    .nullish()
+    .transform((v) => v ?? []),
+});
+
+export type RawCorrection = z.infer<typeof rawCorrection>;
+
 export const rawParse = z.object({
   intent: z.enum(INTENTS),
   client_name: nullableStr,
@@ -107,6 +149,8 @@ export const rawParse = z.object({
     })
     .nullish()
     .transform((v) => v ?? { deposit_percent: null, instalments: null, pass_fees_to_client: null, vat_percent: null, notes: null }),
+  /** Only ever set alongside `correct_draft`, and only when a draft exists. */
+  correction: rawCorrection.nullish().transform((v) => v ?? null),
   confidence: z.number().min(0).max(1),
 });
 
@@ -137,6 +181,14 @@ export type Parsed = {
     notes: string | null;
   };
   confidence: number;
+  /**
+   * A change to the draft on screen, when the message was one.
+   *
+   * The machine treats this exactly as it treats the free reader's output, so
+   * a correction the model read and a correction a regex read are the same
+   * thing by the time anything acts on them.
+   */
+  correction: Correction | null;
   /** Where it came from, for the parser log and for deciding what to trust. */
   source: "command" | "pattern" | "model";
   /**
@@ -218,9 +270,68 @@ export function normalise(raw: RawParse, today: Civil, source: Parsed["source"])
       notes: raw.options.notes,
     },
     confidence: raw.confidence,
+    /*
+     * Only with the intent that means it, so a correction cannot arrive
+     * attached to something else and quietly win. "now invoice Kemi 50k" is a
+     * new document even if the model also filled this in, and "no" is still a
+     * rejection.
+     */
+    correction: raw.intent === "correct_draft" ? asCorrection(raw.correction, today) : null,
     source,
     missing,
   };
+}
+
+/**
+ * The model's correction, turned into values.
+ *
+ * Nothing that will not convert survives: an amount that cannot be read is
+ * dropped rather than guessed at, and so is a date phrase that resolves to
+ * nothing. A correction with nothing left in it is null, which sends the
+ * message down the "I did not catch that" road — the right end for a change
+ * nobody could read, and the wrong end only if we had invented something.
+ */
+function asCorrection(raw: RawCorrection | null, today: Civil): Correction | null {
+  if (!raw) return null;
+
+  const out: Correction = {};
+
+  const kobo = raw.amount === null ? null : parseAmountToKobo(raw.amount);
+  if (kobo !== null && kobo > 0) out.totalKobo = kobo;
+
+  const due = raw.due_date === null ? null : resolveDueDate(raw.due_date, today);
+  if (due) {
+    out.dueDate = due.date;
+    out.duePhrase = raw.due_date!;
+  }
+
+  if (raw.client_name) out.clientName = titleCaseName(raw.client_name);
+  if (raw.description) out.description = raw.description;
+  if (raw.vat_percent !== null) out.vatPercent = raw.vat_percent;
+  if (raw.pass_fees_to_client !== null) out.passFeesToClient = raw.pass_fees_to_client;
+
+  /*
+   * A deposit and instalments are two answers to one question, so asking for
+   * either clears the other. The same rule as the free reader, for the same
+   * reason: `shapeFor` prefers the deposit, so a leftover one would quietly
+   * beat the split somebody just asked for.
+   */
+  if (raw.deposit_percent !== null) {
+    out.depositPercent = raw.deposit_percent;
+    out.instalments = null;
+  } else if (raw.instalments !== null) {
+    out.instalments = raw.instalments;
+    out.depositPercent = null;
+  }
+
+  // Removals last: "50% deposit, and no VAT" is one message.
+  for (const field of raw.clear) {
+    if (field === "vat") out.vatPercent = null;
+    if (field === "deposit") out.depositPercent = null;
+    if (field === "instalments") out.instalments = null;
+  }
+
+  return Object.keys(out).length ? out : null;
 }
 
 /** Compact form for the parser log (PRD section 7, `parser_logs`). */

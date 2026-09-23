@@ -1767,6 +1767,44 @@ const totalOf = (doc: PendingDoc): number =>
     ? doc.lines.reduce((t, l) => t + l.unitAmountKobo * l.qty, 0)
     : (doc.totalKobo ?? 0);
 
+/**
+ * The draft on screen, for the parser to read alongside the reply.
+ *
+ * "correct the work, it is photography" is a sentence about nothing until you
+ * know what is in front of the person who typed it. This is that context, and
+ * only that: our own fields, out of our own store, written plainly.
+ *
+ * Deliberately not the summary the user sees. That one is formatted for a
+ * phone — bold runs, emoji, a question at the end — and none of it helps a
+ * parser, while the "Send it?" at the bottom is the sort of thing a model
+ * reads as an instruction. The date goes in as ISO because this is the one
+ * reader that must never have to interpret "Thu, 1 Oct".
+ */
+export function draftOnScreen(doc: PendingDoc): string {
+  const total = totalOf(doc);
+  const work =
+    doc.lines.length === 1
+      ? doc.lines[0]!.description
+      : doc.lines.length
+        ? `${doc.lines.length} items`
+        : null;
+
+  return [
+    `kind: ${doc.type}`,
+    doc.clientName ? `client: ${doc.clientName}` : null,
+    work ? `item: ${work}` : null,
+    total ? `amount: ${formatNaira(total)}` : null,
+    doc.dueDate ? `due: ${doc.dueDate.y}-${pad(doc.dueDate.m)}-${pad(doc.dueDate.d)}` : null,
+    doc.vatPercent ? `vat: ${doc.vatPercent}%` : null,
+    doc.depositPercent ? `deposit: ${doc.depositPercent}%` : null,
+    doc.instalments ? `instalments: ${doc.instalments}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+const pad = (n: number): string => String(n).padStart(2, "0");
+
 /** Kept local rather than imported, so the machine stays free of side effects. */
 function addDaysTo(c: Civil, days: number): Civil {
   const at = new Date(Date.UTC(c.y, c.m - 1, c.d) + days * 86_400_000);

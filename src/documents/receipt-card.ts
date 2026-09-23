@@ -27,6 +27,8 @@
 import type { FastifyBaseLogger } from "fastify";
 
 import { formatFriendly, type Civil } from "../../core/dates.ts";
+import { logoAvailable, logoSvg } from "../brand/logo.ts";
+import { fontFaces, FONT } from "../pdf/fonts.ts";
 import { renderPng } from "../pdf/chrome.ts";
 import { uploadDocument } from "../whatsapp/client.ts";
 import { formatNaira } from "../../core/totals.ts";
@@ -81,6 +83,11 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
 
   return `<!doctype html>
 <html><head><meta charset="utf-8"><style>
+  /* The faces travel with the render. A PNG is drawn from HTML with no
+     origin and no network, so a linked stylesheet would simply not resolve
+     and the card would come back in whatever the container happens to have —
+     which, in this image, is DejaVu. */
+  ${fontFaces(["display"])}
   :root {
     --ink:#10231c; --cream:#f6f1e7; --sand:#e9e1d0; --sand-2:#ddd3bf; --moss:#3f8f5f;
   }
@@ -88,7 +95,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
   html, body { width:${CARD}px; height:${CARD}px; overflow:hidden; }
   body {
     background:var(--cream); color:var(--ink);
-    font-family:"Segoe UI", -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    font-family:${FONT.display};
     font-size:34px; line-height:1.45;
     display:flex; align-items:center; justify-content:center; padding:52px;
   }
@@ -102,6 +109,14 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
           50% / var(--tooth) 100%;
     box-shadow:0 26px 60px -40px rgb(16 35 28 / 0.45);
   }
+
+  /* The logo is inlined as SVG markup rather than linked, so it cannot be a
+     request that fails mid-render. This only styles what is already there;
+     if the asset is missing the wordmark is set in type instead. */
+  .mark { display:flex; justify-content:center; margin-bottom:36px; }
+  .mark svg { height:64px; width:auto; display:block; }
+  .mark .word { font-size:44px; font-weight:800; letter-spacing:-0.03em; }
+  .mark .word i { font-style:normal; color:var(--moss); }
 
   h1 { font-size:46px; font-weight:800; letter-spacing:-0.02em; text-align:center; }
   .sub { margin-top:10px; text-align:center; font-size:29px; color:rgb(16 35 28 / 0.5); }
@@ -127,8 +142,12 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
 </style></head>
 <body>
   <div class="paper">
-    <h1>${quote ? "Quote" : "Invoice"} for ${esc(draft.clientName)}</h1>
-    <p class="sub">${esc(line)}</p>
+    <div class="mark">${
+      logoAvailable() ? logoSvg("64px") : `<span class="word">bala<i>n</i>s</span>`
+    }</div>
+
+    <h1>${quote ? "Quote" : "Invoice"} Payment Breakdown</h1>
+    <p class="sub">For ${esc(draft.clientName)} · ${esc(line)}</p>
 
     <div class="band">
       <div class="cap">${quote ? "Quote" : "Invoice"} amount</div>

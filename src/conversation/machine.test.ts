@@ -496,6 +496,7 @@ const NOW: Civil = { y: 2026, m: 9, d: 23 };
 function parse(over: Partial<Parsed>): Parsed {
   return {
     intent: "create_invoice",
+    correction: null,
     clientName: "Tunde",
     clientEmail: null,
     lineItems: [{ description: "logo design", qty: 1, unitAmountKobo: 20_000_00 }],

@@ -43,7 +43,18 @@ const FACES = {
     { family: "Instrument Sans", weight: 600, style: "normal", file: "InstrumentSans-SemiBold.ttf" },
     { family: "Instrument Sans", weight: 700, style: "normal", file: "InstrumentSans-Bold.ttf" },
   ],
+  /*
+   * Geist carried only its two heavy weights while it was used for headlines
+   * and amounts alone. The draft receipt is set in Geist throughout, so the
+   * text weight is here too — without it, a request for 400 would be answered
+   * by the nearest face in the family, which is Bold, and every word on the
+   * card would have come out heavy.
+   *
+   * Nothing already drawn changes: every existing use of this stack asks for
+   * 700 or 800 explicitly.
+   */
   display: [
+    { family: "Geist", weight: 400, style: "normal", file: "Geist-Regular.ttf" },
     { family: "Geist", weight: 700, style: "normal", file: "Geist-Bold.ttf" },
     { family: "Geist", weight: 800, style: "normal", file: "Geist-ExtraBold.ttf" },
   ],

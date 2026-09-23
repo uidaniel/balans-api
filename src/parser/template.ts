@@ -95,6 +95,7 @@ export function readTemplate(
 
   const raw: RawParse = {
     intent: type,
+    correction: null,
     client_name: fields.client ?? null,
     // Optional, and the only field that buys something new: with it, F21
     // emails the invoice and the PDF straight to the client.

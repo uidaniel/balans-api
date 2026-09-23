@@ -83,7 +83,23 @@ const schema = z.object({
   /* -- Parser (section 14: model and confidence threshold) ----------------- */
   /** Absent is a supported state: commands and the pattern still work. */
   ANTHROPIC_API_KEY: z.string().optional(),
-  /** The architecture table asks for a small, cheap model with JSON output. */
+  /**
+   * The architecture table asks for a small, cheap model with JSON output.
+   *
+   * Haiku, and the reason is the credit balance rather than the design. On a
+   * parse of about 2,000 tokens in and 200 out, $4 of credit buys roughly
+   * 1,300 messages on Haiku, 440 on Sonnet and 88 on Opus. Running out is not
+   * a slower bot — it is a bot that cannot read a sentence at all, because
+   * the model is the last resort behind the command and pattern readers.
+   *
+   * The way to make parsing better without spending more is to give the model
+   * a better question, and that is what the draft block and the correction
+   * schema in `parser/model.ts` do: most of what looked like stupidity was a
+   * reply to "Send it?" arriving with no idea what was on screen.
+   *
+   * It is one environment variable when the credits are there:
+   *   PARSER_MODEL=claude-sonnet-5   in /opt/balans/.env, then restart.
+   */
   PARSER_MODEL: z.string().default("claude-haiku-4-5-20251001"),
   /** Below this, a document intent is treated as unknown rather than drafted. */
   PARSER_CONFIDENCE_MIN: z.coerce.number().min(0).max(1).default(0.7),

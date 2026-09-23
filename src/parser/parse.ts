@@ -36,12 +36,18 @@ const empty = (intent: RawParse["intent"], confidence: number): RawParse => ({
   due_date: null,
   document_number: null,
   options: { deposit_percent: null, instalments: null, pass_fees_to_client: null, vat_percent: null, notes: null },
+  correction: null,
   confidence,
 });
 
 export async function parseMessage(
   text: string,
-  opts: { today?: Civil; fetchImpl?: typeof fetch } = {},
+  /**
+   * `onScreen` is the draft the user is looking at, when there is one. It only
+   * reaches the model, and only so that a reply to "Send it?" can be read as
+   * the answer to a question rather than as a sentence out of nowhere.
+   */
+  opts: { today?: Civil; fetchImpl?: typeof fetch; onScreen?: string | null } = {},
 ): Promise<ParseOutcome> {
   const started = Date.now();
   const since = () => Date.now() - started;
@@ -73,7 +79,7 @@ export async function parseMessage(
   }
 
   /* 4. The model. ---------------------------------------------------------- */
-  const model = await parseWithModel(text, today, opts.fetchImpl);
+  const model = await parseWithModel(text, today, opts.fetchImpl, opts.onScreen ?? null);
   if (model.ok) {
     const parsed = recoverAmount(normalise(model.parse, today, "model"), text, today);
 
@@ -169,6 +175,7 @@ function recoverAmount(parsed: Parsed, text: string, today: Civil): Parsed {
         notes: parsed.options.notes,
       },
       confidence: parsed.confidence,
+      correction: null,
     },
     today,
     "model",

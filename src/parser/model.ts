@@ -75,6 +75,38 @@ const TOOL = {
           notes: { type: ["string", "null"] },
         },
       },
+      correction: {
+        type: ["object", "null"],
+        description:
+          'ONLY with intent "correct_draft", and only when a <draft> block is present. What the user wants changed about that draft, and nothing else — every field left null is a field they did not mention and which must not move.',
+        properties: {
+          amount: {
+            type: ["string", "null"],
+            description:
+              'The new TOTAL for the whole document, copied exactly as written: "400k", "1.2m". Never converted, never computed.',
+          },
+          due_date: {
+            type: ["string", "null"],
+            description: 'The new due date PHRASE, copied as written: "oct 1st", "next Friday".',
+          },
+          client_name: { type: ["string", "null"], description: "Who the document is for, if they are changing it." },
+          description: {
+            type: ["string", "null"],
+            description:
+              'The work being billed for, if they are changing it. "correct the work, it is photography" is description "photography".',
+          },
+          vat_percent: { type: ["number", "null"] },
+          deposit_percent: { type: ["number", "null"] },
+          instalments: { type: ["number", "null"], description: "The COUNT of equal payments, 2 to 12." },
+          pass_fees_to_client: { type: ["boolean", "null"] },
+          clear: {
+            type: ["array", "null"],
+            items: { type: "string", enum: ["vat", "deposit", "instalments"] },
+            description:
+              'What to take OFF the draft: "no VAT" is ["vat"], "forget the deposit" is ["deposit"]. Null means nothing is being removed, which is not the same as removing nothing.',
+          },
+        },
+      },
       confidence: {
         type: "number",
         description:
@@ -98,11 +130,43 @@ A payment split is either a deposit or a set of equal instalments, never both: "
 
 Nigerian usage you will see: "350k" is 350,000. "1.2m" is 1,200,000. "5h" is 500. Light Pidgin is normal — "abeg bill Tunde 20k for logo" is create_invoice for Tunde. "Who dey owe me" is debtors. "Na so" is confirm.
 
-Intents: create_invoice, create_quote, convert_quote, payment_request, status, debtors, summary, edit_document, cancel_document, resend_document, record_payment, settings, upgrade, referral, stop_reminders, templates, help, confirm, reject, social, unknown.
+Intents: create_invoice, create_quote, convert_quote, payment_request, status, debtors, summary, edit_document, correct_draft, cancel_document, resend_document, record_payment, settings, upgrade, referral, stop_reminders, templates, help, confirm, reject, social, unknown.
+
 
 "settings" means the user's own account: business name, payout bank, due days, closing the account. A question about how an invoice or an email LOOKS is "templates", not "settings". Anything you cannot place is "unknown" — guessing the nearest intent sends somebody into a menu that cannot answer them.
 
 "social" is somebody being a person and asking for nothing: thanks, a greeting, a compliment, saying goodnight. "Thank you", "good morning", "this is nice", "God bless you", "no wahala", "well done" (a greeting in Nigeria, not praise). It is not the same as "unknown": unknown asked for something this tool cannot do and is answered by saying what it does, and answering "thank you" that way reads as not having listened. If a message is a pleasantry AND a request — "thanks, now invoice Tunde 20k" — it is the request.`;
+
+/**
+ * The correction rules, sent only when there is a draft to correct.
+ *
+ * Kept out of the standing prompt because most messages are not replies to a
+ * draft, and every message pays for every token of instruction it is given.
+ * About 200 tokens, on a balance that buys roughly 1,300 parses.
+ */
+const DRAFT_RULES = `
+
+When a <draft> block appears, a draft is on the user's screen and they have just been asked "Send it?". Almost anything they type there is about that draft, and the intent is "correct_draft" with the correction object filled in. Read it the way a person would:
+
+- "correct the work, it is photography" changes the description to "photography".
+- "no make it 400k" is not a rejection. The "no" agrees that the draft is wrong; the change is the amount.
+- "for Tunde instead", "wrong client, Kemi" change client_name.
+- "add vat", "50% upfront", "split into 3" change the options. "no vat" goes in clear.
+- Only what they actually said. A message about the price says nothing about the date, and a date that moves on its own is a bug somebody finds after the invoice is sent.
+
+Still not corrections, even with a draft on screen: a whole new document ("now invoice Kemi 50k"), a plain yes or no, and anything about a different invoice or about the account. Those keep their own intents, and "reject" stays reject.`;
+
+/**
+ * The tool, with the correction fields only when they can be used.
+ *
+ * Same reason as `DRAFT_RULES`: a schema is prompt, and a message with no
+ * draft behind it should not pay to be told how to correct one.
+ */
+function toolFor(onScreen: string | null) {
+  if (onScreen) return TOOL;
+  const { correction: _unused, ...properties } = TOOL.input_schema.properties;
+  return { ...TOOL, input_schema: { ...TOOL.input_schema, properties } };
+}
 
 export type ModelResult =
   | { ok: true; parse: RawParse; latencyMs: number; model: string }
@@ -112,6 +176,17 @@ export async function parseWithModel(
   text: string,
   today: Civil,
   fetchImpl: typeof fetch = fetch,
+  /**
+   * The draft on screen, if there is one, as the user can see it.
+   *
+   * Without it "it is photography" is a sentence about nothing. With it the
+   * model knows what "it" is, and that the reply it is reading is an answer to
+   * "Send it?" rather than the opening of a conversation. It is context and
+   * never instruction — the same tagged-block rule applies to it as to the
+   * message, and it is built by us from our own database rather than echoed
+   * back from anything the user typed at us.
+   */
+  onScreen: string | null = null,
 ): Promise<ModelResult> {
   const started = Date.now();
   const since = () => Date.now() - started;
@@ -121,7 +196,7 @@ export async function parseWithModel(
   // The date goes in as a fact the model may need for context, never as
   // something to compute with. Rule 2 above still stands.
   const prompt = `Today is ${formatISO(today)} in Lagos.
-
+${onScreen ? `\n<draft>\n${onScreen}\n</draft>\n` : ""}
 <message>
 ${text}
 </message>
@@ -140,8 +215,8 @@ Label the message above.`;
       body: JSON.stringify({
         model: env.PARSER_MODEL,
         max_tokens: 1024,
-        system: SYSTEM,
-        tools: [TOOL],
+        system: onScreen ? SYSTEM + DRAFT_RULES : SYSTEM,
+        tools: [toolFor(onScreen)],
         // Forced, so there is always exactly one tool call and never prose.
         tool_choice: { type: "tool", name: TOOL.name },
         messages: [{ role: "user", content: prompt }],
@@ -173,4 +248,4 @@ Label the message above.`;
 }
 
 /** Exported for the prompt test: the rules must survive a refactor. */
-export const _internal = { SYSTEM, TOOL };
+export const _internal = { SYSTEM: SYSTEM + DRAFT_RULES, TOOL, toolFor };

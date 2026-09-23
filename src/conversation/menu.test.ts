@@ -72,6 +72,7 @@ describe("everything that offers the menu offers the tappable one", () => {
   /** What the parser hands over for "/" and the other help commands. */
   const helpParse: Parsed = {
     intent: "help",
+    correction: null,
     clientName: null,
     clientEmail: null,
     lineItems: [],

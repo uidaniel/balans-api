@@ -205,6 +205,7 @@ export function extractDocument(text: string, today: Civil): Parsed | null {
 
   const raw: RawParse = {
     intent,
+    correction: null,
     client_name: clientName,
     client_email: null,
     line_items: description ? [{ description, qty: 1, unit_amount: amount.raw }] : [],

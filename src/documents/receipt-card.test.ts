@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 
 import { receiptHtml, CARD } from "./receipt-card.ts";
 import { payout } from "./summary.ts";
+import { fontFaces } from "../pdf/fonts.ts";
 import type { Draft } from "./store.ts";
 
 const N = (naira: number) => naira * 100;
@@ -100,6 +101,45 @@ describe("what the receipt says", () => {
     const html = receiptHtml(draft({ clientName: '<img src=x onerror="alert(1)">' }), "free", today);
     assert.ok(!html.includes("<img src=x"), "a name is text, not markup");
     assert.match(html, /&lt;img/);
+  });
+
+  it("says what the card is, and still says who it is for", () => {
+    // The heading names the job the picture does. The client did not stop
+    // mattering, so the name moves to the line under it rather than off.
+    const html = receiptHtml(draft({}), "free", today);
+    assert.match(html, /<h1>Invoice Payment Breakdown<[/]h1>/);
+    assert.match(html, /For Daniel/);
+    assert.match(receiptHtml(draft({ type: "quote" }), "free", today), /<h1>Quote Payment Breakdown</);
+  });
+
+  it("carries the logo above the heading", () => {
+    const html = receiptHtml(draft({}), "free", today);
+    const mark = html.indexOf('class="mark"');
+    assert.ok(mark > -1, "the logo block is there");
+    assert.ok(mark < html.indexOf("<h1>"), "and it comes first");
+    // Inlined, never linked: a render has no network, so a logo that arrives
+    // as a second request is a logo that does not arrive.
+    assert.ok(!/<img[^>]+logo/i.test(html), "no fetch for the mark");
+  });
+
+  it("is set in the brand's own type, carried with the render", () => {
+    /*
+     * The whole point of embedding. Without the faces the card comes back in
+     * whatever the container has — DejaVu — which is the exact drift that
+     * made the PDFs stop looking like balans.ng.
+     */
+    const html = receiptHtml(draft({}), "free", today);
+    assert.match(html, /@font-face/);
+    assert.match(html, /font-family:"Geist"/);
+    assert.match(html, /data:font\/ttf;base64,/);
+    assert.match(html, /font-family:"Geist","Instrument Sans"/, "Geist leads the stack");
+  });
+
+  it("has a text weight to be set in, not just headline weights", () => {
+    // Geist carried only 700 and 800 while it was a headline face. Asking for
+    // 400 from a family with none would have been answered by Bold, and every
+    // word on the card would have come out heavy.
+    assert.match(fontFaces(["display"]), /font-weight:400/);
   });
 
   it("is square, so nothing has to guess how it will be cropped", () => {

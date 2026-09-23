@@ -26,6 +26,7 @@ import { markEmailVerified, setEmail, recordConsent, saveBankAccount, activateBa
 import type { Inbound } from "../whatsapp/inbound.ts";
 import {
   step,
+  draftOnScreen,
   VOICE,
   LIMIT_CARD,
   UPGRADE_CARD,
@@ -449,12 +450,36 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
    * The command check comes first of all, so "yes" and "no" are never mistaken
    * for a correction.
    */
-  const correction =
+  const typedCorrection =
     state === "awaiting_confirm" && !asCommand(text) ? readCorrection(text, today) : null;
 
   // Nothing left to work out: the correction is the whole message.
-  const needsParse = NEEDS_PARSE.has(state) && !correction;
-  const reading = needsParse ? await parseMessage(text, { today }) : null;
+  const needsParse = NEEDS_PARSE.has(state) && !typedCorrection;
+
+  /*
+   * The draft goes to the model with the message, whenever there is one.
+   *
+   * Without it, a reply to "Send it?" arrives as a sentence with no subject —
+   * "correct the work, it is photography" was answered with "I did not catch
+   * that", which is this product asking somebody to guess its phrasing. With
+   * it the model can say `correct_draft` and name the field, and the amounts
+   * and dates it returns are still strings that our own code converts.
+   */
+  const onScreen =
+    state === "awaiting_confirm" && saved.context.doc ? draftOnScreen(saved.context.doc) : null;
+  const reading = needsParse ? await parseMessage(text, { today, onScreen }) : null;
+
+  /*
+   * Read for free if possible, by the model if not.
+   *
+   * The two are the same shape by the time they get here, so the machine has
+   * one correction path and not two. The free reader still wins where it
+   * matched: it is instant, it costs nothing, and on the shapes it knows it is
+   * more reliable than a model is.
+   */
+  const correction =
+    typedCorrection ??
+    (state === "awaiting_confirm" && reading?.ok ? reading.parsed.correction : null);
 
   /*
    * Section 5: "A new command always wins over a pending question, so users
@@ -2400,6 +2425,7 @@ function addDaysTo(c: { y: number; m: number; d: number }, days: number) {
 function commandAsParsed(c: { intent: Parsed["intent"]; documentNumber?: number }): Parsed {
   return {
     intent: c.intent,
+    correction: null,
     clientName: null,
     clientEmail: null,
     lineItems: [],

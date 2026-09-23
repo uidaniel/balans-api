@@ -31,8 +31,26 @@ export type Correction = {
 /** Verbs that mean "replace this", not "add this". */
 const CHANGE = String.raw`(?:make it|change it to|change to|change|set it to|set to|it(?:'| i)?s|its|should be|update to|no,? )`;
 
-const AMOUNT_ONLY =
-  /^(?:make it|change it to|change to|set it to|set to|it should be|should be|no,?\s*)?\s*(?:₦|n|ngn)?\s?(\d[\d,]*(?:\.\d+)?\s?[hkm]?)\s*(?:instead|abeg|please|o)?$/i;
+/**
+ * The noise around a change, which carries no meaning of its own.
+ *
+ * Two shapes of it cost real money before they were read. "no make it 400k"
+ * is a correction and not a rejection — the "no" is agreeing that the draft
+ * is wrong — and it matched nothing at all, so the whole sentence went to the
+ * model to be guessed at. And "make it 400k and due 1 Oct" joins two
+ * corrections with a word: the date was taken off the end and the amount was
+ * left sitting behind an "and" that no rule could step over, so the draft came
+ * back with the new date and the old price. Half a correction is worse than
+ * none, because it looks applied.
+ */
+const FILLER = String.raw`(?:(?:no|nope|nah|ok|okay|abeg|please|pls|actually|and|also|plus|then|sorry)\b[,;]?\s*)*`;
+
+const CHANGE_VERB = String.raw`(?:make it|change it to|change to|set it to|set to|it should be|should be|update it to|update to)`;
+
+const AMOUNT_ONLY = new RegExp(
+  String.raw`^${FILLER}${CHANGE_VERB}?\s*${FILLER}(?:₦|n|ngn)?\s?(\d[\d,]*(?:\.\d+)?\s?[hkm]?)\s*(?:instead|abeg|please|o)?$`,
+  "i",
+);
 
 const AMOUNT_LABELLED =
   /(?:amount|total|price|it|cost)\s+(?:should be|is|to)\s+(?:₦|n|ngn)?\s?(\d[\d,]*(?:\.\d+)?\s?[hkm]?)\b/i;
@@ -43,7 +61,36 @@ const DUE_CHANGE = new RegExp(String.raw`\b(?:${CHANGE})\s*due\s*:?\s*(.+)$`, "i
 const CLIENT =
   /\b(?:(?:client|name|customer)\s+(?:should be|is|to)|it(?:'|’)?s for|for)\s+([A-Za-z][A-Za-z0-9 .'&-]{1,60})$/i;
 
-const DESCRIPTION = /\b(?:description|for|it(?:'|’)?s for|work|service)\s+(?:should be|is)\s+(.+)$/i;
+/**
+ * What people call the thing being billed for.
+ *
+ * "Item" is what the form asks for now; "work" is what it used to ask for and
+ * what most people type anyway. Both have to be read, and will have to keep
+ * being read long after the form settles on one word — nobody changes their
+ * vocabulary because a label changed.
+ */
+const WORK_FIELD = String.raw`(?:item|work|description|service|job|product|line)`;
+
+/**
+ * "correct the work, it is photography".
+ *
+ * A real message that came back as "I did not catch that". The old rule wanted
+ * the field name and the verb side by side — "work is photography" — and
+ * people do not write that way. Everything optional here is something that
+ * message had and the rule could not step over: a verb in front, an article,
+ * and a comma where the rule expected a space.
+ */
+const DESCRIPTION = new RegExp(
+  String.raw`\b(?:correct|change|fix|update|edit|make)?\s*(?:the\s+)?${WORK_FIELD}\s*[,;:-]?\s*` +
+    String.raw`(?:it(?:'|’)?s|it is|its|should be|shd be|is|to|as|=)\s+(.+)$`,
+  "i",
+);
+
+/** "item: photography" — a label and a value, with no verb between them. */
+const DESCRIPTION_LABELLED = new RegExp(String.raw`^(?:the\s+)?${WORK_FIELD}\s*[:=]\s*(.+)$`, "i");
+
+/** The old shape, kept because "for" and "it's for" are not field names. */
+const DESCRIPTION_FOR = /\b(?:for|it(?:'|’)?s for)\s+(?:should be|is)\s+(.+)$/i;
 
 const ADD_VAT = /\b(?:add|include|with|plus)\s+vat(?:\s*(?:at\s*)?(\d{1,2}(?:\.\d)?)\s*%)?/i;
 const NO_VAT = /\b(?:no|remove|without|drop|take off)\s+(?:the\s+)?vat\b/i;
@@ -77,7 +124,7 @@ export function readCorrection(text: string, today: Civil): Correction | null {
     if (resolved) {
       out.dueDate = resolved.date;
       out.duePhrase = dueMatch[1]!.trim();
-      rest = rest.slice(0, dueMatch.index).trim().replace(/[,;]+$/, "");
+      rest = tidy(rest.slice(0, dueMatch.index));
     }
   }
 
@@ -136,7 +183,7 @@ export function readCorrection(text: string, today: Civil): Correction | null {
     rest = rest.replace(PASS_FEES, "").trim();
   }
 
-  rest = rest.replace(/^[,;]\s*/, "").replace(/[,;]+$/, "").trim();
+  rest = tidy(rest);
 
   /* Then the amount, which is the change that matters most. ---------------- */
   const labelled = AMOUNT_LABELLED.exec(rest);
@@ -154,7 +201,8 @@ export function readCorrection(text: string, today: Civil): Correction | null {
 
   /* Whatever is left may name the client or the work. ---------------------- */
   if (rest) {
-    const described = DESCRIPTION.exec(rest);
+    const described =
+      DESCRIPTION_LABELLED.exec(rest) ?? DESCRIPTION.exec(rest) ?? DESCRIPTION_FOR.exec(rest);
     if (described) {
       const d = clean(described[1]!);
       if (d) out.description = d;
@@ -170,6 +218,20 @@ export function readCorrection(text: string, today: Civil): Correction | null {
 
   return Object.keys(out).length ? out : null;
 }
+
+/**
+ * Strips the joins and the punctuation a clause leaves behind.
+ *
+ * Every rule here works by cutting its own phrase out of the message, which
+ * leaves the word that joined it to the next one. A trailing "and" is enough
+ * to stop the amount rule matching, and the failure is silent.
+ */
+const tidy = (s: string): string =>
+  s
+    .replace(/^[\s,;]+|[\s,;]+$/g, "")
+    .replace(/^(?:and|also|plus|then)\b[,;]?\s*/i, "")
+    .replace(/[,;]?\s*\b(?:and|also|plus|then)$/i, "")
+    .trim();
 
 const clean = (s: string): string | null => {
   const t = s.trim().replace(/^["'“]|["'”]$/g, "").replace(/[,;:]+$/, "").trim();
