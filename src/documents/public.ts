@@ -179,7 +179,31 @@ export const payableLabel = (d: PublicDocument): string | null =>
 
 /** Whether the page should show a Pay button at all. */
 export function payable(d: PublicDocument): { ok: true } | { ok: false; why: string } {
-  if (d.type === "quote") return { ok: false, why: "quote" };
+  /*
+   * A quote says which kind of quote it is.
+   *
+   * This asked "is it a quote?" before it asked anything about its state, so
+   * every quote got the same answer and the page told the client to reply and
+   * accept it. That is wrong in three ways at once: an expired quote invites
+   * acceptance of a price that has lapsed, a cancelled one invites acceptance
+   * of something withdrawn, and a converted one invites acceptance of work
+   * that has already been invoiced — which is how a client accepts twice and
+   * a freelancer bills twice.
+   *
+   * None of them can be paid here either way, so this is about what the page
+   * says, not what it lets anybody do.
+   */
+  if (d.type === "quote") {
+    if (d.status === "cancelled") return { ok: false, why: "quote_cancelled" };
+    if (d.status === "expired") return { ok: false, why: "quote_expired" };
+    // "accepted" is the same story from the client's side: they have already
+    // said yes and the invoice is either here or coming.
+    if (d.status === "converted" || d.status === "accepted") {
+      return { ok: false, why: "quote_converted" };
+    }
+    return { ok: false, why: "quote" };
+  }
+
   if (d.type === "sample") return { ok: false, why: "sample" };
   if (d.status === "cancelled") return { ok: false, why: "cancelled" };
   if (d.status === "paid" || outstandingKobo(d) === 0) return { ok: false, why: "paid" };

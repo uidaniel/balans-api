@@ -148,6 +148,47 @@ export function askFor(missing: string, draft: { clientName?: string }): string 
 }
 
 /**
+ * The invoice a quote became, written for the client.
+ *
+ * Converting used to tell the user "Quote #1 is now Invoice #2" and stop
+ * there. The invoice row was written with status 'sent' and sent_at set —
+ * because from the product's point of view it had been issued — but nothing
+ * reached the client. No document, no link, no email. The user was left to
+ * work out that "resend invoice 2" was the way to actually send it, and the
+ * overdue sweep started counting down on a client who had never seen it.
+ *
+ * Built from the stored parts rather than from a draft, because by this point
+ * the parts are the truth: `convertQuote` copies them across and resets the
+ * first to payable. Re-deriving the schedule here could disagree with the
+ * rows the payment page is reading.
+ */
+export function convertedForward(
+  d: { number: number | null; clientName: string; totalKobo: number; dueDate: Civil | null },
+  parts: { label: string; amountKobo: number }[],
+  link: string,
+  today: Civil,
+): string {
+  const plan = parts.length
+    ? [
+        "Payment plan:",
+        ...parts.map(
+          (p, i) => `  \u00b7 ${p.label} \u2014 ${formatNaira(p.amountKobo)}${i === 0 ? " (due now)" : ""}`,
+        ),
+      ]
+    : [];
+
+  return para(
+    block(`\u2705 ${b("INVOICE")}`, [
+      row("Client", d.clientName),
+      row("Amount", b(formatNaira(d.totalKobo))),
+      d.dueDate && row("Due", formatFriendly(d.dueDate, today)),
+      ...plan,
+    ]),
+    lines("Click the link to pay:", link),
+  );
+}
+
+/**
  * What goes out once a document is confirmed (F6 step 4).
  *
  * One message, written for the *client*. It carries the PDF and says "click

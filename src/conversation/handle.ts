@@ -44,7 +44,13 @@ import { asCommand } from "../parser/commands.ts";
 import { resolveDueDate, todayIn, type Civil } from "../../core/dates.ts";
 import { defaults, env } from "../config.ts";
 import { confirmDraft, createDraft, discardDraft, getOpenDraft } from "../documents/store.ts";
-import { draftButtons, draftSummary, sentMessage } from "../documents/summary.ts";
+import {
+  draftButtons,
+  draftSummary,
+  sentMessage,
+  convertedForward,
+} from "../documents/summary.ts";
+import { partsFor } from "../documents/parts.ts";
 import { pickerUrlFor } from "../http/routes/templates.ts";
 import { clearLogo, saveLogo } from "../brand/user-logo.ts";
 import {
@@ -1629,7 +1635,66 @@ async function runEffects(
             if (!number) { extra.push(notFoundMessage({})); break; }
             const due = addDaysTo(ctx.today, defaults.behaviour.defaultDueDays);
             const done = await convertQuote(userId, number, due);
-            extra.push(done.ok ? convertedMessage(done.value) : cannotConvertMessage(number, done.why));
+            if (!done.ok) { extra.push(cannotConvertMessage(number, done.why)); break; }
+
+            extra.push(convertedMessage(done.value));
+
+            /*
+             * And then actually send it.
+             *
+             * Converting wrote an invoice with status 'sent' and sent_at set,
+             * and sent nothing. The client never saw it, the user was left to
+             * discover that "resend invoice 2" was how to issue their own
+             * invoice, and the overdue sweep began counting down on somebody
+             * who had never been billed.
+             *
+             * The same three things a confirmed draft does: the client's
+             * inbox, the PDF, and one message to forward.
+             */
+            const made = await findForResend(userId, done.value.invoiceNumber);
+            if (!made.ok) {
+              log.error(
+                { userId, invoice: done.value.invoiceNumber },
+                "converted a quote and could not find the invoice to send",
+              );
+              break;
+            }
+
+            const inv = made.value;
+            void emailDocumentToClient(inv.id, log).then((r) => {
+              if (!r.ok && r.why !== "no_client_email" && r.why !== "not_pro") {
+                log.error({ documentId: inv.id, why: r.why }, "client delivery failed");
+              }
+            });
+
+            const link = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/${inv.publicToken}`;
+            const forward = convertedForward(
+              {
+                number: inv.number,
+                clientName: inv.clientName,
+                totalKobo: inv.totalKobo,
+                dueDate: due,
+              },
+              await partsFor(inv.id),
+              link,
+              ctx.today,
+            );
+
+            const pdf = await renderDocumentPdf(inv.id, log);
+            if (pdf && ctx.phone) {
+              const up = await uploadDocument(pdf.bytes, pdf.filename);
+              if (up.ok) {
+                const sent = await sendDocument(ctx.phone, up.mediaId, pdf.filename, forward);
+                if (sent.ok) {
+                  await recordOutbound(userId, sent.waMessageId, "sent", { kind: "document" });
+                  break;
+                }
+              }
+            }
+
+            // No PDF or no upload: the link still works and is the part that
+            // matters, so it goes as words rather than not at all.
+            extra.push(forward);
             break;
           }
 

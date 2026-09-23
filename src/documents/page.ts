@@ -85,6 +85,8 @@ padding:11px 0;border-bottom:1px solid #f0ece3;font-size:14.5px}
 .part .who{color:#4a5d54}
 .part .amt{font-weight:650}
 .part.done .who,.part.done .amt{color:var(--moss)}
+.part.phead{border-bottom:0;padding-bottom:2px}
+.part.phead .who{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#7b8b83}
 .part .tag{font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;
 color:#8a9a92;margin-left:8px;font-weight:600}
 .trust{margin:24px 28px 0;padding:18px 20px;background:var(--cream);
@@ -362,18 +364,38 @@ function statusPill(doc: PublicDocument, today: Civil, overdue: boolean): string
 function partsBlock(doc: PublicDocument): string {
   if (!doc.parts.length) return "";
 
+  /*
+   * A quote is proposing these, not billing them.
+   *
+   * The tags said "Due now" and "Later" whatever the document was, so a
+   * quote read "Part 1 of 2 — DUE NOW — ₦100,000" a few centimetres above
+   * "This is a quote, not an invoice." Nothing is due on a quote: it is an
+   * offer, it cannot be paid, and the page refuses to take money for one.
+   * A client reading both either thinks they owe money today or thinks the
+   * document is broken, and neither is a good way to open a job.
+   *
+   * So a quote shows the same schedule with no tags on it. The figures are
+   * the point — what accepting would commit them to — and every word about
+   * timing on a quote would be a term nobody has agreed yet.
+   */
+  const quote = doc.type === "quote";
+
   const rows = doc.parts
     .map((p) => {
       const done = p.status === "paid";
-      const tag = done ? "Paid" : p.status === "payable" ? "Due now" : "Later";
-      return `<div class="part${done ? " done" : ""}">
-        <span class="who">${esc(p.label)}<span class="tag">${tag}</span></span>
+      const tag = quote ? "" : done ? "Paid" : p.status === "payable" ? "Due now" : "Later";
+      return `<div class="part${done && !quote ? " done" : ""}">
+        <span class="who">${esc(p.label)}${tag ? `<span class="tag">${tag}</span>` : ""}</span>
         <span class="amt">${formatNaira(p.amountKobo)}</span>
       </div>`;
     })
     .join("");
 
-  return `<div class="parts">${rows}</div>`;
+  // Named on a quote, because without the tags the rows need to say what they
+  // are. On an invoice the tags already do that.
+  const head = quote ? `<div class="part phead"><span class="who">Payment plan</span></div>` : "";
+
+  return `<div class="parts">${head}${rows}</div>`;
 }
 
 function payBlock(
@@ -407,6 +429,14 @@ function payBlock(
       return `<div class="banner cancelled">This ${LABEL[doc.type].toLowerCase()} was cancelled and cannot be paid.</div>`;
     case "quote":
       return `<div class="banner quote">This is a quote, not an invoice. Reply to ${esc(doc.businessName)} to accept it.</div>`;
+    case "quote_expired":
+      return `<div class="banner cancelled">This quote has expired. Contact ${esc(doc.businessName)} for an up-to-date price.</div>`;
+    case "quote_cancelled":
+      return `<div class="banner cancelled">This quote was withdrawn by ${esc(doc.businessName)}.</div>`;
+    case "quote_converted":
+      // Already accepted. Saying so is what stops somebody accepting twice,
+      // and the invoice reaches them by its own link.
+      return `<div class="banner quote">This quote has been accepted and invoiced. ${esc(doc.businessName)} will have sent you the invoice.</div>`;
     case "sample":
       return `<div class="banner quote">A sample, to show what a Balans invoice looks like.</div>`;
     default:
@@ -488,6 +518,32 @@ function transferBlock(doc: PublicDocument, t: TransferPanel, token: string): st
 function trustBlock(doc: PublicDocument): string {
   const mark = monnifyLogo();
 
+  /*
+   * A quote is not a payment, so it must not be described as one.
+   *
+   * This block said "Payments processed by Monnify" and "This payment
+   * settles directly to..." on every document, including a quote that
+   * cannot be paid at all. The disclosure itself still belongs — we are
+   * not a bank and hold nothing, and that is true whatever the document is
+   * — but the payment it describes has to be the conditional one.
+   */
+  /*
+   * Only a quote still open gets the conditional sentence.
+   *
+   * "If you accept this quote" on one that has expired, been withdrawn or
+   * already been invoiced invites the same acceptance the banner above just
+   * ruled out. A quote that is finished keeps the disclosure and drops the
+   * invitation, because the disclosure is true of every document and the
+   * invitation is true of one.
+   */
+  const quote = doc.type === "quote";
+  const open =
+    quote &&
+    doc.status !== "cancelled" &&
+    doc.status !== "expired" &&
+    doc.status !== "converted" &&
+    doc.status !== "accepted";
+
   return `<div class="trust">
     <div class="tline">
       <svg class="shield" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -496,12 +552,17 @@ function trustBlock(doc: PublicDocument): string {
         <path d="m5.6 8 1.7 1.7 3.1-3.3" stroke="currentColor" stroke-width="1.4"
               stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      <span>Payments processed by</span>
+      <span>${quote ? "Payments handled by" : "Payments processed by"}</span>
       ${mark ? `<img class="mlogo" src="${mark}" alt="Monnify" width="88" height="20">` : `<b>Monnify</b>`}
     </div>
     <p class="tsmall">
-      Balans is not a bank and does not hold your money. This payment settles
-      directly to the bank account of <b>${esc(doc.businessName)}</b>.
+      Balans is not a bank and does not hold your money.${
+        open
+          ? ` If you accept this quote, payment settles directly to the bank account of <b>${esc(doc.businessName)}</b>.`
+          : quote
+            ? ` Payments to <b>${esc(doc.businessName)}</b> settle directly to their own bank account.`
+            : ` This payment settles directly to the bank account of <b>${esc(doc.businessName)}</b>.`
+      }
     </p>
   </div>`;
 }
