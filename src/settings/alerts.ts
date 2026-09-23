@@ -18,7 +18,7 @@ import { env } from "../config.ts";
 import { b, lines, para } from "../whatsapp/format.ts";
 import { send } from "../whatsapp/outbound.ts";
 import { sendEmail } from "../email/send.ts";
-import { layout, paragraph } from "../email/layout.ts";
+import { layout, noteBlock, paragraph } from "../email/layout.ts";
 
 export type SecurityEvent = {
   userId: string;
@@ -59,14 +59,11 @@ export function alertEmail(
 ): { subject: string; html: string; text: string } {
   const what = e.what.charAt(0).toUpperCase() + e.what.slice(1);
 
-  const detail = e.detail
-    .map((d) => `<p style="margin:0 0 6px;font-size:15px;line-height:1.55;color:#40534a">${escapeHtml(d)}</p>`)
-    .join("");
-
+  // The heading already says what happened, so the block says when, and what
+  // the change actually was.
   const body = [
     paragraph(escapeHtml(businessName ? `Hello ${businessName},` : "Hello,")),
-    paragraph(`${escapeHtml(what)} at ${escapeHtml(when)}.`),
-    `<div style="margin:0 0 20px;padding:14px 16px;background:#f6f1e7;border-radius:10px">${detail}</div>`,
+    noteBlock([`${what} at ${when}.`, ...e.detail]),
     paragraph("If that was you, there is nothing to do."),
     paragraph(`<strong>If it was not you</strong>, ${escapeHtml(e.undoHint)}`),
   ].join("\n");
@@ -77,7 +74,8 @@ export function alertEmail(
       // The inbox preview is where this is first read, and often the only
       // place: it has to say what happened without being opened.
       preheader: `${what} at ${when}.`,
-      heading: "Security notice",
+      eyebrow: "Security",
+      heading: `${what}`,
       body,
     }),
     text: [

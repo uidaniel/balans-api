@@ -21,7 +21,7 @@ import { env } from "../config.ts";
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { sendEmail } from "./send.ts";
-import { layout, paragraph, button } from "./layout.ts";
+import { amount, layout, paragraph, button } from "./layout.ts";
 import { renderDocumentPdf } from "../documents/pdf.ts";
 
 export type DeliveryResult =
@@ -103,14 +103,16 @@ export async function emailDocumentToClient(
     : null;
   const dateWord = d.type === "quote" ? "Valid until" : "Due";
 
+  /* The amount is what the message is about, so it is stated once and set
+     large, the way the invoice itself states it — not buried in a sentence
+     the reader has to re-read to find it. */
   const body = [
     paragraph(`${esc(d.client_name)},`),
-    paragraph(
-      `${esc(business)} has sent you ${label.toLowerCase()} ${
-        d.number === null ? "" : `<strong>#${d.number}</strong> `
-      }for <strong>${formatNaira(d.total_kobo)}</strong>${
-        when ? `, ${dateWord.toLowerCase()} ${esc(formatFriendly(when))}` : ""
-      }.`,
+    paragraph(`${esc(business)} has sent you ${label.toLowerCase()}.`),
+    amount(
+      d.type === "quote" ? "Quoted" : "Amount due",
+      formatNaira(d.total_kobo),
+      when ? `${dateWord} ${formatFriendly(when)}` : undefined,
     ),
     d.notes ? paragraph(esc(d.notes), true) : "",
     link && d.type !== "quote" ? button(`Pay ${formatNaira(d.total_kobo)}`, link) : "",
@@ -138,6 +140,9 @@ export async function emailDocumentToClient(
           : `${label} #${d.number} from ${business} — ${formatNaira(d.total_kobo)}`,
       html: layout({
         preheader: `${formatNaira(d.total_kobo)}${when ? `, ${dateWord.toLowerCase()} ${formatFriendly(when)}` : ""}.`,
+        // Who it is from, over what it is: the two things a client checks
+        // before deciding whether this is a message they have to deal with.
+        eyebrow: business,
         heading: `${label}${d.number === null ? "" : ` #${d.number}`}`,
         body,
       }),

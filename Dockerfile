@@ -20,9 +20,10 @@ ENV NODE_ENV=production \
     # one.
     CHROME_PATH=/usr/bin/chromium
 
-# Chromium, plus fonts. The fonts are not optional: without them Chrome falls
-# back to a default that has no ₦, and every amount on every invoice renders as
-# a box. DejaVu carries it.
+# Chromium, plus fonts. The invoice layouts carry their own typefaces in
+# assets/fonts, but not the naira sign: neither Instrument Sans nor Geist has
+# ₦ (U+20A6), so it comes from the host and every amount on every invoice
+# renders as a box without one. DejaVu carries it.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         chromium \

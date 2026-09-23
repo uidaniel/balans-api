@@ -133,6 +133,32 @@ test("every layout", async (t) => {
       assert.ok(html.includes("&amp;"));
     });
 
+    await t.test(`${spec.name} carries its typefaces into the PDF`, () => {
+      // A PDF is rendered from HTML with no origin, so a font it links to is
+      // a font it does not get: the document would come out in whatever the
+      // host happens to have, which is the whole reason these are embedded.
+      const html = renderTemplate(spec.id, DOC)!;
+      assert.match(html, /@font-face/);
+      assert.match(html, /url\(data:font\/ttf;base64,/);
+      assert.doesNotMatch(html, /<link/i);
+    });
+
+    await t.test(`${spec.name} asks for them once when the picker shows it`, () => {
+      // Eight sheets on one page, each carrying 400KB of the same typefaces,
+      // is several megabytes over a phone connection to show eight files.
+      const html = renderTemplate(spec.id, DOC, { fonts: "link" })!;
+      assert.match(html, /<link rel="stylesheet" href="\/designs\/fonts\.css">/);
+      assert.doesNotMatch(html, /data:font/);
+    });
+
+    await t.test(`${spec.name} states the link and never an account number`, () => {
+      // A bank account on the document invites a transfer that skips the
+      // link, and with it the split, the receipt and the "paid" message.
+      const html = renderTemplate(spec.id, DOC)!;
+      assert.ok(html.includes("payment.balans.ng/i/abc123"), "the link is on it");
+      assert.doesNotMatch(html, /account number/i);
+    });
+
     await t.test(`${spec.name} drops the Balans line on Pro`, () => {
       const paid = renderTemplate(spec.id, { ...DOC, showMadeWith: false })!;
       assert.ok(!paid.includes("Made with Balans"));
@@ -189,6 +215,12 @@ test("the design picker", async (t) => {
   await t.test("confirms a choice in words, not just a highlight", () => {
     assert.ok(page("pro", "ledger", "ledger").includes("Saved."));
     assert.ok(!page("pro", "ledger").includes("Saved."));
+  });
+
+  await t.test("serves the typefaces rather than inlining them eight times", () => {
+    const html = page("pro");
+    assert.match(html, /<link rel="stylesheet" href="\/designs\/fonts\.css">/);
+    assert.doesNotMatch(html, /data:font/);
   });
 
   await t.test("keeps the page out of search results", () => {

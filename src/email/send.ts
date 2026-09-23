@@ -20,6 +20,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import { env } from "../config.ts";
 import { codeBlock, divider, layout, MARK_CID, paragraph } from "./layout.ts";
+import { esc } from "../documents/page.ts";
 import { markAttachment } from "./assets.ts";
 
 export type Email = {
@@ -174,11 +175,13 @@ export function verificationEmail(code: string, businessName?: string): Omit<Ema
 
     html: layout({
       preheader: `${code} is your code. It lasts 15 minutes.`,
+      eyebrow: "Balans account",
       heading: "Your verification code",
       body: [
         paragraph(
           businessName
-            ? `Here is the code to finish setting up ${businessName} on Balans.`
+            ? // Their own words, escaped: `paragraph` takes HTML.
+              `Here is the code to finish setting up ${esc(businessName)} on Balans.`
             : "Here is the code to finish setting up your Balans account.",
         ),
         codeBlock(code),

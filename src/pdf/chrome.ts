@@ -184,8 +184,16 @@ export async function renderPdf(html: string, size: PageSize = A4): Promise<Buff
 
     const attempt = async (): Promise<Buffer> => {
       await b.send("Page.setDocumentContent", { frameId: b.frameId, html });
-      // Long enough for layout and webfont fallback, short enough not to matter.
-      await sleep(120);
+      /*
+       * Long enough for layout and for the typefaces to decode.
+       *
+       * The sheets declare `font-display:block`, so text is invisible until
+       * its face is ready rather than being drawn in the fallback and
+       * swapped — a PDF is captured once and cannot be repainted. The faces
+       * are data URIs, so nothing is fetched and this is decode time alone,
+       * but it is the one thing between a correct document and a blank one.
+       */
+      await sleep(300);
       const res = await b.send("Page.printToPDF", {
         printBackground: true,
         paperWidth: size.widthInches,
@@ -241,7 +249,7 @@ export async function renderPng(html: string, width: number, height: number): Pr
         mobile: false,
       });
       await b.send("Page.setDocumentContent", { frameId: b.frameId, html });
-      await sleep(120);
+      await sleep(300);
       const res = await b.send("Page.captureScreenshot", {
         format: "png",
         clip: { x: 0, y: 0, width, height, scale: 1 },

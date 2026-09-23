@@ -16,6 +16,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import type { FastifyInstance } from "fastify";
 import { db } from "../../db/pool.ts";
 import { addDays, todayIn } from "../../../core/dates.ts";
@@ -24,6 +25,7 @@ import { esc } from "../../documents/page.ts";
 import { legalLines } from "../../documents/pdf.ts";
 import { logoDataUri } from "../../brand/user-logo.ts";
 import { renderDocumentHtml, type DocumentData } from "../../pdf/template.ts";
+import { FONT, FONT_FILES, fontStylesheet } from "../../pdf/fonts.ts";
 import { availableTo, renderTemplate, TEMPLATES, templateById } from "../../pdf/templates.ts";
 
 const HTML = "text/html; charset=utf-8";
@@ -159,12 +161,12 @@ const CSS = `
  */
 :root{--marigold:#f5b82e;--ink:#10231c;--cream:#f6f1e7;--sand:#e9e1d0;--sand2:#ddd3bf;--sc:.30}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--cream);color:var(--ink);
-font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+body{background:var(--cream);color:var(--ink);font-family:${FONT.sans};
 -webkit-font-smoothing:antialiased;line-height:1.5;padding:28px 16px 72px}
 .head{max-width:1000px;margin:0 auto 26px}
-.head h1{font-size:26px;letter-spacing:-.035em;font-weight:700}
-.head p{margin-top:6px;color:#5c6f66;font-size:15px}
+/* The page is set in the same two typefaces as the sheets it is offering. */
+.head h1{font-family:${FONT.display};font-size:27px;letter-spacing:-.035em;font-weight:800}
+.head p{margin-top:7px;color:#5c6f66;font-size:15px;max-width:52ch}
 .grid{max-width:1000px;margin:0 auto;display:grid;gap:18px;justify-content:center;
 grid-template-columns:repeat(auto-fill,calc(793.7px * var(--sc)))}
 .card{background:#fff;border:1px solid var(--sand2);border-radius:16px;overflow:hidden;
@@ -188,9 +190,10 @@ padding:2px 7px;border-radius:99px;background:var(--sand);color:#5c6f66}
 .tag.pro{background:var(--marigold);color:var(--ink)}
 .blurb{margin-top:5px;font-size:12.8px;color:#6b7d74;line-height:1.45;min-height:37px}
 form{margin-top:11px}
-button{width:100%;padding:10px;border:0;border-radius:10px;background:var(--ink);color:var(--cream);
-font-size:14px;font-weight:650;cursor:pointer;font-family:inherit}
-button:disabled{background:var(--sand);color:#8a9a92;cursor:default}
+/* A pill, as every button on balans.ng is. */
+button{width:100%;padding:11px;border:0;border-radius:999px;background:var(--ink);color:var(--cream);
+font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+button:disabled{background:var(--sand);color:#7d8d85;cursor:default}
 .locked{margin-top:11px;font-size:12.5px;color:#8a9a92;text-align:center;line-height:1.4}
 .done{max-width:1000px;margin:0 auto 20px;padding:13px 16px;border-radius:12px;
 background:#e4f2e9;color:#256b41;font-weight:600;font-size:14.5px}
@@ -220,7 +223,7 @@ background:#e4f2e9;color:#256b41;font-weight:600;font-size:14.5px}
   .tag{font-size:10px}
   .blurb{font-size:13.5px;margin-top:6px;min-height:0}
   form{margin-top:14px}
-  button{padding:14px;font-size:15.5px;border-radius:12px}
+  button{padding:14px;font-size:15.5px}
   .locked{margin-top:14px;font-size:13px}
   .done{font-size:14px;padding:12px 14px}
   .foot{margin-top:26px}
@@ -302,7 +305,12 @@ export function pickerPage(opts: {
           ? { ...opts.sample, logoDataUri: PLACEHOLDER_LOGO }
           : opts.sample;
 
-      const html = renderTemplate(t.id, sample) ?? renderDocumentHtml(sample);
+      /* `link` rather than embedded bytes: eight sheets on one page would
+         otherwise carry eight copies of 400KB of typefaces, over a phone
+         connection, to show the same eight files. */
+      const html =
+        renderTemplate(t.id, sample, { fonts: "link" }) ??
+        renderDocumentHtml(sample, { fonts: "link" });
       const locked = !mine.has(t.id);
       const on = t.id === chosen.id;
 
@@ -332,6 +340,7 @@ export function pickerPage(opts: {
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Invoice designs</title><meta name="robots" content="noindex,nofollow">
+<link rel="stylesheet" href="/designs/fonts.css">
 <style>${CSS}</style></head><body>
 ${saved ? `<div class="done">Saved. Your invoices now go out as ${esc(saved.name)}.</div>` : ""}
 <div class="head">
@@ -347,6 +356,33 @@ ${saved ? `<div class="done">Saved. Your invoices now go out as ${esc(saved.name
 /* -------------------------------------------------------------------------- */
 
 export async function templateRoutes(app: FastifyInstance): Promise<void> {
+  /*
+   * The typefaces, for the previews.
+   *
+   * A PDF carries them in the HTML because it is rendered with no origin to
+   * fetch from. This page has one, and eight sheets that would each carry
+   * their own copy otherwise. Both are immutable: a font file is replaced by
+   * adding another, never by editing this one.
+   */
+  app.get("/designs/fonts.css", async (_req, reply) =>
+    reply
+      .type("text/css; charset=utf-8")
+      .header("cache-control", "public, max-age=31536000, immutable")
+      .send(fontStylesheet()),
+  );
+
+  app.get<{ Params: { file: string } }>("/designs/fonts/:file", async (req, reply) => {
+    // A fixed map, never a path joined from the request: this one reaches the
+    // filesystem, and that is how a traversal bug gets written.
+    const file = FONT_FILES[req.params.file];
+    if (!file) return reply.status(404).send({ error: "not found" });
+
+    return reply
+      .type("font/ttf")
+      .header("cache-control", "public, max-age=31536000, immutable")
+      .send(await readFile(file));
+  });
+
   app.get<{ Params: { token: string }; Querystring: { saved?: string } }>(
     "/designs/:token",
     async (req, reply) => {
@@ -400,6 +436,7 @@ const notFound = (): string => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Not found</title><meta name="robots" content="noindex,nofollow">
+<link rel="stylesheet" href="/designs/fonts.css">
 <style>${CSS}</style></head><body>
 <div class="head"><h1>Nothing here</h1>
 <p>This link has expired, or it was never quite right. Reply <b>designs</b> on WhatsApp for a new one.</p></div>

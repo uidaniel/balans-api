@@ -1,19 +1,47 @@
 /**
- * The document template (PRD F20).
+ * The document template (PRD F20), and Classic, the layout it renders in.
  *
  * "One HTML template with variants for quote, invoice, receipt and sample."
  * One template, because the alternative is four that drift apart, and the
  * drift lands on the piece of paper somebody is being asked to pay.
  *
+ * Classic lives here rather than beside the other seven because it is also
+ * the fallback: a withdrawn or misspelled template id must still produce an
+ * invoice. Everything it is drawn from is in `kit.ts`, which is the port of
+ * the sheets on balans.ng — same rules, same sizes, same typefaces.
+ *
  * Everything is inline and nothing is fetched. A render that reaches out to a
  * CDN can hang, can fail, and tells that CDN which invoices are being made.
- * System fonts only: the document must look the same rendered on a laptop in
- * Lagos and in a container with no fonts installed.
  */
 
-import { formatFriendly, formatISO, type Civil } from "../../core/dates.ts";
-import { formatNaira } from "../../core/totals.ts";
+import { formatISO, type Civil } from "../../core/dates.ts";
 import { esc } from "../documents/page.ts";
+import {
+  biz,
+  bizMeta,
+  cap,
+  dueLabel,
+  field,
+  headlineAmount,
+  ink,
+  isReceipt,
+  items,
+  kind,
+  legal,
+  madeWith,
+  methodWords,
+  money,
+  INK,
+  MARIGOLD,
+  MARIGOLD_DEEP,
+  owedKobo,
+  party,
+  sheet,
+  shortUrl,
+  totals,
+  when,
+  type RenderOptions,
+} from "./kit.ts";
 
 export type Variant = "invoice" | "quote" | "receipt" | "sample";
 
@@ -53,225 +81,116 @@ export type DocumentData = {
   showMadeWith: boolean;
 };
 
-const TITLE: Record<Variant, string> = {
-  invoice: "INVOICE",
-  quote: "QUOTE",
-  receipt: "RECEIPT",
-  sample: "SAMPLE INVOICE",
-};
+/* -------------------------------------------------------------------------- */
+/* Classic                                                                    */
+/* -------------------------------------------------------------------------- */
 
-/* Brand tokens, matching the web app and the public page. Duplicated because
-   a PDF renders from a cold process with no shared stylesheet. */
+/**
+ * The layout everybody starts on: the business first, then the amount, stated
+ * early and in the one colour on the page.
+ *
+ * A marigold rule across the head and nothing else decorative. It is the
+ * design that has to work for a photographer, a caterer and a law firm, so it
+ * commits to nothing beyond being clear.
+ */
 const CSS = `
-@page { size: A4; margin: 0 }
-*{box-sizing:border-box;margin:0;padding:0}
-body{
-  font-family:"Segoe UI",-apple-system,"Helvetica Neue",Arial,sans-serif;
-  color:#10231c;background:#fff;
-  font-size:11pt;line-height:1.5;
-  -webkit-print-color-adjust:exact;print-color-adjust:exact;
-}
-.sheet{width:210mm;min-height:297mm;padding:18mm 16mm 14mm;position:relative;display:flex;flex-direction:column}
-.head{display:flex;justify-content:space-between;align-items:flex-start;gap:12mm}
-.brand{display:flex;align-items:center;gap:3mm}
-.logo{height:14mm;width:auto;max-width:48mm;object-fit:contain}
-.dot{width:3.6mm;height:3.6mm;border-radius:50%;background:#f5b82e;flex:none}
-.bizname{font-size:15pt;font-weight:700;letter-spacing:-.02em}
-.bizmeta{margin-top:2mm;font-size:9pt;color:#5c6f66;line-height:1.45}
-.title{text-align:right;flex:none}
-.kind{font-size:19pt;font-weight:700;letter-spacing:.06em;color:#10231c}
-.num{margin-top:1mm;font-size:11pt;color:#5c6f66}
-.dates{margin-top:3mm;font-size:9.5pt;color:#5c6f66;line-height:1.6}
-.dates b{color:#10231c;font-weight:600}
-.parties{margin-top:12mm;display:flex;gap:10mm}
-.party{flex:1}
-.label{font-size:8pt;letter-spacing:.1em;text-transform:uppercase;color:#8a9a92;font-weight:600}
-.party .who{margin-top:2mm;font-size:12pt;font-weight:600}
-.party .sub{margin-top:1mm;font-size:9.5pt;color:#5c6f66}
-table{width:100%;border-collapse:collapse;margin-top:10mm}
-thead th{
-  text-align:left;font-size:8pt;letter-spacing:.1em;text-transform:uppercase;
-  color:#8a9a92;font-weight:600;padding:0 0 2.5mm;border-bottom:.4mm solid #10231c;
-}
-th.r,td.r{text-align:right}
-th.c,td.c{text-align:center}
-tbody td{padding:3.5mm 0;border-bottom:.2mm solid #ece7dc;vertical-align:top;font-size:10.5pt}
-tbody td.desc{padding-right:8mm}
-.totals{margin-top:6mm;margin-left:auto;width:78mm}
-.trow{display:flex;justify-content:space-between;padding:1.6mm 0;font-size:10.5pt;color:#40534a}
-.trow.grand{
-  margin-top:2mm;padding-top:3mm;border-top:.5mm solid #10231c;
-  font-size:14pt;font-weight:700;color:#10231c;
-}
-.trow.paid{color:#3f8f5f}
-.paidstamp{
-  margin-top:8mm;display:inline-block;padding:2.5mm 6mm;border-radius:2mm;
-  background:#e4f2e9;color:#256b41;font-weight:700;font-size:11pt;letter-spacing:.02em;
-}
-.notes{margin-top:10mm;padding:5mm 6mm;background:#f6f1e7;border-radius:2mm;font-size:9.5pt;color:#40534a;white-space:pre-wrap}
-.paybox{margin-top:10mm;padding:6mm;border:.3mm solid #e9e1d0;border-radius:2mm}
-.paybox .label{margin-bottom:2mm}
-.paybox .url{font-size:10pt;color:#10231c;word-break:break-all}
-.foot{margin-top:auto;padding-top:12mm;font-size:7.8pt;color:#8a9a92;line-height:1.6}
-.foot .made{margin-top:2mm;color:#a0aea7}
-.watermark{
-  position:absolute;top:50%;left:50%;
-  transform:translate(-50%,-50%) rotate(-28deg);
-  font-size:74pt;font-weight:800;letter-spacing:.06em;
-  color:rgba(16,35,28,.07);white-space:nowrap;pointer-events:none;
-}
+.wrap{flex:1;display:flex;flex-direction:column;padding:1.5em 1.8em 1.4em}
+.brand-rule{height:.45em;flex:none;background:${MARIGOLD}}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:1em}
+.head .mail{margin-top:.4em;font-size:.6em;color:${ink(0.5)};
+overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.head .right{flex:none;text-align:right;font-size:.6em;line-height:1.55;color:${ink(0.5)}}
+.band{margin-top:1.4em;display:flex;align-items:flex-start;justify-content:space-between;gap:1em;
+border-top:1px solid ${ink(0.12)};padding-top:1em}
+.band .amt{margin-top:.2em;font-size:1.4em;line-height:1;font-weight:800;
+font-variant-numeric:tabular-nums;color:${MARIGOLD_DEEP}}
+.band .amt.off{color:${ink(0.75)}}
+.dates{margin-top:.9em;display:flex;justify-content:space-between;gap:1em;
+border-top:1px solid ${ink(0.12)};padding-top:.9em}
+.work{margin-top:1.3em}
+.terms{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:1em;padding-top:1.2em}
+.terms .thanks{font-size:.62em;font-weight:600}
+.terms .where{margin-top:.3em;font-size:.58em;color:${ink(0.45)};
+overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.terms .where b{font-weight:600;color:${INK}}
+.terms .mail{flex:none;font-size:.58em;color:${ink(0.4)}}
+.notes{margin-top:1.1em;font-size:.58em;line-height:1.6;color:${ink(0.6)};white-space:pre-wrap}
 `;
 
-export function renderDocumentHtml(d: DocumentData): string {
-  const isReceipt = d.variant === "receipt";
-  const owed = d.totalKobo - d.amountPaidKobo;
+export function renderDocumentHtml(d: DocumentData, opts: RenderOptions = {}): string {
+  const h = headlineAmount(d);
+  const receipt = isReceipt(d) && d.receipt ? d.receipt : null;
 
-  const rows = d.lines
-    .map(
-      (l) => `<tr>
-      <td class="desc">${esc(l.description)}</td>
-      <td class="c">${fmtQty(l.qty)}</td>
-      <td class="r">${formatNaira(l.unitAmountKobo)}</td>
-      <td class="r">${formatNaira(l.amountKobo)}</td>
-    </tr>`,
-    )
-    .join("");
+  /* The middle band: who it is for, which document this is, and the amount.
+     A client reading it on a phone should be able to stop after this line. */
+  const band = `<div class="band">
+    ${field("Billed to", party(d.clientName, d.clientEmail), "min0")}
+    ${
+      receipt
+        ? field("Receipt number", `#${receipt.number}`)
+        : d.number === null
+          ? ""
+          : field(`${kind(d)} number`, `#${d.number}`)
+    }
+    <div style="flex:none;text-align:right">
+      ${cap(`${h.label} (NGN)`)}
+      <p class="amt ${h.paid ? "off" : ""}">${money(h.amount)}</p>
+    </div>
+  </div>`;
 
-  const dateLabel = d.variant === "quote" ? "Valid until" : "Due";
+  /* The dates, and on a receipt how it was paid — the two questions somebody
+     puts an invoice in a folder to be able to answer later. */
+  const facts = [
+    d.issueDate ? field("Issue date", when(d.issueDate)) : "",
+    receipt
+      ? field("Paid on", when(receipt.paidOn))
+      : d.dueDate
+        ? field(dueLabel(d), when(d.dueDate))
+        : "",
+    receipt ? field("Payment", esc(methodWords(receipt.method))) : "",
+    receipt ? field("Reference", esc(receipt.reference)) : "",
+  ].filter(Boolean);
 
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><style>${CSS}</style></head>
-<body><div class="sheet">
-
-  ${d.variant === "sample" ? `<div class="watermark">SAMPLE</div>` : ""}
-
+  const body = `<div class="brand-rule"></div>
+<div class="wrap">
   <div class="head">
-    <div>
-      <div class="brand">
-        ${
-          /*
-           * The user's own logo, or nothing.
-           *
-           * Deliberately never ours. This invoice is from their business to
-           * their client, and a Balans coin beside their name reads as their
-           * mark — which it is not, and which would be the wrong claim on a
-           * document somebody is being asked to pay. Our name belongs in the
-           * footer, where it already is.
-           */
-          d.logoDataUri ? `<img class="logo" src="${d.logoDataUri}" alt="">` : ""
-        }
-        <span class="bizname">${esc(d.businessName)}</span>
-      </div>
-      <div class="bizmeta">
-        ${d.businessAddress ? `${esc(d.businessAddress)}<br>` : ""}
-        ${d.businessEmail ? `${esc(d.businessEmail)}<br>` : ""}
-        ${d.businessTin ? `TIN ${esc(d.businessTin)}` : ""}
-      </div>
+    <div class="min0">
+      ${biz(d)}
+      ${d.businessEmail ? `<p class="mail">${esc(d.businessEmail)}</p>` : ""}
     </div>
-    <div class="title">
-      <div class="kind">${TITLE[d.variant]}</div>
-      ${numberLine(d)}
-      <div class="dates">
-        ${d.issueDate ? `Issued <b>${formatFriendly(d.issueDate)}</b><br>` : ""}
-        ${
-          isReceipt && d.receipt
-            ? `Paid <b>${formatFriendly(d.receipt.paidOn)}</b>`
-            : d.dueDate
-              ? `${dateLabel} <b>${formatFriendly(d.dueDate)}</b>`
-              : ""
-        }
-      </div>
+    <div class="right">${bizMeta(d, ["address", "tin"])}</div>
+  </div>
+
+  ${band}
+
+  ${facts.length ? `<div class="dates">${facts.join("")}</div>` : ""}
+
+  <div class="work">
+    ${items(d)}
+    ${totals(d)}
+  </div>
+
+  ${d.notes ? `<p class="notes">${esc(d.notes)}</p>` : ""}
+
+  <div class="terms">
+    <div class="min0">
+      <p class="thanks">${receipt ? "Thank you for the payment." : "Thanks for the business."}</p>
+      ${
+        d.publicUrl && !isReceipt(d) && owedKobo(d) > 0
+          ? `<p class="where">Pay online at <b>${esc(shortUrl(d.publicUrl))}</b></p>`
+          : d.publicUrl
+            ? `<p class="where">See it any time at <b>${esc(shortUrl(d.publicUrl))}</b></p>`
+            : ""
+      }
     </div>
+    ${d.showMadeWith ? madeWith(d) : d.businessEmail ? `<p class="mail">${esc(d.businessEmail)}</p>` : ""}
   </div>
 
-  <div class="parties">
-    <div class="party">
-      <div class="label">${isReceipt ? "Received from" : "Billed to"}</div>
-      <div class="who">${esc(d.clientName)}</div>
-      ${d.clientEmail ? `<div class="sub">${esc(d.clientEmail)}</div>` : ""}
-    </div>
-    ${
-      isReceipt && d.receipt
-        ? `<div class="party">
-             <div class="label">Payment</div>
-             <div class="who">${esc(methodWords(d.receipt.method))}</div>
-             <div class="sub">Ref ${esc(d.receipt.reference)}</div>
-           </div>`
-        : ""
-    }
-  </div>
+  ${legal(d)}
+</div>`;
 
-  <table>
-    <thead><tr>
-      <th>Description</th><th class="c">Qty</th><th class="r">Rate</th><th class="r">Amount</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
-
-  <div class="totals">
-    ${
-      d.vatKobo > 0
-        ? `<div class="trow"><span>Subtotal</span><span>${formatNaira(d.subtotalKobo)}</span></div>
-           <div class="trow"><span>VAT${d.vatPercent ? ` ${d.vatPercent}%` : ""}</span><span>${formatNaira(d.vatKobo)}</span></div>`
-        : ""
-    }
-    <div class="trow grand"><span>${isReceipt ? "Paid" : "Total"}</span><span>${formatNaira(
-      isReceipt ? d.amountPaidKobo : d.totalKobo,
-    )}</span></div>
-    ${
-      !isReceipt && d.amountPaidKobo > 0
-        ? `<div class="trow paid"><span>Paid</span><span>&minus;${formatNaira(d.amountPaidKobo)}</span></div>
-           <div class="trow grand"><span>Balance</span><span>${formatNaira(owed)}</span></div>`
-        : ""
-    }
-  </div>
-
-  ${!isReceipt && owed <= 0 && d.totalKobo > 0 ? `<div class="paidstamp">PAID IN FULL</div>` : ""}
-  ${d.notes ? `<div class="notes">${esc(d.notes)}</div>` : ""}
-
-  ${
-    d.publicUrl && !isReceipt && d.variant !== "sample" && owed > 0
-      ? `<div class="paybox">
-           <div class="label">Pay online</div>
-           <div class="url">${esc(d.publicUrl)}</div>
-         </div>`
-      : ""
-  }
-
-  <div class="foot">
-    ${esc(d.legalLines[0])}<br>${esc(d.legalLines[1])}
-    ${d.showMadeWith ? `<div class="made">Made with Balans &middot; balans.ng</div>` : ""}
-  </div>
-
-</div></body></html>`;
-}
-
-function numberLine(d: DocumentData): string {
-  if (d.variant === "receipt" && d.receipt) {
-    return `<div class="num">No. ${d.receipt.number}${
-      d.number === null ? "" : ` &middot; for Invoice ${d.number}`
-    }</div>`;
-  }
-  return d.number === null ? "" : `<div class="num">No. ${d.number}</div>`;
-}
-
-/** "1", "2.5" — never "2.500", which looks like a price. */
-function fmtQty(qty: number): string {
-  return Number.isInteger(qty) ? String(qty) : String(Number(qty.toFixed(3)));
-}
-
-const METHOD_WORDS: Record<string, string> = {
-  CARD: "Card",
-  ACCOUNT_TRANSFER: "Bank transfer",
-  DIRECT_DEBIT: "Direct debit",
-  USSD: "USSD",
-  PHONE_NUMBER: "Phone number",
-  CASH: "Cash",
-};
-
-function methodWords(method: string | null): string {
-  if (!method) return "Online";
-  return METHOD_WORDS[method] ?? method.toLowerCase().replace(/_/g, " ");
+  // Classic lists the work in the wider Free table, whose rows are taller.
+  return sheet(d, opts, { css: CSS, body, rowEm: 1.6 });
 }
 
 /** The stable identity of a rendered document, for the snapshot (F20). */
