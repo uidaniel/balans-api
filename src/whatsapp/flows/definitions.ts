@@ -596,7 +596,10 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
     id: itemScreenId(word),
     title: o.title,
     terminal: false,
-    data: { ...carried, ...itemData(index) },
+    // Every starting number rides on every screen now. The form can be
+    // reached again after any item, so there is no longer a point in the
+    // journey where one of them is safely behind us.
+    data: { ...carried, ...itemData(0) },
     layout: {
       type: "SingleColumnLayout",
       children: [
@@ -634,30 +637,260 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
               "input-type": "number",
               "max-chars": 12,
             },
-            ...(next
-              ? [
-                  {
-                    type: "EmbeddedLink",
-                    text: "Add another item",
-                    "on-click-action": {
-                      name: "navigate",
-                      next: { type: "screen", name: itemScreenId(next) },
-                      payload: {
-                        ...carriedPayload,
-                        ...itemPayload(index),
-                        ...initPayload(index + 1),
-                      },
-                    },
-                  },
-                ]
-              : []),
+            {
+              /*
+               * Back to the form, not onwards to the terms.
+               *
+               * The chain used to run ITEM_TWO to ITEM_THREE to TERMS, which
+               * meant the only screen that ever knew about every item was the
+               * last one. Somebody who tapped back to check the client name
+               * landed on a screen holding none of them, and its Next threw
+               * them away without a word.
+               *
+               * Handing the item back instead makes the form the one place
+               * that holds the whole invoice. It lists what has been added
+               * and offers the next slot, so adding a third item is a tap
+               * from there rather than a chain nobody can leave.
+               */
+              type: "Footer",
+              label: "Save item",
+              "on-click-action": {
+                name: "navigate",
+                next: { type: "screen", name: "WORK_AGAIN" },
+                payload: {
+                  ...carriedPayload,
+                  ...itemPayload(index),
+                  ...initPayload(0),
+                  // A literal, because this is the screen that knows: saving
+                  // item three is what makes the invoice three items long.
+                  // The word, not the digit: a Switch case key that looks
+                  // like a number is refused on upload.
+                  item_count: word,
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * The main screen of the form, and the screen you come back to.
+ *
+ * Two instances of one builder. `again` is the copy the extra-item screens
+ * return to, and it exists because of something a user hit within an hour of
+ * the item screens going live: add a second item, tap back to check the
+ * client name, tap Next, and the second item is gone.
+ *
+ * That is not a slip, it is the shape. A Flow with no data endpoint has no
+ * memory across the back arrow — the earlier screen is restored with the
+ * data it was pushed with, which for this screen is no extra items at all.
+ * And a Footer's destination is fixed when the Flow is published, so Next
+ * cannot decide to visit item two only when there is one.
+ *
+ * So the item screens no longer carry on forwards. They hand their item back
+ * here, and this screen then holds every item, lists them, and sends them on.
+ * Nobody has to press back, and the screen somebody is looking at is the
+ * screen that knows everything.
+ *
+ * The one difference between the two copies is the Amount box. The first
+ * declares `amount` a number, so the phone opens a number pad on it; what
+ * comes back out of that box is a string and there is no cast in Flow JSON,
+ * so the copy that receives it declares a string and takes a text keyboard.
+ * The alternative was a text keyboard for everybody on the field they type
+ * most often, to spare the return trip a worse one.
+ */
+function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
+  /* Where "Add another item" goes, and everything it takes with it. */
+  const addLink = (target: string) => ({
+    type: "EmbeddedLink",
+    text: "Add another item",
+    "on-click-action": {
+      name: "navigate",
+      next: { type: "screen", name: target },
+      payload: {
+        client_name: "${form.client_name}",
+        client_email: "${form.client_email}",
+        description: "${form.description}",
+        amount: "${form.amount}",
+        due_date: "${form.due_date}",
+        plan: "${data.plan}",
+        notes: "${data.notes}",
+        vat: "${data.vat}",
+        pass_fees: "${data.pass_fees}",
+        ...itemPayload(null),
+        ...initPayload(0),
+      },
+    },
+  });
+
+  /** One saved item, read back to the person who typed it. */
+  const savedLine = (index: number) => {
+    const f = itemFields(EXTRA_ITEMS[index]!);
+    return {
+      type: "TextCaption",
+      text: `Item ${index + 2}: \${data.${f.description}} — ₦\${data.${f.amount}}`,
+    };
+  };
+
+  /*
+   * What has been added, and where the next one goes.
+   *
+   * A `Switch` rather than five slots behind `visible`: that property is
+   * accepted by Meta's validator and ignored on a handset, which is how four
+   * empty Item/Amount pairs once appeared under a one-line invoice. A Switch
+   * renders one branch, and the branch carries both the list and the link, so
+   * the two cannot disagree about how many items there are.
+   *
+   * Flow JSON has no default case, so every count is spelled out. One item
+   * never reaches this screen and five is the last of them.
+   *
+   * The cases are keyed by the item's word for the same reason the screens
+   * are. Meta's validator refuses a Switch whose case keys look like numbers,
+   * with "Cannot read property 'type' of undefined" and no line number —
+   * probed on 23 September 2026 against a throwaway Flow, one variant at a
+   * time, because the message says nothing about which key it choked on.
+   */
+  const cases: Record<string, unknown[]> = {};
+  EXTRA_ITEMS.forEach((_, index) => {
+    const shown: unknown[] = [];
+    for (let i = 0; i <= index; i++) shown.push(savedLine(i));
+    const next = EXTRA_ITEMS[index + 1];
+    shown.push(
+      next
+        ? addLink(itemScreenId(next))
+        : {
+            type: "TextCaption",
+            text: "Five items is the most this form takes. Send a sentence for a longer invoice.",
+          },
+    );
+    cases[EXTRA_ITEMS[index]!] = shown;
+  });
+
+  return {
+    id: again ? "WORK_AGAIN" : "WORK",
+    title: o.title,
+    terminal: false,
+    // Declared so a correction can open the form on what is already there.
+    data: {
+      client_name: { type: "string", __example__: "Daniel Uwak" },
+      client_email: { type: "string", __example__: "" },
+      description: { type: "string", __example__: "Website design" },
+      // A number on the way in, because the input is `input-type: "number"`
+      // and Meta checks the declared type against the field it initialises. A
+      // string on the way back, because that is what a form returns.
+      amount: again
+        ? { type: "string", __example__: "250000" }
+        : { type: "number", __example__: 250000 },
+      due_date: { type: "string", __example__: "" },
+      plan: { type: "string", __example__: "one" },
+      notes: { type: "string", __example__: "" },
+      vat: { type: "boolean", __example__: false },
+      pass_fees: { type: "boolean", __example__: false },
+      // How many items exist, as the string a Switch can match on.
+      ...(again ? { item_count: { type: "string", __example__: "two" } } : {}),
+      ...itemData(0),
+    },
+    layout: {
+      type: "SingleColumnLayout",
+      children: [
+        {
+          type: "TextSubheading",
+          text: again ? "Your invoice so far." : "Who it is for, and what it is for.",
+        },
+        {
+          type: "Form",
+          name: "work_form",
+          // Starting values belong to the form, not to each input: at 7.1
+          // `init-value` on a TextInput is rejected outright.
+          "init-values": {
+            client_name: "${data.client_name}",
+            client_email: "${data.client_email}",
+            description: "${data.description}",
+            amount: "${data.amount}",
+            due_date: "${data.due_date}",
+          },
+          children: [
+            {
+              type: "TextInput",
+              name: "client_name",
+              label: "Client",
+              required: true,
+              "input-type": "text",
+              "max-chars": 80,
+            },
+            {
+              type: "TextInput",
+              name: "client_email",
+              label: "Email",
+              "helper-text": "Optional. They get a copy by email too.",
+              required: false,
+              "input-type": "email",
+              "max-chars": 120,
+            },
+            {
+              type: "TextInput",
+              name: "description",
+              label: "Item",
+              "helper-text": "What you are billing for. This is the line they read.",
+              required: true,
+              "input-type": "text",
+              "max-chars": 100,
+            },
+            {
+              type: "TextInput",
+              name: "amount",
+              label: "Amount",
+              "helper-text": "Naira, before VAT. Digits only.",
+              required: true,
+              "input-type": again ? "text" : "number",
+              "max-chars": 12,
+            },
+            /*
+             * Straight after the first item's amount, because that is where
+             * somebody realises there is a second thing to bill for.
+             *
+             * A link rather than a checkbox, and a screen rather than a row,
+             * because Flow JSON has no repeater and nothing on a screen can
+             * add one. `update_data` is not an action at 7.1, so a control
+             * that changes what is on screen would need a data endpoint,
+             * which these Flows deliberately do not have.
+             */
+            ...(again
+              ? [{ type: "Switch", value: "${data.item_count}", cases }]
+              : [addLink(itemScreenId(EXTRA_ITEMS[0]!))]),
+            {
+              type: "TextInput",
+              name: "due_date",
+              label: o.dateLabel,
+              "helper-text": o.dateHelp,
+              required: false,
+              "input-type": "text",
+              "max-chars": 40,
+            },
             {
               type: "Footer",
               label: "Next",
               "on-click-action": {
                 name: "navigate",
                 next: { type: "screen", name: "TERMS" },
-                payload: { ...carriedPayload, ...itemPayload(index) },
+                payload: {
+                  client_name: "${form.client_name}",
+                  client_email: "${form.client_email}",
+                  description: "${form.description}",
+                  amount: "${form.amount}",
+                  // From `data`, not `form`: this screen holds the extra
+                  // items without collecting them, so a correction that
+                  // arrived with three lines keeps all three.
+                  ...itemPayload(null),
+                  due_date: "${form.due_date}",
+                  plan: "${data.plan}",
+                  notes: "${data.notes}",
+                  vat: "${data.vat}",
+                  pass_fees: "${data.pass_fees}",
+                },
               },
             },
           ],
@@ -675,156 +908,8 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
   json: {
     version: VERSION,
     screens: [
-      {
-        id: "WORK",
-        title: o.title,
-        terminal: false,
-        // Declared so a correction can open the form on what is already there.
-        data: {
-          client_name: { type: "string", __example__: "Daniel Uwak" },
-          client_email: { type: "string", __example__: "" },
-          description: { type: "string", __example__: "Website design" },
-          // A number, because the input is `input-type: "number"` and Meta
-          // checks the declared type against the field it initialises.
-          amount: { type: "number", __example__: 250000 },
-          due_date: { type: "string", __example__: "" },
-          plan: { type: "string", __example__: "one" },
-          notes: { type: "string", __example__: "" },
-          vat: { type: "boolean", __example__: false },
-          pass_fees: { type: "boolean", __example__: false },
-          ...itemData(0),
-        },
-        layout: {
-          type: "SingleColumnLayout",
-          children: [
-            {
-              type: "TextSubheading",
-              text: "Who it is for, and what it is for.",
-            },
-            {
-              type: "Form",
-              name: "work_form",
-              // Starting values belong to the form, not to each input: at 7.1
-              // `init-value` on a TextInput is rejected outright.
-              "init-values": {
-                client_name: "${data.client_name}",
-                client_email: "${data.client_email}",
-                description: "${data.description}",
-                amount: "${data.amount}",
-                due_date: "${data.due_date}",
-              },
-              children: [
-                {
-                  type: "TextInput",
-                  name: "client_name",
-                  label: "Client",
-                  required: true,
-                  "input-type": "text",
-                  "max-chars": 80,
-                },
-                {
-                  type: "TextInput",
-                  name: "client_email",
-                  label: "Email",
-                  "helper-text": "Optional. They get a copy by email too.",
-                  required: false,
-                  "input-type": "email",
-                  "max-chars": 120,
-                },
-                {
-                  type: "TextInput",
-                  name: "description",
-                  label: "Item",
-                  "helper-text": "What you are billing for. This is the line they read.",
-                  required: true,
-                  "input-type": "text",
-                  "max-chars": 100,
-                },
-                {
-                  type: "TextInput",
-                  name: "amount",
-                  label: "Amount",
-                  "helper-text": "Naira, before VAT. Digits only.",
-                  required: true,
-                  "input-type": "number",
-                  "max-chars": 12,
-                },
-                /*
-                 * Straight after the first item's amount, because that is
-                 * where somebody realises there is a second thing to bill for.
-                 *
-                 * A link rather than a checkbox, and a screen rather than a
-                 * row, because Flow JSON has no repeater and nothing on a
-                 * screen can add one. `update_data` is not an action at 7.1,
-                 * so a control that changes what is on screen would need a
-                 * data endpoint, which these Flows deliberately do not have.
-                 *
-                 * The first attempt was five slots on this screen, each
-                 * hidden behind `visible: "${form.add_two}"`. Meta's
-                 * validator accepts that; a phone ignores it, and every slot
-                 * showed at once — four empty Work/Amount pairs under an
-                 * invoice with one line on it. Navigation is the only thing
-                 * that reliably changes what is in front of somebody.
-                 */
-                {
-                  type: "EmbeddedLink",
-                  text: "Add another item",
-                  "on-click-action": {
-                    name: "navigate",
-                    next: { type: "screen", name: itemScreenId(EXTRA_ITEMS[0]) },
-                    payload: {
-                      client_name: "${form.client_name}",
-                      client_email: "${form.client_email}",
-                      description: "${form.description}",
-                      amount: "${form.amount}",
-                      due_date: "${form.due_date}",
-                      plan: "${data.plan}",
-                      notes: "${data.notes}",
-                      vat: "${data.vat}",
-                      pass_fees: "${data.pass_fees}",
-                      ...itemPayload(null),
-                      ...initPayload(0),
-                    },
-                  },
-                },
-                {
-                  type: "TextInput",
-                  name: "due_date",
-                  label: o.dateLabel,
-                  "helper-text": o.dateHelp,
-                  required: false,
-                  "input-type": "text",
-                  "max-chars": 40,
-                },
-                {
-                  type: "Footer",
-                  label: "Next",
-                  "on-click-action": {
-                    name: "navigate",
-                    next: { type: "screen", name: "TERMS" },
-                    payload: {
-                      client_name: "${form.client_name}",
-                      client_email: "${form.client_email}",
-                      description: "${form.description}",
-                      amount: "${form.amount}",
-                      // From `data`, not `form`: this screen no longer holds
-                      // the extra items, it only passes them through. A
-                      // correction that came in with three lines and left
-                      // this way keeps all three.
-                      ...itemPayload(null),
-                      due_date: "${form.due_date}",
-                      plan: "${data.plan}",
-                      notes: "${data.notes}",
-                      vat: "${data.vat}",
-                      pass_fees: "${data.pass_fees}",
-                    },
-                  },
-                },
-              ],
-            },
-          ],
-        },
-      },
+      workScreen(o, false),
+      workScreen(o, true),
       ...EXTRA_ITEMS.map((_, index) => itemScreen(index, o)),
       {
         id: "TERMS",

@@ -415,17 +415,37 @@ describe("line items on the document forms", () => {
          * Navigation is the only thing that reliably changes what is on a
          * screen without a data endpoint: `update_data` is not an action at
          * 7.1, probed against Meta on 23 September 2026.
+         *
+         * The first item is added from the form; every one after it from the
+         * form the item screens hand their work back to. So both copies of
+         * the form offer the link, and the item screens offer nothing but a
+         * way home.
          */
-        const chain = ["WORK", ...WORDS.map(SCREEN)];
-        for (let i = 0; i < WORDS.length; i++) {
-          const from = chain[i]!;
-          const link = links(from).find((n) => action(n).name === "navigate");
-          assert.ok(link, `${from} offers no way to add an item`);
-          assert.equal(link!.text, "Add another item");
-          assert.equal((action(link!).next as Node).name, SCREEN(WORDS[i]!));
-        }
-        // And the last one does not pretend there is a sixth.
-        assert.equal(links(SCREEN("five")).length, 0);
+        const first = links("WORK").find((n) => action(n).name === "navigate");
+        assert.ok(first, "the form offers no way to add an item");
+        assert.equal(first!.text, "Add another item");
+        assert.equal((action(first!).next as Node).name, SCREEN(WORDS[0]!));
+
+        // Coming back, where the link points depends on how many items there
+        // already are, which is the whole reason for the Switch.
+        const cases = (walk(screen("WORK_AGAIN")).find((n) => n.type === "Switch")!.cases ??
+          {}) as Record<string, Node[]>;
+
+        WORDS.forEach((_, index) => {
+          const branch = cases[WORDS[index]!];
+          assert.ok(branch, `no branch for ${index + 2} items`);
+          const link = branch!.find((n) => n.type === "EmbeddedLink");
+          const next = WORDS[index + 1];
+          if (next) {
+            assert.equal((action(link!).next as Node).name, SCREEN(next), `${index + 2} items`);
+          } else {
+            // And the last one does not pretend there is a sixth.
+            assert.equal(link, undefined, "a sixth item is offered");
+          }
+        });
+
+        // An item screen collects one item. Leaving it is the Footer's job.
+        for (const w of WORDS) assert.equal(links(SCREEN(w)).length, 0, `item ${w} has a link`);
       });
 
       it("never makes an item required", () => {
@@ -437,14 +457,50 @@ describe("line items on the document forms", () => {
         }
       });
 
-      it("lets every item screen finish the document", () => {
-        // The screen somebody taps Next on is how many items the invoice has,
-        // which is also what makes going back the remove.
-        for (const w of WORDS) {
+      it("hands every item back to the form rather than past it", () => {
+        /*
+         * The bug this replaced, found on a real phone within an hour of the
+         * item screens going live: add a second item, tap back to check the
+         * client name, tap Next, and the second item is gone.
+         *
+         * A Flow with no data endpoint has no memory across the back arrow \u2014
+         * the earlier screen is restored with the data it was pushed with \u2014
+         * and a Footer's destination is fixed at publish, so the form could
+         * neither remember the item nor route around it. Now every item screen
+         * returns to the form, and the form holds the lot.
+         */
+        WORDS.forEach((w, index) => {
           const f = footer(SCREEN(w));
           assert.equal(action(f).name, "navigate");
-          assert.equal((action(f).next as Node).name, "TERMS");
+          assert.equal((action(f).next as Node).name, "WORK_AGAIN", `item ${w}`);
+          // A literal, because this is the screen that knows: saving item
+          // three is what makes an invoice three items long.
+          assert.equal(payloadOf(f).item_count, w, `item ${w} miscounts`);
+        });
+
+        // And the form is the only thing that ends the first half.
+        for (const id of ["WORK", "WORK_AGAIN"]) {
+          assert.equal((action(footer(id)).next as Node).name, "TERMS", id);
         }
+      });
+
+      it("shows what has already been added", () => {
+        // The other half of the same complaint: somebody who added an item
+        // had no way to see it again. Each branch of the Switch reads back
+        // every item up to its own count.
+        const cases = (walk(screen("WORK_AGAIN")).find((n) => n.type === "Switch")!.cases ??
+          {}) as Record<string, Node[]>;
+
+        WORDS.forEach((_, index) => {
+          const text = (cases[WORDS[index]!] ?? [])
+            .filter((n) => n.type === "TextCaption")
+            .map((n) => String(n.text))
+            .join(" ");
+          for (let i = 0; i <= index; i++) {
+            assert.match(text, new RegExp(`item_${WORDS[i]}_description`), `${index + 2} items`);
+            assert.match(text, new RegExp(`item_${WORDS[i]}_amount`), `${index + 2} items`);
+          }
+        });
       });
 
       it("declares every amount a string except the one it fills", () => {
@@ -459,28 +515,29 @@ describe("line items on the document forms", () => {
          * the screen that needed it has been through.
          */
         for (const w of WORDS) {
-          for (const id of ["WORK", "TERMS", ...WORDS.map(SCREEN)]) {
+          for (const id of ["WORK", "WORK_AGAIN", "TERMS", ...WORDS.map(SCREEN)]) {
             const data = screen(id).data as Record<string, { type: string }>;
             assert.equal(data[`item_${w}_amount`]!.type, "string", `${id} item ${w}`);
           }
         }
 
-        WORDS.forEach((w, index) => {
+        for (const w of WORDS) {
           const own = screen(SCREEN(w)).data as Record<string, { type: string }>;
           assert.equal(own[`item_${w}_amount_init`]!.type, "number", `${SCREEN(w)} starts item ${w}`);
 
-          // Consumed, so not carried any further.
-          for (const spent of WORDS.slice(0, index)) {
-            const data = screen(SCREEN(w)).data as Record<string, unknown>;
-            assert.equal(
-              data[`item_${spent}_amount_init`],
-              undefined,
-              `${SCREEN(w)} still carries a start for ${spent}`,
-            );
+          /*
+           * Carried everywhere now, where they used to be dropped once spent.
+           * The form is reachable again after any item, so there is no longer
+           * a point in the journey where one of these is safely behind us.
+           */
+          for (const id of ["WORK", "WORK_AGAIN", ...WORDS.map(SCREEN)]) {
+            const data = screen(id).data as Record<string, { type: string }>;
+            assert.equal(data[`item_${w}_amount_init`]!.type, "number", `${id} lost the start for ${w}`);
           }
+
           const terms = screen("TERMS").data as Record<string, unknown>;
           assert.equal(terms[`item_${w}_amount_init`], undefined, `TERMS declares a start for ${w}`);
-        });
+        }
       });
 
       it("carries every item along every route", () => {
@@ -491,7 +548,7 @@ describe("line items on the document forms", () => {
          * those lines are gone and nothing said so.
          */
         const routes: Node[] = [];
-        for (const id of ["WORK", ...WORDS.map(SCREEN)]) {
+        for (const id of ["WORK", "WORK_AGAIN", ...WORDS.map(SCREEN)]) {
           routes.push(footer(id), ...links(id));
         }
 
