@@ -372,6 +372,9 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
 
   /* -- Coming back from checkout ------------------------------------------- */
 
+  /** The marketing site, which owns every page a payer is sent to. */
+  const SITE = env.SITE_URL.replace(/\/$/, "");
+
   /**
    * Where the processor sends the payer afterwards.
    *
@@ -384,8 +387,46 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     "/pay/callback",
     async (req, reply) => {
       const reference = req.query.ref ?? req.query.paymentReference;
-      const token = reference ? await tokenForReference(reference) : null;
-      if (!token) return reply.redirect("https://balans.ng", 303);
+      if (!reference) return reply.redirect(SITE, 303);
+
+      /*
+       * A subscription is not a document, and used to land on the homepage.
+       *
+       * `tokenForReference` joins payments to documents, so it finds nothing
+       * for a Pro payment — there is no invoice, the payer is us. The lookup
+       * returned null and the fallback dropped somebody who had just paid
+       * onto the marketing site, with no acknowledgement and no way back to
+       * the chat they started in.
+       *
+       * The prefix is written by the one place that opens these, beside the
+       * subscription row it belongs to.
+       */
+      if (reference.startsWith("sub_")) {
+        const { rows } = await db().query<{ status: string }>(
+          `SELECT status FROM subscriptions WHERE payment_reference = $1 LIMIT 1`,
+          [reference],
+        );
+
+        const status = rows[0]?.status;
+        if (!status) return reply.redirect(SITE, 303);
+
+        /*
+         * Whether to say it is on yet.
+         *
+         * The webhook is what activates a subscription, and the browser can
+         * easily arrive first — so "active" here is a fact worth checking
+         * rather than assuming. The other page says the payment is being
+         * confirmed, which is true both while the webhook is in flight and
+         * if the payment never completed at all.
+         */
+        return reply.redirect(
+          status === "active" ? `${SITE}/pro/success` : `${SITE}/pro/success?state=confirming`,
+          303,
+        );
+      }
+
+      const token = await tokenForReference(reference);
+      if (!token) return reply.redirect(SITE, 303);
       return reply.redirect(`/i/${token}`, 303);
     },
   );
