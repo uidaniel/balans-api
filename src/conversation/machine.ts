@@ -374,7 +374,7 @@ export const VOICE = {
    * address they went to, and it is already the only bold thing here.
    */
   askCode: (email: string) =>
-    para(`Code sent to ${b(email)}.`, lines(b("Send me the 6 digits."), "No code?")),
+    para(`Code sent to ${b(email)}.`, lines(b("Send me the 6 digits code."), "No code?")),
 
   /** The two ways out of the code step, as taps. */
   codeButtons: (): ReplyButton[] => [
