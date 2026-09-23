@@ -292,6 +292,9 @@ const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 // prettier-ignore
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+// prettier-ignore
+const MONTH_LONG = ["January", "February", "March", "April", "May", "June",
+                    "July", "August", "September", "October", "November", "December"] as const;
 
 /**
  * How a resolved date is written back to the user: "Fri, 25 Dec".
@@ -305,3 +308,27 @@ export function formatFriendly(c: Civil, today?: Civil): string {
   const year = today && today.y !== c.y ? ` ${c.y}` : "";
   return `${DAY_SHORT[weekdayOf(c)]}, ${c.d} ${MONTH_SHORT[c.m - 1]}${year}`;
 }
+
+/**
+ * A date with the month spelled out: "1 October".
+ *
+ * No weekday. This is for dates that are a deadline rather than an
+ * appointment — the day a monthly count comes back, say — where which
+ * weekday it lands on is noise.
+ *
+ * The year appears only when it is not the one we are in, so a reset in
+ * December reads "1 January 2027" rather than sending somebody to look up
+ * which January was meant.
+ */
+export function formatDayMonth(c: Civil, today?: Civil): string {
+  const year = today && today.y !== c.y ? ` ${c.y}` : "";
+  return `${c.d} ${MONTH_LONG[c.m - 1]}${year}`;
+}
+
+/**
+ * The 1st of next month, which is when anything counted per month comes back.
+ *
+ * Through `addMonths`, so December rolls into the next year rather than
+ * becoming month thirteen.
+ */
+export const firstOfNextMonth = (today: Civil): Civil => addMonths({ ...today, d: 1 }, 1);

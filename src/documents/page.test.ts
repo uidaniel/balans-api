@@ -319,7 +319,7 @@ describe("the messages that report on the books", () => {
       outstandingKobo: 50_000_00, overdueKobo: 0,
       topClients: [{ name: "Zenith", paidKobo: 50_000_00 }],
     }),
-    limitReachedMessage(5, 5),
+    limitReachedMessage(5, 5, { y: 2026, m: 9, d: 23 }),
     notFoundMessage({ clientName: "Zenith" }),
     notFoundMessage({ number: 3 }),
     notFoundMessage({}),

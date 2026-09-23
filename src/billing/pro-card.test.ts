@@ -10,10 +10,10 @@
  * would be a false claim in the one message whose whole job is to be trusted
  * about money. Swapping the two is the mistake this file exists to catch.
  *
- * The other half is what the captions may say. A card carries the price, the
- * feature list and the promise that nothing is lost on cancelling; a caption
- * printed under it that repeats any of that is the same pitch twice in one
- * bubble, and the copy on the picture is the one people read.
+ * The card sits above the message rather than replacing it. Somebody with
+ * images turned off, or on a client that will not load one, still gets the
+ * whole offer in words — which is also why a card that fails to send does
+ * not take the message down with it.
  *
  * And because a card is a picture, its claims are the only ones in the
  * product no test can read. "₦4,000" and "8 designs" are painted on. If the
@@ -25,7 +25,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 
-import { proOffer, proOfferCaption, proOfferButtons } from "./messages.ts";
+import { proOffer, proOfferButtons } from "./messages.ts";
 import { LIMIT_CARD, UPGRADE_CARD } from "../conversation/machine.ts";
 import { defaults } from "../config.ts";
 import { availableTo } from "../pdf/templates.ts";
@@ -65,19 +65,16 @@ describe("the two Pro cards", () => {
   });
 });
 
-describe("the Pro caption", () => {
-  it("says how far through the month they are", () => {
-    assert.match(proOfferCaption(2), new RegExp(`2 of your ${limit}`));
-    assert.match(proOfferCaption(limit), new RegExp(`all ${limit}`), "and reads right at the end");
-  });
-
-  it("does not repeat what is already on the card", () => {
-    for (const used of [0, 2, limit]) {
-      const caption = proOfferCaption(used);
-      for (const claim of [/logo/i, /designs/i, /reminders/i, /fee/i, /cancel/i, /4,000/]) {
-        assert.doesNotMatch(caption, claim, `the picture above already says this (used ${used})`);
-      }
-    }
+describe("the Pro message", () => {
+  it("still says everything it said before the card existed", () => {
+    // The card goes above these words, it does not replace them. Somebody
+    // with images turned off, or on a client that will not load one, still
+    // gets the whole offer.
+    const words = proOffer(2);
+    assert.match(words, /4,000/, "the price");
+    assert.match(words, /Unlimited invoices/);
+    assert.match(words, /logo on every invoice/);
+    assert.match(words, /invoice designs/);
   });
 
   it("carries one button, and it is the way in", () => {
@@ -88,18 +85,6 @@ describe("the Pro caption", () => {
 });
 
 describe("when the card cannot be sent", () => {
-  it("falls back to words that carry the offer on their own", () => {
-    // The caption leans on the picture. Resending it alone would be a message
-    // with the point missing, so the fallback is the full pitch.
-    const words = proOffer(2);
-    assert.match(words, /4,000/, "the price");
-    assert.match(words, /Unlimited invoices/, "and what it buys");
-
-    const handle = read("../conversation/handle.ts");
-    const upgrade = handle.slice(handle.indexOf('case "show_upgrade"'), handle.length);
-    assert.match(upgrade.slice(0, 1400), /buttonsFallback = proOffer\(used\)/);
-  });
-
   it("retries in words rather than dropping the message", () => {
     const handle = read("../conversation/handle.ts");
     assert.match(

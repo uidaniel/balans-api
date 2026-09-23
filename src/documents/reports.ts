@@ -10,7 +10,7 @@
  * one: the user is not a bank, and the people who owe them are their clients.
  */
 
-import { formatFriendly, type Civil } from "../../core/dates.ts";
+import { formatFriendly, formatDayMonth, firstOfNextMonth, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { b, block, i, lines, para, row, rule } from "../whatsapp/format.ts";
 import { bucketOf, type Bucket, type Debtors, type DocumentStatus, type Summary } from "./queries.ts";
@@ -180,16 +180,27 @@ export function summaryMessage(s: Summary): string {
  * the offer itself, because there is no picture behind it and no button under
  * it — so it names the price and says what to reply.
  */
-export function limitReachedMessage(used: number, limit: number): string {
+export function limitReachedMessage(used: number, limit: number, today: Civil): string {
   return para(
     `🛑 That is your ${b(`${limit} documents`)} for this month.`,
     lines(
-      `You have sent ${used}. The count resets on the 1st.`,
+      `You have sent ${used}. The count resets on ${resetDay(today)}.`,
       `Reply ${b("upgrade")} for unlimited documents and a lower fee.`,
     ),
     i("Invoices already sent still work, and you still get paid."),
   );
 }
+
+/**
+ * When the count comes back, named.
+ *
+ * "The 1st" is the kind of thing that is obvious to whoever wrote it and not
+ * to the person reading it on the 23rd of a month they have lost track of.
+ * Naming the month answers the actual question — how long am I stuck —
+ * without making them work it out.
+ */
+const resetDay = (today: Civil): string =>
+  formatDayMonth(firstOfNextMonth(today), today);
 
 /**
  * The same thing, under the Pro card.
@@ -203,10 +214,10 @@ export function limitReachedMessage(used: number, limit: number): string {
  * That last line matters most — somebody who has just been stopped mid-invoice
  * will wonder whether the money they are already owed is at risk.
  */
-export function limitReachedCaption(used: number, limit: number): string {
+export function limitReachedCaption(used: number, limit: number, today: Civil): string {
   return para(
     `🛑 That is your ${b(`${limit} documents`)} for this month.`,
-    `You have sent ${used}. The count resets on the 1st.`,
+    `You have sent ${used}. The count resets on ${resetDay(today)}.`,
     i("Invoices already sent still work, and you still get paid."),
   );
 }

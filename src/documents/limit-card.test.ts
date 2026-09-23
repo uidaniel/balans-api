@@ -22,6 +22,7 @@ import { readFileSync } from "node:fs";
 import { limitReachedMessage, limitReachedCaption } from "./reports.ts";
 import { LIMIT_CARD } from "../conversation/machine.ts";
 import { defaults } from "../config.ts";
+import type { Civil } from "../../core/dates.ts";
 
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 
@@ -61,13 +62,35 @@ describe("the Free limit", () => {
 
 describe("the limit message", () => {
   const used = defaults.plans.free.documentsPerMonth!;
-  const caption = limitReachedCaption(used, used);
-  const words = limitReachedMessage(used, used);
+  const september: Civil = { y: 2026, m: 9, d: 23 };
+  const caption = limitReachedCaption(used, used, september);
+  const words = limitReachedMessage(used, used, september);
 
-  it("says how many, and when the count comes back", () => {
+  it("says how many, and names the month the count comes back", () => {
+    // "The 1st" is obvious to whoever wrote it and not to somebody reading it
+    // on the 23rd of a month they have lost track of. The question being
+    // asked is how long am I stuck, and a month answers it.
     for (const m of [caption, words]) {
       assert.match(m, new RegExp(String(used)), "the number they have sent");
-      assert.match(m, /resets on the 1st/);
+      assert.match(m, /resets on 1 October/);
+      assert.doesNotMatch(m, /the 1st/, "which month was the whole question");
+    }
+  });
+
+  it("rolls into next year in December, with the year said", () => {
+    // 1 January on its own, read in December, is ambiguous in the one
+    // direction that matters: it sounds like eleven months away.
+    const december: Civil = { y: 2026, m: 12, d: 28 };
+    assert.match(limitReachedCaption(used, used, december), /resets on 1 January 2027/);
+  });
+
+  it("names the right month from the first day and the last", () => {
+    for (const d of [1, 15, 30]) {
+      assert.match(
+        limitReachedCaption(used, used, { y: 2026, m: 9, d }),
+        /1 October/,
+        `the 1st of next month, asked on the ${d}th`,
+      );
     }
   });
 
