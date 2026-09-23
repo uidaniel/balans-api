@@ -807,6 +807,43 @@ describe("a tapped button", () => {
     });
   });
 
+  describe("changing where the client's copy goes", () => {
+    const base = {
+      draftId: DRAFTED.draftId,
+      doc: {
+        type: "invoice" as const,
+        clientName: "Uwak Joshua",
+        clientEmail: "joshuauwak1@gmail.com",
+        lines: [{ description: "Commercial", qty: 1, unitAmountKobo: 2_500_000_00 }],
+      },
+    };
+
+    const after = (said: string) =>
+      doc("awaiting_confirm", base, said, {
+        parsed: parse({ intent: "correct_draft" }),
+        correction: readCorrection(said, { y: 2026, m: 9, d: 23 }),
+      }).context.doc;
+
+    it("puts the new address on the draft", () => {
+      assert.equal(after("change the email to uakdan209@gmail.com")?.clientEmail, "uakdan209@gmail.com");
+      // And nothing else moved with it.
+      assert.equal(after("change the email to uakdan209@gmail.com")?.clientName, "Uwak Joshua");
+    });
+
+    it("takes it off when asked, rather than leaving the old one", () => {
+      /*
+       * Null is an instruction and undefined is silence. Treated the same,
+       * "no email" would have left the previous address in place and sent
+       * the client's copy to it anyway.
+       */
+      assert.equal(after("no email")?.clientEmail, null);
+    });
+
+    it("leaves it alone when the message is about something else", () => {
+      assert.equal(after("make it 400k")?.clientEmail, "joshuauwak1@gmail.com");
+    });
+  });
+
   it("keeps a draft with more lines than the form holds in words", () => {
     // Five slots against twenty lines from a sentence. Opening the form would
     // show five and drop the rest on submit — an invoice shrinking inside the

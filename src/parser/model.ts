@@ -90,6 +90,12 @@ const TOOL = {
             description: 'The new due date PHRASE, copied as written: "oct 1st", "next Friday".',
           },
           client_name: { type: ["string", "null"], description: "Who the document is for, if they are changing it." },
+          client_email: {
+            type: ["string", "null"],
+            description:
+              'Where the client\'s copy is emailed, if they are changing it: "change the email to x@y.com", ' +
+              '"send it to x@y.com". Taking the address off entirely is ["email"] in clear.',
+          },
           description: {
             type: ["string", "null"],
             description:
@@ -135,7 +141,7 @@ const TOOL = {
           },
           clear: {
             type: ["array", "null"],
-            items: { type: "string", enum: ["vat", "deposit", "instalments"] },
+            items: { type: "string", enum: ["vat", "deposit", "instalments", "email"] },
             description:
               'What to take OFF the draft: "no VAT" is ["vat"], "forget the deposit" is ["deposit"]. Null means nothing is being removed, which is not the same as removing nothing.',
           },
@@ -193,6 +199,8 @@ When a <draft> block appears, a draft is on the user's screen and they have just
 - A date attached to ONE PART of the plan goes in stage_due, never in due_date: "let the 50%
   deposit be due on Friday this week" moves the deposit and leaves the invoice's own date
   alone. "due next Friday", with no part named, is the invoice's date.
+- An address goes in client_email, never in client_name: "send it to daniel@studio.ng" is an
+  email, not a person called Daniel. "no email" is ["email"] in clear.
 - A first payment with a share named is a deposit, not instalments: "break it into two milestones, 20% for the first" is deposit_percent 20 and nothing else, because the deposit and the balance are already the two parts. Equal parts with no share named are instalments: "split it into three" is instalments 3.
 - Only what they actually said. A message about the price says nothing about the date, and a date that moves on its own is a bug somebody finds after the invoice is sent.
 

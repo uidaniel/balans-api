@@ -113,6 +113,8 @@ export const rawCorrection = z.object({
   amount: z.string().trim().min(1).max(40).nullish().transform((v) => v ?? null),
   due_date: z.string().trim().min(1).max(60).nullish().transform((v) => v ?? null),
   client_name: z.string().trim().min(1).max(200).nullish().transform((v) => v ?? null),
+  /** Where the client's copy goes. Put "email" in `clear` to take it off. */
+  client_email: z.string().trim().email().max(254).nullish().transform((v) => v ?? null),
   description: z.string().trim().min(1).max(200).nullish().transform((v) => v ?? null),
   vat_percent: z.number().min(0).max(100).nullish().transform((v) => v ?? null),
   deposit_percent: z.number().min(1).max(100).nullish().transform((v) => v ?? null),
@@ -144,8 +146,8 @@ export const rawCorrection = z.object({
     .nullish()
     .transform((v) => v ?? null),
   clear: z
-    .array(z.enum(["vat", "deposit", "instalments"]))
-    .max(3)
+    .array(z.enum(["vat", "deposit", "instalments", "email"]))
+    .max(4)
     .nullish()
     .transform((v) => v ?? []),
 });
@@ -369,6 +371,7 @@ function asCorrection(raw: RawCorrection | null, today: Civil): Correction | nul
   }
 
   if (raw.client_name) out.clientName = titleCaseName(raw.client_name);
+  if (raw.client_email) out.clientEmail = raw.client_email.toLowerCase();
   if (raw.description) out.description = raw.description;
   if (raw.vat_percent !== null) out.vatPercent = raw.vat_percent;
   if (raw.pass_fees_to_client !== null) out.passFeesToClient = raw.pass_fees_to_client;
@@ -392,6 +395,7 @@ function asCorrection(raw: RawCorrection | null, today: Civil): Correction | nul
     if (field === "vat") out.vatPercent = null;
     if (field === "deposit") out.depositPercent = null;
     if (field === "instalments") out.instalments = null;
+    if (field === "email") out.clientEmail = null;
   }
 
   return Object.keys(out).length ? out : null;

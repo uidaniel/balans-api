@@ -56,6 +56,15 @@ export type Correction = {
    */
   stageDue?: { which: "first" | "last" | number; date: Civil; phrase: string };
   clientName?: string;
+  /**
+   * Where the client's copy goes. Null takes the address off entirely.
+   *
+   * Everything else on a draft could be corrected and this could not, so
+   * "change the email to uakdan209@gmail.com" — a sentence with exactly one
+   * possible meaning — came back as "I did not catch that". A typo in an
+   * address meant discarding the draft and writing the whole invoice again.
+   */
+  clientEmail?: string | null;
   description?: string;
   vatPercent?: number | null;
   depositPercent?: number | null;
@@ -144,6 +153,48 @@ const STAGE =
 const STAGE_DUE = /\b(?:be\s+)?due\s*(?:on|by)?\s*:?\s*(.+)$/i;
 
 const ORDINALS = ["first", "second", "third", "fourth", "fifth"];
+
+/**
+ * An address, and the ways people put one on a draft.
+ *
+ * Deliberately loose about the verb and strict about the address: anything
+ * shaped like an email is almost certainly meant as one, and there is nothing
+ * else on an invoice it could be mistaken for. A bare address on its own line
+ * counts, because that is what people send when they have been asked once.
+ */
+const EMAIL = String.raw`[^\s@]+@[^\s@]+\.[a-z]{2,}`;
+
+/*
+ * Three ways in, and a bare address on its own.
+ *
+ *   a verb and a preposition   “send it to x@y.com”, “use x@y.com”
+ *   the noun                   “change the email to x@y.com”, “email: x@y”
+ *   nothing at all             “x@y.com”, which is what people send when
+ *                              they have already been asked once
+ *
+ * The trailing filler matters more than it looks: “use joshua@opay.com
+ * instead” failed on the anchor alone, and a correction this reader half
+ * understands is a correction it refuses outright.
+ */
+const SET_EMAIL = new RegExp(
+  String.raw`(?:^|\b)(?:` +
+    // a verb, with the noun optional: “send it to”, “change the email to”
+    String.raw`(?:change|correct|fix|update|set|use|send|forward|cc)\s+(?:it|them)?\s*` +
+    String.raw`(?:(?:the|his|her|their|client(?:'|’)?s?)\s+)?(?:e-?mail|mail|address)?\s*` +
+    String.raw`(?:to|is|should be|for|:|=)?\s*` +
+    String.raw`|` +
+    // the noun on its own: “the email is”, “email:”
+    String.raw`(?:(?:the|his|her|their|client(?:'|’)?s?)\s+)?(?:e-?mail|mail|address)\s*` +
+    String.raw`(?:it|them)?\s*(?:to|is|should be|:|=)?\s*` +
+    String.raw`|` +
+    // or nothing: the address by itself
+    String.raw`)(${EMAIL})(?:\s+(?:instead|please|pls|abeg|o|thanks))?\s*$`,
+  "i",
+);
+
+/** "no email", "remove the email", "don't email it". */
+const NO_EMAIL =
+  /\b(?:no|remove|without|drop|take off|forget|cancel)\s+(?:the\s+)?e-?mail\b|\bdo\s?n(?:o|')?t\s+e-?mail\b/i;
 
 const DUE = /\b(?:due|deadline|payable|pay(?:able)? by)\s*:?\s*(.+)$/i;
 const DUE_CHANGE = new RegExp(String.raw`\b(?:${CHANGE})\s*due\s*:?\s*(.+)$`, "i");
@@ -338,6 +389,24 @@ export function readCorrection(text: string, today: Civil): Correction | null {
   }
 
   /*
+   * The address, before anything that reads names or work.
+   *
+   * "send it to daniel@x.com" would otherwise be read by the client rule as
+   * a person called "Daniel@x.com", and the draft would come back addressed
+   * to an email address.
+   */
+  if (NO_EMAIL.test(rest)) {
+    out.clientEmail = null;
+    rest = tidy(rest.replace(NO_EMAIL, ""));
+  } else {
+    const email = SET_EMAIL.exec(rest);
+    if (email) {
+      out.clientEmail = email[1]!.toLowerCase();
+      rest = tidy(rest.slice(0, email.index));
+    }
+  }
+
+  /*
    * Adding and removing whole lines.
    *
    * After the fixed options, so "remove the VAT" is already accounted for,
@@ -462,7 +531,7 @@ const tidy = (s: string): string =>
  * other way round it would end up ignored, which costs a wrong invoice.
  */
 const NOISE =
-  /\b(?:no|nope|nah|ok|okay|abeg|please|pls|actually|sorry|and|also|plus|then|instead|now|make|makes|change|changed|set|update|correct|fix|edit|put|do|split|break|down|into|in|it|this|that|the|a|an|to|be|been|should|shd|is|are|was|for|of|on|at|as|so|just|abi|na|invoice|quote|draft|document|bill|add|adds|remove|delete|include|drop|let|lets|have|has|want|wants|i|me|my|we|us)\b/gi;
+  /\b(?:no|nope|nah|ok|okay|abeg|please|pls|actually|sorry|and|also|plus|then|instead|now|make|makes|change|changed|set|update|correct|fix|edit|put|do|split|break|down|into|in|it|this|that|the|a|an|to|be|been|should|shd|is|are|was|for|of|on|at|as|so|just|abi|na|invoice|quote|draft|document|bill|add|adds|remove|delete|include|drop|let|lets|have|has|want|wants|i|me|my|we|us|email|e-mail|mail|address|send|sent|copy|cc)\b/gi;
 
 const unexplained = (rest: string): boolean =>
   tidy(rest).replace(NOISE, "").replace(/[^a-z0-9]+/gi, "") !== "";

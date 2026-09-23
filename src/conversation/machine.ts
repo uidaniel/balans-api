@@ -2139,6 +2139,9 @@ function applyCorrection(doc: PendingDoc, c: Correction): PendingDoc {
   const next: PendingDoc = { ...doc };
 
   if (c.clientName) next.clientName = c.clientName;
+  // Null is an instruction here, not an absence: "no email" takes the address
+  // off, and `undefined` is the field nobody mentioned.
+  if (c.clientEmail !== undefined) next.clientEmail = c.clientEmail;
   if (c.dueDate) next.dueDate = c.dueDate;
 
   /*

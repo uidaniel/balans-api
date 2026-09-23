@@ -296,3 +296,55 @@ describe("a date for one part of the payment plan", () => {
     assert.equal(c?.stageDue, undefined);
   });
 });
+
+/**
+ * The one field on a draft that could not be corrected.
+ *
+ * "change the email to uakdan209@gmail.com" \u2014 a sentence with exactly one
+ * possible meaning \u2014 came back as "I did not catch that", so a typo in an
+ * address meant discarding the draft and writing the whole invoice again.
+ */
+describe("changing where the client's copy goes", () => {
+  const today = { y: 2026, m: 9, d: 23 } as const;
+  const read = (s: string) => readCorrection(s, today);
+
+  it("takes an address however it is introduced", () => {
+    for (const said of [
+      "change the email to uakdan209@gmail.com",
+      "email uakdan209@gmail.com",
+      "the email is uakdan209@gmail.com",
+      "email: UakDan209@Gmail.com",
+      "client email should be uakdan209@gmail.com",
+      // What people send when they have already been asked once.
+      "uakdan209@gmail.com",
+    ]) {
+      assert.equal(read(said)?.clientEmail, "uakdan209@gmail.com", said);
+    }
+  });
+
+  it("reads an address as an address, not as a person", () => {
+    /*
+     * "send it to X" is one of the phrases the client rule answers to, so
+     * without this the draft came back addressed to a client called
+     * "Daniel@studio.ng".
+     */
+    const c = read("send it to daniel@studio.ng");
+    assert.equal(c?.clientEmail, "daniel@studio.ng");
+    assert.equal(c?.clientName, undefined);
+  });
+
+  it("does not trip over the word people put on the end", () => {
+    // "instead" broke the anchor, and a correction half understood is one
+    // this reader refuses outright.
+    assert.equal(read("use joshua@opay.com instead")?.clientEmail, "joshua@opay.com");
+  });
+
+  it("takes the address off when asked", () => {
+    // Null is an instruction, not an absence: it means send no copy. A field
+    // nobody mentioned is undefined.
+    for (const said of ["no email", "remove the email"]) {
+      assert.equal(read(said)?.clientEmail, null, said);
+    }
+    assert.equal(read("make it 400k")?.clientEmail, undefined);
+  });
+});
