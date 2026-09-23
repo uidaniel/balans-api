@@ -196,6 +196,44 @@ describe("every published Flow", () => {
         }
       });
 
+      it("hands a carried value on as the type the next screen declares", () => {
+        /*
+         * The third face of the same trap, and the one nothing was watching.
+         *
+         * The two tests above cover a value going into an input and a value
+         * coming back out of one. This is the value that does neither: a
+         * screen passing `${data.x}` straight through to the next screen.
+         * Nothing casts it, so if the two screens disagree about its type the
+         * Flow publishes and then fails on the phone at the tap that carries
+         * it — which is how five screens of line items would have gone wrong,
+         * quietly, on the fourth item.
+         */
+        const byId = new Map(json.screens.map((s) => [String(s.id), s]));
+
+        for (const screen of json.screens) {
+          const mine = (screen.data as Record<string, Node>) ?? {};
+
+          for (const node of walk(screen.layout)) {
+            if (node.name !== "navigate") continue;
+
+            const target = byId.get(String((node.next as Node | undefined)?.name));
+            if (!target) continue;
+            const theirs = (target.data as Record<string, Node>) ?? {};
+
+            for (const [key, ref] of Object.entries((node.payload as Record<string, string>) ?? {})) {
+              const from = /^\$\{data\.([a-z_0-9]+)\}$/i.exec(ref)?.[1];
+              if (!from || !mine[from] || !theirs[key]) continue;
+              assert.equal(
+                theirs[key]?.type,
+                mine[from]?.type,
+                `${String(screen.id)} sends data.${from} (${String(mine[from]?.type)}) to ` +
+                  `${String(target.id)}.${key}, which is declared ${String(theirs[key]?.type)}`,
+              );
+            }
+          }
+        }
+      });
+
       it("keeps input labels short enough not to wrap", () => {
         /*
          * An input's label sits in a narrow left column, and a long one wraps
@@ -337,6 +375,7 @@ describe("the bank dropdown", () => {
  */
 describe("line items on the document forms", () => {
   const WORDS = ["two", "three", "four", "five"];
+  const SCREEN = (w: string) => `ITEM_${w.toUpperCase()}`;
 
   for (const key of ["invoice", "quote"]) {
     const flow = FLOWS.find((f) => f.key === key)!;
@@ -345,84 +384,127 @@ describe("line items on the document forms", () => {
     const inputs = (id: string) =>
       walk(screen(id)).filter((n) => n.type === "TextInput" || n.type === "OptIn");
     const named = (id: string, name: string) => inputs(id).find((n) => n.name === name);
+    const links = (id: string) => walk(screen(id)).filter((n) => n.type === "EmbeddedLink");
+    const action = (n: Node) => n["on-click-action"] as Node;
+    const payloadOf = (n: Node) => (action(n).payload ?? {}) as Record<string, string>;
+    const footer = (id: string) => walk(screen(id)).find((n) => n.type === "Footer")!;
 
     describe(key, () => {
-      it("has a slot for a second, third, fourth and fifth item", () => {
-        for (const w of WORDS) {
-          assert.ok(named("WORK", `item_${w}_description`), `no description field for item ${w}`);
-          assert.ok(named("WORK", `item_${w}_amount`), `no amount field for item ${w}`);
-        }
-      });
-
-      it("never makes one of them required", () => {
+      it("gives each extra item a screen of its own", () => {
         /*
-         * A required input that is hidden passes Meta's publish validator —
-         * probed on 23 September 2026 — but the validator does not run on a
-         * phone. If a hidden required field does block the footer there, it
-         * blocks it with nothing on screen to explain why.
+         * Not five slots on one screen. That was the first attempt, each slot
+         * behind `visible: "${form.add_two}"`, and Meta's validator accepted
+         * it — but a phone ignores `visible`, so an invoice with one line
+         * opened showing four empty Work/Amount pairs under it.
          */
         for (const w of WORDS) {
-          assert.notEqual(named("WORK", `item_${w}_description`)!.required, true, `item ${w}`);
-          assert.notEqual(named("WORK", `item_${w}_amount`)!.required, true, `item ${w}`);
-          assert.notEqual(named("WORK", `add_${w}`)!.required, true, `checkbox ${w}`);
+          assert.ok(screen(SCREEN(w)), `no screen for item ${w}`);
+          assert.ok(named(SCREEN(w), `item_${w}_description`), `no description field for item ${w}`);
+          assert.ok(named(SCREEN(w), `item_${w}_amount`), `no amount field for item ${w}`);
         }
       });
 
-      it("hides each item behind its own checkbox", () => {
-        for (const w of WORDS) {
-          const want = `\${form.add_${w}}`;
-          assert.equal(named("WORK", `item_${w}_description`)!.visible, want, `item ${w}`);
-          assert.equal(named("WORK", `item_${w}_amount`)!.visible, want, `item ${w}`);
-        }
+      it("shows one item and nothing else until somebody asks", () => {
+        // The form opens on the invoice most people are writing.
+        const names = inputs("WORK").map((n) => n.name);
+        assert.ok(!names.some((n) => typeof n === "string" && n.startsWith("item_")));
       });
 
-      it("hides each checkbox behind the one above it", () => {
-        // Otherwise a one-line invoice opens showing four "Add another item"
-        // boxes at once, which is the clutter the whole arrangement avoids.
-        assert.equal(named("WORK", "add_two")!.visible, undefined, "the first is always offered");
-        for (let i = 1; i < WORDS.length; i++) {
-          assert.equal(
-            named("WORK", `add_${WORDS[i]}`)!.visible,
-            `\${form.add_${WORDS[i - 1]}}`,
-            `checkbox ${WORDS[i]}`,
-          );
-        }
-      });
-
-      it("puts the checkbox before the item it reveals", () => {
-        const order = inputs("WORK").map((n) => n.name);
-        for (const w of WORDS) {
-          assert.ok(
-            order.indexOf(`add_${w}`) < order.indexOf(`item_${w}_description`),
-            `the box for item ${w} is below the fields it controls`,
-          );
-        }
-      });
-
-      it("declares the amounts as numbers on WORK and strings on TERMS", () => {
+      it("offers the next item as a link, never a checkbox", () => {
         /*
-         * The trap `amount` already carries a long comment about, now four
-         * times over. WORK initialises a `input-type: "number"` input, so its
-         * declaration must be a number; TERMS receives `${form...}`, which is
-         * a string whatever the input was. Getting it backwards passes the
-         * publish validator and fails on a real phone at the moment somebody
-         * taps Next.
+         * Navigation is the only thing that reliably changes what is on a
+         * screen without a data endpoint: `update_data` is not an action at
+         * 7.1, probed against Meta on 23 September 2026.
          */
-        const work = screen("WORK").data as Record<string, { type: string }>;
-        const terms = screen("TERMS").data as Record<string, { type: string }>;
+        const chain = ["WORK", ...WORDS.map(SCREEN)];
+        for (let i = 0; i < WORDS.length; i++) {
+          const from = chain[i]!;
+          const link = links(from).find((n) => action(n).name === "navigate");
+          assert.ok(link, `${from} offers no way to add an item`);
+          assert.equal(link!.text, "Add another item");
+          assert.equal((action(link!).next as Node).name, SCREEN(WORDS[i]!));
+        }
+        // And the last one does not pretend there is a sixth.
+        assert.equal(links(SCREEN("five")).length, 0);
+      });
 
+      it("never makes an item required", () => {
+        // An item nobody filled in is not an item, and a required field on a
+        // screen somebody opened by accident is a form they cannot leave.
         for (const w of WORDS) {
-          assert.equal(work[`item_${w}_amount`]!.type, "number", `WORK item ${w}`);
-          assert.equal(terms[`item_${w}_amount`]!.type, "string", `TERMS item ${w}`);
+          assert.notEqual(named(SCREEN(w), `item_${w}_description`)!.required, true, `item ${w}`);
+          assert.notEqual(named(SCREEN(w), `item_${w}_amount`)!.required, true, `item ${w}`);
         }
       });
 
-      it("does not declare the checkboxes on TERMS", () => {
-        // A screen's data has to arrive in the payload that reaches it, and
-        // WORK sends on the items rather than the boxes that revealed them.
-        const terms = screen("TERMS").data as Record<string, unknown>;
+      it("lets every item screen finish the document", () => {
+        // The screen somebody taps Next on is how many items the invoice has,
+        // which is also what makes going back the remove.
         for (const w of WORDS) {
-          assert.equal(terms[`add_${w}`], undefined, `TERMS declares add_${w} but is never sent it`);
+          const f = footer(SCREEN(w));
+          assert.equal(action(f).name, "navigate");
+          assert.equal((action(f).next as Node).name, "TERMS");
+        }
+      });
+
+      it("declares every amount a string except the one it fills", () => {
+        /*
+         * Both halves of the trap at once.
+         *
+         * A `input-type: "number"` input must be initialised from a number —
+         * Meta refuses to publish otherwise. What comes back out of that same
+         * input is a string. So the money travels between screens as a string
+         * under `item_two_amount`, and the starting value rides separately
+         * under `item_two_amount_init`, which is a number and is dropped once
+         * the screen that needed it has been through.
+         */
+        for (const w of WORDS) {
+          for (const id of ["WORK", "TERMS", ...WORDS.map(SCREEN)]) {
+            const data = screen(id).data as Record<string, { type: string }>;
+            assert.equal(data[`item_${w}_amount`]!.type, "string", `${id} item ${w}`);
+          }
+        }
+
+        WORDS.forEach((w, index) => {
+          const own = screen(SCREEN(w)).data as Record<string, { type: string }>;
+          assert.equal(own[`item_${w}_amount_init`]!.type, "number", `${SCREEN(w)} starts item ${w}`);
+
+          // Consumed, so not carried any further.
+          for (const spent of WORDS.slice(0, index)) {
+            const data = screen(SCREEN(w)).data as Record<string, unknown>;
+            assert.equal(
+              data[`item_${spent}_amount_init`],
+              undefined,
+              `${SCREEN(w)} still carries a start for ${spent}`,
+            );
+          }
+          const terms = screen("TERMS").data as Record<string, unknown>;
+          assert.equal(terms[`item_${w}_amount_init`], undefined, `TERMS declares a start for ${w}`);
+        });
+      });
+
+      it("carries every item along every route", () => {
+        /*
+         * The one that matters for money. A correction arrives with three
+         * lines and somebody taps Next on the first screen without opening
+         * the others. Every payload has to pass on what it is not editing, or
+         * those lines are gone and nothing said so.
+         */
+        const routes: Node[] = [];
+        for (const id of ["WORK", ...WORDS.map(SCREEN)]) {
+          routes.push(footer(id), ...links(id));
+        }
+
+        for (const node of routes) {
+          const payload = payloadOf(node);
+          const editing = WORDS.find(
+            (w) => payload[`item_${w}_amount`] === `\${form.item_${w}_amount}`,
+          );
+          for (const w of WORDS) {
+            const want = w === editing ? "form" : "data";
+            assert.equal(payload[`item_${w}_description`], `\${${want}.item_${w}_description}`);
+            assert.equal(payload[`item_${w}_amount`], `\${${want}.item_${w}_amount}`);
+          }
         }
       });
 
@@ -440,16 +522,14 @@ describe("line items on the document forms", () => {
         }
       });
 
-      it("opens on the items a draft already has", () => {
+      it("opens each item screen on what the draft already has", () => {
         // The correction path. Without an init-value the field comes up empty
         // and the submit drops the line it was meant to be correcting.
-        const form = walk(screen("WORK")).find((n) => n.type === "Form")!;
-        const init = form["init-values"] as Record<string, string>;
-
         for (const w of WORDS) {
-          assert.equal(init[`add_${w}`], `\${data.add_${w}}`);
+          const form = walk(screen(SCREEN(w))).find((n) => n.type === "Form")!;
+          const init = form["init-values"] as Record<string, string>;
           assert.equal(init[`item_${w}_description`], `\${data.item_${w}_description}`);
-          assert.equal(init[`item_${w}_amount`], `\${data.item_${w}_amount}`);
+          assert.equal(init[`item_${w}_amount`], `\${data.item_${w}_amount_init}`);
         }
       });
     });

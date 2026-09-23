@@ -414,15 +414,15 @@ export function planIdFor(o: { depositPercent?: number | null; instalments?: num
 /* -------------------------------------------------------------------------- */
 
 /**
- * The items after the first, which the form can hold.
+ * The items after the first, one screen each.
  *
  * Words rather than digits because a Flow screen id and a field name may only
  * contain letters and underscores — `ITEM_2` is refused on upload.
  *
  * Four extra is a judgement, not a limit of the format. It covers the invoices
  * people actually build a line at a time, and the sentence path still takes up
- * to twenty for anything longer. Every slot exists in the JSON whether it is
- * used or not, so the cost of raising this is paid by every invoice.
+ * to twenty for anything longer. Every screen exists in the JSON whether it is
+ * reached or not, so the cost of raising this is paid by every invoice.
  */
 export const EXTRA_ITEMS = ["two", "three", "four", "five"] as const;
 
@@ -432,122 +432,76 @@ export const itemFields = (w: string): { description: string; amount: string } =
   amount: `item_${w}_amount`,
 });
 
-/** The checkbox that reveals an item. */
-export const addField = (w: string): string => `add_${w}`;
+/** The screen that collects one item. Letters and underscores only. */
+export const itemScreenId = (w: string): string => `ITEM_${w.toUpperCase()}`;
 
 /**
- * Items two to five, each behind its own checkbox.
+ * The number that fills an item's Amount box when its screen opens.
  *
- * Flow JSON has no repeater, and nothing on a screen can add one. `update_data`
- * is not an action at 7.1 — probed against Meta on 23 September 2026, which
- * answered that an `on-click-action` may only be `data_exchange`, `navigate` or
- * `complete`. A server round trip per added line would mean a data endpoint,
- * which these Flows deliberately do not have (see the note at the top).
+ * A second name for the same money, and not redundancy.
  *
- * So the rows are all in the JSON and a checkbox decides whether they are on
- * screen. Each checkbox is itself hidden behind the one above it, so a single
- * line invoice — which is most invoices — shows one "Add another item" and
- * nothing more. Unticking is the remove: the fields go away and the handler
- * drops an item with no description.
+ * `item_two_amount` has to be a string on every screen, because that is what
+ * comes back out of a form and there is no cast in Flow JSON — one screen
+ * sending a number to a key another screen declares a string is an error on
+ * the phone, not at publish. But the Amount box is `input-type: "number"`, and
+ * Meta refuses to publish a number input initialised from a string:
  *
- * Optional, never required. A hidden required input passes the publish
- * validator, but the validator does not run on a phone, and the failure it
- * would hide is somebody unable to submit a form with no visible problem on
- * it. An opted-in item left empty is simply not an item.
+ *   Expected property 'item_two_amount' to be of type 'number' but found
+ *   'string'.
+ *
+ * Probed against Meta on 23 September 2026, both directions. There is no type
+ * that satisfies both, so the starting value travels under its own name and is
+ * dropped once the screen that needs it has been through.
+ *
+ * Zero means empty. A blank Amount cannot be expressed as a number, and an
+ * init of 0 renders as an empty box rather than a "0" — which is just as well,
+ * since a ₦0 line is not a line.
  */
-function extraItemChildren(): unknown[] {
-  const children: unknown[] = [];
-  let revealedBy: string | null = null;
-
-  for (const w of EXTRA_ITEMS) {
-    const f = itemFields(w);
-    children.push({
-      type: "OptIn",
-      name: addField(w),
-      label: "Add another item",
-      required: false,
-      ...(revealedBy ? { visible: revealedBy } : {}),
-    });
-
-    const visible = `\${form.${addField(w)}}`;
-    children.push(
-      {
-        type: "TextInput",
-        name: f.description,
-        label: "Work",
-        required: false,
-        "input-type": "text",
-        "max-chars": 100,
-        visible,
-      },
-      {
-        type: "TextInput",
-        name: f.amount,
-        label: "Amount",
-        "helper-text": "Naira, before VAT. Digits only.",
-        required: false,
-        "input-type": "number",
-        "max-chars": 12,
-        visible,
-      },
-    );
-    revealedBy = visible;
-  }
-
-  return children;
-}
-
-/** Starting values for the extra items, so a correction reopens on them. */
-function extraItemInitValues(): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const w of EXTRA_ITEMS) {
-    const f = itemFields(w);
-    out[addField(w)] = `\${data.${addField(w)}}`;
-    out[f.description] = `\${data.${f.description}}`;
-    out[f.amount] = `\${data.${f.amount}}`;
-  }
-  return out;
-}
+export const initField = (w: string): string => `item_${w}_amount_init`;
 
 /**
- * The extra items as screen data.
+ * Every item in a payload; the screen's own two read from the form.
  *
- * `amountType` is the whole reason this takes an argument. WORK declares an
- * amount a number because it initialises a `input-type: "number"` field, and
- * TERMS declares it a string because what arrives there is `${form.…}`, which
- * is a string whatever the input was. Getting that backwards passes the
- * publish validator and fails on a phone — the same trap `amount` already
- * carries a long comment about, now multiplied by four.
+ * `at` is the index in EXTRA_ITEMS of the item this screen collects, or null
+ * on WORK, which collects none of them. Everything else is passed straight
+ * through, so whatever a correction arrived with survives a route that never
+ * visits it.
  */
-function extraItemData(
-  amountType: "number" | "string",
-  /*
-   * WORK needs the checkboxes so a correction reopens with the items that
-   * are already on the draft showing. TERMS must not declare them: a screen's
-   * data has to arrive in the navigate payload that reaches it, and WORK
-   * sends on the items, not the boxes that revealed them.
-   */
-  optIns: "with_opt_ins" | "items_only",
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const w of EXTRA_ITEMS) {
-    const f = itemFields(w);
-    if (optIns === "with_opt_ins") out[addField(w)] = { type: "boolean", __example__: false };
-    out[f.description] = { type: "string", __example__: "" };
-    out[f.amount] =
-      amountType === "number" ? { type: "number", __example__: 0 } : { type: "string", __example__: "" };
-  }
-  return out;
-}
-
-/** The extra items in a navigate or complete payload, read from `form` or `data`. */
-function extraItemPayload(source: "form" | "data"): Record<string, string> {
+function itemPayload(at: number | null): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const w of EXTRA_ITEMS) {
+  EXTRA_ITEMS.forEach((w, index) => {
     const f = itemFields(w);
+    const source = index === at ? "form" : "data";
     out[f.description] = `\${${source}.${f.description}}`;
     out[f.amount] = `\${${source}.${f.amount}}`;
-  }
+  });
+  return out;
+}
+
+/** The starting numbers still ahead of us. Consumed ones are not passed on. */
+function initPayload(from: number): Record<string, string> {
+  const out: Record<string, string> = {};
+  EXTRA_ITEMS.forEach((w, index) => {
+    if (index >= from) out[initField(w)] = `\${data.${initField(w)}}`;
+  });
+  return out;
+}
+
+/**
+ * The item half of a screen's data.
+ *
+ * `from` is the first starting number this screen still carries — 0 on WORK,
+ * its own index on an item screen, and null on TERMS, which is the end of the
+ * road and initialises nothing.
+ */
+function itemData(from: number | null): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  EXTRA_ITEMS.forEach((w, index) => {
+    const f = itemFields(w);
+    out[f.description] = { type: "string", __example__: "" };
+    out[f.amount] = { type: "string", __example__: "" };
+    if (from != null && index >= from) out[initField(w)] = { type: "number", __example__: 0 };
+  });
   return out;
 }
 
@@ -594,6 +548,125 @@ type DocumentFlow = {
   dateHelp: string;
 };
 
+/**
+ * One extra item, on its own screen.
+ *
+ * Reached only by tapping "Add another item", so an invoice with one line
+ * never shows it — which is most invoices. The back arrow is the remove: the
+ * screen is popped and its two fields go with it, and the screen somebody
+ * taps Next on is the number of items the invoice has.
+ *
+ * Everything the document has collected so far rides along in `data` and is
+ * handed on untouched. Only this screen's own two fields are read from the
+ * form.
+ */
+function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
+  const word = EXTRA_ITEMS[index]!;
+  const f = itemFields(word);
+  const next = EXTRA_ITEMS[index + 1];
+
+  /* What a document is, minus the items. `amount` is a string here and a
+   * number on WORK: WORK initialises a number input with it, this screen only
+   * passes it on, and what came out of WORK's form is a string. */
+  const carried = {
+    client_name: { type: "string", __example__: "Daniel Uwak" },
+    client_email: { type: "string", __example__: "" },
+    description: { type: "string", __example__: "Website design" },
+    amount: { type: "string", __example__: "250000" },
+    due_date: { type: "string", __example__: "" },
+    plan: { type: "string", __example__: "one" },
+    notes: { type: "string", __example__: "" },
+    vat: { type: "boolean", __example__: false },
+    pass_fees: { type: "boolean", __example__: false },
+  };
+
+  const carriedPayload = {
+    client_name: "${data.client_name}",
+    client_email: "${data.client_email}",
+    description: "${data.description}",
+    amount: "${data.amount}",
+    due_date: "${data.due_date}",
+    plan: "${data.plan}",
+    notes: "${data.notes}",
+    vat: "${data.vat}",
+    pass_fees: "${data.pass_fees}",
+  };
+
+  return {
+    id: itemScreenId(word),
+    title: o.title,
+    terminal: false,
+    data: { ...carried, ...itemData(index) },
+    layout: {
+      type: "SingleColumnLayout",
+      children: [
+        {
+          type: "TextSubheading",
+          // "Item two" rather than "Item 2": the screen ids have to be words,
+          // and the two reading the same way is worth more than the digit.
+          text: `Item ${index + 2}`,
+        },
+        {
+          type: "Form",
+          name: "item_form",
+          "init-values": {
+            [f.description]: `\${data.${f.description}}`,
+            // The starting number, not `data.item_two_amount`, which is a
+            // string by the time it reaches here. See initField.
+            [f.amount]: `\${data.${initField(word)}}`,
+          },
+          children: [
+            {
+              type: "TextInput",
+              name: f.description,
+              label: "Work",
+              "helper-text": "Leave both blank to drop this item.",
+              required: false,
+              "input-type": "text",
+              "max-chars": 100,
+            },
+            {
+              type: "TextInput",
+              name: f.amount,
+              label: "Amount",
+              "helper-text": "Naira, before VAT. Digits only.",
+              required: false,
+              "input-type": "number",
+              "max-chars": 12,
+            },
+            ...(next
+              ? [
+                  {
+                    type: "EmbeddedLink",
+                    text: "Add another item",
+                    "on-click-action": {
+                      name: "navigate",
+                      next: { type: "screen", name: itemScreenId(next) },
+                      payload: {
+                        ...carriedPayload,
+                        ...itemPayload(index),
+                        ...initPayload(index + 1),
+                      },
+                    },
+                  },
+                ]
+              : []),
+            {
+              type: "Footer",
+              label: "Next",
+              "on-click-action": {
+                name: "navigate",
+                next: { type: "screen", name: "TERMS" },
+                payload: { ...carriedPayload, ...itemPayload(index) },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
 function documentFlow(o: DocumentFlow): FlowDefinition {
   return {
   key: o.key,
@@ -619,7 +692,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           notes: { type: "string", __example__: "" },
           vat: { type: "boolean", __example__: false },
           pass_fees: { type: "boolean", __example__: false },
-          ...extraItemData("number", "with_opt_ins"),
+          ...itemData(0),
         },
         layout: {
           type: "SingleColumnLayout",
@@ -639,7 +712,6 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                 description: "${data.description}",
                 amount: "${data.amount}",
                 due_date: "${data.due_date}",
-                ...extraItemInitValues(),
               },
               children: [
                 {
@@ -668,9 +740,44 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                   "input-type": "number",
                   "max-chars": 12,
                 },
-                // Straight after the first item's amount, because that is
-                // where somebody realises there is a second thing to bill for.
-                ...extraItemChildren(),
+                /*
+                 * Straight after the first item's amount, because that is
+                 * where somebody realises there is a second thing to bill for.
+                 *
+                 * A link rather than a checkbox, and a screen rather than a
+                 * row, because Flow JSON has no repeater and nothing on a
+                 * screen can add one. `update_data` is not an action at 7.1,
+                 * so a control that changes what is on screen would need a
+                 * data endpoint, which these Flows deliberately do not have.
+                 *
+                 * The first attempt was five slots on this screen, each
+                 * hidden behind `visible: "${form.add_two}"`. Meta's
+                 * validator accepts that; a phone ignores it, and every slot
+                 * showed at once — four empty Work/Amount pairs under an
+                 * invoice with one line on it. Navigation is the only thing
+                 * that reliably changes what is in front of somebody.
+                 */
+                {
+                  type: "EmbeddedLink",
+                  text: "Add another item",
+                  "on-click-action": {
+                    name: "navigate",
+                    next: { type: "screen", name: itemScreenId(EXTRA_ITEMS[0]) },
+                    payload: {
+                      client_name: "${form.client_name}",
+                      client_email: "${form.client_email}",
+                      description: "${form.description}",
+                      amount: "${form.amount}",
+                      due_date: "${form.due_date}",
+                      plan: "${data.plan}",
+                      notes: "${data.notes}",
+                      vat: "${data.vat}",
+                      pass_fees: "${data.pass_fees}",
+                      ...itemPayload(null),
+                      ...initPayload(0),
+                    },
+                  },
+                },
                 {
                   type: "TextInput",
                   name: "due_date",
@@ -700,7 +807,11 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       client_email: "${form.client_email}",
                       description: "${form.description}",
                       amount: "${form.amount}",
-                      ...extraItemPayload("form"),
+                      // From `data`, not `form`: this screen no longer holds
+                      // the extra items, it only passes them through. A
+                      // correction that came in with three lines and left
+                      // this way keeps all three.
+                      ...itemPayload(null),
                       due_date: "${form.due_date}",
                       plan: "${data.plan}",
                       notes: "${data.notes}",
@@ -714,6 +825,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           ],
         },
       },
+      ...EXTRA_ITEMS.map((_, index) => itemScreen(index, o)),
       {
         id: "TERMS",
         title: "How it is paid",
@@ -746,8 +858,9 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           notes: { type: "string", __example__: "" },
           vat: { type: "boolean", __example__: false },
           pass_fees: { type: "boolean", __example__: false },
-          // Strings here, numbers on WORK. See extraItemData.
-          ...extraItemData("string", "items_only"),
+          // Strings, like everywhere. TERMS initialises none of them, so it
+          // carries no starting numbers either. See itemData.
+          ...itemData(null),
         },
         layout: {
           type: "SingleColumnLayout",
@@ -801,7 +914,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       client_email: "${data.client_email}",
                       description: "${data.description}",
                       amount: "${data.amount}",
-                      ...extraItemPayload("data"),
+                      ...itemPayload(null),
                       due_date: "${data.due_date}",
                       plan: "${form.plan}",
                       vat: "${form.vat}",

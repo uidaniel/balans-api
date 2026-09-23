@@ -605,20 +605,23 @@ describe("a tapped button", () => {
       notes: "half now",
       vat: true,
       pass_fees: true,
-      // The four extra item slots, all empty and all unticked, so the form
-      // opens showing one line and one "Add another item".
-      add_two: false,
+      // The four extra items, all empty, so the form opens showing one line
+      // and an "Add another item" link under it. Each is sent twice: the
+      // string that travels between screens, and the number that fills the
+      // Amount box on the screen that collects it. Zero is how a blank
+      // amount is said, and renders as an empty box.
       item_two_description: "",
-      item_two_amount: 0,
-      add_three: false,
+      item_two_amount: "",
+      item_two_amount_init: 0,
       item_three_description: "",
-      item_three_amount: 0,
-      add_four: false,
+      item_three_amount: "",
+      item_three_amount_init: 0,
       item_four_description: "",
-      item_four_amount: 0,
-      add_five: false,
+      item_four_amount: "",
+      item_four_amount_init: 0,
       item_five_description: "",
-      item_five_amount: 0,
+      item_five_amount: "",
+      item_five_amount_init: 0,
     });
   });
 
@@ -652,16 +655,20 @@ describe("a tapped button", () => {
     assert.equal(data.description, "logo");
     assert.equal(data.amount, 50_000, "the first line's own amount, not the total");
 
-    assert.equal(data.add_two, true, "the second line's slot has to be showing");
     assert.equal(data.item_two_description, "website");
-    assert.equal(data.item_two_amount, 250_000);
+    assert.equal(data.item_two_amount, "250000", "carried between screens as a string");
+    assert.equal(data.item_two_amount_init, 250_000, "and as a number where the box is filled");
 
-    assert.equal(data.add_three, true);
     assert.equal(data.item_three_description, "business cards");
-    assert.equal(data.item_three_amount, 10_000);
+    assert.equal(data.item_three_amount, "10000");
+    assert.equal(data.item_three_amount_init, 10_000);
 
-    assert.equal(data.add_four, false, "and nothing beyond what is on the draft");
+    // And nothing beyond what is on the draft. Zero rather than an empty
+    // string because the Amount box takes a number, and an empty number is
+    // not a thing Flow JSON can say.
     assert.equal(data.item_four_description, "");
+    assert.equal(data.item_four_amount, "");
+    assert.equal(data.item_four_amount_init, 0);
   });
 
   it("keeps a draft with more lines than the form holds in words", () => {

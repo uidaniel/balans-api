@@ -24,7 +24,7 @@ type SettingsRowId = (typeof SETTINGS_ROW_IDS)[number];
 import { parseAmountToKobo } from "../../core/amount.ts";
 import { resolveDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
-import { addField, EXTRA_ITEMS, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
+import { EXTRA_ITEMS, initField, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
 
@@ -1642,19 +1642,21 @@ function formValues(doc: PendingDoc): Record<string, string | number | boolean> 
   };
 
   /*
-   * The rest of the items, with their checkboxes already ticked.
+   * The rest of the items.
    *
-   * A slot left unticked is hidden, so a draft's fourth line would be
-   * invisible in the form that is meant to be correcting it — and the submit
-   * would drop it. Anything past the fifth line cannot be shown at all; that
-   * is what `overflowsForm` is for.
+   * Each one has a screen of its own behind "Add another item", and each is
+   * sent twice: once as the string that travels between screens, and once as
+   * the number that fills its Amount box when that screen opens. Flow JSON
+   * has no cast and no empty number, so zero is how a blank amount is said —
+   * which renders as an empty box, not a "0". Anything past the fifth line
+   * cannot be shown at all; that is what `overflowsForm` is for.
    */
   EXTRA_ITEMS.forEach((w, index) => {
     const line = doc.lines[index + 1];
     const f = itemFields(w);
-    values[addField(w)] = Boolean(line);
     values[f.description] = line?.description ?? "";
-    values[f.amount] = line ? naira(line) : 0;
+    values[f.amount] = line ? String(naira(line)) : "";
+    values[initField(w)] = line ? naira(line) : 0;
   });
 
   return values;
