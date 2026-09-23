@@ -30,7 +30,7 @@ import { formatNaira } from "../../core/totals.ts";
 import { resolveDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
 import { EXTRA_ITEMS, initField, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
-import { askFor, DEFAULT_DESCRIPTION } from "../documents/summary.ts";
+import { askFor, DEFAULT_DESCRIPTION, draftButtons } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
 
 export type State =
@@ -1515,9 +1515,33 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
       return { replies: [VOICE.nothingPending], next: "idle", context: ctx, effects: [] };
 
     default:
+      /*
+       * A draft button tapped on a bubble whose draft is gone.
+       *
+       * A WhatsApp message lasts for ever and its buttons stay tappable, so
+       * "Change it" on an invoice sent twenty minutes ago is an ordinary
+       * thing to do. The id arrives as the text "change something", nothing
+       * in idle reads it, and the answer was "I only do quotes, invoices and
+       * payments" — which reads as the bot forgetting what it had just sent.
+       *
+       * "Send it" and "Discard" were already fine by accident: their ids are
+       * "yes" and "no", which the parser calls confirm and reject, and those
+       * land on the same message two cases above. This is the third button
+       * joining them rather than a new idea.
+       *
+       * The ids come from `draftButtons` so renaming one cannot quietly
+       * bring the old answer back.
+       */
+      if (DRAFT_BUTTONS.has(msg.text.trim().toLowerCase())) {
+        return { replies: [VOICE.nothingPending], next: "idle", context: ctx, effects: [] };
+      }
+
       return { replies: [VOICE.outOfScope], next: "idle", context: ctx, effects: [] };
   }
 }
+
+/** The three answers to "Send it?", by id. Tapped long after the draft has gone. */
+const DRAFT_BUTTONS = new Set(draftButtons().map((b) => b.id));
 
 /** Turns a parse into a document under construction, then asks or drafts. */
 function startDocument(p: Parsed, ctx: Context, now: Civil): Step {

@@ -698,6 +698,30 @@ describe("a tapped button", () => {
     assert.equal(out.next, "awaiting_confirm", "the draft is still there");
   });
 
+  it("answers a draft button tapped long after the draft has gone", () => {
+    /*
+     * A WhatsApp message lasts for ever and its buttons stay tappable. Somebody
+     * tapped "Change it" on an invoice sent twenty minutes earlier and was told
+     * "I only do quotes, invoices and payments" — which reads as the bot
+     * forgetting what it had just sent them.
+     *
+     * "Send it" and "Discard" were already right, because their ids are "yes"
+     * and "no" and the parser calls those confirm and reject. Only the middle
+     * one fell through, which is exactly the kind of gap a third case gets.
+     */
+    for (const id of ["yes", "change something", "no"]) {
+      const out = doc("idle", {}, id, { parsed: parse({ intent: "unknown" }) });
+      assert.deepEqual(out.replies, [VOICE.nothingPending], `tapping ${id} after the draft is gone`);
+      assert.deepEqual(out.effects, [], `tapping ${id} must not do anything`);
+    }
+  });
+
+  it("still says it only does invoices to something it really cannot read", () => {
+    // The guard on the fix: it must not swallow the case it sits in front of.
+    const out = doc("idle", {}, "what is the weather", { parsed: parse({ intent: "unknown" }) });
+    assert.deepEqual(out.replies, [VOICE.outOfScope]);
+  });
+
   it("does not mistake a sentence about changing for the button", () => {
     // "change something" is matched whole. A correction that happens to use
     // the word belongs to the correction parser, not to the button branch.
