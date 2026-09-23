@@ -24,7 +24,7 @@ import { checkCode, issueCode } from "../lib/codes.ts";
 import { sendEmail, transport, verificationEmail } from "../email/send.ts";
 import { markEmailVerified, setEmail, recordConsent, saveBankAccount, activateBankAccount, getPendingBank } from "./store.ts";
 import type { Inbound } from "../whatsapp/inbound.ts";
-import { step, VOICE, type Effect, type PendingDoc, type State } from "./machine.ts";
+import { step, VOICE, LIMIT_CARD, type Effect, type PendingDoc, type State } from "./machine.ts";
 import { splitForPlan } from "../whatsapp/flows/definitions.ts";
 import { VAT_PERCENT } from "../parser/extract.ts";
 import { parseAmountToKobo } from "../../core/amount.ts";
@@ -54,6 +54,7 @@ import {
   convertedMessage,
   debtorsMessage,
   limitReachedMessage,
+  limitReachedCaption,
   notFoundMessage,
   remindersStoppedMessage,
   resendMessage,
@@ -127,6 +128,51 @@ async function sendMenu(
 
   log.warn({ userId, reason: sent.reason }, "cheat sheet failed, sending the menu as words");
   return fallback;
+}
+
+/**
+ * Whether this person can start another document, and the card if they cannot.
+ *
+ * Asked before the form opens, not after it comes back. It used to be asked
+ * only in `save_draft`, which is the moment a filled-in form arrives — so the
+ * answer was "you have run out" delivered to somebody who had just typed a
+ * client, an amount and a description into four fields. The work was thrown
+ * away and the refusal read as a bug.
+ *
+ * Returns null when there is room. Returns the words-only message when there
+ * is not and the card could not be sent, so the caller can push it as text.
+ */
+async function limitCard(
+  userId: string,
+  phone: string | undefined,
+  today: Civil,
+  log: FastifyBaseLogger,
+): Promise<{ stop: false } | { stop: true; words: string | null }> {
+  // Independent of each other, and both are needed. One round trip, not two.
+  const [plan, used] = await Promise.all([planOf(userId), documentsThisMonth(userId, today)]);
+  const limit = defaults.plans[plan].documentsPerMonth;
+
+  if (limit === null || used < limit) return { stop: false };
+
+  log.info({ userId, used, limit, plan }, "monthly document limit reached");
+  const words = limitReachedMessage(used, limit);
+  if (!phone) return { stop: true, words };
+
+  const sent = await sendButtons(phone, {
+    headerImage: LIMIT_CARD,
+    body: limitReachedCaption(used, limit),
+    // The id is the word the parser already reads, so tapping this and typing
+    // "upgrade" are the same message arriving by different routes.
+    buttons: [{ id: "upgrade", title: "Upgrade to Pro" }],
+  });
+
+  if (sent.ok) {
+    await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+    return { stop: true, words: null };
+  }
+
+  log.warn({ userId, reason: sent.reason }, "limit card failed, sending the limit as words");
+  return { stop: true, words };
 }
 
 /** The screen each Flow opens on. */
@@ -725,6 +771,25 @@ async function runEffects(
         }
 
         case "send_flow": {
+          /*
+           * The plan limit, asked before the form opens.
+           *
+           * Only for the three document forms. Onboarding and business details
+           * are not documents and have no limit to hit — checking them would
+           * lock somebody out of finishing their own setup.
+           *
+           * Before the `flowId` lookup as well, so the words-only fallback
+           * below does not invite a document that cannot be created either.
+           */
+          if (effect.key === "invoice" || effect.key === "quote" || effect.key === "request") {
+            const gate = await limitCard(userId, ctx.phone, ctx.today, log);
+            if (gate.stop) {
+              if (gate.words) extra.push(gate.words);
+              holdAt = "idle";
+              break;
+            }
+          }
+
           const id = await flowId(effect.key);
 
           /*
@@ -877,23 +942,21 @@ async function runEffects(
         case "save_draft": {
           const doc = effect.doc;
 
-          // F6: plan limits are checked before the draft is shown. Drafting
-          // something and refusing to send it afterwards would be worse than
-          // saying so now, because by then they have read and approved it.
-          // Independent of each other, and both are needed before anything
-          // can be drafted. Another 160ms round trip saved.
-          const [plan, used] = await Promise.all([
-            planOf(userId),
-            documentsThisMonth(userId, ctx.today),
-          ]);
-          const limit = defaults.plans[plan].documentsPerMonth;
-          if (limit !== null) {
-            if (used >= limit) {
-              log.info({ userId, used, limit, plan }, "monthly document limit reached");
-              extra.push(limitReachedMessage(used, limit));
-              holdAt = "idle";
-              break;
-            }
+          /*
+           * F6: plan limits, checked again.
+           *
+           * The form path is already stopped before it opens, but a typed
+           * invoice never passes through `send_flow` and arrives straight
+           * here. This is also the last point at which refusing costs the
+           * user nothing: drafting something and refusing to send it
+           * afterwards would be worse, because by then they have read and
+           * approved it.
+           */
+          const gate = await limitCard(userId, ctx.phone, ctx.today, log);
+          if (gate.stop) {
+            if (gate.words) extra.push(gate.words);
+            holdAt = "idle";
+            break;
           }
 
           const draft = await createDraft(userId, {

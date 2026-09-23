@@ -27,6 +27,8 @@ const FILES: Record<string, { file: string; type: string }> = {
   // Two, chosen by the clock. See `settlesTonight`.
   "paid-tonight.png": { file: "paid-tonight.png", type: "image/png" },
   "paid-tomorrow.png": { file: "paid-tomorrow.png", type: "image/png" },
+  // The Free limit, with what Pro costs and what it removes.
+  "limit.png": { file: "limit.png", type: "image/png" },
 };
 
 /**

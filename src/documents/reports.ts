@@ -173,7 +173,13 @@ export function summaryMessage(s: Summary): string {
 
 /* -------------------------------------------------------------------------- */
 
-/** F6: when the Free limit is hit, say so and offer Pro. */
+/**
+ * F6: when the Free limit is hit, say so and offer Pro.
+ *
+ * The words-only version, used when the card cannot be sent. It has to carry
+ * the offer itself, because there is no picture behind it and no button under
+ * it — so it names the price and says what to reply.
+ */
 export function limitReachedMessage(used: number, limit: number): string {
   return para(
     `🛑 That is your ${b(`${limit} documents`)} for this month.`,
@@ -181,6 +187,26 @@ export function limitReachedMessage(used: number, limit: number): string {
       `You have sent ${used}. The count resets on the 1st.`,
       `Reply ${b("upgrade")} for unlimited documents and a lower fee.`,
     ),
+    i("Invoices already sent still work, and you still get paid."),
+  );
+}
+
+/**
+ * The same thing, under the Pro card.
+ *
+ * Shorter, because the card above it already lists what Pro removes and what
+ * it costs, and a button under it already says how to start. Repeating either
+ * one in the caption would be the message arguing with itself.
+ *
+ * What is left is the part the picture cannot know: how many they have sent,
+ * when the count resets, and that nothing they have already sent is affected.
+ * That last line matters most — somebody who has just been stopped mid-invoice
+ * will wonder whether the money they are already owed is at risk.
+ */
+export function limitReachedCaption(used: number, limit: number): string {
+  return para(
+    `🛑 That is your ${b(`${limit} documents`)} for this month.`,
+    `You have sent ${used}. The count resets on the 1st.`,
     i("Invoices already sent still work, and you still get paid."),
   );
 }
