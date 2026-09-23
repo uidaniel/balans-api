@@ -724,6 +724,17 @@ export const VOICE = {
     `To take it off again, say ${b("remove my logo")}.`,
   ),
 
+  /**
+   * They opened a setting and changed their mind.
+   *
+   * Says what did not happen, because the worry on the way out of a settings
+   * screen is whether something was changed by accident.
+   */
+  settingUnchanged: para(
+    `\u{1F44D} ${b("Left it as it was.")}`,
+    `Nothing has changed. Say ${b("settings")} whenever you want to look again.`,
+  ),
+
   /** They said no. Nothing was saved and nothing needs explaining. */
   logoDeclined: para(
     `👍 ${b("Left it alone.")}`,
@@ -1155,13 +1166,13 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       return atSettingsMenu(text, context, msg);
 
     case "settings:business_name":
-      return takeNewBusinessName(text, context);
+      return takeNewBusinessName(text, context, msg);
 
     case "settings:invoice_number":
-      return takeInvoiceNumber(text, context);
+      return takeInvoiceNumber(text, context, msg);
 
     case "settings:due_days":
-      return takeDueDays(text, context);
+      return takeDueDays(text, context, msg);
 
     case "settings:bank_code":
       return takeBankChangeCode(text, context);
@@ -1254,7 +1265,42 @@ function atSettingsMenu(text: string, ctx: Context, msg: Inbound): Step {
   return retry("settings:menu", ctx, VOICE.settingsUnknown);
 }
 
-function takeNewBusinessName(text: string, ctx: Context): Step {
+/**
+ * The ways somebody says they have changed their mind.
+ *
+ * A settings question used to have no answer except the one it asked for.
+ * Somebody who opened "change business name" and thought better of it typed
+ * "i dont want to change it again" \u2014 and that became their business name,
+ * printed on their invoices and on the page their clients pay from. It is
+ * letters, it is the right length, and every rule the validator had let it
+ * straight through.
+ *
+ * So there is a door now. The phrases are the ones people actually use when
+ * they mean to leave, and the sentence above is one of them, because it was.
+ */
+const CHANGED_MY_MIND =
+  /^(?:cancel|never ?mind|forget it|leave it(?: as it is)?|no|nope|nah|stop|back|exit|quit|skip|i(?:'| a)?m (?:good|fine|ok(?:ay)?)|i (?:do ?n(?:o|')?t|dont|don't) want to change (?:it|this|my name|the name|anything)?(?: again)?)[.!]?$/i;
+
+/**
+ * A way out of a settings question, or null to carry on asking.
+ *
+ * Two doors: saying so, and asking for something else entirely. The second
+ * was already computed for every state and simply never consulted here, which
+ * is why "/pro" was answered twice with "that does not look like a business
+ * name" \u2014 a slash command being told it is a bad name is the bot arguing
+ * with somebody who has plainly moved on.
+ */
+function leaveSetting(text: string, ctx: Context, msg: Inbound, now: Civil): Step | null {
+  if (CHANGED_MY_MIND.test(text.trim())) {
+    return { replies: [VOICE.settingUnchanged], next: "idle", context: forget(ctx), effects: [] };
+  }
+  return commandEscape(msg, ctx, now);
+}
+
+function takeNewBusinessName(text: string, ctx: Context, msg: Inbound): Step {
+  const out = leaveSetting(text, ctx, msg, today(msg));
+  if (out) return out;
+
   const name = text.replace(/\s+/g, " ").trim();
 
   /*
@@ -1294,7 +1340,10 @@ function takeNewBusinessName(text: string, ctx: Context): Step {
  * because somebody who types 5 after issuing 40 needs to know why nothing
  * appeared to happen.
  */
-function takeInvoiceNumber(text: string, ctx: Context): Step {
+function takeInvoiceNumber(text: string, ctx: Context, msg: Inbound): Step {
+  const out = leaveSetting(text, ctx, msg, today(msg));
+  if (out) return out;
+
   const start = Number(text.trim().replace(/[^0-9]/g, ""));
   if (!Number.isInteger(start) || start < 1 || start > 2_000_000_000) {
     return retry("settings:invoice_number", ctx, VOICE.askInvoiceStart);
@@ -1307,7 +1356,10 @@ function takeInvoiceNumber(text: string, ctx: Context): Step {
   };
 }
 
-function takeDueDays(text: string, ctx: Context): Step {
+function takeDueDays(text: string, ctx: Context, msg: Inbound): Step {
+  const out = leaveSetting(text, ctx, msg, today(msg));
+  if (out) return out;
+
   const days = Number(text.trim().replace(/[^0-9]/g, ""));
   if (!Number.isInteger(days) || days < 0 || days > 180) {
     return retry("settings:due_days", ctx, VOICE.askDueDays);

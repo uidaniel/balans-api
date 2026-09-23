@@ -157,3 +157,62 @@ describe("the commands still being commands", () => {
     );
   });
 });
+
+describe("changing your mind about a setting", () => {
+  /*
+   * From a live chat, and it ended with somebody's business name being
+   * "I Dont Want To Change It Again" — printed on their invoices and on the
+   * page their clients pay from.
+   *
+   * They had opened "change business name", thought better of it, and said
+   * so. The question had no answer except the one it asked for: the sentence
+   * is letters, it is the right length, and every rule the validator had let
+   * it through. Twice before that they had typed "/pro", and were told twice
+   * that it did not look like a business name — the escape was computed for
+   * this state and simply never consulted.
+   */
+  const msg = (text: string, parsed?: unknown) =>
+    ({ text, today: { y: 2026, m: 9, d: 23 }, parsed }) as never;
+
+  const at = (text: string, parsed?: unknown) =>
+    step("settings:business_name", { businessName: "Kemi Studio" }, msg(text, parsed), "1.0");
+
+  it("takes no for an answer", () => {
+    for (const said of [
+      "i dont want to change it again",
+      "I don't want to change it",
+      "cancel",
+      "never mind",
+      "forget it",
+      "leave it as it is",
+      "no",
+      "stop",
+    ]) {
+      const out = at(said);
+      assert.equal(out.next, "idle", said);
+      assert.deepEqual(out.effects, [], `${said} changed something`);
+      assert.match(String(out.replies[0]), /Left it as it was/, said);
+    }
+  });
+
+  it("lets a command out rather than arguing with it", () => {
+    // "/pro" is somebody who has moved on. Telling them it is a bad name is
+    // the bot refusing to notice.
+    const out = at("/pro", { intent: "upgrade", confidence: 1 });
+    assert.notEqual(out.next, "settings:business_name");
+  });
+
+  it("still takes a real name", () => {
+    const out = at("Kemi Adeyemi Studio");
+    assert.deepEqual(
+      out.effects.map((e) => e.type),
+      ["set_business_name"],
+    );
+  });
+
+  it("still refuses one that is plainly not a name", () => {
+    const out = at("kemi@studio.ng");
+    assert.equal(out.next, "settings:business_name");
+    assert.match(String(out.replies[0]), /email address/i);
+  });
+});
