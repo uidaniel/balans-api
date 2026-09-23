@@ -18,6 +18,7 @@ import { settlesTonight } from "./settlement.ts";
 import { env } from "../config.ts";
 import { renderReceiptPdf } from "../documents/pdf.ts";
 import { proStarted } from "../billing/messages.ts";
+import { PRO_CARD } from "../conversation/machine.ts";
 import { b, block, lines, para, row } from "../whatsapp/format.ts";
 import { arrivalLine } from "./settlement.ts";
 
@@ -168,6 +169,10 @@ export async function notifyProActive(
       userId,
       phone,
       text: proStarted(),
+      // The card, with the confirmation underneath it. Worth the picture:
+      // this is the one message in the product somebody has actually paid
+      // for, and it is the moment to make it feel like something.
+      image: PRO_CARD,
       // Outside the window this is worth a template: somebody who has just
       // parted with ₦4,000 should not wait a day to hear it worked.
       fallback: {

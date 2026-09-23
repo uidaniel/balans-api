@@ -26,7 +26,7 @@ import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 
 import { proOffer, proOfferButtons } from "./messages.ts";
-import { LIMIT_CARD, UPGRADE_CARD } from "../conversation/machine.ts";
+import { LIMIT_CARD, UPGRADE_CARD, PRO_CARD } from "../conversation/machine.ts";
 import { defaults } from "../config.ts";
 import { availableTo } from "../pdf/templates.ts";
 
@@ -139,6 +139,29 @@ describe("when the card cannot be sent", () => {
   });
 });
 
+describe("the card that arrives once the money is in", () => {
+  const notify = read("../payments/notify.ts");
+
+  it("rides on the activation message", () => {
+    // The one message in the product somebody has actually paid for.
+    const branch = notify.slice(notify.indexOf("text: proStarted()"));
+    assert.match(branch.slice(0, 500), /image: PRO_CARD/);
+  });
+
+  it("is a third picture, not one of the other two", () => {
+    // "Five done" and "Upgrade to Pro" are both offers. This one is a
+    // receipt, and sending an offer to somebody who has just bought is the
+    // shop assistant again.
+    assert.notEqual(PRO_CARD, LIMIT_CARD);
+    assert.notEqual(PRO_CARD, UPGRADE_CARD);
+  });
+
+  it("is served by the brand route", () => {
+    const route = read("../http/routes/brand.ts");
+    assert.match(route, new RegExp(`"${PRO_CARD.split("/").pop()}":`));
+  });
+});
+
 describe("what the cards have painted on them", () => {
   /*
    * Not assertions about the code. These are the values the artwork at
@@ -155,7 +178,23 @@ describe("what the cards have painted on them", () => {
   });
 
   it("still match the number of designs", () => {
-    assert.equal(availableTo("pro").length, 8, 'both cards say "8 invoice designs"');
+    assert.equal(availableTo("pro").length, 8, 'the cards say "8 invoice designs"');
+  });
+
+  it("and the membership card carries a date nothing can update", () => {
+    /*
+     * pro.png reads "MEMBER SINCE SEP 2026". It is painted on, so every
+     * person who subscribes after September gets a card with the wrong month
+     * on it. Nothing in code can fix that — this is here so it is a decision
+     * somebody makes rather than something a customer points out.
+     *
+     * Either redraw it without the date, or generate the card per user.
+     */
+    const stale = new Date("2026-10-01");
+    assert.ok(
+      Date.now() < stale.getTime(),
+      "pro.png says SEP 2026 and it is now October or later — redraw it or drop the date",
+    );
   });
 
   it("still match the promise of no fee", () => {

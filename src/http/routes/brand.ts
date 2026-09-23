@@ -32,6 +32,8 @@ const FILES: Record<string, { file: string; type: string }> = {
   // The same offer without the "five done" headline, for anyone who asks
   // for Pro before they have run out.
   "upgrade.png": { file: "upgrade.png", type: "image/png" },
+  // The membership card, once the money is in.
+  "pro.png": { file: "pro.png", type: "image/png" },
 };
 
 /**
