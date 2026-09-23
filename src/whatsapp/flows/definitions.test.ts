@@ -780,3 +780,124 @@ describe("line items on the document forms", () => {
     assert.ok(!names.some((n) => typeof n === "string" && n.startsWith("item_")));
   });
 });
+
+/**
+ * A form field that is not on screen has no value to read.
+ *
+ * `${form.item_three_description}` in a payload is not a lookup that comes
+ * back empty when item three has no boxes rendered. The Flow dies, and it
+ * dies on the tap *after* the one that built the payload, which is why this
+ * cost two rounds of "Something went wrong. Try again later." to find: the
+ * screen you are staring at when it breaks is not the screen that broke it.
+ *
+ * Which items are on screen is decided by the count, and the boxes are laid
+ * out as a prefix \u2014 two, then two and three, and so on. So an action may
+ * read an item from the form only from inside the branch of the count Switch
+ * that guarantees the boxes are there. An action outside that Switch, like
+ * the single "Add another item" link, may read no items at all.
+ */
+describe("what a Flow reads out of a form", () => {
+  const WORDS = ["two", "three", "four", "five"];
+
+  /** Every action in a tree, with the Switch branches it sits inside. */
+  function actions(
+    value: unknown,
+    within: { value: string; branch: string }[] = [],
+    out: { action: Node; label: string; within: { value: string; branch: string }[] }[] = [],
+  ) {
+    if (Array.isArray(value)) {
+      for (const v of value) actions(v, within, out);
+      return out;
+    }
+    if (!isNode(value)) return out;
+
+    const act = value["on-click-action"];
+    if (isNode(act) && act.name === "navigate") {
+      out.push({
+        action: act,
+        label: String(value.text ?? value.label ?? value.type),
+        within,
+      });
+    }
+
+    if (value.type === "Switch" && isNode(value.cases)) {
+      for (const [branch, body] of Object.entries(value.cases)) {
+        actions(body, [...within, { value: String(value.value), branch }], out);
+      }
+      return out;
+    }
+
+    for (const [k, v] of Object.entries(value)) {
+      if (k !== "on-click-action") actions(v, within, out);
+    }
+    return out;
+  }
+
+  for (const key of ["invoice", "quote"]) {
+    const flow = FLOWS.find((f) => f.key === key)!;
+    const json = flow.json as { screens: Node[] };
+
+    it(`${key}: only reads an item from the form where the form is showing it`, () => {
+      for (const screen of json.screens) {
+        /*
+         * Fields nothing can hide. An item screen renders its own two boxes
+         * straight into the Form, so its Save may read them without asking
+         * anybody — it is the form that lists items conditionally.
+         */
+        const always = new Set(
+          walk(screen.layout)
+            .filter((n) => n.type === "Switch")
+            .reduce(
+              (rest, sw) => rest.filter((n) => !walk(sw.cases).includes(n)),
+              walk(screen.layout).filter((n) => n.type === "TextInput"),
+            )
+            .map((n) => String(n.name)),
+        );
+
+        for (const { action, label, within } of actions(screen.layout)) {
+          const count = within.find((w) => w.value === "${data.item_count}");
+          // "one" is the form with no extra boxes on it, and no count
+          // Switch at all is the same thing: nothing may be read.
+          const rendered = count && count.branch !== "one" ? WORDS.indexOf(count.branch) : -1;
+
+          const payload = (action.payload ?? {}) as Record<string, unknown>;
+          for (const [field, value] of Object.entries(payload)) {
+            if (typeof value !== "string") continue;
+            const m = /^\$\{form\.item_([a-z]+)_/.exec(value);
+            if (!m) continue;
+            if (always.has(value.slice(7, -1))) continue;
+            const at = WORDS.indexOf(m[1]!);
+            assert.ok(
+              at <= rendered,
+              `${screen.id} "${label}" reads ${field} from the form, ` +
+                `but item ${m[1]} has no boxes on screen there` +
+                (count ? ` (count is "${count.branch}")` : " (no count Switch above it)"),
+            );
+          }
+        }
+      }
+    });
+
+    it(`${key}: leaves the count agreeing with the boxes after a removal`, () => {
+      for (const screen of json.screens) {
+        for (const { action, label } of actions(screen.layout)) {
+          const payload = (action.payload ?? {}) as Record<string, unknown>;
+          const dropped = WORDS.filter((w) => payload[`has_${w}`] === "no");
+          const count = payload.item_count;
+          // A payload that turns nothing off, or names no count, has
+          // nothing to disagree with.
+          if (dropped.length === 0 || typeof count !== "string" || count.startsWith("${")) continue;
+
+          const first = WORDS.indexOf(dropped[0]!);
+          const expected = first === 0 ? "one" : WORDS[first - 1]!;
+          assert.equal(
+            count,
+            expected,
+            `${screen.id} "${label}" drops item ${dropped[0]} but says the invoice is ` +
+              `"${String(count)}" items long \u2014 which sends Next to read a box that is not there`,
+          );
+        }
+      }
+    });
+  }
+});

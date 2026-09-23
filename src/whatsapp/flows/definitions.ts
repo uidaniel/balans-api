@@ -751,7 +751,20 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
                   [f.description]: "",
                   [f.amount]: "",
                   [flagField(word)]: "no",
-                  item_count: word,
+                  /*
+                   * The count goes back one, not to this item's own word.
+                   *
+                   * It said `word`, which claimed three items on an invoice
+                   * that had just lost its third. The boxes on the form run
+                   * off the flags and the Next button runs off the count, so
+                   * a count that overstates them sends Next to read an item
+                   * out of a form that is not showing it — the same death as
+                   * above, one screen along.
+                   *
+                   * Removing the only extra item leaves "one", which is the
+                   * form with no extras on it.
+                   */
+                  item_count: index === 0 ? "one" : EXTRA_ITEMS[index - 1]!,
                 },
               },
             },
@@ -883,70 +896,6 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
       },
     },
   });
-
-  /**
-   * Taking one item back off the invoice.
-   *
-   * A link rather than a button, and it goes to a screen of its own because a
-   * screen cannot navigate to itself: "Same screen navigation is not allowed.
-   * Loop detected." A cycle through another screen is fine, probed on 23
-   * September 2026, so Remove goes out to a one-line confirmation and comes
-   * straight back with the item gone.
-   *
-   * `upTo` is how many items have boxes on screen, which is what decides
-   * where each item is read from. The one being removed leaves as two empty
-   * strings and with its flag off: empty is what the document reader drops,
-   * and the flag is what takes the boxes off the form.
-   */
-  const removeLink = (index: number) => {
-    const w = EXTRA_ITEMS[index]!;
-    const f = itemFields(w);
-    return {
-      type: "EmbeddedLink",
-      text: `Remove item ${index + 2}`,
-      "on-click-action": {
-        name: "navigate",
-        next: { type: "screen", name: "REMOVED" },
-        payload: {
-          /*
-           * The fields that are always on screen come from the form, so
-           * nothing anybody has typed into the invoice itself is lost by
-           * removing a line.
-           */
-          client_name: "${form.client_name}",
-          client_email: "${form.client_email}",
-          description: "${form.description}",
-          amount: "${form.amount}",
-          due_date: "${form.due_date}",
-          plan: "${data.plan}",
-          notes: "${data.notes}",
-          vat: "${data.vat}",
-          pass_fees: "${data.pass_fees}",
-          /*
-           * The other items come from data, not from the form, and that is
-           * the one thing this link gives up.
-           *
-           * It sits inside its own item's Switch so that it disappears with
-           * the item rather than outliving it, which means it cannot know how
-           * many other items have boxes on screen — and reading a field that
-           * is not rendered is not something to find out on somebody's
-           * invoice. What it costs is an unsaved edit to a *different* extra
-           * item, which reverts to what that item was when the screen opened.
-           * The screen redraws from this payload either way, and what it
-           * shows afterwards is exactly what will be sent.
-           */
-          ...itemPayloadUpTo(null),
-          ...flagPayload(null),
-          item_count: "${data.item_count}",
-          ...initPayload(0),
-          // Last, so they win: this is the line coming off.
-          [f.description]: "",
-          [f.amount]: "",
-          [flagField(w)]: "no",
-        },
-      },
-    };
-  };
 
   /* Onward to the terms, carrying the same. */
   const onward = (at: number | null) => ({
@@ -1190,9 +1139,31 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
               ? [
                   ...itemBoxes,
                   { type: "Switch", value: "${data.item_count}", cases },
-                  // One link, one target. ADD_NEXT works out which item
-                  // screen that means.
-                  addLink("ADD_NEXT", 3),
+                  /*
+                   * One link, one target. ADD_NEXT works out which item
+                   * screen that means.
+                   *
+                   * `null`, so every item travels from data rather than from
+                   * the form — and that is not tidiness, it is the whole
+                   * bug. A payload cannot vary by branch here: a link's
+                   * payload is fixed at publish and the screen may hold two
+                   * links in total, counted across every Switch, so there is
+                   * no per-count version of this one. Reading `${form.x}`
+                   * for an item whose boxes are not on screen therefore
+                   * happens on every count below five — and a form field
+                   * that was never rendered has no value to read. The Flow
+                   * died one tap later, on ADD_NEXT, with "Something went
+                   * wrong. Try again later."
+                   *
+                   * What it costs: an edit typed into an item box and not
+                   * followed by Next is lost by tapping Add. The always-on
+                   * fields above — client, item, amount, date — are read
+                   * from the form and survive, because those are rendered
+                   * whatever the count is. Next reads the item boxes from
+                   * the form, and Next is inside the Switch that knows how
+                   * many of them there are, which is why it is allowed to.
+                   */
+                  addLink("ADD_NEXT", null),
                 ]
               : [addLink(itemScreenId(EXTRA_ITEMS[0]!), null)]),
             {
