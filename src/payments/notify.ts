@@ -20,6 +20,7 @@ import { renderReceiptPdf } from "../documents/pdf.ts";
 import { proStarted } from "../billing/messages.ts";
 import { PRO_CARD } from "../conversation/machine.ts";
 import { proEmail, sendEmail } from "../email/send.ts";
+import { emailPaidToClient, emailPaidToUser } from "../email/paid-delivery.ts";
 import { displayNumber } from "../whatsapp/number.ts";
 
 /**
@@ -44,6 +45,13 @@ export type PaidNotice = {
   userId: string;
   /** The payment that settled it, so the receipt can be rendered from it. */
   paymentId?: string;
+  /**
+   * The document it paid, so the two emails can be sent from it.
+   *
+   * Optional because a payment can exist without one — a subscription paid by
+   * link is a payment with no invoice behind it — and those send nothing.
+   */
+  documentId?: string;
   documentType: string;
   documentNumber: number | null;
   clientName: string;
@@ -156,6 +164,24 @@ export async function notifyPaid(n: PaidNotice, log: FastifyBaseLogger): Promise
     { userId: n.userId, documentNumber: n.documentNumber, outcome: outcome.kind },
     "payment notice",
   );
+
+  /*
+   * And the paperwork, by email, to both sides.
+   *
+   * After the WhatsApp message and never in front of it. The chat is where
+   * this product lives and the message above is the one people screenshot;
+   * rendering two PDFs and talking to a mail provider must not stand between
+   * a payment and somebody hearing about it.
+   *
+   * Only when the invoice is settled in full. A deposit is not a paid invoice
+   * and stamping one PAID would be a lie on a document somebody files.
+   *
+   * Not awaited, and neither call throws. The money has already moved.
+   */
+  if (n.documentId && n.fullyPaid) {
+    void emailPaidToClient(n.documentId, log);
+    void emailPaidToUser(n.documentId, log);
+  }
 }
 
 /**

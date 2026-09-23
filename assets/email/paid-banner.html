@@ -1,0 +1,76 @@
+<!doctype html>
+<!--
+  The banner at the top of both payment emails, as it was drawn.
+
+  Authored at 1120x448, which is the size paid-banner.png is captured at and
+  twice the 560x224 the email shows it at — the same 2x the welcome and Pro
+  banners use, so it stays sharp on a phone.
+
+  No rounded corners here on purpose: the renderer captures on an opaque
+  background, so rounding the picture would leave four white corners on the
+  email's cream page. `layout()` rounds the <img> instead, which every mail
+  client that matters honours.
+
+  It is the WhatsApp paid card (assets/brand/paid-tonight.png) turned on its
+  side, and with the settlement line taken off. The card says "in your bank
+  tonight" because it is sent within minutes of the payment and the clock is
+  still true; an email is kept, and a picture saying "tonight" would still say
+  it next March when somebody opens it looking for the receipt.
+
+  "Dem don balans you" is the one piece of Nigerian English in the product's
+  own voice, and it is on the freelancer's copy rather than the client's for a
+  reason: the client is being thanked, the freelancer is being congratulated,
+  and only one of those is a moment.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face{font-family:"Geist";font-weight:700;src:url("../fonts/Geist-Bold.ttf")}
+@font-face{font-family:"Geist";font-weight:800;src:url("../fonts/Geist-ExtraBold.ttf")}
+@font-face{font-family:"Instrument Sans";font-weight:600;src:url("../fonts/InstrumentSans-SemiBold.ttf")}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1120px;height:448px}
+.banner{position:relative;width:1120px;height:448px;overflow:hidden;
+  background:#10231C;color:#F6F1E7;font-family:"Instrument Sans",sans-serif}
+/*
+ * Marigold bleeding in from the side the stamp is on.
+ *
+ * A gradient, not a circle at low opacity: a flat circle has an edge, and at
+ * this size the edge reads as a dark olive disc sitting on the banner rather
+ * than as light coming from behind it.
+ */
+.glow{position:absolute;right:-220px;top:-260px;width:760px;height:760px;
+  background:radial-gradient(circle,rgba(245,184,46,.30) 0%,rgba(245,184,46,.13) 42%,rgba(245,184,46,0) 70%)}
+.copy{position:absolute;left:64px;top:76px}
+.tag{display:inline-flex;align-items:center;gap:14px;height:52px;padding:0 24px 0 20px;
+  border-radius:999px;background:#183A2B;color:#6FDC9C;font-size:24px;font-weight:600}
+.tag svg{width:24px;height:24px}
+h1{margin-top:32px;font-family:"Geist",sans-serif;font-weight:800;font-size:80px;line-height:1;
+  letter-spacing:-.045em}
+.sub{margin-top:24px;font-size:26px;font-weight:600;color:rgba(246,241,231,.62)}
+/* The same mark the paid invoice itself now carries. */
+.stamp{position:absolute;right:76px;top:50%;transform:translateY(-50%) rotate(-12deg);
+  padding:20px 44px;border:8px solid #6FDC9C;border-radius:20px;color:#6FDC9C;
+  font-family:"Geist",sans-serif;font-weight:800;font-size:80px;letter-spacing:.12em;
+  opacity:.92}
+</style>
+</head>
+<body>
+<div class="banner">
+  <div class="glow"></div>
+  <div class="copy">
+    <span class="tag">
+      <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M1.5 6.4 4.4 9.3 10.5 3" stroke="#6FDC9C" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Payment received
+    </span>
+    <h1>Dem don balans<br>you.</h1>
+    <p class="sub">The receipt and the paid invoice are attached.</p>
+  </div>
+  <div class="stamp">PAID</div>
+</div>
+</body>
+</html>

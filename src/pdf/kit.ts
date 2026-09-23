@@ -33,6 +33,8 @@ export const MARIGOLD = "#F5B82E";
 export const MARIGOLD_DEEP = "#D99A12";
 export const CREAM = "#F6F1E7";
 export const MOSS = "#3F8F5F";
+/** The stamp, which is the brand's green at a weight that survives 17% opacity. */
+const MOSS_INK = "#2F7A4B";
 
 /** `text-ink/45` and friends, which is how the web sheets state every tint. */
 export const ink = (alpha: number): string => `rgba(16,35,28,${alpha})`;
@@ -206,6 +208,23 @@ font-size:.46em;line-height:1.6;color:${ink(0.42)}}
 .mark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-28deg);
 font-family:${FONT.display};font-size:5.2em;font-weight:800;letter-spacing:.06em;
 color:${ink(0.07)};white-space:nowrap}
+/*
+ * PAID, across the invoice that was paid.
+ *
+ * The same placement as SAMPLE and deliberately not the same weight. SAMPLE
+ * warns you that a document is not real, so it is faint enough to read
+ * through. This one is the answer to the only question anybody opens an old
+ * invoice to ask, so it is a stamp rather than a watermark: moss green,
+ * outlined, and readable from across a desk.
+ *
+ * Behind the content and not over it. An invoice is a record somebody's
+ * accountant reads, and a stamp that obscures a figure turns a paid invoice
+ * into a query.
+ */
+.paid{position:absolute;top:46%;left:50%;transform:translate(-50%,-50%) rotate(-16deg);
+padding:.14em .42em;border:.07em solid ${MOSS_INK};border-radius:.14em;
+font-family:${FONT.display};font-size:4.4em;font-weight:800;letter-spacing:.1em;
+color:${MOSS_INK};opacity:.17;white-space:nowrap;pointer-events:none}
 `;
 
 /* -------------------------------------------------------------------------- */
@@ -242,6 +261,7 @@ export function sheet(d: DocumentData, opts: RenderOptions, parts: SheetParts): 
 <style>${fontFaces(fonts, opts.fonts ?? "embed")}${BASE}${css}</style></head>
 <body><div class="sheet" style="font-size:${sheetFontSize(d, rowEm)}">
 ${d.variant === "sample" ? `<div class="mark">SAMPLE</div>` : ""}
+${isPaid(d) ? `<div class="paid">PAID</div>` : ""}
 ${body}
 ${d.ref ? `<div class="ref">${esc(d.ref)}</div>` : ""}
 </div></body></html>`;
@@ -268,6 +288,20 @@ const TITLE_CASE: Record<DocumentData["variant"], string> = {
 export const upperKind = (d: DocumentData): string => UPPER[d.variant];
 export const kind = (d: DocumentData): string => TITLE_CASE[d.variant];
 export const isReceipt = (d: DocumentData): boolean => d.variant === "receipt";
+
+/**
+ * Whether this document has been paid in full, and should say so on its face.
+ *
+ * Only invoices. A receipt is already proof of payment and stamping it says
+ * the same thing twice; a quote has nothing to pay yet; and a sample is a
+ * demonstration with nobody's money in it, so a PAID stamp there is a claim
+ * about a client who does not exist.
+ *
+ * `totalKobo > 0` because a zero-total document is not paid, it is empty, and
+ * `owed <= 0` would otherwise stamp it.
+ */
+export const isPaid = (d: DocumentData): boolean =>
+  d.variant === "invoice" && d.totalKobo > 0 && owedKobo(d) <= 0;
 
 export const dueLabel = (d: DocumentData): string => (d.variant === "quote" ? "Valid until" : "Due");
 export const numberLabel = (d: DocumentData): string =>
