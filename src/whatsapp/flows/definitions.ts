@@ -426,6 +426,16 @@ export function planIdFor(o: { depositPercent?: number | null; instalments?: num
  */
 export const EXTRA_ITEMS = ["two", "three", "four", "five"] as const;
 
+/**
+ * How many items the invoice has, as a word.
+ *
+ * A word because a Switch case key that looks like a number is refused on
+ * upload, with "Cannot read property 'type' of undefined" and no line number.
+ * "one" is the form with no extra items on it, which is where a removal can
+ * land you.
+ */
+const COUNTS = ["one", ...EXTRA_ITEMS] as const;
+
 /** Field names for one item, in the order they appear on the screen. */
 export const itemFields = (w: string): { description: string; amount: string } => ({
   description: `item_${w}_description`,
@@ -786,7 +796,7 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
    * the first copy, which has none. That item is read from the form so an
    * edit to it counts; the rest are passed along from data untouched.
    */
-  const leaving = (upTo: number | null) => ({
+  const leaving = (upTo: number | null, flags = true) => ({
     client_name: "${form.client_name}",
     client_email: "${form.client_email}",
     description: "${form.description}",
@@ -797,7 +807,16 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
     vat: "${data.vat}",
     pass_fees: "${data.pass_fees}",
     ...itemPayloadUpTo(upTo),
-    ...(again ? flagPayload(null) : flagPayload("fresh")),
+    /*
+     * The flags travel between the form and the item screens and stop there.
+     *
+     * TERMS does not declare them, and a payload carrying a key the screen it
+     * lands on has never heard of is not ignored — the Flow dies with
+     * "Something went wrong. Try again later.", on the tap after the one that
+     * caused it. Adding them to TERMS would work too, and would mean sending
+     * the form's own bookkeeping on to the screen that submits the invoice.
+     */
+    ...(flags ? (again ? flagPayload(null) : flagPayload("fresh")) : {}),
   });
 
   /* Where "Add another item" goes, and everything it takes with it. */
@@ -811,6 +830,44 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
     },
   });
 
+  /**
+   * Taking one item back off the invoice.
+   *
+   * A link rather than a button, and it goes to a screen of its own because a
+   * screen cannot navigate to itself: "Same screen navigation is not allowed.
+   * Loop detected." A cycle through another screen is fine, probed on 23
+   * September 2026, so Remove goes out to a one-line confirmation and comes
+   * straight back with the item gone.
+   *
+   * `upTo` is how many items have boxes on screen, which is what decides
+   * where each item is read from. The one being removed leaves as two empty
+   * strings and with its flag off: empty is what the document reader drops,
+   * and the flag is what takes the boxes off the form.
+   */
+  const removeLink = (index: number) => {
+    const w = EXTRA_ITEMS[index]!;
+    const f = itemFields(w);
+    return {
+      type: "EmbeddedLink",
+      text: `Remove item ${index + 2}`,
+      "on-click-action": {
+        name: "navigate",
+        next: { type: "screen", name: "REMOVED" },
+        payload: {
+          ...leaving(index),
+          // After everything else, so these win over what `leaving` carried.
+          [f.description]: "",
+          [f.amount]: "",
+          [flagField(w)]: "no",
+          // The count steps back with it, so Add offers this slot again
+          // rather than walking past it and leaving a hole.
+          item_count: COUNTS[index]!,
+          ...initPayload(0),
+        },
+      },
+    };
+  };
+
   /* Onward to the terms, carrying the same. */
   const onward = (at: number | null) => ({
     type: "Footer",
@@ -818,7 +875,7 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
     "on-click-action": {
       name: "navigate",
       next: { type: "screen", name: "TERMS" },
-      payload: leaving(at),
+      payload: leaving(at, false),
     },
   });
 
@@ -903,9 +960,43 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
    */
   const footers: Record<string, unknown[]> = {};
 
+  /*
+   * No running total on this screen.
+   *
+   * There was a line reading "3 items on this invoice", and a removal makes
+   * it a lie: the count stays where it is so that Add keeps walking forwards
+   * into unused slots rather than refilling a hole. A number that is wrong
+   * after an ordinary action is worse than no number, and the items are all
+   * listed above it anyway.
+   */
+  /*
+   * One item back to nothing: the form with no extras on it.
+   *
+   * Reached by removing the only extra item. Without this case the Switch
+   * would match nothing, and a screen whose Footer lives inside a Switch and
+   * matches nothing has no way forward at all.
+   */
+  cases.one = [addLink(itemScreenId(EXTRA_ITEMS[0]!), null)];
+  footers.one = [onward(null)];
+
   EXTRA_ITEMS.forEach((_, index) => {
     const next = EXTRA_ITEMS[index + 1];
     cases[EXTRA_ITEMS[index]!] = [
+      /*
+       * Remove takes the last item off, and only the last one.
+       *
+       * Four links, one per item, was the first shape and it could not be
+       * had: the payload has to know how many items are on screen, which only
+       * the count knows, and a Switch cannot nest inside a Switch — "Invalid
+       * value found for property 'type'". A link that outlived the item it
+       * removed was the alternative, which is a button that lies.
+       *
+       * The last item is the one somebody has just added and wants back out,
+       * it is unambiguous, and taking it off leaves no hole. Removing one
+       * from the middle is still clearing its two boxes, which is a gesture
+       * rather than a button but is exact about which line it drops.
+       */
+      removeLink(index),
       next
         ? addLink(itemScreenId(next), index)
         : {
@@ -1069,6 +1160,64 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
   };
 }
 
+/**
+ * Where Remove goes, so that it can come back.
+ *
+ * A screen cannot navigate to itself — "Same screen navigation is not allowed.
+ * Loop detected" — so taking an item off the invoice cannot simply redraw the
+ * form. A cycle through another screen is allowed, so this is that screen: it
+ * says what happened, hands everything back, and has no opinion of its own.
+ *
+ * It collects nothing, which is why there is no Form on it. Everything it
+ * holds arrived in the payload of the link that removed the item, already
+ * blanked, and leaves again untouched.
+ */
+function removedScreen(): Record<string, unknown> {
+  const carried = {
+    client_name: { type: "string", __example__: "Daniel Uwak" },
+    client_email: { type: "string", __example__: "" },
+    description: { type: "string", __example__: "Website design" },
+    // A string: it came out of a form on the way here.
+    amount: { type: "string", __example__: "250000" },
+    due_date: { type: "string", __example__: "" },
+    plan: { type: "string", __example__: "one" },
+    notes: { type: "string", __example__: "" },
+    vat: { type: "boolean", __example__: false },
+    pass_fees: { type: "boolean", __example__: false },
+    item_count: { type: "string", __example__: "two" },
+  };
+
+  const back = Object.fromEntries(
+    Object.keys({ ...carried, ...flagData(), ...itemData(0) }).map((k) => [k, `\${data.${k}}`]),
+  );
+
+  return {
+    id: "REMOVED",
+    title: "Item removed",
+    terminal: false,
+    data: { ...carried, ...flagData(), ...itemData(0) },
+    layout: {
+      type: "SingleColumnLayout",
+      children: [
+        { type: "TextSubheading", text: "That item is off the invoice." },
+        {
+          type: "TextCaption",
+          text: "Everything else is as you left it.",
+        },
+        {
+          type: "Footer",
+          label: "Back to the invoice",
+          "on-click-action": {
+            name: "navigate",
+            next: { type: "screen", name: "WORK_AGAIN" },
+            payload: back,
+          },
+        },
+      ],
+    },
+  };
+}
+
 function documentFlow(o: DocumentFlow): FlowDefinition {
   return {
   key: o.key,
@@ -1080,6 +1229,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
       workScreen(o, false),
       workScreen(o, true),
       ...EXTRA_ITEMS.map((_, index) => itemScreen(index, o)),
+      removedScreen(),
       {
         id: "TERMS",
         title: "How it is paid",

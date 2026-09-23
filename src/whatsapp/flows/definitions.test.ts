@@ -105,6 +105,43 @@ describe("every published Flow", () => {
         }
       });
 
+      it("hands every screen exactly the data it declares", () => {
+        /*
+         * The failure this catches killed a live Flow, and it killed it one
+         * tap after the mistake: "Something went wrong. Try again later.", a
+         * blank screen, and no way to tell which key did it.
+         *
+         * Four flags were added to say which items exist. They travel between
+         * the form and the item screens, and every route out to TERMS carried
+         * them too \u2014 to a screen that had never heard of them. A payload key
+         * the target does not declare is not ignored.
+         *
+         * The other direction is as fatal and easier to do by accident: a
+         * screen that declares a field nobody sends it.
+         */
+        const byId = new Map(json.screens.map((s) => [String(s.id), s]));
+
+        for (const screen of json.screens) {
+          for (const node of walk(screen.layout)) {
+            if (node.name !== "navigate") continue;
+
+            const target = byId.get(String((node.next as Node | undefined)?.name));
+            if (!target) continue;
+
+            const declared = new Set(Object.keys((target.data as Node) ?? {}));
+            const sent = new Set(Object.keys((node.payload as Node) ?? {}));
+            const route = `${String(screen.id)} -> ${String(target.id)}`;
+
+            for (const key of sent) {
+              assert.ok(declared.has(key), `${route} sends ${key}, which it does not declare`);
+            }
+            for (const key of declared) {
+              assert.ok(sent.has(key), `${route} never sends ${key}, which it declares`);
+            }
+          }
+        }
+      });
+
       it("declares data with the type of the field it fills", () => {
         /*
          * Meta refuses the whole Flow for this, and it is invisible here:
@@ -443,7 +480,8 @@ describe("line items on the document forms", () => {
         WORDS.forEach((_, index) => {
           const branch = cases[WORDS[index]!];
           assert.ok(branch, `no branch for ${index + 2} items`);
-          const link = branch!.find((n) => n.type === "EmbeddedLink");
+          // Two links live here now: Remove comes first, Add follows.
+          const link = branch!.find((n) => n.text === "Add another item");
           const next = WORDS[index + 1];
           if (next) {
             assert.equal((action(link!).next as Node).name, SCREEN(next), `${index + 2} items`);
@@ -568,9 +606,17 @@ describe("line items on the document forms", () => {
           assert.equal(index >= 0, true);
         });
 
-        // And the form starts with none of them on.
+        /*
+         * The form starts with none of them on \u2014 read from the link that
+         * leaves for an item screen, because the flags only travel between
+         * the form and those screens. The Next button does not carry them:
+         * TERMS does not declare them, and a payload key a screen has never
+         * heard of kills the Flow on the tap after the one that sent it.
+         */
+        const out = links("WORK").find((n) => n.text === "Add another item")!;
         for (const w of WORDS) {
-          assert.equal(payloadOf(footer("WORK"))[`has_${w}`], "no", `WORK starts ${w} on`);
+          assert.equal(payloadOf(out)[`has_${w}`], "no", `WORK starts ${w} on`);
+          assert.equal(payloadOf(footer("WORK"))[`has_${w}`], undefined, `TERMS is sent ${w}`);
         }
       });
 
@@ -631,6 +677,19 @@ describe("line items on the document forms", () => {
 
         for (const node of routes) {
           const payload = payloadOf(node);
+
+          /*
+           * Remove is the one route that writes rather than forwards: it
+           * blanks the item it drops, which is what makes the document reader
+           * leave that line out. Everything else it carries is checked below
+           * like any other route.
+           */
+          const dropped = WORDS.find((w) => payload[`item_${w}_amount`] === "");
+          if (dropped) {
+            assert.equal(payload[`item_${dropped}_description`], "", `${dropped} half-dropped`);
+            assert.equal(payload[`has_${dropped}`], "no", `${dropped} dropped but still on`);
+          }
+
           /*
            * Whatever has boxes on this screen is read from the form, so an
            * edit counts; everything past it is passed on as it arrived. An
@@ -642,6 +701,7 @@ describe("line items on the document forms", () => {
             (w) => payload[`item_${w}_amount`] === `\${form.item_${w}_amount}`,
           );
           for (const w of WORDS) {
+            if (w === dropped) continue;
             const want = fromForm.includes(w) ? "form" : "data";
             assert.equal(payload[`item_${w}_description`], `\${${want}.item_${w}_description}`);
             assert.equal(payload[`item_${w}_amount`], `\${${want}.item_${w}_amount}`);
