@@ -513,9 +513,40 @@ export async function initTransaction(
           ? {
               incomeSplitConfig: input.splits.map((s) => ({
                 subAccountCode: s.subAccountCode,
-                // A flat reserved amount rather than splitPercentage: the
-                // share is already exact and a percentage would re-round it.
-                reservedAmount: s.amountKobo / 100,
+                /*
+                 * `splitAmount`, in naira, and the name matters more than
+                 * anything else in this file.
+                 *
+                 * This said `reservedAmount` for months. Monnify confirmed on
+                 * 23 September 2026 that it is not a field they recognise and
+                 * that unrecognised fields are dropped silently — so every
+                 * split we sent arrived as a sub-account code and a fee
+                 * bearer with no amount attached to it, which Monnify accepts
+                 * and which splits nothing. The user's share would have
+                 * stayed in our wallet. Nothing had been paid yet, so no real
+                 * money went the wrong way, but it would have on the first
+                 * invoice after going live.
+                 *
+                 * Proved rather than taken on trust, because "it was
+                 * accepted" means nothing when unknown fields are dropped.
+                 * A field the server reads is a field it can refuse, so each
+                 * candidate was sent a value it would have to reject. On a
+                 * ₦1,000 transaction:
+                 *
+                 *   splitPercentage: 150     refused, "percentage is invalid"
+                 *   splitAmount: 999999      refused, "sum of split amounts
+                 *                            should not be greater than
+                 *                            transaction amount"
+                 *   reservedAmount: 999999   accepted
+                 *   sparklePoints: 999999    accepted
+                 *   nothing at all           accepted
+                 *
+                 * A flat amount rather than `splitPercentage`: the share is
+                 * already exact to the kobo and a percentage would re-round
+                 * it. Naira, like `amount` above — that is the unit the "sum
+                 * of split amounts" check compared against.
+                 */
+                splitAmount: s.amountKobo / 100,
                 feeBearer: s.bearsFee,
               })),
             }

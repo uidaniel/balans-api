@@ -11,10 +11,17 @@
  * from the clock rather than written into a message, and it is computed here
  * so every surface says the same thing.
  *
- * PRD-GAP: the 22:00 run is what Monnify's integration support described for
- * this account's configuration, not something observed. The first real payment
- * between our own accounts is what confirms it, and `SETTLEMENT_HOUR` moves if
- * it lands at some other time.
+ * Confirmed by Monnify support on 23 September 2026, in writing: "Account
+ * transactions settle at 10:00 PM on the same day, including weekends and
+ * public holidays."
+ *
+ * The same reply drew a line this file gets to ignore: card transactions
+ * settle at 10:00 PM the *next* day and not at all on weekends or public
+ * holidays. Nothing here is paid by card. A client pays an invoice by
+ * transfer into an account issued for that one payment — `initBankTransfer`,
+ * not the hosted checkout — so every payment `arrivalLine` speaks for is an
+ * account transaction. If a card route is ever added, this file is wrong for
+ * it and needs to know which kind of payment it is describing.
  */
 
 import { defaults } from "../config.ts";

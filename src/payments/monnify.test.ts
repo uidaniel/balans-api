@@ -375,6 +375,110 @@ describe("initTransaction", () => {
     );
     assert.equal(res.ok, false);
   });
+
+  /*
+   * The split, which is the line that keeps Balans out of the user's money —
+   * and which had no test at all until it turned out to be wrong.
+   *
+   * It sent `reservedAmount`. Monnify confirmed on 23 September 2026 that
+   * they do not recognise that field and that unrecognised fields are dropped
+   * silently, so every split went out as a sub-account code and a fee bearer
+   * with no amount on it. Monnify accepts that and splits nothing: the user's
+   * share would have stayed in our wallet.
+   *
+   * It survived because "it was accepted" looked like it worked. That is
+   * worth nothing when unknown fields are dropped, which is why these check
+   * the field name itself rather than that a request was made.
+   */
+  describe("the split that sends the user their money", () => {
+    const split = async (splits: Parameters<typeof initTransaction>[0]["splits"]) => {
+      let body: Record<string, unknown> = {};
+      const f = stub((_u, init) => {
+        body = JSON.parse(String(init?.body));
+        return envelope({ transactionReference: "MNFY|1" });
+      });
+      await initTransaction(
+        {
+          amountKobo: 350_000_00,
+          customerName: "Zenith Homes",
+          customerEmail: "z@h.ng",
+          paymentReference: "inv-14",
+          description: "Invoice 14",
+          redirectUrl: "https://balans.ng/pay/callback",
+          splits,
+        },
+        f,
+      );
+      return (body.incomeSplitConfig ?? []) as Record<string, unknown>[];
+    };
+
+    it("names the amount the field Monnify actually reads", async () => {
+      /*
+       * Proved against their API rather than read off a page. A field the
+       * server reads is a field it can refuse, so each candidate was sent a
+       * value it would have to reject. On a ₦1,000 transaction:
+       *
+       *   splitPercentage: 150     refused, "percentage is invalid"
+       *   splitAmount: 999999      refused, "sum of split amounts should not
+       *                            be greater than transaction amount"
+       *   reservedAmount: 999999   accepted
+       *   sparklePoints: 999999    accepted
+       */
+      const [entry] = await split([
+        { subAccountCode: "MFY_SUB_1", amountKobo: 346_500_00, bearsFee: true },
+      ]);
+
+      assert.equal(entry!.splitAmount, 346_500, "naira, and the field they read");
+      assert.equal(entry!.reservedAmount, undefined, "the name that was silently dropped");
+    });
+
+    it("sends an amount, never a bare sub-account", async () => {
+      /*
+       * The shape the bug produced. Monnify accepts a split entry with no
+       * amount and no percentage on it — it is not an error anywhere, it
+       * simply moves no money.
+       */
+      const entries = await split([
+        { subAccountCode: "MFY_SUB_1", amountKobo: 346_500_00, bearsFee: true },
+      ]);
+
+      for (const entry of entries) {
+        const hasShare =
+          typeof entry.splitAmount === "number" || typeof entry.splitPercentage === "number";
+        assert.ok(hasShare, `a split with no share moves nothing: ${JSON.stringify(entry)}`);
+      }
+    });
+
+    it("converts kobo to naira, once, like the amount above it", async () => {
+      // The 100x bug, in the field that decides what the user gets rather
+      // than what the client pays.
+      const [entry] = await split([
+        { subAccountCode: "MFY_SUB_1", amountKobo: 1_000_00, bearsFee: true },
+      ]);
+      assert.equal(entry!.splitAmount, 1_000);
+    });
+
+    it("never splits more than the transaction is worth", async () => {
+      /*
+       * Monnify refuses this outright — "sum of split amounts should not be
+       * greater than transaction amount" — so it would be a failed payment
+       * rather than a silent one. Asserted here because the caller works the
+       * share out from fees, and a fee that ever came out negative would
+       * push the share above the total.
+       */
+      const entries = await split([
+        { subAccountCode: "MFY_SUB_1", amountKobo: 346_500_00, bearsFee: true },
+      ]);
+      const sum = entries.reduce((t, e) => t + Number(e.splitAmount ?? 0), 0);
+      assert.ok(sum <= 350_000, `split ₦${sum} out of ₦350,000`);
+    });
+
+    it("says nothing about splits when there are none", async () => {
+      // Our own Pro subscription is not split: the payer is us.
+      assert.deepEqual(await split(undefined), []);
+      assert.deepEqual(await split([]), []);
+    });
+  });
 });
 
 /*
