@@ -218,5 +218,13 @@ Next, and not before:
 
   4. Only once both answer 200: stop the Cloudflare tunnel on the laptop.
 
-To deploy a change later:  /opt/balans/app/deploy/deploy.sh
+  5. Turn pushing into deploying, once:
+
+       /opt/balans/app/deploy/install-watcher.sh
+
+     After that a push to main is live within a minute, and there is no
+     reason to log in here again. Deploying by hand still works —
+     /opt/balans/app/deploy/deploy.sh — and is what to reach for when the
+     change is to /opt/balans/.env rather than to the code, since nothing
+     in git moves when that does.
 DONE
