@@ -1368,18 +1368,31 @@ async function runEffects(
         case "show_settings": {
           // Every row says what that setting is now, so they are all read
           // together rather than one query per row.
-          const [account, pending, prefs] = await Promise.all([
+          const [account, pending, prefs, plan] = await Promise.all([
             accountInForce(userId),
             pendingChange(userId),
             db().query<{
               default_due_days: number | null;
               template_id: string | null;
               invoice_number_start: number;
+              business_name: string | null;
+              logo_url: string | null;
             }>(
-              `SELECT default_due_days, template_id, invoice_number_start
+              /*
+               * The name comes from here, not from the conversation.
+               *
+               * It used to be read off `context.businessName`, which is only
+               * ever set by changing the name in that same chat. Everybody who
+               * set theirs during onboarding \u2014 which is everybody \u2014 opened
+               * settings to be told "Business name: Not set yet" about a name
+               * printed on all of their invoices.
+               */
+              `SELECT default_due_days, template_id, invoice_number_start,
+                      business_name, logo_url
                  FROM users WHERE id = $1`,
               [userId],
             ),
+            planOf(userId),
           ]);
 
           const p = prefs.rows[0];
@@ -1391,12 +1404,15 @@ async function runEffects(
             const sent = await sendList(
               ctx.phone,
               settingsList({
-                businessName,
+                businessName: p?.business_name ?? businessName,
                 account,
                 pending,
                 dueDays: p?.default_due_days ?? defaults.behaviour.defaultDueDays,
                 designName: design?.name ?? null,
                 invoiceStart: p?.invoice_number_start ?? 1,
+                // F21: the logo is a Pro feature, so the row only exists for
+                // somebody who can use it.
+                logo: plan === "pro" ? { set: Boolean(p?.logo_url) } : null,
               }),
             );
             if (sent.ok) {
@@ -1406,7 +1422,7 @@ async function runEffects(
             log.error({ userId, reason: sent.reason }, "settings list failed; falling back to text");
           }
 
-          extra.push(settingsMenu({ businessName, account, pending }));
+          extra.push(settingsMenu({ businessName: p?.business_name ?? businessName, account, pending }));
           break;
         }
 

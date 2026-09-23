@@ -708,6 +708,22 @@ export const VOICE = {
     { id: "no", title: "No" },
   ],
 
+  /**
+   * How a logo gets on and off an invoice (F21, Pro).
+   *
+   * Both halves, because the settings row is the first place anybody learns
+   * that either is possible. The image arrives as an ordinary WhatsApp photo
+   * and is confirmed before it goes anywhere near a document.
+   */
+  logoHow: para(
+    `\u{1F5BC}\uFE0F ${b("Send me the image.")}`,
+    lines(
+      "Any photo of your logo, PNG or JPG, on a plain background if you have one.",
+      "I will show it to you before it goes on anything.",
+    ),
+    `To take it off again, say ${b("remove my logo")}.`,
+  ),
+
   /** They said no. Nothing was saved and nothing needs explaining. */
   logoDeclined: para(
     `👍 ${b("Left it alone.")}`,
@@ -1202,6 +1218,16 @@ function atSettingsMenu(text: string, ctx: Context, msg: Inbound): Step {
 
   if (/^(4|design|designs|invoice design|templates?)\b/.test(s)) {
     return { replies: [], next: "idle", context: forget(ctx), effects: [{ type: "show_designs" }] };
+  }
+
+  /*
+   * F21, Pro. The row only exists for somebody who can have a logo, so this
+   * explains both ends of it: an image adds one and a phrase takes it away.
+   * Nothing here needs to know whether one is set - both answers are useful
+   * either way, and the row above already said which it is.
+   */
+  if (/^(logo|my logo|change (my )?logo|set (my )?logo)\b/.test(s)) {
+    return { replies: [VOICE.logoHow], next: "idle", context: forget(ctx), effects: [] };
   }
 
   if (/^(5|invoice number|invoice no|numbering|number)\b/.test(s)) {

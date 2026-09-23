@@ -43,6 +43,7 @@ describe("the row that closes an account", () => {
     dueDays: 7,
     designName: null,
     invoiceStart: 1,
+    logo: null,
   }).sections.flatMap((s) => s.rows);
 
   it("does not send the phrase that confirms a deletion", () => {

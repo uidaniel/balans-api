@@ -720,6 +720,41 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
               "input-type": "number",
               "max-chars": 12,
             },
+            /*
+             * Remove, on the screen that owns the item.
+             *
+             * This is where it fits in the budget: a screen may hold two
+             * EmbeddedLinks counted across every Switch branch, and the form
+             * spends its allowance on Add. It is also where somebody is when
+             * they change their mind about a line they are in the middle of
+             * adding.
+             *
+             * A link rather than a second button, because a screen has one
+             * Footer and that one is Save. And a link is not blocked by the
+             * required fields, which is what lets it out of a screen the
+             * Footer will not leave.
+             */
+            {
+              type: "EmbeddedLink",
+              text: `Remove item ${index + 2}`,
+              "on-click-action": {
+                name: "navigate",
+                next: { type: "screen", name: "REMOVED" },
+                payload: {
+                  ...carriedPayload,
+                  // Everything from data, including this item: what this
+                  // screen holds is not saved until the Footer saves it, so
+                  // leaving by this door leaves nothing behind.
+                  ...itemPayload(null),
+                  ...initPayload(0),
+                  ...flagPayload(null),
+                  [f.description]: "",
+                  [f.amount]: "",
+                  [flagField(word)]: "no",
+                  item_count: word,
+                },
+              },
+            },
             {
               /*
                * Back to the form, not onwards to the terms.
@@ -819,14 +854,33 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
     ...(flags ? (again ? flagPayload(null) : flagPayload("fresh")) : {}),
   });
 
-  /* Where "Add another item" goes, and everything it takes with it. */
+  /*
+   * Where "Add another item" goes, and everything it takes with it.
+   *
+   * A screen may hold two EmbeddedLinks and no more \u2014 "Maximum number of
+   * EmbeddedLink allowed per screen is 2 but found 8" \u2014 and the count is
+   * taken across every branch of every Switch, not across what is on screen
+   * at once. That limit is not enforced on publish in a way that helps: the
+   * Flow went out with eight links on the form and the phone answered
+   * "Something went wrong. Try again later." on open.
+   *
+   * So the form has one Add link with one fixed target, and the screen it
+   * lands on does the routing with a Footer per count. Footers are not
+   * rationed.
+   */
   const addLink = (target: string, at: number | null) => ({
     type: "EmbeddedLink",
     text: "Add another item",
     "on-click-action": {
       name: "navigate",
       next: { type: "screen", name: target },
-      payload: { ...leaving(at), ...initPayload(0) },
+      payload: {
+        ...leaving(at),
+        ...initPayload(0),
+        // The router needs the count to know which slot is next. The item
+        // screens do not, and a key a screen does not declare kills the Flow.
+        ...(again ? { item_count: "${data.item_count}" } : {}),
+      },
     },
   });
 
@@ -854,15 +908,41 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
         name: "navigate",
         next: { type: "screen", name: "REMOVED" },
         payload: {
-          ...leaving(index),
-          // After everything else, so these win over what `leaving` carried.
+          /*
+           * The fields that are always on screen come from the form, so
+           * nothing anybody has typed into the invoice itself is lost by
+           * removing a line.
+           */
+          client_name: "${form.client_name}",
+          client_email: "${form.client_email}",
+          description: "${form.description}",
+          amount: "${form.amount}",
+          due_date: "${form.due_date}",
+          plan: "${data.plan}",
+          notes: "${data.notes}",
+          vat: "${data.vat}",
+          pass_fees: "${data.pass_fees}",
+          /*
+           * The other items come from data, not from the form, and that is
+           * the one thing this link gives up.
+           *
+           * It sits inside its own item's Switch so that it disappears with
+           * the item rather than outliving it, which means it cannot know how
+           * many other items have boxes on screen — and reading a field that
+           * is not rendered is not something to find out on somebody's
+           * invoice. What it costs is an unsaved edit to a *different* extra
+           * item, which reverts to what that item was when the screen opened.
+           * The screen redraws from this payload either way, and what it
+           * shows afterwards is exactly what will be sent.
+           */
+          ...itemPayloadUpTo(null),
+          ...flagPayload(null),
+          item_count: "${data.item_count}",
+          ...initPayload(0),
+          // Last, so they win: this is the line coming off.
           [f.description]: "",
           [f.amount]: "",
           [flagField(w)]: "no",
-          // The count steps back with it, so Add offers this slot again
-          // rather than walking past it and leaving a hole.
-          item_count: COUNTS[index]!,
-          ...initPayload(0),
         },
       },
     };
@@ -976,34 +1056,11 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
    * would match nothing, and a screen whose Footer lives inside a Switch and
    * matches nothing has no way forward at all.
    */
-  cases.one = [addLink(itemScreenId(EXTRA_ITEMS[0]!), null)];
+  cases.one = [];
   footers.one = [onward(null)];
 
   EXTRA_ITEMS.forEach((_, index) => {
-    const next = EXTRA_ITEMS[index + 1];
-    cases[EXTRA_ITEMS[index]!] = [
-      /*
-       * Remove takes the last item off, and only the last one.
-       *
-       * Four links, one per item, was the first shape and it could not be
-       * had: the payload has to know how many items are on screen, which only
-       * the count knows, and a Switch cannot nest inside a Switch — "Invalid
-       * value found for property 'type'". A link that outlived the item it
-       * removed was the alternative, which is a button that lies.
-       *
-       * The last item is the one somebody has just added and wants back out,
-       * it is unambiguous, and taking it off leaves no hole. Removing one
-       * from the middle is still clearing its two boxes, which is a gesture
-       * rather than a button but is exact about which line it drops.
-       */
-      removeLink(index),
-      next
-        ? addLink(itemScreenId(next), index)
-        : {
-            type: "TextCaption",
-            text: "Five items is the most this form takes. Send a sentence for a longer invoice.",
-          },
-    ];
+    cases[EXTRA_ITEMS[index]!] = [];
     footers[EXTRA_ITEMS[index]!] = [onward(index)];
   });
 
@@ -1130,7 +1187,13 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
              * which these Flows deliberately do not have.
              */
             ...(again
-              ? [...itemBoxes, { type: "Switch", value: "${data.item_count}", cases }]
+              ? [
+                  ...itemBoxes,
+                  { type: "Switch", value: "${data.item_count}", cases },
+                  // One link, one target. ADD_NEXT works out which item
+                  // screen that means.
+                  addLink("ADD_NEXT", 3),
+                ]
               : [addLink(itemScreenId(EXTRA_ITEMS[0]!), null)]),
             {
               type: "TextInput",
@@ -1155,6 +1218,95 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
               : [onward(null)]),
           ],
         },
+      ],
+    },
+  };
+}
+
+/**
+ * Which item screen "Add another item" means.
+ *
+ * The form cannot decide this itself. A link's target is fixed when the Flow
+ * is published, so one link per possible target would be four links — and a
+ * screen may hold two, counted across every branch of every Switch. Eight of
+ * them published without complaint and then failed to open on the phone, with
+ * "Something went wrong. Try again later." and nothing else.
+ *
+ * Footers are not rationed, so the routing happens here instead: one Footer
+ * per count, each pointing at the first empty slot. It costs a tap, which is
+ * the price of the limit.
+ */
+function addNextScreen(): Record<string, unknown> {
+  const carried = {
+    client_name: { type: "string", __example__: "Daniel Uwak" },
+    client_email: { type: "string", __example__: "" },
+    description: { type: "string", __example__: "Website design" },
+    amount: { type: "string", __example__: "250000" },
+    due_date: { type: "string", __example__: "" },
+    plan: { type: "string", __example__: "one" },
+    notes: { type: "string", __example__: "" },
+    vat: { type: "boolean", __example__: false },
+    pass_fees: { type: "boolean", __example__: false },
+    item_count: { type: "string", __example__: "two" },
+  };
+  const data = { ...carried, ...flagData(), ...itemData(0) };
+
+  /** Everything, untouched. This screen decides a direction and nothing else. */
+  const through = Object.fromEntries(
+    Object.keys(data)
+      .filter((k) => k !== "item_count")
+      .map((k) => [k, `\${data.${k}}`]),
+  );
+
+  const footer = (label: string, target: string) => ({
+    type: "Footer",
+    label,
+    "on-click-action": {
+      name: "navigate",
+      next: { type: "screen", name: target },
+      payload: through,
+    },
+  });
+
+  /*
+   * One branch per count. The count says how many items exist, so the next
+   * one is the slot after that \u2014 and on five there is no next one, so the
+   * only way out is back.
+   */
+  const cases: Record<string, unknown[]> = {
+    one: [footer("Add item 2", itemScreenId(EXTRA_ITEMS[0]!))],
+  };
+  EXTRA_ITEMS.forEach((w, index) => {
+    const next = EXTRA_ITEMS[index + 1];
+    cases[w] = next
+      ? [footer(`Add item ${index + 3}`, itemScreenId(next))]
+      : [
+          {
+            type: "TextBody",
+            text: "Five items is the most this form takes. Send a sentence for a longer invoice.",
+          },
+          {
+            type: "Footer",
+            label: "Back to the invoice",
+            "on-click-action": {
+              name: "navigate",
+              next: { type: "screen", name: "WORK_AGAIN" },
+              payload: { ...through, item_count: `\${data.item_count}` },
+            },
+          },
+        ];
+  });
+
+  return {
+    id: "ADD_NEXT",
+    title: "Another item",
+    terminal: false,
+    data,
+    layout: {
+      type: "SingleColumnLayout",
+      children: [
+        { type: "TextSubheading", text: "Another line on this invoice." },
+        { type: "Form", name: "add_form", children: [{ type: "Switch", value: "${data.item_count}", cases }] },
       ],
     },
   };
@@ -1200,18 +1352,29 @@ function removedScreen(): Record<string, unknown> {
       type: "SingleColumnLayout",
       children: [
         { type: "TextSubheading", text: "That item is off the invoice." },
+        { type: "TextCaption", text: "Everything else is as you left it." },
         {
-          type: "TextCaption",
-          text: "Everything else is as you left it.",
-        },
-        {
-          type: "Footer",
-          label: "Back to the invoice",
-          "on-click-action": {
-            name: "navigate",
-            next: { type: "screen", name: "WORK_AGAIN" },
-            payload: back,
-          },
+          /*
+           * A Form with nothing in it but the button.
+           *
+           * Every other screen puts its Footer inside one, and this screen
+           * collects nothing, so it did not need one. Being the only screen
+           * shaped differently is not a difference worth having when the
+           * failure it would cause looks like "Something went wrong."
+           */
+          type: "Form",
+          name: "removed_form",
+          children: [
+            {
+              type: "Footer",
+              label: "Back to the invoice",
+              "on-click-action": {
+                name: "navigate",
+                next: { type: "screen", name: "WORK_AGAIN" },
+                payload: back,
+              },
+            },
+          ],
         },
       ],
     },
@@ -1228,6 +1391,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
     screens: [
       workScreen(o, false),
       workScreen(o, true),
+      addNextScreen(),
       ...EXTRA_ITEMS.map((_, index) => itemScreen(index, o)),
       removedScreen(),
       {

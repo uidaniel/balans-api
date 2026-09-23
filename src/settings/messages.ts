@@ -124,6 +124,7 @@ export const SETTINGS_ROW_IDS = [
   "due days",
   "invoice design",
   "invoice number",
+  "logo",
   "close my account",
 ] as const;
 
@@ -137,6 +138,8 @@ export function settingsList(x: {
   designName: string | null;
   /** The number the next invoice will take, when it is not simply the next one. */
   invoiceStart: number;
+  /** F21: Pro only. Null for anybody who cannot have one. */
+  logo: { set: boolean } | null;
 }): {
   body: string;
   button: string;
@@ -215,6 +218,26 @@ ${rest}`,
             description:
               x.invoiceStart > 1 ? `Starting at ${x.invoiceStart}` : "Counting from 1",
           },
+          ...(x.logo
+            ? [
+                {
+                  /*
+                   * Only for Pro, because only Pro gets one.
+                   *
+                   * It was missing entirely: the logo arrives by sending an
+                   * image and leaves by saying "remove my logo", and nothing
+                   * on this screen said either of those things. A feature
+                   * somebody is paying \u20a64,000 a month for should not have to
+                   * be discovered.
+                   */
+                  id: "logo",
+                  title: "Logo",
+                  description: x.logo.set
+                    ? "On your invoices \u2014 tap to change or remove it"
+                    : "Not set \u2014 tap to add one",
+                },
+              ]
+            : []),
           {
             /*
              * Not "delete my account", which is the phrase that CONFIRMS a

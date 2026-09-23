@@ -105,6 +105,26 @@ describe("every published Flow", () => {
         }
       });
 
+      it("keeps every screen inside the two-link budget", () => {
+        /*
+         * "Maximum number of EmbeddedLink allowed per screen is 2 but found
+         * 8." Counted across every branch of every Switch, not across what a
+         * phone shows at once — and not caught reliably on publish. The Flow
+         * went out with eight links on the form and answered "Something went
+         * wrong. Try again later." when anybody opened it.
+         *
+         * That is why a link target is never chosen by branching: one link
+         * per possible destination is four links before anything else.
+         */
+        for (const screen of json.screens) {
+          const links = walk(screen.layout).filter((n) => n.type === "EmbeddedLink");
+          assert.ok(
+            links.length <= 2,
+            `${String(screen.id)} has ${links.length} links: ${links.map((l) => l.text).join(", ")}`,
+          );
+        }
+      });
+
       it("hands every screen exactly the data it declares", () => {
         /*
          * The failure this catches killed a live Flow, and it killed it one
@@ -473,26 +493,43 @@ describe("line items on the document forms", () => {
         assert.equal(first!.text, "Add another item");
         assert.equal((action(first!).next as Node).name, SCREEN(WORDS[0]!));
 
-        // Coming back, where the link points depends on how many items there
-        // already are, which is the whole reason for the count Switch.
-        const cases = countCases("WORK_AGAIN", "EmbeddedLink");
+        /*
+         * Coming back, the link has one fixed target and a screen of its own
+         * works out which item that means. A link cannot choose its
+         * destination, and one link per destination is four links on a screen
+         * that may hold two.
+         */
+        const again = links("WORK_AGAIN");
+        assert.equal(again.length, 1, "the form should offer exactly one link");
+        assert.equal(again[0]!.text, "Add another item");
+        assert.equal((action(again[0]!).next as Node).name, "ADD_NEXT");
 
-        WORDS.forEach((_, index) => {
-          const branch = cases[WORDS[index]!];
-          assert.ok(branch, `no branch for ${index + 2} items`);
-          // Two links live here now: Remove comes first, Add follows.
-          const link = branch!.find((n) => n.text === "Add another item");
+        const route = countCases("ADD_NEXT", "Footer");
+        WORDS.forEach((w, index) => {
+          const branch = route[w] ?? [];
+          const go = branch.find((n) => n.type === "Footer")!;
           const next = WORDS[index + 1];
-          if (next) {
-            assert.equal((action(link!).next as Node).name, SCREEN(next), `${index + 2} items`);
-          } else {
-            // And the last one does not pretend there is a sixth.
-            assert.equal(link, undefined, "a sixth item is offered");
-          }
+          assert.equal(
+            (action(go).next as Node).name,
+            next ? SCREEN(next) : "WORK_AGAIN",
+            `${index + 2} items routes wrong`,
+          );
         });
+        // One item on the invoice means item two is the next one.
+        assert.equal((action(route.one![0]!).next as Node).name, SCREEN(WORDS[0]!));
 
-        // An item screen collects one item. Leaving it is the Footer's job.
-        for (const w of WORDS) assert.equal(links(SCREEN(w)).length, 0, `item ${w} has a link`);
+        /*
+         * An item screen offers exactly one link, and it is Remove. That is
+         * where Remove lives: the form spends its two-link allowance on Add,
+         * and this is the screen somebody is on when they change their mind
+         * about the line they are adding.
+         */
+        for (const w of WORDS) {
+          const own = links(SCREEN(w));
+          assert.equal(own.length, 1, `item ${w} should offer one link`);
+          assert.match(String(own[0]!.text), /^Remove item /);
+          assert.equal((action(own[0]!).next as Node).name, "REMOVED");
+        }
       });
 
       it("will not save an item with a hole in it", () => {
@@ -664,15 +701,11 @@ describe("line items on the document forms", () => {
          * the others. Every payload has to pass on what it is not editing, or
          * those lines are gone and nothing said so.
          */
-        const routes: Node[] = [footer("WORK"), ...links("WORK")];
+        const routes: Node[] = [footer("WORK"), ...links("WORK"), ...links("WORK_AGAIN")];
         for (const w of WORDS) routes.push(footer(SCREEN(w)), ...links(SCREEN(w)));
-        // The form you come back to has a button and a link per count.
-        for (const branch of [countCases("WORK_AGAIN", "Footer"), countCases("WORK_AGAIN", "EmbeddedLink")]) {
-          // The five-item branch offers a note instead of a link, and a note
-          // goes nowhere.
-          for (const nodes of Object.values(branch)) {
-            routes.push(...nodes.filter((n) => n["on-click-action"]));
-          }
+        // The form you come back to has a Next per count.
+        for (const nodes of Object.values(countCases("WORK_AGAIN", "Footer"))) {
+          routes.push(...nodes.filter((n) => n["on-click-action"]));
         }
 
         for (const node of routes) {
