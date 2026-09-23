@@ -173,7 +173,7 @@ export function resolveDueDate(phrase: string, today: Civil): Resolved | null {
   if (/^(?:the )?end of (?:the )?week$|^week ?end$/.test(s)) {
     // Friday, not Sunday: an invoice due "end of week" is due before the
     // weekend, because nobody is at a desk on Saturday to pay it.
-    return { date: nextWeekday(today, 5, false), kind: "weekday" };
+    return { date: nextWeekday(today, 5), kind: "weekday" };
   }
 
   /* "in two weeks", "in 30 days", "in a month". ---------------------------- */
@@ -204,9 +204,26 @@ export function resolveDueDate(phrase: string, today: Civil): Resolved | null {
     return { date: addDays(today, Number(m[1])), kind: "relative" };
   }
 
-  /* "next week", "next month". --------------------------------------------- */
-  if (/^(?:the )?(?:next|following|upper) week$/.test(s)) return { date: addDays(today, 7), kind: "relative" };
-  if (/^(?:the )?(?:next|following|upper) month$/.test(s)) return { date: addMonths(today, 1), kind: "relative" };
+  /*
+   * "next week", "upper week", "next month".
+   *
+   * How far ahead each qualifier reaches, which is the whole of the idiom:
+   *
+   *   next week, following week   one week out
+   *   upper week                  TWO weeks out
+   *
+   * "Upper" was read as a synonym for "next" when it was first added, which
+   * is wrong by a week on every date it touched \u2014 and a week is the
+   * difference between an invoice that is due and one that is overdue. Said
+   * plainly by the person who speaks this way: upper is the week after next.
+   */
+  if ((m = /^(?:the )?(next|following|upper) week$/.exec(s))) {
+    return { date: addDays(today, weeksOut(m[1]!) * 7), kind: "relative" };
+  }
+  if ((m = /^(?:the )?(next|following|upper) month$/.exec(s))) {
+    // The same idiom, one unit up: upper month is the month after next.
+    return { date: addMonths(today, weeksOut(m[1]!)), kind: "relative" };
+  }
 
   /*
    * "next week Monday", "upper week Monday", "Monday next week".
@@ -217,9 +234,8 @@ export function resolveDueDate(phrase: string, today: Civil): Resolved | null {
    * Monday" rather than "Monday next week" — is the ordinary way round, not a
    * mistake to be tolerated.
    *
-   * Every one of these means the named day in the week after this one, which
-   * is `nextWeekday` with the jump, exactly as "next Monday" already resolved.
-   * "This week Monday" is the nearer one and does not jump.
+   * How far each qualifier reaches is `weeksOut`: this and coming stay in the
+   * week we are in, next and following go one along, and upper goes two.
    */
   if (
     (m =
@@ -231,7 +247,7 @@ export function resolveDueDate(phrase: string, today: Civil): Resolved | null {
     const [when, name] = WEEKDAYS[m[1]!] === undefined ? [m[1]!, m[2]!] : [m[2]!, m[1]!];
     const day = WEEKDAYS[name];
     if (day !== undefined) {
-      return { date: dayOfWeek(today, day, when === "this" ? 0 : 1), kind: "weekday" };
+      return { date: dayOfWeek(today, day, weeksOut(when)), kind: "weekday" };
     }
   }
 
@@ -240,9 +256,9 @@ export function resolveDueDate(phrase: string, today: Civil): Resolved | null {
     const day = WEEKDAYS[m[2]!];
     if (day !== undefined) {
       // "next Friday" is the Friday of the week after this one, which is what
-      // people mean when they bother to say "next" at all.
-      const jumpAWeek = m[1] === "next" || m[1] === "following" || m[1] === "upper";
-      return { date: nextWeekday(today, day, jumpAWeek), kind: "weekday" };
+      // people mean when they bother to say "next" at all. "Upper Friday"
+      // reaches a week further, like every other "upper".
+      return { date: nextWeekday(today, day, weeksOut(m[1])), kind: "weekday" };
     }
   }
 
@@ -276,9 +292,24 @@ function dayOfWeek(today: Civil, target: number, weeksAhead: number): Civil {
   return addDays(mondayThisWeek, weeksAhead * 7 + ((target + 6) % 7));
 }
 
-function nextWeekday(today: Civil, target: number, jumpAWeek: boolean): Civil {
+function nextWeekday(today: Civil, target: number, weeksAhead = 0): Civil {
   const delta = (target - weekdayOf(today) + 7) % 7 || 7;
-  return addDays(today, delta + (jumpAWeek ? 7 : 0));
+  return addDays(today, delta + weeksAhead * 7);
+}
+
+/**
+ * How many weeks forward a qualifier reaches.
+ *
+ * One place, because the same four words appear in three different rules and
+ * they drifted: "upper" counted as one week in all of them, which is the week
+ * this idiom does not mean. Nothing said so \u2014 the dates were simply seven
+ * days early, which on an invoice is the difference between due and overdue.
+ */
+function weeksOut(word: string | undefined): number {
+  if (word === "upper") return 2;
+  if (word === "next" || word === "following") return 1;
+  // "this", "coming", and no qualifier at all: the week we are in.
+  return 0;
 }
 
 function explicitDate(s: string, today: Civil): Resolved | null {

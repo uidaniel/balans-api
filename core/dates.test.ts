@@ -52,21 +52,35 @@ describe("dates people actually write", () => {
     ["monday", "2026-09-28"],
     ["mon", "2026-09-28"],
     ["next monday", "2026-10-05"],
-    // How a date is said here. "Upper week" is next week, and naming the week
-    // before the day is the ordinary word order, not a mistake to tolerate:
-    // "due upper week monday" was answered with "I did not catch that".
-    //
-    // Naming the week is a different question from "next Monday". It fixes
-    // which seven days are meant, so said on this Wednesday it is five days
-    // out — where "next monday" above, which names no week, is twelve.
-    ["upper week monday", "2026-09-28"],
+    /*
+     * How a date is said here, and how far each word reaches.
+     *
+     *   this, coming     the week we are in
+     *   next, following  one week out
+     *   upper            TWO weeks out
+     *
+     * "Upper" was first added as a synonym for "next", which is wrong by a
+     * week on every date it touches \u2014 and a week is the difference between
+     * an invoice that is due and one that is overdue. It means the week
+     * after next, said by the people who say it.
+     *
+     * Naming the week is also a different question from "next Monday". It
+     * fixes which seven days are meant, so "next week monday" said on this
+     * Wednesday is five days out, where "next monday" is twelve.
+     */
     ["next week monday", "2026-09-28"],
     ["monday next week", "2026-09-28"],
     ["due next week tuesday", "2026-09-29"],
-    ["upper week friday", "2026-10-02"],
     ["this week friday", "2026-09-25"],
-    ["upper week", "2026-09-30"],
-    ["upper monday", "2026-10-05"],
+    // Monday of the week after next: this week's Monday is 21 Sep, plus a
+    // fortnight.
+    ["upper week monday", "2026-10-05"],
+    ["upper week friday", "2026-10-09"],
+    ["upper week", "2026-10-07"],
+    // No week named, so it counts forward: the coming Monday is 28 Sep, and
+    // "upper" adds the fortnight.
+    ["upper monday", "2026-10-12"],
+    ["upper month", "2026-11-23"],
     // The day after tomorrow, to everybody in the country.
     ["next tomorrow", "2026-09-25"],
 
