@@ -145,7 +145,7 @@ describe("the card that arrives once the money is in", () => {
   it("rides on the activation message", () => {
     // The one message in the product somebody has actually paid for.
     const branch = notify.slice(notify.indexOf("text: proStarted()"));
-    assert.match(branch.slice(0, 500), /image: PRO_CARD/);
+    assert.match(branch.slice(0, 700), /image: proCardUrl\(/);
   });
 
   it("is a third picture, not one of the other two", () => {
@@ -181,20 +181,13 @@ describe("what the cards have painted on them", () => {
     assert.equal(availableTo("pro").length, 8, 'the cards say "8 invoice designs"');
   });
 
-  it("and the membership card carries a date nothing can update", () => {
-    /*
-     * pro.png reads "MEMBER SINCE SEP 2026". It is painted on, so every
-     * person who subscribes after September gets a card with the wrong month
-     * on it. Nothing in code can fix that — this is here so it is a decision
-     * somebody makes rather than something a customer points out.
-     *
-     * Either redraw it without the date, or generate the card per user.
-     */
-    const stale = new Date("2026-10-01");
-    assert.ok(
-      Date.now() < stale.getTime(),
-      "pro.png says SEP 2026 and it is now October or later — redraw it or drop the date",
-    );
+  it("no longer depends on the month painted into the card", () => {
+    // pro.png reads "MEMBER SINCE SEP 2026", which would have been wrong for
+    // everybody who subscribed later. The month is drawn over it now, so the
+    // artwork's own date is no longer a claim anybody sees.
+    const notify = read("../payments/notify.ts");
+    assert.match(notify, /proCardUrl\(new Date\(\)\)/, "the card is asked for by month");
+    assert.match(notify, /timeZone: defaults\.behaviour\.timezone/, "in Lagos, not UTC");
   });
 
   it("still match the promise of no fee", () => {

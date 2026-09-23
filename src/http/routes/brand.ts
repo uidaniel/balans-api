@@ -16,6 +16,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
+import { proCard } from "../../billing/pro-card.ts";
 
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../assets/brand");
 
@@ -44,10 +45,49 @@ const FILES: Record<string, { file: string; type: string }> = {
  */
 const cache = new Map<string, Buffer>();
 
+/** "2026-12" and nothing else. */
+const MONTH = /^(\d{4})-(\d{2})$/;
+
 export async function brandRoutes(app: FastifyInstance): Promise<void> {
-  app.get<{ Params: { name: string } }>("/brand/:name", async (req, reply) => {
+  app.get<{ Params: { name: string }; Querystring: { m?: string } }>(
+    "/brand/:name",
+    async (req, reply) => {
     const wanted = FILES[req.params.name];
     if (!wanted) return reply.status(404).send({ error: "not found" });
+
+    /*
+     * The Pro card, with the month on it.
+     *
+     * The artwork has "MEMBER SINCE SEP 2026" painted in, so everybody who
+     * subscribed later would get a card saying September. The month is drawn
+     * over it instead, by the same browser that renders the invoices.
+     *
+     * A month in the URL rather than a user: it is the only thing that
+     * varies, it is not private, and it means twelve possible images a year
+     * — each built once and kept — instead of one per subscriber. A request
+     * with no month, or a bad one, gets the artwork as it is.
+     */
+    if (req.params.name === "pro.png" && req.query.m) {
+      const parts = MONTH.exec(req.query.m);
+      const year = Number(parts?.[1]);
+      const month = Number(parts?.[2]);
+
+      if (parts && month >= 1 && month <= 12 && year >= 2024 && year <= 2100) {
+        try {
+          const card = await proCard(month, year);
+          if (card) {
+            return reply
+              .header("content-type", "image/png")
+              .header("cache-control", "public, max-age=31536000, immutable")
+              .send(card);
+          }
+        } catch (e) {
+          // The card is a nicety; the message it rides on is not. Falling back
+          // to the artwork costs a wrong month and saves the whole send.
+          req.log.error({ err: (e as Error).message }, "could not draw the Pro card");
+        }
+      }
+    }
 
     let bytes = cache.get(req.params.name);
     if (!bytes) {
@@ -66,5 +106,6 @@ export async function brandRoutes(app: FastifyInstance): Promise<void> {
       .header("content-type", wanted.type)
       .header("cache-control", "public, max-age=31536000, immutable")
       .send(bytes);
-  });
+    },
+  );
 }

@@ -15,10 +15,26 @@ import { db } from "../db/pool.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { send } from "../whatsapp/outbound.ts";
 import { settlesTonight } from "./settlement.ts";
-import { env } from "../config.ts";
+import { defaults, env } from "../config.ts";
 import { renderReceiptPdf } from "../documents/pdf.ts";
 import { proStarted } from "../billing/messages.ts";
 import { PRO_CARD } from "../conversation/machine.ts";
+
+/**
+ * The membership card for the month somebody joined in.
+ *
+ * Lagos, not the server's idea of the date: a subscription paid at half past
+ * midnight on the 1st is a member since that month, and UTC would say the
+ * one before.
+ */
+function proCardUrl(at: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: defaults.behaviour.timezone,
+    year: "numeric",
+    month: "2-digit",
+  }).format(at);
+  return `${PRO_CARD}?m=${parts}`;
+}
 import { b, block, lines, para, row } from "../whatsapp/format.ts";
 import { arrivalLine } from "./settlement.ts";
 
@@ -169,10 +185,15 @@ export async function notifyProActive(
       userId,
       phone,
       text: proStarted(),
-      // The card, with the confirmation underneath it. Worth the picture:
-      // this is the one message in the product somebody has actually paid
-      // for, and it is the moment to make it feel like something.
-      image: PRO_CARD,
+      /*
+       * The card, with the confirmation underneath it.
+       *
+       * Worth the picture: this is the one message in the product somebody
+       * has actually paid for. The month is theirs — it is the moment they
+       * became a member, which is now — rather than the one painted into the
+       * artwork, so a card issued in March does not say September.
+       */
+      image: proCardUrl(new Date()),
       // Outside the window this is worth a template: somebody who has just
       // parted with ₦4,000 should not wait a day to hear it worked.
       fallback: {

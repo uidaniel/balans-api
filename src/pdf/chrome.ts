@@ -220,6 +220,55 @@ export async function renderPdf(html: string, size: PageSize = A4): Promise<Buff
   return mine;
 }
 
+/**
+ * Renders HTML to a PNG, at exactly the size asked for.
+ *
+ * Same browser and same rules as `renderPdf`: the HTML is self-contained, so
+ * a render cannot hang on somebody else's CDN. This exists for the one image
+ * in the product that has to say something different to each person — the Pro
+ * card, which carries the month they joined.
+ */
+export async function renderPng(html: string, width: number, height: number): Promise<Buffer> {
+  const run = async (): Promise<Buffer> => {
+    let b = await ready();
+
+    const attempt = async (): Promise<Buffer> => {
+      // The viewport has to match, or the capture is padded or cropped.
+      await b.send("Emulation.setDeviceMetricsOverride", {
+        width,
+        height,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      await b.send("Page.setDocumentContent", { frameId: b.frameId, html });
+      await sleep(120);
+      const res = await b.send("Page.captureScreenshot", {
+        format: "png",
+        clip: { x: 0, y: 0, width, height, scale: 1 },
+        captureBeyondViewport: true,
+      });
+      return Buffer.from(res.result.data, "base64");
+    };
+
+    try {
+      return await attempt();
+    } catch (first) {
+      browser = null;
+      b = await ready();
+      try {
+        return await attempt();
+      } catch {
+        throw first;
+      }
+    }
+  };
+
+  // Same queue as the PDFs: one browser, one render at a time.
+  const mine = queue.then(run, run);
+  queue = mine.catch(() => undefined);
+  return mine;
+}
+
 /** Closes the browser. Called on shutdown so no process is left behind. */
 export async function closeRenderer(): Promise<void> {
   const b = browser;
