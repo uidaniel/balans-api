@@ -20,7 +20,13 @@ import { readFileSync } from "node:fs";
 
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 const route = read("../http/routes/public.ts");
-const callback = route.slice(route.indexOf('"/pay/callback"'));
+// Bounded by the end of the handler rather than by a character count: the
+// branch has grown twice and a fixed window stopped reaching the lines it was
+// checking, so the tests failed while the code was right.
+const callback = route.slice(
+  route.indexOf('"/pay/callback"'),
+  route.indexOf("/** The stored PDF"),
+);
 
 describe("coming back from a Pro payment", () => {
   it("recognises a subscription reference before looking for a document", () => {
@@ -31,27 +37,33 @@ describe("coming back from a Pro payment", () => {
     assert.ok(sub < doc, "asked before a lookup that cannot succeed for one");
   });
 
-  it("sends them to the success page, not the home page", () => {
-    assert.match(callback.slice(0, 2000), /\/pro\/success/);
+  it("closes itself back to the chat rather than opening a web page", () => {
+    /*
+     * The checkout runs in WhatsApp's own browser, so finishing leaves
+     * somebody looking at a page on top of the conversation they started in
+     * — while the confirmation they want is a message in that conversation.
+     * WhatsApp gives a page no way to dismiss its browser, but it does
+     * intercept its own links, so the page navigates to wa.me.
+     */
+    assert.match(callback, /renderProDone\(/, "a page that takes them back");
+    assert.doesNotMatch(callback, /\/pro\/success/, "not a marketing page to close by hand");
   });
 
   it("only says Pro is on once it actually is", () => {
-    // The webhook is what activates a subscription and the browser can arrive
-    // first, so this is a fact to check rather than assume.
-    assert.match(callback.slice(0, 2000), /status === "active"/);
-    assert.match(callback.slice(0, 2000), /state=confirming/);
+    // The webhook is what activates a subscription and the browser can
+    // arrive first, so this is a fact to check rather than assume.
+    assert.match(callback, /active: status === "active"/);
   });
 
   it("still returns an invoice payer to their invoice", () => {
     // The change must not cost the case that already worked.
-    assert.match(callback.slice(0, 2000), /reply\.redirect\(`\/i\/\$\{token\}`, 303\)/);
+    assert.match(callback, /reply\.redirect\(`\/i\/\$\{token\}`, 303\)/);
   });
 
   it("uses the reference prefix the checkout actually writes", () => {
-    // Two files agreeing on a string with nothing to enforce it. If the
-    // prefix ever changes, this is what fails rather than the payer.
-    const handle = read("../conversation/handle.ts");
-    assert.match(handle, /const reference = `sub_\$\{/, "the checkout writes sub_");
+    // Two files agreeing on a string with nothing to enforce it.
+    const pro = read("../http/routes/pro.ts");
+    assert.match(pro, /const reference = `sub_\$\{/, "the checkout writes sub_");
   });
 });
 

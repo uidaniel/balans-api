@@ -20,6 +20,8 @@ import { balansFee, settle, type BalansRates } from "../../../core/fees.ts";
 import { initBankTransfer, initTransaction } from "../../payments/monnify.ts";
 import { findByToken, markViewed, outstandingKobo, payable, payableNowKobo } from "../../documents/public.ts";
 import { renderDocument, renderNotFound, type TransferPanel } from "../../documents/page.ts";
+import { renderProDone } from "../../billing/pro-done.ts";
+import { displayNumber } from "../../whatsapp/number.ts";
 import {
   liveTransferFor,
   paymentProgress,
@@ -411,18 +413,26 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
         if (!status) return reply.redirect(SITE, 303);
 
         /*
-         * Whether to say it is on yet.
+         * Back to the chat, rather than on to a web page.
          *
-         * The webhook is what activates a subscription, and the browser can
-         * easily arrive first — so "active" here is a fact worth checking
-         * rather than assuming. The other page says the payment is being
-         * confirmed, which is true both while the webhook is in flight and
-         * if the payment never completed at all.
+         * The checkout ran in WhatsApp's own browser, so finishing leaves
+         * somebody looking at a page on top of the conversation they started
+         * in — while the confirmation they actually want is a message in
+         * that conversation. Sending them to a marketing page was one more
+         * thing to close.
+         *
+         * WhatsApp gives a page no way to dismiss its browser, but it does
+         * intercept its own links, so this page navigates to `wa.me` and the
+         * browser goes away. It says what happened first, because that trick
+         * can fail and a blank screen is the wrong failure on a phone that
+         * has just taken somebody's money.
+         *
+         * Whether it claims Pro is on is still a checked fact: the webhook
+         * is what activates a subscription and the browser can arrive first.
          */
-        return reply.redirect(
-          status === "active" ? `${SITE}/pro/success` : `${SITE}/pro/success?state=confirming`,
-          303,
-        );
+        return reply
+          .type(HTML)
+          .send(renderProDone({ waNumber: await displayNumber(), active: status === "active" }));
       }
 
       const token = await tokenForReference(reference);
