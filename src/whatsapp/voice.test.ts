@@ -96,7 +96,7 @@ const messages: [string, () => string][] = [
   ["reminders stopped", () => reports.remindersStoppedMessage(2, null)],
   ["reminders, none waiting", () => reports.remindersStoppedMessage(0, null)],
 
-  ["draft summary", () => summary.draftSummary(draft, TODAY)],
+  ["draft summary", () => summary.draftSummary(draft, TODAY, "free")],
   ["ask for client", () => summary.askFor("client_name", {})],
   ["ask for amount", () => summary.askFor("amount", { clientName: "Zenith" })],
   ["ask for amount, no client", () => summary.askFor("amount", {})],

@@ -32,6 +32,19 @@ import { renderDocument } from "./page.ts";
 import { payable, type PublicDocument, type PublicStatus } from "./public.ts";
 import { convertedForward } from "./summary.ts";
 
+/**
+ * Source, with the line endings taken off.
+ *
+ * The tests below read code rather than call it, and two of them match across
+ * a line break. `.gitattributes` normalises to LF in the repository and back
+ * to CRLF in a Windows working copy, so those matches find nothing on the
+ * machine the code is written on and everything on the machine it runs on —
+ * a test that passes in CI and fails on a fresh clone, saying nothing about
+ * why. What is being checked is the shape of the code, not how the lines end.
+ */
+const source = (path: string): string =>
+  readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n");
+
 const N = (naira: number) => naira * 100;
 const today = { y: 2026, m: 9, d: 23 };
 
@@ -131,7 +144,7 @@ describe("converting it", () => {
   it("copies the plan across and reopens the first part", () => {
     // Read from the SQL, because this is the one step with no seam to call:
     // the reset is done by the insert itself.
-    const actions = readFileSync(new URL("./actions.ts", import.meta.url), "utf8");
+    const actions = source("./actions.ts");
     const convert = actions.slice(actions.indexOf("export async function convertQuote"));
 
     assert.match(convert, /INSERT INTO payment_parts/, "the plan comes with the work");
@@ -148,7 +161,7 @@ describe("converting it", () => {
      * goes out, the product believes it billed somebody it never contacted,
      * and the overdue sweep starts chasing them for it.
      */
-    const handle = readFileSync(new URL("../conversation/handle.ts", import.meta.url), "utf8");
+    const handle = source("../conversation/handle.ts");
     const branch = handle.slice(handle.indexOf('effect.intent === "convert_quote"'));
     const convert = branch.slice(0, branch.indexOf("\n          }\n") + 12);
 
@@ -159,7 +172,7 @@ describe("converting it", () => {
   });
 
   it("falls back to the link when the PDF cannot be made", () => {
-    const handle = readFileSync(new URL("../conversation/handle.ts", import.meta.url), "utf8");
+    const handle = source("../conversation/handle.ts");
     const branch = handle.slice(handle.indexOf('effect.intent === "convert_quote"'));
     assert.match(branch.slice(0, 3000), /extra\.push\(forward\)/, "the link is the part that matters");
   });

@@ -10,7 +10,9 @@
  */
 
 import { formatFriendly, type Civil } from "../../core/dates.ts";
+import { settle } from "../../core/fees.ts";
 import { formatNaira } from "../../core/totals.ts";
+import { defaults } from "../config.ts";
 import { b, block, lines, para, row } from "../whatsapp/format.ts";
 import { shapeFor } from "./parts.ts";
 import type { Draft } from "./store.ts";
@@ -64,7 +66,49 @@ export function planLines(draft: {
   ];
 }
 
-export function draftSummary(draft: Draft, today: Civil): string {
+/**
+ * What actually lands in the user's bank, once every fee has come out.
+ *
+ * Summed over the payment plan rather than taken off the total, because the
+ * fees are charged per payment and not per invoice. A ₦50,000 invoice paid in
+ * one go meets the processor's flat charge once; the same invoice split into a
+ * deposit and a balance meets it twice, and the difference is real money the
+ * summary would otherwise be wrong about.
+ *
+ * The rates are the ones `/pay` settles with — same `settle`, same defaults —
+ * so this is not a second opinion that can drift from the first. If the number
+ * here is wrong then the split at payment time is wrong too, and the place to
+ * fix it is the rate table, not this message.
+ *
+ * With the fee passed to the client, the client's total is grossed up and what
+ * comes out of the user's share is only our own fee. That falls out of
+ * `settle`; there is no separate branch for it here.
+ */
+export function payout(
+  draft: {
+    totalKobo: number;
+    depositPercent: number | null;
+    instalments: number | null;
+    passFeesToClient: boolean;
+  },
+  plan: "free" | "pro",
+): { receivesKobo: number; feesKobo: number } {
+  const p = defaults.plans[plan];
+  const rates = { percentBps: p.feePercentBps, minKobo: p.feeMinKobo, capKobo: p.feeCapKobo };
+
+  const shape = shapeFor(draft, draft.totalKobo);
+  const payments = shape?.length ? shape.map((s) => s.amountKobo) : [draft.totalKobo];
+
+  const receivesKobo = payments.reduce(
+    (sum, amountKobo) =>
+      sum + settle(amountKobo, rates, { passToClient: draft.passFeesToClient }).userReceivesKobo,
+    0,
+  );
+
+  return { receivesKobo, feesKobo: draft.totalKobo - receivesKobo };
+}
+
+export function draftSummary(draft: Draft, today: Civil, plan: "free" | "pro"): string {
   const rows: (string | false)[] = [row("Client", draft.clientName)];
 
   // One line reads as a single "Work" row. Several deserve their own lines,
@@ -96,9 +140,33 @@ export function draftSummary(draft: Draft, today: Civil): string {
   if (draft.passFeesToClient) rows.push(row("Fees", "Client pays the transaction fee"));
   if (draft.clientEmail) rows.push(row("Email to", draft.clientEmail));
 
-  // Just the question. The three answers arrive as buttons under it, so
+  /*
+   * What they will actually be paid, under the amount they are approving.
+   *
+   * The invoice figure is what the client owes; it is not what arrives, and
+   * the gap is a percentage somebody agreed to during onboarding and has not
+   * thought about since. Saying it here, at the one moment they are looking
+   * at this invoice's money, is the difference between a fee they chose and a
+   * deduction they discover on the settlement.
+   *
+   * Only the figure is bold. The total already carries the bold in the block
+   * above, and a whole line of it beside "Send it?" would leave three things
+   * shouting and nothing standing out.
+   *
+   * Not on a sample, which is a demonstration invoice with nobody's money in
+   * it — a fee line there is a number about a client who does not exist.
+   */
+  const ps =
+    draft.type !== "sample" &&
+    `PS: you receive ${b(formatNaira(payout(draft, plan).receivesKobo))} of this after fees.`;
+
+  // Then just the question. The three answers arrive as buttons under it, so
   // spelling them out here would print the instructions twice.
-  return para(block(`🧾 ${b(`${LABEL[draft.type].toUpperCase()} DRAFT`)}`, rows), b("Send it?"));
+  return para(
+    block(`🧾 ${b(`${LABEL[draft.type].toUpperCase()} DRAFT`)}`, rows),
+    ps,
+    b("Send it?"),
+  );
 }
 
 

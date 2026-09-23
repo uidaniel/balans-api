@@ -64,7 +64,7 @@ describe("a payment plan reaches both messages", () => {
     ],
   ] as const) {
     it(`shows ${name} on the draft, before they approve it`, () => {
-      const m = draftSummary(draft(over), today);
+      const m = draftSummary(draft(over), today, "free");
       for (const line of expected) assert.ok(m.includes(line), `missing "${line}" in:\n${m}`);
     });
 
@@ -81,7 +81,7 @@ describe("a payment plan reaches both messages", () => {
     const d = draft({ depositPercent: 25 });
     // The first part is written `payable` and the rest `pending`, so this is
     // a fact about the data rather than a turn of phrase.
-    assert.match(draftSummary(d, today), /25% deposit — ₦75,000 \(due now\)/);
+    assert.match(draftSummary(d, today, "free"), /25% deposit — ₦75,000 \(due now\)/);
     assert.match(sent(d), /25% deposit — ₦75,000 \(due now\)/);
     assert.equal((sent(d).match(/due now/g) ?? []).length, 1, "only the first stage");
   });
@@ -90,7 +90,7 @@ describe("a payment plan reaches both messages", () => {
     // One payment needs no schedule, and printing one would invent a stage.
     assert.deepEqual(planLines(draft({})), []);
     assert.doesNotMatch(sent(draft({})), /Payment plan/);
-    assert.doesNotMatch(draftSummary(draft({}), today), /Payment plan/);
+    assert.doesNotMatch(draftSummary(draft({}), today, "free"), /Payment plan/);
   });
 });
 

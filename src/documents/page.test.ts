@@ -269,7 +269,7 @@ describe("the messages that go with a document", () => {
     } as never;
     const sent = sentMessage(draft, { number: 7, publicToken: "abc" }, "https://balans.ng", TODAY);
     return [
-      draftSummary(draft, TODAY),
+      draftSummary(draft, TODAY, "free"),
       // One message now: the note travels inside the caption rather than
       // following as a second bubble, so there are no longer two halves.
       sent.forward,

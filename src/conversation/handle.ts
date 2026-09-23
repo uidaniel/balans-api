@@ -171,12 +171,17 @@ async function limitCard(
   phone: string | undefined,
   today: Civil,
   log: FastifyBaseLogger,
-): Promise<{ stop: false } | { stop: true; words: string | null }> {
+): Promise<{ stop: false; plan: "free" | "pro" } | { stop: true; words: string | null }> {
   // Independent of each other, and both are needed. One round trip, not two.
   const [plan, used] = await Promise.all([planOf(userId), documentsThisMonth(userId, today)]);
   const limit = defaults.plans[plan].documentsPerMonth;
 
-  if (limit === null || used < limit) return { stop: false };
+  // Handed back rather than thrown away: the draft summary has to say what
+  // the user will be paid, and that is the plan's fee. Asking again would be
+  // a second query for something already in hand — and a second query is a
+  // second answer, which is how a summary ends up disagreeing with the gate
+  // that let it through.
+  if (limit === null || used < limit) return { stop: false, plan };
 
   log.info({ userId, used, limit, plan }, "monthly document limit reached");
   const words = limitReachedMessage(used, limit, today);
@@ -1117,7 +1122,7 @@ async function runEffects(
             notes: doc.notes ?? null,
           });
           draftId = draft.id;
-          extra.push(draftSummary(draft, ctx.today));
+          extra.push(draftSummary(draft, ctx.today, gate.plan));
           buttons = draftButtons();
           log.info({ userId, draftId: draft.id, totalKobo: draft.totalKobo }, "draft saved");
           break;
