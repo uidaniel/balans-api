@@ -5,6 +5,7 @@ import type { Parsed } from "../parser/schema.ts";
 import type { Civil } from "../../core/dates.ts";
 import type { Correction } from "../parser/corrections.ts";
 import { FLOWS } from "../whatsapp/flows/definitions.ts";
+import { readCorrection } from "../parser/corrections.ts";
 import { settingsMenu } from "../settings/messages.ts";
 
 const V = "2026-09-draft-1";
@@ -728,6 +729,82 @@ describe("a tapped button", () => {
         );
       }
     }
+  });
+
+  describe("building a longer invoice by typing", () => {
+    /*
+     * The form holds five items and every one past the first costs a screen,
+     * because a WhatsApp Flow has no repeating list and no way to redraw a
+     * screen in place. Typing has neither limit, and the sentence that
+     * creates an invoice has read several items since the beginning. These
+     * are the same lines arriving one message later.
+     */
+    const twoLines = {
+      draftId: DRAFTED.draftId,
+      doc: {
+        type: "invoice" as const,
+        clientName: "Zenith Homes",
+        lines: [
+          { description: "Mobile App Design", qty: 1, unitAmountKobo: 500_000_00 },
+          { description: "Search Engine Optimization", qty: 1, unitAmountKobo: 100_000_00 },
+        ],
+      },
+    };
+
+    const after = (draft: typeof twoLines, said: string) => {
+      const out = doc("awaiting_confirm", draft, said, {
+        parsed: parse({ intent: "correct_draft" }),
+        correction: readCorrection(said, { y: 2026, m: 9, d: 23 }),
+      });
+      return out.context.doc?.lines ?? [];
+    };
+
+    it("puts a new line on the end", () => {
+      const lines = after(twoLines, "add hosting 20k");
+      assert.equal(lines.length, 3);
+      assert.deepEqual(lines[2], {
+        description: "hosting",
+        qty: 1,
+        unitAmountKobo: 20_000_00,
+      });
+      // The first two are exactly as they were.
+      assert.deepEqual(lines.slice(0, 2), twoLines.doc.lines);
+    });
+
+    it("takes one off by its number, and by its name", () => {
+      assert.deepEqual(
+        after(twoLines, "remove item 2").map((l) => l.description),
+        ["Mobile App Design"],
+      );
+      assert.deepEqual(
+        after(twoLines, "remove the search engine line").map((l) => l.description),
+        ["Mobile App Design"],
+      );
+    });
+
+    it("will not empty the invoice", () => {
+      /*
+       * "remove the design" against a one-line draft means they want a
+       * different invoice, not an empty one. Leaving it alone and showing the
+       * summary again says what they still have; a document with nothing on
+       * it says nothing at all.
+       */
+      const one = {
+        draftId: DRAFTED.draftId,
+        doc: {
+          type: "invoice" as const,
+          clientName: "Zenith Homes",
+          lines: [{ description: "Mobile App Design", qty: 1, unitAmountKobo: 500_000_00 }],
+        },
+      };
+      assert.deepEqual(after(one, "remove the design"), one.doc.lines);
+    });
+
+    it("leaves a name it cannot find alone", () => {
+      // Better to show the draft unchanged than to guess which line they
+      // meant and delete a different one.
+      assert.equal(after(twoLines, "remove the catering").length, 2);
+    });
   });
 
   it("keeps a draft with more lines than the form holds in words", () => {

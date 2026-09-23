@@ -118,6 +118,16 @@ export const rawCorrection = z.object({
   deposit_percent: z.number().min(1).max(100).nullish().transform((v) => v ?? null),
   instalments: z.number().int().min(2).max(12).nullish().transform((v) => v ?? null),
   pass_fees_to_client: z.boolean().nullish().transform((v) => v ?? null),
+  /**
+    * Whole lines to put on the end of the draft.
+    *
+    * The same shape as the line items in a new invoice, because it is the
+    * same thing: "add SEO 100k" against a draft and "logo 50k, SEO 100k" in
+    * a first message are one ability pointed at two moments.
+    */
+  add_lines: z.array(rawLineItem).max(10).nullish().transform((v) => v ?? []),
+  /** Words naming a line to take off, or its number: "the SEO line", "2". */
+  remove_line: z.string().trim().min(1).max(120).nullish().transform((v) => v ?? null),
   clear: z
     .array(z.enum(["vat", "deposit", "instalments"]))
     .max(3)
@@ -303,6 +313,28 @@ function asCorrection(raw: RawCorrection | null, today: Civil): Correction | nul
   if (due) {
     out.dueDate = due.date;
     out.duePhrase = raw.due_date!;
+  }
+
+  /*
+   * Lines added, and one taken away.
+   *
+   * A line with no price is dropped rather than added at zero: "add the
+   * photoshoot" names work without saying what it costs, and a ₦0 line on
+   * somebody's invoice is worse than no line at all.
+   */
+  const added = raw.add_lines
+    .map((l) => ({
+      description: l.description,
+      unitAmountKobo: l.unit_amount === null ? null : parseAmountToKobo(l.unit_amount),
+    }))
+    .filter((l): l is { description: string; unitAmountKobo: number } => (l.unitAmountKobo ?? 0) > 0);
+  if (added.length) out.addLines = added;
+
+  if (raw.remove_line) {
+    const position = /^(?:item|line|number|no\.?)?\s*(\d{1,2})(?:st|nd|rd|th)?$/i.exec(raw.remove_line);
+    out.removeLine = position
+      ? { position: Number(position[1]) }
+      : { match: raw.remove_line };
   }
 
   if (raw.client_name) out.clientName = titleCaseName(raw.client_name);

@@ -172,3 +172,82 @@ describe("how the two readers are wired together", () => {
     assert.match(handle, /parseMessage\(text, \{ today, onScreen \}\)/);
   });
 });
+
+/**
+ * Building a longer invoice by typing, because the form cannot.
+ *
+ * A WhatsApp Flow has no repeating list, no way to redraw a screen in place,
+ * and at most two tappable links on a screen. Five items is as far as the
+ * form goes, and every item past the first costs a screen. A sentence has
+ * none of those limits and this reader already handles the hard part.
+ */
+describe("adding and removing whole lines", () => {
+  const today = { y: 2026, m: 9, d: 23 } as const;
+  const read = (s: string) => readCorrection(s, today);
+
+  it("adds a line from the way people actually write one", () => {
+    for (const [said, description, kobo] of [
+      ["add SEO 100k", "SEO", 100_000_00],
+      ["add seo for 100000", "seo", 100_000_00],
+      ["also add hosting 20k", "hosting", 20_000_00],
+      ["add another item: business cards 5k", "business cards", 5_000_00],
+      ["include photography for N75,000", "photography", 75_000_00],
+    ] as const) {
+      assert.deepEqual(read(said)?.addLines, [{ description, unitAmountKobo: kobo }], said);
+    }
+  });
+
+  it("reads several at once, joined however they were joined", () => {
+    assert.deepEqual(read("add SEO 100k and hosting 20k")?.addLines, [
+      { description: "SEO", unitAmountKobo: 100_000_00 },
+      { description: "hosting", unitAmountKobo: 20_000_00 },
+    ]);
+
+    /*
+     * "design" begins with the letter the naira prefix used to match, so the
+     * money pattern ate it: this came back as an item called "logo desig".
+     */
+    assert.deepEqual(read("add logo design 50k, hosting 20k, cards 5k")?.addLines, [
+      { description: "logo design", unitAmountKobo: 50_000_00 },
+      { description: "hosting", unitAmountKobo: 20_000_00 },
+      { description: "cards", unitAmountKobo: 5_000_00 },
+    ]);
+  });
+
+  it("takes a line off by its number or by its name", () => {
+    assert.deepEqual(read("remove item 2")?.removeLine, { position: 2 });
+    assert.deepEqual(read("take off item 3")?.removeLine, { position: 3 });
+    assert.deepEqual(read("remove the SEO line")?.removeLine, { match: "SEO" });
+    assert.deepEqual(read("delete the hosting")?.removeLine, { match: "hosting" });
+  });
+
+  it("does not mistake the options for lines", () => {
+    // Each of these has its own rule, and each says "add" or "remove".
+    assert.equal(read("add vat")?.vatPercent, 7.5);
+    assert.equal(read("remove the vat")?.vatPercent, null);
+    assert.equal(read("remove the deposit")?.depositPercent, null);
+    // "add 50% deposit" left the word "add" behind, and a leftover used to
+    // mean "I did not understand this message".
+    assert.equal(read("add 50% deposit")?.depositPercent, 50);
+    for (const s of ["add vat", "remove the vat", "add 50% deposit"]) {
+      assert.equal(read(s)?.addLines, undefined, s);
+      assert.equal(read(s)?.removeLine, undefined, s);
+    }
+  });
+
+  it("reads an addition alongside the other things in the sentence", () => {
+    const c = read("add SEO 100k due next friday");
+    assert.deepEqual(c?.addLines, [{ description: "SEO", unitAmountKobo: 100_000_00 }]);
+    assert.deepEqual(c?.dueDate, { y: 2026, m: 10, d: 2 });
+  });
+
+  it("hands anything it only half understood to the model", () => {
+    /*
+     * Every part or none. Half of "add SEO 100k and make it urgent" is an
+     * item nobody asked for, priced at whatever the sentence ended with \u2014
+     * and an invoice that is quietly wrong is worse than one more model call.
+     */
+    assert.equal(read("add SEO 100k and make it urgent"), null);
+    assert.equal(read("add the photoshoot"), null, "named, but not priced");
+  });
+});

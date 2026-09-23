@@ -17,6 +17,26 @@ import { COUNTED, SPREAD, countOf } from "./extract.ts";
 
 export type Correction = {
   totalKobo?: number;
+  /**
+   * Lines to put on the end of the draft.
+   *
+   * The form holds five items and cannot hold a sixth, and every way of
+   * adding one inside a WhatsApp Flow fights the format: there is no
+   * repeating list, no way to redraw a screen in place, and at most two
+   * tappable links on a screen. Typing has none of those limits, and the
+   * sentence that creates an invoice has read several items since the
+   * beginning — "logo 50k, website 250k" is two lines. This is the same
+   * ability, pointed at a draft that already exists.
+   */
+  addLines?: { description: string; unitAmountKobo: number }[];
+  /**
+   * A line to take off, named the way somebody would name it.
+   *
+   * Either its number on the summary — "remove item 2" — or words out of
+   * it, "remove the SEO line". Which one is decided here; finding it is the
+   * machine's job, because only the machine has the draft.
+   */
+  removeLine?: { position: number } | { match: string };
   dueDate?: Civil;
   /** The phrase, so the summary can echo how they said it. */
   duePhrase?: string;
@@ -54,6 +74,47 @@ const AMOUNT_ONLY = new RegExp(
 
 const AMOUNT_LABELLED =
   /(?:amount|total|price|it|cost)\s+(?:should be|is|to)\s+(?:₦|n|ngn)?\s?(\d[\d,]*(?:\.\d+)?\s?[hkm]?)\b/i;
+
+/**
+ * Money as people write it: "100k", "₦250,000", "1.5m", "N20000".
+ *
+ * The naira prefix needs a word boundary in front of it. Without one, the
+ * "n" of "design" was read as the currency: "add logo design 50k" came back
+ * as an item called "logo desig".
+ */
+const MONEY = String.raw`(?:₦|\bngn|\bn)?\s?\d[\d,]*(?:\.\d+)?\s?[hkm]?`;
+
+/**
+ * "add SEO 100k", "also add hosting for 20000", "add another item: cards 5k".
+ *
+ * Only the opening words. What follows is split on "and" and commas and read
+ * one line at a time, because "add SEO 100k and hosting 20k" is two items and
+ * a single pattern would hand back "SEO 100k and hosting" as the description.
+ */
+const ADD_LINES = new RegExp(
+  String.raw`\b(?:also\s+)?(?:add|include|put in|throw in)\s+` +
+    String.raw`(?:(?:another|a|one more|an extra)\s+(?:item|line)s?\s*[:,-]?\s*)?`,
+  "i",
+);
+
+/** One "something, some money" pair, with whatever joins them. */
+const ONE_LINE = new RegExp(
+  String.raw`^(.+?)\s*(?:\bfor\b|\bat\b|@|[:=-])?\s*(${MONEY})$`,
+  "i",
+);
+
+/**
+ * Taking a line off by name or by number.
+ *
+ * Read after the fixed options, so "remove the VAT" and "remove the deposit"
+ * are long gone by the time this sees the message — they are answers to
+ * different questions and each has its own rule above.
+ */
+const REMOVE_LINE =
+  /\b(?:remove|delete|take off|take out|drop|cancel)\s+(?:the\s+)?(.+?)\s*(?:\bline\b|\bitem\b)?$/i;
+
+/** "item 2", "line 3", "the 2nd one" — a position rather than a name. */
+const BY_POSITION = /^(?:item|line|number|no\.?)?\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s+one)?$/i;
 
 const DUE = /\b(?:due|deadline|payable|pay(?:able)? by)\s*:?\s*(.+)$/i;
 const DUE_CHANGE = new RegExp(String.raw`\b(?:${CHANGE})\s*due\s*:?\s*(.+)$`, "i");
@@ -217,6 +278,59 @@ export function readCorrection(text: string, today: Civil): Correction | null {
     }
   }
 
+  /*
+   * Adding and removing whole lines.
+   *
+   * After the fixed options, so "remove the VAT" is already accounted for,
+   * and before the description and amount rules, which would otherwise read
+   * "add SEO 100k" as a new price for the first line.
+   */
+  const adding = ADD_LINES.exec(rest);
+  if (adding) {
+    const after = rest.slice(adding.index + adding[0]!.length).trim();
+    /*
+     * A comma only separates items when a space follows it. Without that,
+     * "include photography for N75,000" was split down the thousands
+     * separator into "photography for N75" and "000", and the whole message
+     * fell through to the model.
+     */
+    const parts = after.split(/\s*,\s+|\s+and\s+/i).filter(Boolean);
+    const lines: { description: string; unitAmountKobo: number }[] = [];
+
+    for (const part of parts) {
+      const m = ONE_LINE.exec(part.trim());
+      const kobo = m ? parseAmountToKobo(m[2]!) : null;
+      const description = m ? clean(m[1]!) : "";
+      // Every part or none. Half of "add SEO 100k and make it urgent" is an
+      // item nobody asked for, priced at whatever the sentence ended with.
+      if (!description || kobo === null || kobo <= 0) {
+        lines.length = 0;
+        break;
+      }
+      lines.push({ description, unitAmountKobo: kobo });
+    }
+
+    if (lines.length) {
+      out.addLines = lines;
+      rest = tidy(rest.slice(0, adding.index));
+    }
+  }
+
+  if (!out.addLines) {
+    const removing = REMOVE_LINE.exec(rest);
+    if (removing) {
+      const what = clean(removing[1]!) ?? "";
+      const position = BY_POSITION.exec(what);
+      if (position) {
+        out.removeLine = { position: Number(position[1]) };
+        rest = tidy(rest.slice(0, removing.index));
+      } else if (what && what.split(" ").length <= 6) {
+        out.removeLine = { match: what };
+        rest = tidy(rest.slice(0, removing.index));
+      }
+    }
+  }
+
   /* Then the amount, which is the change that matters most. ---------------- */
   const labelled = AMOUNT_LABELLED.exec(rest);
   const bare = labelled ? null : AMOUNT_ONLY.exec(rest);
@@ -289,7 +403,7 @@ const tidy = (s: string): string =>
  * other way round it would end up ignored, which costs a wrong invoice.
  */
 const NOISE =
-  /\b(?:no|nope|nah|ok|okay|abeg|please|pls|actually|sorry|and|also|plus|then|instead|now|make|makes|change|changed|set|update|correct|fix|edit|put|do|split|break|down|into|in|it|this|that|the|a|an|to|be|been|should|shd|is|are|was|for|of|on|at|as|so|just|abi|na|invoice|quote|draft|document|bill)\b/gi;
+  /\b(?:no|nope|nah|ok|okay|abeg|please|pls|actually|sorry|and|also|plus|then|instead|now|make|makes|change|changed|set|update|correct|fix|edit|put|do|split|break|down|into|in|it|this|that|the|a|an|to|be|been|should|shd|is|are|was|for|of|on|at|as|so|just|abi|na|invoice|quote|draft|document|bill|add|adds|remove|delete|include|drop)\b/gi;
 
 const unexplained = (rest: string): boolean =>
   tidy(rest).replace(NOISE, "").replace(/[^a-z0-9]+/gi, "") !== "";

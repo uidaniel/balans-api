@@ -99,6 +99,27 @@ const TOOL = {
           deposit_percent: { type: ["number", "null"] },
           instalments: { type: ["number", "null"], description: "The COUNT of equal payments, 2 to 12." },
           pass_fees_to_client: { type: ["boolean", "null"] },
+          add_lines: {
+            type: ["array", "null"],
+            description:
+              'Whole NEW lines to add to the draft, when they say "add", "include", "also add". ' +
+              'Each is {description, unit_amount}. "add SEO 100k and hosting 20k" is two. ' +
+              "Never use this for changing the price or the wording of a line that is already there.",
+            items: {
+              type: "object",
+              properties: {
+                description: { type: "string" },
+                unit_amount: { type: ["string", "null"], description: "As written: \"100k\"." },
+              },
+              required: ["description"],
+            },
+          },
+          remove_line: {
+            type: ["string", "null"],
+            description:
+              'A line to take OFF, named as they named it: "the SEO line" -> "SEO", ' +
+              '"remove item 2" -> "2". Not for VAT, a deposit or instalments, which go in clear.',
+          },
           clear: {
             type: ["array", "null"],
             items: { type: "string", enum: ["vat", "deposit", "instalments"] },
@@ -152,6 +173,10 @@ When a <draft> block appears, a draft is on the user's screen and they have just
 - "no make it 400k" is not a rejection. The "no" agrees that the draft is wrong; the change is the amount.
 - "for Tunde instead", "wrong client, Kemi" change client_name.
 - "add vat", "50% upfront", "split into 3" change the options. "no vat" goes in clear.
+- "add SEO 100k", "also include hosting for 20000" put NEW lines in add_lines. The form holds
+  five items; a sentence has no limit, so this is how a long invoice gets built.
+- "remove the SEO line", "take off item 2", "drop the hosting" go in remove_line. Taking off
+  VAT or a deposit is not this — that is clear.
 - A first payment with a share named is a deposit, not instalments: "break it into two milestones, 20% for the first" is deposit_percent 20 and nothing else, because the deposit and the balance are already the two parts. Equal parts with no share named are instalments: "split it into three" is instalments 3.
 - Only what they actually said. A message about the price says nothing about the date, and a date that moves on its own is a bug somebody finds after the invoice is sent.
 

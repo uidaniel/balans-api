@@ -2142,6 +2142,44 @@ function applyCorrection(doc: PendingDoc, c: Correction): PendingDoc {
     next.totalKobo = undefined;
   }
 
+  /*
+   * Whole lines, added and taken away.
+   *
+   * Before the amount rule below, which replaces the price of a single line
+   * and collapses several into one — running it after an add would undo the
+   * add. Nobody writes a message that means both.
+   */
+  if (c.addLines?.length) {
+    next.lines = [
+      ...next.lines,
+      ...c.addLines.map((l) => ({ description: l.description, qty: 1, unitAmountKobo: l.unitAmountKobo })),
+    ];
+    // The total is whatever the lines add up to now, not what it was.
+    next.totalKobo = undefined;
+  }
+
+  if (c.removeLine && next.lines.length > 1) {
+    /*
+     * Only ever one line, and never the last one.
+     *
+     * An invoice with nothing on it is not a document, and "remove the
+     * design" against a one-line draft means they want a different invoice,
+     * not an empty one — so it is left alone and the summary comes back
+     * unchanged, which shows them what they still have.
+     */
+    const at =
+      "position" in c.removeLine
+        ? c.removeLine.position - 1
+        : next.lines.findIndex((l) =>
+            l.description.toLowerCase().includes(c.removeLine && "match" in c.removeLine ? c.removeLine.match.toLowerCase() : "\u0000"),
+          );
+
+    if (at >= 0 && at < next.lines.length) {
+      next.lines = next.lines.filter((_, i) => i !== at);
+      next.totalKobo = undefined;
+    }
+  }
+
   if (c.totalKobo !== undefined) {
     // A new total replaces the price of a single line. With several lines
     // there is no honest way to spread it, so it becomes one line instead and
