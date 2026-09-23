@@ -12,6 +12,7 @@
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { b, block, lines, para, row } from "../whatsapp/format.ts";
+import { shapeFor } from "./parts.ts";
 import type { Draft } from "./store.ts";
 
 /** F6: description defaults to "Services" if absent, and the draft says so. */
@@ -31,6 +32,37 @@ const SENT_LABEL: Record<Draft["type"], string> = {
   payment_request: "Request",
   sample: "Sample",
 };
+
+/**
+ * The payment plan, written out, with the figure for every stage.
+ *
+ * One helper for every surface that shows it, and the arithmetic is
+ * `splitInto` — the same call that wrote the rows in `payment_parts`. That
+ * is the whole point of it being here. The draft summary used to divide the
+ * total by the number of instalments itself, which agrees with the stored
+ * parts right up until the division is not exact, and then the message
+ * promises three payments of one figure while the client is charged another.
+ *
+ * "Due now" on the first stage because that is literally its status: the
+ * first part is written `payable` and the rest `pending`. A client looking
+ * at a deposit invoice is asking exactly one question — how much do I pay
+ * today — and the total at the top is not the answer.
+ */
+export function planLines(draft: {
+  totalKobo: number;
+  depositPercent: number | null;
+  instalments: number | null;
+}): string[] {
+  const shape = shapeFor(draft, draft.totalKobo);
+  if (!shape) return [];
+
+  return [
+    "Payment plan:",
+    ...shape.map(
+      (p, i) => `  · ${p.label} — ${formatNaira(p.amountKobo)}${i === 0 ? " (due now)" : ""}`,
+    ),
+  ];
+}
 
 export function draftSummary(draft: Draft, today: Civil): string {
   const rows: (string | false)[] = [row("Client", draft.clientName)];
@@ -60,14 +92,7 @@ export function draftSummary(draft: Draft, today: Civil): string {
   if (draft.dueDate) {
     rows.push(row(draft.type === "quote" ? "Valid until" : "Due", formatFriendly(draft.dueDate, today)));
   }
-  if (draft.depositPercent) rows.push(row("Deposit", `${draft.depositPercent}% up front`));
-  if (draft.instalments) {
-    // The figure, not just the count. "3 payments" leaves somebody working out
-    // what each one is worth, and this is the line they check before sending.
-    rows.push(
-      row("Payments", `${draft.instalments} x ${formatNaira(Math.round(draft.totalKobo / draft.instalments))}`),
-    );
-  }
+  rows.push(...planLines(draft));
   if (draft.passFeesToClient) rows.push(row("Fees", "Client pays the transaction fee"));
   if (draft.clientEmail) rows.push(row("Email to", draft.clientEmail));
 
@@ -178,6 +203,11 @@ export function sentMessage(
       row("Amount", b(formatNaira(draft.totalKobo))),
       draft.dueDate &&
         row(draft.type === "quote" ? "Valid until" : "Due", formatFriendly(draft.dueDate, today)),
+      // The client is the one being asked for a deposit, so the client is the
+      // one who has to be told. Without this the forward says "₦300,000, click
+      // to pay" and the page it opens asks for ₦75,000, which reads as an
+      // error in the sender's favour.
+      ...planLines(draft),
     ]),
     lines(draft.type === "quote" ? "Click the link to view it:" : "Click the link to pay:", link),
     note,

@@ -245,10 +245,10 @@ describe("the payment plans a form can offer", () => {
     for (const plan of PLANS) {
       const split = splitForPlan(plan.id);
       if (plan.id === "one") {
-        assert.equal(shapeFor(split), null, "one payment is no split at all");
+        assert.equal(shapeFor(split, 100_000_00), null, "one payment is no split at all");
         continue;
       }
-      assert.notEqual(shapeFor(split), null, `${plan.id} produced nothing`);
+      assert.notEqual(shapeFor(split, 100_000_00), null, `${plan.id} produced nothing`);
     }
   });
 

@@ -177,8 +177,8 @@ export async function createDraft(userId: string, input: DraftInput): Promise<Dr
      * told one thing and their client was shown another, which is the worst
      * shape a bug in this product can take.
      */
-    const shape = shapeFor(input);
-    if (shape) await createParts(id, totals.totalKobo, shape, c);
+    const shape = shapeFor(input, totals.totalKobo);
+    if (shape) await createParts(id, shape, c);
 
     return {
       ...input,

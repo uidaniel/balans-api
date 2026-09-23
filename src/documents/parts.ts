@@ -14,7 +14,7 @@
 import type pg from "pg";
 
 import { db, tx } from "../db/pool.ts";
-import { splitInto } from "../../core/totals.ts";
+import { depositSplit, equalSplit } from "../../core/totals.ts";
 
 export type Part = {
   id: string;
@@ -34,7 +34,7 @@ export type Part = {
  */
 export async function createParts(
   documentId: string,
-  totalKobo: number,
+  /** Labels and exact figures. The arithmetic was done in `shapeFor`. */
   shape: Shape,
   /**
    * An open transaction to write inside.
@@ -45,11 +45,6 @@ export async function createParts(
    */
   client?: pg.PoolClient,
 ): Promise<Part[]> {
-  const amounts = splitInto(
-    totalKobo,
-    shape.map((s) => s.percent),
-  );
-
   const write = async (c: pg.PoolClient): Promise<Part[]> => {
     await c.query(`DELETE FROM payment_parts WHERE document_id = $1`, [documentId]);
 
@@ -58,13 +53,13 @@ export async function createParts(
       const { rows } = await c.query<{ id: string }>(
         `INSERT INTO payment_parts (document_id, position, label, amount_kobo, status)
          VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [documentId, i, s.label, amounts[i]!, i === 0 ? "payable" : "pending"],
+        [documentId, i, s.label, s.amountKobo, i === 0 ? "payable" : "pending"],
       );
       made.push({
         id: rows[0]!.id,
         position: i,
         label: s.label,
-        amountKobo: amounts[i]!,
+        amountKobo: s.amountKobo,
         status: i === 0 ? "payable" : "pending",
         paidAt: null,
       });
@@ -75,8 +70,23 @@ export async function createParts(
   return client ? write(client) : tx(write);
 }
 
-/** How a total is broken up. The percentages always add to 100. */
-export type Shape = { label: string; percent: number }[];
+/**
+ * How a total is broken up: a label and an exact figure for each part.
+ *
+ * Kobo, not percentages. A shape used to carry a percent and the amounts were
+ * worked out later, which is fine for a deposit — 25% and 75% are both
+ * exact — and wrong for anything that does not divide: a third written as
+ * 33.33% loses a hundredth of a percent per part, so "3 equal payments" of
+ * ₦300,000 came out as ₦99,990, ₦99,990 and ₦100,020.
+ *
+ * The parts still summed to the total, because the last one absorbed what the
+ * others dropped. That is why it survived — every test asked whether the
+ * money added up, and none asked whether the equal parts were equal.
+ *
+ * With the figures decided here, there is one answer and every surface reads
+ * it: the stored rows, the draft, the forwarded message and the payment page.
+ */
+export type Shape = { label: string; amountKobo: number }[];
 
 /**
  * The shape a document's options ask for, or null for one single payment.
@@ -93,15 +103,18 @@ export type Shape = { label: string; percent: number }[];
  * make a second part worth nothing — which `payment_parts` rejects outright,
  * because a part worth zero is not something a client can pay.
  */
-export function shapeFor(o: {
-  depositPercent?: number | null;
-  instalments?: number | null;
-}): Shape | null {
+export function shapeFor(
+  o: {
+    depositPercent?: number | null;
+    instalments?: number | null;
+  },
+  totalKobo: number,
+): Shape | null {
   const deposit = o.depositPercent;
-  if (deposit != null && deposit > 0 && deposit < 100) return depositShape(deposit);
+  if (deposit != null && deposit > 0 && deposit < 100) return depositShape(totalKobo, deposit);
 
   const n = o.instalments;
-  if (n != null && n >= MIN_INSTALMENTS && n <= MAX_INSTALMENTS) return equalShape(n);
+  if (n != null && n >= MIN_INSTALMENTS && n <= MAX_INSTALMENTS) return equalShape(totalKobo, n);
 
   return null;
 }
@@ -114,22 +127,20 @@ export const MIN_INSTALMENTS = 2;
 export const MAX_INSTALMENTS = 12;
 
 /** A deposit, as F7 writes it: "50% deposit" is deposit then balance. */
-export const depositShape = (percent: number): Shape => [
-  { label: `${percent}% deposit`, percent },
-  { label: "Balance", percent: 100 - percent },
-];
+export function depositShape(totalKobo: number, percent: number): Shape {
+  const [deposit, balance] = depositSplit(totalKobo, percent);
+  return [
+    { label: `${percent}% deposit`, amountKobo: deposit },
+    { label: "Balance", amountKobo: balance },
+  ];
+}
 
-/** "three equal parts", with the rounding remainder on the last one. */
-export function equalShape(n: number): Shape {
-  const each = Math.floor((100 / n) * 100) / 100;
-  const shape = Array.from({ length: n }, (_, i) => ({
+/** "three equal parts", and they are equal to the kobo. */
+export function equalShape(totalKobo: number, n: number): Shape {
+  return equalSplit(totalKobo, n).map((amountKobo, i) => ({
     label: `Part ${i + 1} of ${n}`,
-    percent: each,
+    amountKobo,
   }));
-  // splitInto insists the percentages total 100, and the last one absorbs the
-  // rounding here exactly as it absorbs the kobo there.
-  shape[n - 1]!.percent = Math.round((100 - each * (n - 1)) * 100) / 100;
-  return shape;
 }
 
 export async function partsFor(documentId: string): Promise<Part[]> {

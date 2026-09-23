@@ -111,6 +111,32 @@ export function splitInto(totalKobo: number, percents: number[]): number[] {
   return parts;
 }
 
+/**
+ * A total divided into n parts as equally as it can be divided.
+ *
+ * In kobo, not percentages, and that is the whole reason it exists. A third
+ * of a total cannot be written as a percentage with two decimals: 33.33%
+ * three times is 99.99% of the money, so ₦300,000 "in 3 equal payments"
+ * came out as ₦99,990, ₦99,990 and ₦100,020. The parts summed to the total
+ * — the last one absorbed what the others dropped — so every test passed,
+ * and the client was still billed three different amounts for something the
+ * form called equal.
+ *
+ * The odd kobo go to the earliest parts, so the first payment is never
+ * smaller than the last. Nobody is owed an explanation for paying a kobo more
+ * up front; being asked for more at the end is a different conversation.
+ */
+export function equalSplit(totalKobo: number, n: number): number[] {
+  if (!Number.isSafeInteger(totalKobo) || totalKobo < 0) {
+    throw new RangeError(`bad total: ${totalKobo}`);
+  }
+  if (!Number.isSafeInteger(n) || n < 1) throw new RangeError(`bad part count: ${n}`);
+
+  const each = Math.floor(totalKobo / n);
+  const over = totalKobo - each * n;
+  return Array.from({ length: n }, (_, i) => each + (i < over ? 1 : 0));
+}
+
 /** "50% deposit" as F7 writes it: a deposit and the balance. */
 export const depositSplit = (totalKobo: number, depositPercent: number): [number, number] => {
   const [deposit, balance] = splitInto(totalKobo, [depositPercent, 100 - depositPercent]);
