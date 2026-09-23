@@ -6,6 +6,7 @@ import type { Civil } from "../../core/dates.ts";
 import type { Correction } from "../parser/corrections.ts";
 import { FLOWS } from "../whatsapp/flows/definitions.ts";
 import { readCorrection } from "../parser/corrections.ts";
+import { asCommand } from "../parser/commands.ts";
 import { settingsMenu } from "../settings/messages.ts";
 
 const V = "2026-09-draft-1";
@@ -881,6 +882,37 @@ describe("a tapped button", () => {
     it("leaves the draft alone when nothing matches", () => {
       // Better an unchanged draft than renaming whichever line came first.
       assert.deepEqual(after("change the catering to the catering deposit"), twoLines.doc.lines);
+    });
+  });
+
+  describe("a way out of a dead end", () => {
+    /*
+     * "There is no draft waiting" answers somebody who tapped a button on an
+     * old message, or answered a question that has since been dropped. They
+     * are by definition somewhere they did not mean to be, and the message
+     * offered one example and nothing to tap.
+     */
+    const stranded = () =>
+      doc("idle", { draftId: undefined, doc: undefined }, "yes", {
+        parsed: parse({ intent: "unknown" }),
+        correction: null,
+      });
+
+    it("offers help under it, as a button", () => {
+      const out = stranded();
+      assert.match(out.replies.join("\n"), /no draft waiting/i);
+      assert.deepEqual(out.buttons, [{ id: "help", title: "Need help?" }]);
+    });
+
+    it("sends the word the parser already reads", () => {
+      /*
+       * The id is the message text when it is tapped, so the button and
+       * typing "help" take the same path and neither needs a special case.
+       * A title nobody can tap is 20 characters at WhatsApp; this is ten.
+       */
+      const button = stranded().buttons![0]!;
+      assert.equal(asCommand(button.id)?.intent, "help");
+      assert.ok(button.title.length <= 20, button.title);
     });
   });
 

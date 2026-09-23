@@ -467,6 +467,19 @@ export const VOICE = {
   ],
 
   /**
+   * A way out of a dead end.
+   *
+   * "There is no draft waiting" is the reply to somebody who tapped a button
+   * on an old message, or answered a question that has since been dropped.
+   * They are, by definition, somewhere they did not mean to be \u2014 and the
+   * message answered them with one example and nothing to tap.
+   *
+   * The id is the word the parser already reads, so the button and typing
+   * "help" take exactly the same path and neither needs a special case.
+   */
+  helpButton: (): ReplyButton[] => [{ id: "help", title: "Need help?" }],
+
+  /**
    * The same moment, carried by the consent Flow.
    *
    * No links in the body, because the Flow already has both of them as taps
@@ -1609,7 +1622,13 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
     // A stray "yes" with nothing to confirm, and everything unrecognised.
     case "confirm":
     case "reject":
-      return { replies: [VOICE.nothingPending], next: "idle", context: ctx, effects: [] };
+      return {
+        replies: [VOICE.nothingPending],
+        buttons: VOICE.helpButton(),
+        next: "idle",
+        context: ctx,
+        effects: [],
+      };
 
     default:
       /*
@@ -1630,7 +1649,13 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
        * bring the old answer back.
        */
       if (DRAFT_BUTTONS.has(msg.text.trim().toLowerCase())) {
-        return { replies: [VOICE.nothingPending], next: "idle", context: ctx, effects: [] };
+        return {
+        replies: [VOICE.nothingPending],
+        buttons: VOICE.helpButton(),
+        next: "idle",
+        context: ctx,
+        effects: [],
+      };
       }
 
       return { replies: [VOICE.outOfScope], next: "idle", context: ctx, effects: [] };
@@ -1933,7 +1958,15 @@ function addDaysTo(c: Civil, days: number): Civil {
 /** The answer to a single question, and nothing else. */
 function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound): Step {
   const doc = ctx.doc;
-  if (!doc) return { replies: [VOICE.nothingPending], next: "idle", context: {}, effects: [] };
+  if (!doc) {
+    return {
+      replies: [VOICE.nothingPending],
+      buttons: VOICE.helpButton(),
+      next: "idle",
+      context: {},
+      effects: [],
+    };
+  }
 
   const now = today(msg);
 
@@ -2023,7 +2056,13 @@ function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound
     }
 
     default:
-      return { replies: [VOICE.nothingPending], next: "idle", context: {}, effects: [] };
+      return {
+        replies: [VOICE.nothingPending],
+        buttons: VOICE.helpButton(),
+        next: "idle",
+        context: {},
+        effects: [],
+      };
   }
 }
 
@@ -2033,7 +2072,13 @@ function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound
 function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
   const doc = ctx.doc;
   if (!doc || !ctx.draftId) {
-    return { replies: [VOICE.nothingPending], next: "idle", context: {}, effects: [] };
+    return {
+      replies: [VOICE.nothingPending],
+      buttons: VOICE.helpButton(),
+      next: "idle",
+      context: {},
+      effects: [],
+    };
   }
 
   const now = today(msg);
