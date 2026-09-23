@@ -43,7 +43,7 @@ const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
  * fractions of the image rather than pixels, so the numbers still mean
  * something if the artwork is ever exported at another size.
  */
-const LINE = {
+export const LINE = {
   /**
    * The card's tilt, in degrees.
    *
@@ -53,13 +53,25 @@ const LINE = {
    * the word PRO.
    */
   tilt: -4.8,
-  /** Top-left of the patch, as a fraction of the whole image. */
+  /**
+   * Top-left of the patch, as a fraction of the whole image.
+   *
+   * The gap between the two lines is narrow and the patch has to live in it.
+   * Reading the ink column by column: PRO bottoms out at y=1065, and the
+   * date line starts at y=1113 at its left end. A patch starting at 1055 —
+   * which is what this was — began ten pixels above PRO's baseline and shaved
+   * the bottom off the letters.
+   *
+   * 1098 sits between the two with room either side, and the height covers
+   * the date's full band (down to y=1138 at the left) without reaching back
+   * up into PRO once the rotation lifts the right-hand end.
+   */
   x: 475 / 2160,
-  y: 1055 / 2160,
+  y: 1098 / 2160,
   w: 660 / 2160,
-  h: 115 / 2160,
-  /** Type size, from a measured cap height of 31px. */
-  size: 43 / 2160,
+  h: 55 / 2160,
+  /** Type size, from a measured cap height of 27px. */
+  size: 39 / 2160,
 };
 
 /**

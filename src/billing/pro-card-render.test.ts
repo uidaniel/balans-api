@@ -20,7 +20,7 @@ import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 import zlib from "node:zlib";
 
-import { proCardHtml, SIZE } from "./pro-card.ts";
+import { proCardHtml, SIZE, LINE } from "./pro-card.ts";
 
 const html = (m: number, y: number) => proCardHtml(m, y);
 
@@ -139,6 +139,42 @@ describe("where it draws it", () => {
     const tilt = /rotate\((-?[\d.]+)deg\)/.exec(out)?.[1];
     assert.ok(tilt, "nothing is rotated");
     assert.ok(Number(tilt) < -4 && Number(tilt) > -6, `${tilt} degrees is not the card's angle`);
+  });
+
+  it("clears the bottom of PRO", () => {
+    /*
+     * The regression this is here for.
+     *
+     * The patch started at y=1055, ten pixels above PRO's baseline, so it
+     * shaved the bottom off the letters — visible on a real card and not in
+     * any test. Reading the ink column by column: PRO bottoms out around
+     * y=1065 and the date line starts around y=1113, so the patch has to
+     * live in that gap.
+     */
+    const top = LINE.y * SIZE;
+
+    let proBottom = 0;
+    for (let x = 460; x <= 940; x += 4) {
+      for (let y = 980; y <= 1090; y++) {
+        // Anything this high is PRO: the date line starts well below it.
+        if (pixels.hex(x, y) === "#10231C" && y > proBottom) proBottom = y;
+      }
+    }
+
+    assert.ok(proBottom > 1000, `did not find PRO (lowest ink ${proBottom})`);
+    assert.ok(
+      top > proBottom,
+      `the patch starts at ${top} and PRO reaches ${proBottom} — it would clip the letters`,
+    );
+  });
+
+  it("still covers the line it is there to cover", () => {
+    // And the other side of the same gap: too low and the old date shows.
+    const top = LINE.y * SIZE;
+    const bottom = top + LINE.h * SIZE;
+
+    assert.ok(top < 1113, `the date starts at 1113 and the patch at ${top}`);
+    assert.ok(bottom > 1138, `the date ends at 1138 and the patch at ${bottom}`);
   });
 
   it("carries the artwork itself, not a rebuild of it", () => {
