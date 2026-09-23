@@ -424,17 +424,39 @@ export function planIdFor(o: { depositPercent?: number | null; instalments?: num
  * to twenty for anything longer. Every screen exists in the JSON whether it is
  * reached or not, so the cost of raising this is paid by every invoice.
  */
+/**
+ * The items after the first, and the screens that hold them.
+ *
+ * The shape of this changed completely on 23 September 2026, after three
+ * rounds of "Something went wrong. Try again later." on a real phone, and the
+ * reason is worth writing down because Meta's validator will not tell you.
+ *
+ * The form used to be one screen that reshaped itself: a `Switch` per item
+ * decided which boxes appeared, a count decided which button, and the Form's
+ * `init-values` named all eight item fields so the boxes would come back
+ * filled. That last part is the bug. `init-values` may only name fields that
+ * are *on the screen*, and a field inside a `Switch` branch that did not match
+ * is not on the screen. Publishing is happy \u2014 every name exists somewhere in
+ * the JSON, which is all the validator checks, confirmed by probe. The phone
+ * is not, and it does not say so until the next tap, which is what made this
+ * so hard to see: the screen you are staring at when it breaks is not the
+ * screen that broke it.
+ *
+ * So nothing is conditional any more. There is one screen per number of items
+ * \u2014 WORK_ONE through WORK_FIVE \u2014 and each renders exactly the boxes it has,
+ * names exactly those in `init-values`, and reads exactly those back out of
+ * the form. Adding an item is a move to the next screen; removing one is a
+ * move to the previous. No Switch, no flags, no count field, no second copy of
+ * an amount to work around a type, and no router screen in the middle \u2014 which
+ * also gives back the tap that used to cost.
+ *
+ * Eleven screens instead of nine. Fifteen publish fine (probed), and screen
+ * ids may hold letters and underscores only, which is why they are words.
+ */
 export const EXTRA_ITEMS = ["two", "three", "four", "five"] as const;
 
-/**
- * How many items the invoice has, as a word.
- *
- * A word because a Switch case key that looks like a number is refused on
- * upload, with "Cannot read property 'type' of undefined" and no line number.
- * "one" is the form with no extra items on it, which is where a removal can
- * land you.
- */
-const COUNTS = ["one", ...EXTRA_ITEMS] as const;
+/** Item counts as words, for screen ids. `TOTALS[n - 1]` names n items. */
+const TOTALS = ["ONE", "TWO", "THREE", "FOUR", "FIVE"] as const;
 
 /** Field names for one item, in the order they appear on the screen. */
 export const itemFields = (w: string): { description: string; amount: string } => ({
@@ -446,133 +468,87 @@ export const itemFields = (w: string): { description: string; amount: string } =
 export const itemScreenId = (w: string): string => `ITEM_${w.toUpperCase()}`;
 
 /**
- * The number that fills an item's Amount box when its screen opens.
+ * The form screen that shows exactly this many items.
  *
- * A second name for the same money, and not redundancy.
- *
- * `item_two_amount` has to be a string on every screen, because that is what
- * comes back out of a form and there is no cast in Flow JSON — one screen
- * sending a number to a key another screen declares a string is an error on
- * the phone, not at publish. But the Amount box is `input-type: "number"`, and
- * Meta refuses to publish a number input initialised from a string:
- *
- *   Expected property 'item_two_amount' to be of type 'number' but found
- *   'string'.
- *
- * Probed against Meta on 23 September 2026, both directions. There is no type
- * that satisfies both, so the starting value travels under its own name and is
- * dropped once the screen that needs it has been through.
- *
- * Zero means empty. A blank Amount cannot be expressed as a number, and an
- * init of 0 renders as an empty box rather than a "0" — which is just as well,
- * since a ₦0 line is not a line.
+ * `items` counts the first one too, so it runs 1 to 5. WORK is the separate
+ * entry copy; see `formScreen`.
  */
-export const initField = (w: string): string => `item_${w}_amount_init`;
+export const formScreenId = (items: number): string => `WORK_${TOTALS[items - 1]}`;
 
-/**
- * Every item in a payload; the screen's own two read from the form.
- *
- * `at` is the index in EXTRA_ITEMS of the item this screen collects, or null
- * on WORK, which collects none of them. Everything else is passed straight
- * through, so whatever a correction arrived with survives a route that never
- * visits it.
- */
-function itemPayload(at: number | null): Record<string, string> {
-  const out: Record<string, string> = {};
-  EXTRA_ITEMS.forEach((w, index) => {
-    const f = itemFields(w);
-    const source = index === at ? "form" : "data";
-    out[f.description] = `\${${source}.${f.description}}`;
-    out[f.amount] = `\${${source}.${f.amount}}`;
-  });
-  return out;
-}
+/** The extra items a screen showing `items` items has: 0 to 4 of them. */
+const extrasOf = (items: number): readonly string[] => EXTRA_ITEMS.slice(0, items - 1);
 
-/**
- * Every item, with the ones on screen read from the form.
- *
- * The form lists all of them once they exist, and every one of them can be
- * typed in, so every one of them has to leave in whatever state it is now in.
- * Reading them from `data` instead would show an edit, accept it, and then
- * send the old value — which is the same failure as losing an item, wearing a
- * disguise.
- *
- * `upTo` is the last item with boxes on screen. The ones past it have no
- * fields rendered, so there is nothing to read from the form and they travel
- * as they arrived.
- */
-function itemPayloadUpTo(upTo: number | null): Record<string, string> {
-  const out: Record<string, string> = {};
-  EXTRA_ITEMS.forEach((w, index) => {
-    const f = itemFields(w);
-    const source = upTo !== null && index <= upTo ? "form" : "data";
-    out[f.description] = `\${${source}.${f.description}}`;
-    out[f.amount] = `\${${source}.${f.amount}}`;
-  });
-  return out;
-}
+/** What a document is, minus the items. */
+const carriedData = (amount: "string" | "number"): Record<string, unknown> => ({
+  client_name: { type: "string", __example__: "Daniel Uwak" },
+  client_email: { type: "string", __example__: "" },
+  description: { type: "string", __example__: "Website design" },
+  amount:
+    amount === "number"
+      ? { type: "number", __example__: 250000 }
+      : { type: "string", __example__: "250000" },
+  due_date: { type: "string", __example__: "" },
+  plan: { type: "string", __example__: "one" },
+  notes: { type: "string", __example__: "" },
+  vat: { type: "boolean", __example__: false },
+  pass_fees: { type: "boolean", __example__: false },
+});
 
-/**
- * Whether an item exists, as its own field.
- *
- * One flag each rather than one count, because the count cannot drive the
- * boxes. A Form refuses a field name it has already seen — "Duplicate name
- * found for Form components" — so a Switch on the count would have to repeat
- * item two's fields in the branch for three items, and four, and five. With a
- * flag apiece, each item gets a Switch of its own whose single case renders
- * its two fields once, and four independent Switches can all be open at the
- * same time. Which is what a list is.
- */
-export const flagField = (w: string): string => `has_${w}`;
+/** Those same fields in a payload, from wherever this screen holds them. */
+const carriedPayload = (from: "form" | "data"): Record<string, string> => ({
+  // The five somebody types are read from the form wherever there is one, so
+  // an edit made on the way past is an edit that counts.
+  client_name: `\${${from}.client_name}`,
+  client_email: `\${${from}.client_email}`,
+  description: `\${${from}.description}`,
+  amount: `\${${from}.amount}`,
+  due_date: `\${${from}.due_date}`,
+  // These four are only ever set on TERMS, at the end, so every screen before
+  // it is simply carrying them.
+  plan: "${data.plan}",
+  notes: "${data.notes}",
+  vat: "${data.vat}",
+  pass_fees: "${data.pass_fees}",
+});
 
-/** All four flags as data. */
-function flagData(): Record<string, unknown> {
-  return Object.fromEntries(
-    EXTRA_ITEMS.map((w) => [flagField(w), { type: "string", __example__: "no" }]),
-  );
-}
-
-/**
- * The flags in a payload.
- *
- * `at` is the item this screen has just collected, which is the one turning
- * on. Null on the form, which turns none on and passes them all through, and
- * "fresh" at the very start, where nothing exists yet and there is no data to
- * pass through from.
- */
-function flagPayload(at: number | null | "fresh"): Record<string, string> {
-  return Object.fromEntries(
-    EXTRA_ITEMS.map((w, index) => [
-      flagField(w),
-      at === "fresh" ? "no" : index === at ? "yes" : `\${data.${flagField(w)}}`,
-    ]),
-  );
-}
-
-/** The starting numbers still ahead of us. Consumed ones are not passed on. */
-function initPayload(from: number): Record<string, string> {
-  const out: Record<string, string> = {};
-  EXTRA_ITEMS.forEach((w, index) => {
-    if (index >= from) out[initField(w)] = `\${data.${initField(w)}}`;
-  });
-  return out;
-}
-
-/**
- * The item half of a screen's data.
- *
- * `from` is the first starting number this screen still carries — 0 on WORK,
- * its own index on an item screen, and null on TERMS, which is the end of the
- * road and initialises nothing.
- */
-function itemData(from: number | null): Record<string, unknown> {
+/** Some number of extra items, declared. Always strings: a form returns strings. */
+function itemData(count: number): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  EXTRA_ITEMS.forEach((w, index) => {
+  for (const w of EXTRA_ITEMS.slice(0, count)) {
     const f = itemFields(w);
     out[f.description] = { type: "string", __example__: "" };
     out[f.amount] = { type: "string", __example__: "" };
-    if (from != null && index >= from) out[initField(w)] = { type: "number", __example__: 0 };
-  });
+  }
+  return out;
+}
+
+/**
+ * Some number of extra items in a payload, read from one place.
+ *
+ * There is no longer a choice to get wrong. A screen showing `count` items
+ * reads all `count` of them out of its own form; a screen that is only passing
+ * them through reads all of them out of data. The old version took "read the
+ * first n from the form and the rest from data", and getting n wrong by one is
+ * how the form died last time.
+ */
+function itemPayload(count: number, from: "form" | "data"): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const w of EXTRA_ITEMS.slice(0, count)) {
+    const f = itemFields(w);
+    out[f.description] = `\${${from}.${f.description}}`;
+    out[f.amount] = `\${${from}.${f.amount}}`;
+  }
+  return out;
+}
+
+/** The slots past `count`, as the empty strings TERMS declares. */
+function emptyItems(count: number): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const w of EXTRA_ITEMS.slice(count)) {
+    const f = itemFields(w);
+    out[f.description] = "";
+    out[f.amount] = "";
+  }
   return out;
 }
 
@@ -631,77 +607,36 @@ type DocumentFlow = {
  * handed on untouched. Only this screen's own two fields are read from the
  * form.
  */
+/**
+ * One extra item, on a screen of its own.
+ *
+ * `index` is its place among the extras, so 0 is item 2. It is reached from
+ * the form that already has `index` extras on it, and it hands its item back
+ * to the form that has `index + 1`.
+ *
+ * Nothing is pre-filled here, which is why there are no `init-values` and no
+ * second copy of the amount under another name. This screen is only ever
+ * opened to add an item that does not exist yet; editing one that does happens
+ * in its boxes on the form.
+ */
 function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
   const word = EXTRA_ITEMS[index]!;
   const f = itemFields(word);
-  const next = EXTRA_ITEMS[index + 1];
-
-  /* What a document is, minus the items. `amount` is a string here and a
-   * number on WORK: WORK initialises a number input with it, this screen only
-   * passes it on, and what came out of WORK's form is a string. */
-  const carried = {
-    client_name: { type: "string", __example__: "Daniel Uwak" },
-    client_email: { type: "string", __example__: "" },
-    description: { type: "string", __example__: "Website design" },
-    amount: { type: "string", __example__: "250000" },
-    due_date: { type: "string", __example__: "" },
-    plan: { type: "string", __example__: "one" },
-    notes: { type: "string", __example__: "" },
-    vat: { type: "boolean", __example__: false },
-    pass_fees: { type: "boolean", __example__: false },
-  };
-
-  const carriedPayload = {
-    client_name: "${data.client_name}",
-    client_email: "${data.client_email}",
-    description: "${data.description}",
-    amount: "${data.amount}",
-    due_date: "${data.due_date}",
-    plan: "${data.plan}",
-    notes: "${data.notes}",
-    vat: "${data.vat}",
-    pass_fees: "${data.pass_fees}",
-  };
+  const held = { ...carriedPayload("data"), ...itemPayload(index, "data") };
 
   return {
     id: itemScreenId(word),
     title: o.title,
     terminal: false,
-    // Every starting number rides on every screen now. The form can be
-    // reached again after any item, so there is no longer a point in the
-    // journey where one of them is safely behind us.
-    data: { ...carried, ...flagData(), ...itemData(0) },
+    data: { ...carriedData("string"), ...itemData(index) },
     layout: {
       type: "SingleColumnLayout",
       children: [
-        {
-          type: "TextSubheading",
-          // "Item two" rather than "Item 2": the screen ids have to be words,
-          // and the two reading the same way is worth more than the digit.
-          text: `Item ${index + 2}`,
-        },
+        { type: "TextSubheading", text: `Item ${index + 2}` },
         {
           type: "Form",
           name: "item_form",
-          "init-values": {
-            [f.description]: `\${data.${f.description}}`,
-            // The starting number, not `data.item_two_amount`, which is a
-            // string by the time it reaches here. See initField.
-            [f.amount]: `\${data.${initField(word)}}`,
-          },
           children: [
-            /*
-             * Both required, which is what greys Save out until they are
-             * filled in.
-             *
-             * They used to be optional, on the reasoning that a screen
-             * somebody opened by accident should not trap them. What happened
-             * instead is that a half-filled item saved, and the form came back
-             * showing a line with no price on it. The back arrow is still the
-             * way out of a screen opened by mistake — it leaves the item
-             * unsaved, which is what blank fields used to mean and is clearer
-             * about it.
-             */
             {
               type: "TextInput",
               name: f.description,
@@ -720,86 +655,33 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
               "input-type": "number",
               "max-chars": 12,
             },
-            /*
-             * Remove, on the screen that owns the item.
-             *
-             * This is where it fits in the budget: a screen may hold two
-             * EmbeddedLinks counted across every Switch branch, and the form
-             * spends its allowance on Add. It is also where somebody is when
-             * they change their mind about a line they are in the middle of
-             * adding.
-             *
-             * A link rather than a second button, because a screen has one
-             * Footer and that one is Save. And a link is not blocked by the
-             * required fields, which is what lets it out of a screen the
-             * Footer will not leave.
-             */
             {
+              /*
+               * A link rather than a second button, because a screen has one
+               * Footer and that one is Save. A link is also not blocked by the
+               * two required fields above, which is what lets somebody out of
+               * a screen the Footer will not leave.
+               */
               type: "EmbeddedLink",
               text: `Remove item ${index + 2}`,
               "on-click-action": {
                 name: "navigate",
-                next: { type: "screen", name: "REMOVED" },
-                payload: {
-                  ...carriedPayload,
-                  // Everything from data, including this item: what this
-                  // screen holds is not saved until the Footer saves it, so
-                  // leaving by this door leaves nothing behind.
-                  ...itemPayload(null),
-                  ...initPayload(0),
-                  ...flagPayload(null),
-                  [f.description]: "",
-                  [f.amount]: "",
-                  [flagField(word)]: "no",
-                  /*
-                   * The count goes back one, not to this item's own word.
-                   *
-                   * It said `word`, which claimed three items on an invoice
-                   * that had just lost its third. The boxes on the form run
-                   * off the flags and the Next button runs off the count, so
-                   * a count that overstates them sends Next to read an item
-                   * out of a form that is not showing it — the same death as
-                   * above, one screen along.
-                   *
-                   * Removing the only extra item leaves "one", which is the
-                   * form with no extras on it.
-                   */
-                  item_count: index === 0 ? "one" : EXTRA_ITEMS[index - 1]!,
-                },
+                next: { type: "screen", name: formScreenId(index + 1) },
+                // Straight back to the form it came from, carrying only what
+                // it arrived with. Nothing typed here was ever saved.
+                payload: held,
               },
             },
             {
-              /*
-               * Back to the form, not onwards to the terms.
-               *
-               * The chain used to run ITEM_TWO to ITEM_THREE to TERMS, which
-               * meant the only screen that ever knew about every item was the
-               * last one. Somebody who tapped back to check the client name
-               * landed on a screen holding none of them, and its Next threw
-               * them away without a word.
-               *
-               * Handing the item back instead makes the form the one place
-               * that holds the whole invoice. It lists what has been added
-               * and offers the next slot, so adding a third item is a tap
-               * from there rather than a chain nobody can leave.
-               */
               type: "Footer",
               label: "Save item",
               "on-click-action": {
                 name: "navigate",
-                next: { type: "screen", name: "WORK_AGAIN" },
+                next: { type: "screen", name: formScreenId(index + 2) },
                 payload: {
-                  ...carriedPayload,
-                  ...itemPayload(index),
-                  ...initPayload(0),
-                  // This item now exists, which is what puts its two boxes on
-                  // the form. The others keep whatever they were.
-                  ...flagPayload(index),
-                  // A literal, because this is the screen that knows: saving
-                  // item three is what makes the invoice three items long.
-                  // The word, not the digit: a Switch case key that looks
-                  // like a number is refused on upload.
-                  item_count: word,
+                  ...held,
+                  [f.description]: `\${form.${f.description}}`,
+                  [f.amount]: `\${form.${f.amount}}`,
                 },
               },
             },
@@ -811,137 +693,32 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
 }
 
 /**
- * The main screen of the form, and the screen you come back to.
+ * The form, once per number of items on it.
  *
- * Two instances of one builder. `again` is the copy the extra-item screens
- * return to, and it exists because of something a user hit within an hour of
- * the item screens going live: add a second item, tap back to check the
- * client name, tap Next, and the second item is gone.
+ * `items` counts the first, so it runs 1 to 5. `entry` is the copy a Flow
+ * opens on, and it exists for one reason: its Amount is a number input, so the
+ * number pad is what comes up on the field people type most. A form only ever
+ * returns strings and Flow JSON has no cast, so every screen after that
+ * declares a string and takes a text keyboard. Nothing navigates to the entry
+ * copy \u2014 removing an item from the two-item form lands on WORK_ONE, which is
+ * the same screen with a string in it.
  *
- * That is not a slip, it is the shape. A Flow with no data endpoint has no
- * memory across the back arrow — the earlier screen is restored with the
- * data it was pushed with, which for this screen is no extra items at all.
- * And a Footer's destination is fixed when the Flow is published, so Next
- * cannot decide to visit item two only when there is one.
- *
- * So the item screens no longer carry on forwards. They hand their item back
- * here, and this screen then holds every item, lists them, and sends them on.
- * Nobody has to press back, and the screen somebody is looking at is the
- * screen that knows everything.
- *
- * The one difference between the two copies is the Amount box. The first
- * declares `amount` a number, so the phone opens a number pad on it; what
- * comes back out of that box is a string and there is no cast in Flow JSON,
- * so the copy that receives it declares a string and takes a text keyboard.
- * The alternative was a text keyboard for everybody on the field they type
- * most often, to spare the return trip a worse one.
+ * What is on this screen is decided here and nowhere else. No Switch decides
+ * what to render, so `init-values` can name every box and be right, and the
+ * payloads can read every box and be right.
  */
-function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
-  /*
-   * What leaves this screen, whichever way somebody leaves it.
-   *
-   * `at` is the extra item this screen currently has boxes for, or null on
-   * the first copy, which has none. That item is read from the form so an
-   * edit to it counts; the rest are passed along from data untouched.
-   */
-  const leaving = (upTo: number | null, flags = true) => ({
-    client_name: "${form.client_name}",
-    client_email: "${form.client_email}",
-    description: "${form.description}",
-    amount: "${form.amount}",
-    due_date: "${form.due_date}",
-    plan: "${data.plan}",
-    notes: "${data.notes}",
-    vat: "${data.vat}",
-    pass_fees: "${data.pass_fees}",
-    ...itemPayloadUpTo(upTo),
-    /*
-     * The flags travel between the form and the item screens and stop there.
-     *
-     * TERMS does not declare them, and a payload carrying a key the screen it
-     * lands on has never heard of is not ignored — the Flow dies with
-     * "Something went wrong. Try again later.", on the tap after the one that
-     * caused it. Adding them to TERMS would work too, and would mean sending
-     * the form's own bookkeeping on to the screen that submits the invoice.
-     */
-    ...(flags ? (again ? flagPayload(null) : flagPayload("fresh")) : {}),
-  });
+function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<string, unknown> {
+  const extras = extrasOf(items);
+  const mine = { ...carriedPayload("form"), ...itemPayload(extras.length, "form") };
 
-  /*
-   * Where "Add another item" goes, and everything it takes with it.
-   *
-   * A screen may hold two EmbeddedLinks and no more \u2014 "Maximum number of
-   * EmbeddedLink allowed per screen is 2 but found 8" \u2014 and the count is
-   * taken across every branch of every Switch, not across what is on screen
-   * at once. That limit is not enforced on publish in a way that helps: the
-   * Flow went out with eight links on the form and the phone answered
-   * "Something went wrong. Try again later." on open.
-   *
-   * So the form has one Add link with one fixed target, and the screen it
-   * lands on does the routing with a Footer per count. Footers are not
-   * rationed.
-   */
-  const addLink = (target: string, at: number | null) => ({
-    type: "EmbeddedLink",
-    text: "Add another item",
-    "on-click-action": {
-      name: "navigate",
-      next: { type: "screen", name: target },
-      payload: {
-        ...leaving(at),
-        ...initPayload(0),
-        // The router needs the count to know which slot is next. The item
-        // screens do not, and a key a screen does not declare kills the Flow.
-        ...(again ? { item_count: "${data.item_count}" } : {}),
-      },
-    },
-  });
-
-  /* Onward to the terms, carrying the same. */
-  const onward = (at: number | null) => ({
-    type: "Footer",
-    label: "Next",
-    "on-click-action": {
-      name: "navigate",
-      next: { type: "screen", name: "TERMS" },
-      payload: leaving(at, false),
-    },
-  });
-
-  /**
-   * The item just added, in two boxes somebody can type in.
-   *
-   * Not a line of text. Dynamic text does not resolve on a handset: the first
-   * attempt was a caption reading `Item 2: ${data.item_two_description}`, and
-   * that is precisely what the phone showed — the words, not the value. Meta's
-   * validator accepts it, which by now counts for nothing on its own.
-   *
-   * `init-values` does resolve, because it is how the client's own name comes
-   * back when a correction reopens the form. So the value goes into an input,
-   * which then shows it — and an input is a thing you can fix. The first
-   * version disabled them, which put the item on screen behind glass: you
-   * could read the typo and not touch it, and the only way to change a price
-   * was to send the whole invoice and correct the draft.
-   *
-   * Neither is required, and that is the remove. Clearing both leaves an item
-   * with no description and no amount, which is not an item, and the reader
-   * that builds the document drops it. Adding one still demands both, on the
-   * screen that adds it — you cannot create half an item, only delete a whole
-   * one.
-   *
-   * One item per branch rather than all of them, because a Form refuses a
-   * field name it has already seen — "Duplicate name found for Form
-   * components" — and a cumulative list would repeat item two in every branch
-   * after the second. What is shown is the one just saved, which is the one
-   * somebody is looking for.
-   */
-  const savedFields = (index: number) => {
-    const f = itemFields(EXTRA_ITEMS[index]!);
+  /** The boxes for the items after the first, in the order they were added. */
+  const itemBoxes = extras.flatMap((w, i) => {
+    const f = itemFields(w);
     return [
       {
         type: "TextInput",
         name: f.description,
-        label: `Item ${index + 2}`,
+        label: `Item ${i + 2}`,
         required: false,
         "input-type": "text",
         "max-chars": 100,
@@ -950,144 +727,104 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
         type: "TextInput",
         name: f.amount,
         label: "Amount",
-        "helper-text": "Clear both to drop this item.",
+        "helper-text": "Naira, before VAT. Digits only.",
         required: false,
         "input-type": "text",
         "max-chars": 12,
       },
     ];
-  };
-
-  /*
-   * What has been added, and where the next one goes.
-   *
-   * A `Switch` rather than five slots behind `visible`: that property is
-   * accepted by Meta's validator and ignored on a handset, which is how four
-   * empty Item/Amount pairs once appeared under a one-line invoice. A Switch
-   * renders one branch, and the branch carries both the list and the link, so
-   * the two cannot disagree about how many items there are.
-   *
-   * Flow JSON has no default case, so every count is spelled out. One item
-   * never reaches this screen and five is the last of them.
-   *
-   * The cases are keyed by the item's word for the same reason the screens
-   * are. Meta's validator refuses a Switch whose case keys look like numbers,
-   * with "Cannot read property 'type' of undefined" and no line number —
-   * probed on 23 September 2026 against a throwaway Flow, one variant at a
-   * time, because the message says nothing about which key it choked on.
-   */
-  const cases: Record<string, unknown[]> = {};
-
-  /*
-   * The Next button, once per branch, and for the same reason.
-   *
-   * It has to read the item on screen out of the *form* rather than out of
-   * data, or an edit made here is discarded the moment somebody taps it —
-   * which is the bug this whole screen exists to prevent, one level down. The
-   * payload differs per branch, so the button does too, and a Footer inside a
-   * Switch cannot coexist with one outside it.
-   */
-  const footers: Record<string, unknown[]> = {};
-
-  /*
-   * No running total on this screen.
-   *
-   * There was a line reading "3 items on this invoice", and a removal makes
-   * it a lie: the count stays where it is so that Add keeps walking forwards
-   * into unused slots rather than refilling a hole. A number that is wrong
-   * after an ordinary action is worse than no number, and the items are all
-   * listed above it anyway.
-   */
-  /*
-   * One item back to nothing: the form with no extras on it.
-   *
-   * Reached by removing the only extra item. Without this case the Switch
-   * would match nothing, and a screen whose Footer lives inside a Switch and
-   * matches nothing has no way forward at all.
-   */
-  cases.one = [];
-  footers.one = [onward(null)];
-
-  EXTRA_ITEMS.forEach((_, index) => {
-    cases[EXTRA_ITEMS[index]!] = [];
-    footers[EXTRA_ITEMS[index]!] = [onward(index)];
   });
 
   /*
-   * One Switch per item, each on its own flag, so they can all be open.
+   * Two links, and two is the ceiling.
    *
-   * The first version keyed everything off the count, which meant only the
-   * item just saved could be shown: repeating item two's fields in the branch
-   * for three items would have been the same field name twice, and a Form
-   * refuses that. A flag each gives every item a Switch whose single case
-   * renders its two boxes once, and four of them open together are a list.
-   */
-  const itemBoxes = EXTRA_ITEMS.map((w, index) => ({
-    type: "Switch",
-    value: `\${data.${flagField(w)}}`,
-    cases: { yes: savedFields(index) },
-  }));
-
-  /*
-   * Starting values for those boxes.
+   * Probed against Meta on 23 September 2026: a screen may render at most two
+   * EmbeddedLinks, and the count is per rendered screen rather than per Flow
+   * \u2014 two links in each of four Switch branches publishes fine, three in one
+   * branch does not. The error reports the total across every branch, which is
+   * what made this look like a Flow-wide budget before. There is no `enabled`
+   * property, so a link cannot be greyed out, and NavigationList is refused
+   * outright at 7.1.
    *
-   * Every declared key has to match a field that exists somewhere on the
-   * screen — "declared but not used in the init-values" is a publish error —
-   * and each field appears in exactly one branch, so the two lists are the
-   * same length by construction.
+   * So the form gets Add and one Remove. Remove takes the last item and sits
+   * directly under that item's Amount, which is where somebody looking at a
+   * line they did not want will look for it. Any other item is cleared by
+   * emptying its two boxes \u2014 what the helper text says, and what the reader
+   * that builds the document acts on.
    */
-  const savedInit: Record<string, string> = {};
-  if (again) {
-    for (const w of EXTRA_ITEMS) {
-      const f = itemFields(w);
-      savedInit[f.description] = `\${data.${f.description}}`;
-      savedInit[f.amount] = `\${data.${f.amount}}`;
-    }
-  }
+  const links = [
+    ...(items < 5
+      ? [
+          {
+            type: "EmbeddedLink",
+            text: "Add another item",
+            "on-click-action": {
+              name: "navigate",
+              next: { type: "screen", name: itemScreenId(EXTRA_ITEMS[extras.length]!) },
+              payload: mine,
+            },
+          },
+        ]
+      : []),
+    ...(extras.length > 0
+      ? [
+          {
+            type: "EmbeddedLink",
+            text: `Remove item ${items}`,
+            "on-click-action": {
+              name: "navigate",
+              next: { type: "screen", name: formScreenId(items - 1) },
+              // One item shorter, so the last one is simply not sent. The
+              // screen it lands on does not declare it, which is the whole
+              // removal: no blanking, no flag, nothing to fall out of step.
+              payload: {
+                ...carriedPayload("form"),
+                ...itemPayload(extras.length - 1, "form"),
+              },
+            },
+          },
+        ]
+      : []),
+  ];
 
   return {
-    id: again ? "WORK_AGAIN" : "WORK",
+    id: entry ? "WORK" : formScreenId(items),
     title: o.title,
     terminal: false,
-    // Declared so a correction can open the form on what is already there.
-    data: {
-      client_name: { type: "string", __example__: "Daniel Uwak" },
-      client_email: { type: "string", __example__: "" },
-      description: { type: "string", __example__: "Website design" },
-      // A number on the way in, because the input is `input-type: "number"`
-      // and Meta checks the declared type against the field it initialises. A
-      // string on the way back, because that is what a form returns.
-      amount: again
-        ? { type: "string", __example__: "250000" }
-        : { type: "number", __example__: 250000 },
-      due_date: { type: "string", __example__: "" },
-      plan: { type: "string", __example__: "one" },
-      notes: { type: "string", __example__: "" },
-      vat: { type: "boolean", __example__: false },
-      pass_fees: { type: "boolean", __example__: false },
-      // How many items exist, as the string a Switch can match on.
-      ...(again ? { item_count: { type: "string", __example__: "two" }, ...flagData() } : {}),
-      ...itemData(0),
-    },
+    data: { ...carriedData(entry ? "number" : "string"), ...itemData(extras.length) },
     layout: {
       type: "SingleColumnLayout",
       children: [
         {
           type: "TextSubheading",
-          text: again ? "Your invoice so far." : "Who it is for, and what it is for.",
+          text: entry ? "Who it is for, and what it is for." : "Your invoice so far.",
         },
         {
           type: "Form",
           name: "work_form",
-          // Starting values belong to the form, not to each input: at 7.1
-          // `init-value` on a TextInput is rejected outright.
+          /*
+           * Every name here is a box on this screen, and every box on this
+           * screen is named here. That is the invariant the old form broke,
+           * and definitions.test.ts now checks it on every screen.
+           *
+           * Starting values belong to the Form, not to each input: at 7.1
+           * `init-value` on a TextInput is rejected outright.
+           */
           "init-values": {
             client_name: "${data.client_name}",
             client_email: "${data.client_email}",
             description: "${data.description}",
             amount: "${data.amount}",
             due_date: "${data.due_date}",
-            ...savedInit,
+            ...Object.fromEntries(
+              extras.flatMap((w) => {
+                const f = itemFields(w);
+                return [
+                  [f.description, `\${data.${f.description}}`],
+                  [f.amount, `\${data.${f.amount}}`],
+                ];
+              }),
+            ),
           },
           children: [
             {
@@ -1122,50 +859,19 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
               label: "Amount",
               "helper-text": "Naira, before VAT. Digits only.",
               required: true,
-              "input-type": again ? "text" : "number",
+              "input-type": entry ? "number" : "text",
               "max-chars": 12,
             },
-            /*
-             * Straight after the first item's amount, because that is where
-             * somebody realises there is a second thing to bill for.
-             *
-             * A link rather than a checkbox, and a screen rather than a row,
-             * because Flow JSON has no repeater and nothing on a screen can
-             * add one. `update_data` is not an action at 7.1, so a control
-             * that changes what is on screen would need a data endpoint,
-             * which these Flows deliberately do not have.
-             */
-            ...(again
+            ...itemBoxes,
+            ...(items === 5
               ? [
-                  ...itemBoxes,
-                  { type: "Switch", value: "${data.item_count}", cases },
-                  /*
-                   * One link, one target. ADD_NEXT works out which item
-                   * screen that means.
-                   *
-                   * `null`, so every item travels from data rather than from
-                   * the form — and that is not tidiness, it is the whole
-                   * bug. A payload cannot vary by branch here: a link's
-                   * payload is fixed at publish and the screen may hold two
-                   * links in total, counted across every Switch, so there is
-                   * no per-count version of this one. Reading `${form.x}`
-                   * for an item whose boxes are not on screen therefore
-                   * happens on every count below five — and a form field
-                   * that was never rendered has no value to read. The Flow
-                   * died one tap later, on ADD_NEXT, with "Something went
-                   * wrong. Try again later."
-                   *
-                   * What it costs: an edit typed into an item box and not
-                   * followed by Next is lost by tapping Add. The always-on
-                   * fields above — client, item, amount, date — are read
-                   * from the form and survive, because those are rendered
-                   * whatever the count is. Next reads the item boxes from
-                   * the form, and Next is inside the Switch that knows how
-                   * many of them there are, which is why it is allowed to.
-                   */
-                  addLink("ADD_NEXT", null),
+                  {
+                    type: "TextCaption",
+                    text: "Five items is the most this form takes. Send a sentence for a longer invoice.",
+                  },
                 ]
-              : [addLink(itemScreenId(EXTRA_ITEMS[0]!), null)]),
+              : []),
+            ...links,
             {
               type: "TextInput",
               name: "due_date",
@@ -1175,174 +881,16 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
               "input-type": "text",
               "max-chars": 40,
             },
-            /*
-             * Next, once per branch on the form you come back to.
-             *
-             * Its payload has to read every item that has boxes on screen out
-             * of the form, so an edit made here counts, and how many that is
-             * depends on the count — so the button itself does. A Footer
-             * inside a Switch cannot coexist with one outside it, which is
-             * why the plain button below belongs to the first copy alone.
-             */
-            ...(again
-              ? [{ type: "Switch", value: "${data.item_count}", cases: footers }]
-              : [onward(null)]),
-          ],
-        },
-      ],
-    },
-  };
-}
-
-/**
- * Which item screen "Add another item" means.
- *
- * The form cannot decide this itself. A link's target is fixed when the Flow
- * is published, so one link per possible target would be four links — and a
- * screen may hold two, counted across every branch of every Switch. Eight of
- * them published without complaint and then failed to open on the phone, with
- * "Something went wrong. Try again later." and nothing else.
- *
- * Footers are not rationed, so the routing happens here instead: one Footer
- * per count, each pointing at the first empty slot. It costs a tap, which is
- * the price of the limit.
- */
-function addNextScreen(): Record<string, unknown> {
-  const carried = {
-    client_name: { type: "string", __example__: "Daniel Uwak" },
-    client_email: { type: "string", __example__: "" },
-    description: { type: "string", __example__: "Website design" },
-    amount: { type: "string", __example__: "250000" },
-    due_date: { type: "string", __example__: "" },
-    plan: { type: "string", __example__: "one" },
-    notes: { type: "string", __example__: "" },
-    vat: { type: "boolean", __example__: false },
-    pass_fees: { type: "boolean", __example__: false },
-    item_count: { type: "string", __example__: "two" },
-  };
-  const data = { ...carried, ...flagData(), ...itemData(0) };
-
-  /** Everything, untouched. This screen decides a direction and nothing else. */
-  const through = Object.fromEntries(
-    Object.keys(data)
-      .filter((k) => k !== "item_count")
-      .map((k) => [k, `\${data.${k}}`]),
-  );
-
-  const footer = (label: string, target: string) => ({
-    type: "Footer",
-    label,
-    "on-click-action": {
-      name: "navigate",
-      next: { type: "screen", name: target },
-      payload: through,
-    },
-  });
-
-  /*
-   * One branch per count. The count says how many items exist, so the next
-   * one is the slot after that \u2014 and on five there is no next one, so the
-   * only way out is back.
-   */
-  const cases: Record<string, unknown[]> = {
-    one: [footer("Add item 2", itemScreenId(EXTRA_ITEMS[0]!))],
-  };
-  EXTRA_ITEMS.forEach((w, index) => {
-    const next = EXTRA_ITEMS[index + 1];
-    cases[w] = next
-      ? [footer(`Add item ${index + 3}`, itemScreenId(next))]
-      : [
-          {
-            type: "TextBody",
-            text: "Five items is the most this form takes. Send a sentence for a longer invoice.",
-          },
-          {
-            type: "Footer",
-            label: "Back to the invoice",
-            "on-click-action": {
-              name: "navigate",
-              next: { type: "screen", name: "WORK_AGAIN" },
-              payload: { ...through, item_count: `\${data.item_count}` },
-            },
-          },
-        ];
-  });
-
-  return {
-    id: "ADD_NEXT",
-    title: "Another item",
-    terminal: false,
-    data,
-    layout: {
-      type: "SingleColumnLayout",
-      children: [
-        { type: "TextSubheading", text: "Another line on this invoice." },
-        { type: "Form", name: "add_form", children: [{ type: "Switch", value: "${data.item_count}", cases }] },
-      ],
-    },
-  };
-}
-
-/**
- * Where Remove goes, so that it can come back.
- *
- * A screen cannot navigate to itself — "Same screen navigation is not allowed.
- * Loop detected" — so taking an item off the invoice cannot simply redraw the
- * form. A cycle through another screen is allowed, so this is that screen: it
- * says what happened, hands everything back, and has no opinion of its own.
- *
- * It collects nothing, which is why there is no Form on it. Everything it
- * holds arrived in the payload of the link that removed the item, already
- * blanked, and leaves again untouched.
- */
-function removedScreen(): Record<string, unknown> {
-  const carried = {
-    client_name: { type: "string", __example__: "Daniel Uwak" },
-    client_email: { type: "string", __example__: "" },
-    description: { type: "string", __example__: "Website design" },
-    // A string: it came out of a form on the way here.
-    amount: { type: "string", __example__: "250000" },
-    due_date: { type: "string", __example__: "" },
-    plan: { type: "string", __example__: "one" },
-    notes: { type: "string", __example__: "" },
-    vat: { type: "boolean", __example__: false },
-    pass_fees: { type: "boolean", __example__: false },
-    item_count: { type: "string", __example__: "two" },
-  };
-
-  const back = Object.fromEntries(
-    Object.keys({ ...carried, ...flagData(), ...itemData(0) }).map((k) => [k, `\${data.${k}}`]),
-  );
-
-  return {
-    id: "REMOVED",
-    title: "Item removed",
-    terminal: false,
-    data: { ...carried, ...flagData(), ...itemData(0) },
-    layout: {
-      type: "SingleColumnLayout",
-      children: [
-        { type: "TextSubheading", text: "That item is off the invoice." },
-        { type: "TextCaption", text: "Everything else is as you left it." },
-        {
-          /*
-           * A Form with nothing in it but the button.
-           *
-           * Every other screen puts its Footer inside one, and this screen
-           * collects nothing, so it did not need one. Being the only screen
-           * shaped differently is not a difference worth having when the
-           * failure it would cause looks like "Something went wrong."
-           */
-          type: "Form",
-          name: "removed_form",
-          children: [
             {
               type: "Footer",
-              label: "Back to the invoice",
+              label: "Next",
               "on-click-action": {
                 name: "navigate",
-                next: { type: "screen", name: "WORK_AGAIN" },
-                payload: back,
+                next: { type: "screen", name: "TERMS" },
+                // TERMS holds all five slots whichever way somebody got there,
+                // so the ones this screen does not have go as the empty
+                // strings it declares.
+                payload: { ...mine, ...emptyItems(extras.length) },
               },
             },
           ],
@@ -1360,11 +908,9 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
   json: {
     version: VERSION,
     screens: [
-      workScreen(o, false),
-      workScreen(o, true),
-      addNextScreen(),
+      formScreen(o, 1, true),
+      ...TOTALS.map((_, i) => formScreen(o, i + 1, false)),
       ...EXTRA_ITEMS.map((_, index) => itemScreen(index, o)),
-      removedScreen(),
       {
         id: "TERMS",
         title: "How it is paid",
@@ -1399,7 +945,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           pass_fees: { type: "boolean", __example__: false },
           // Strings, like everywhere. TERMS initialises none of them, so it
           // carries no starting numbers either. See itemData.
-          ...itemData(null),
+          ...itemData(EXTRA_ITEMS.length),
         },
         layout: {
           type: "SingleColumnLayout",
@@ -1453,7 +999,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       client_email: "${data.client_email}",
                       description: "${data.description}",
                       amount: "${data.amount}",
-                      ...itemPayload(null),
+                      ...itemPayload(EXTRA_ITEMS.length, "data"),
                       due_date: "${data.due_date}",
                       plan: "${form.plan}",
                       vat: "${form.vat}",

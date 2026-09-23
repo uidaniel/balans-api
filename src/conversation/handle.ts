@@ -988,7 +988,9 @@ async function runEffects(
             // Ties the submission back to this person. Read on the way in, and
             // never trusted for anything the sender could have chosen.
             token: `${effect.key}:${userId}`,
-            screen: FLOW_SCREEN[effect.key],
+            // The document forms pick their own, by how many items the
+            // draft has. Everything else opens where it always does.
+            screen: effect.screen ?? FLOW_SCREEN[effect.key],
             // The invoice form carries its starting values on the effect;
             // business details are read here because only this side has a
             // database.

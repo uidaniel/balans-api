@@ -432,7 +432,9 @@ describe("the bank dropdown", () => {
  */
 describe("line items on the document forms", () => {
   const WORDS = ["two", "three", "four", "five"];
-  const SCREEN = (w: string) => `ITEM_${w.toUpperCase()}`;
+  const TOTALS = ["ONE", "TWO", "THREE", "FOUR", "FIVE"];
+  const ITEM = (w: string) => `ITEM_${w.toUpperCase()}`;
+  const FORM = (items: number) => `WORK_${TOTALS[items - 1]}`;
 
   for (const key of ["invoice", "quote"]) {
     const flow = FLOWS.find((f) => f.key === key)!;
@@ -442,328 +444,205 @@ describe("line items on the document forms", () => {
       walk(screen(id)).filter((n) => n.type === "TextInput" || n.type === "OptIn");
     const named = (id: string, name: string) => inputs(id).find((n) => n.name === name);
     const links = (id: string) => walk(screen(id)).filter((n) => n.type === "EmbeddedLink");
+    const footer = (id: string) => walk(screen(id)).find((n) => n.type === "Footer")!;
     const action = (n: Node) => n["on-click-action"] as Node;
     const payloadOf = (n: Node) => (action(n).payload ?? {}) as Record<string, string>;
-    const footer = (id: string) => walk(screen(id)).find((n) => n.type === "Footer")!;
-    /** The count-keyed Switch whose branches hold nodes of this type. */
-    const countCases = (id: string, holds: string) => {
-      const sw = walk(screen(id)).find(
-        (n) =>
-          n.type === "Switch" &&
-          n.value === "${data.item_count}" &&
-          Object.values(n.cases as Record<string, Node[]>).some((b) => b.some((c) => c.type === holds)),
-      )!;
-      return (sw.cases ?? {}) as Record<string, Node[]>;
-    };
+    const target = (n: Node) => ((action(n).next as Node).name as string) ?? "";
+    const linkTo = (id: string, text: RegExp) => links(id).find((l) => text.test(String(l.text)));
+    /** Every form screen: the entry copy, then one per number of items. */
+    const forms = () => ["WORK", ...TOTALS.map((_, i) => FORM(i + 1))];
 
     describe(key, () => {
-      it("gives each extra item a screen of its own", () => {
-        /*
-         * Not five slots on one screen. That was the first attempt, each slot
-         * behind `visible: "${form.add_two}"`, and Meta's validator accepted
-         * it — but a phone ignores `visible`, so an invoice with one line
-         * opened showing four empty Work/Amount pairs under it.
-         */
-        for (const w of WORDS) {
-          assert.ok(screen(SCREEN(w)), `no screen for item ${w}`);
-          assert.ok(named(SCREEN(w), `item_${w}_description`), `no description field for item ${w}`);
-          assert.ok(named(SCREEN(w), `item_${w}_amount`), `no amount field for item ${w}`);
-        }
-      });
-
-      it("shows one item and nothing else until somebody asks", () => {
-        // The form opens on the invoice most people are writing.
-        const names = inputs("WORK").map((n) => n.name);
-        assert.ok(!names.some((n) => typeof n === "string" && n.startsWith("item_")));
-      });
-
-      it("offers the next item as a link, never a checkbox", () => {
-        /*
-         * Navigation is the only thing that reliably changes what is on a
-         * screen without a data endpoint: `update_data` is not an action at
-         * 7.1, probed against Meta on 23 September 2026.
-         *
-         * The first item is added from the form; every one after it from the
-         * form the item screens hand their work back to. So both copies of
-         * the form offer the link, and the item screens offer nothing but a
-         * way home.
-         */
-        const first = links("WORK").find((n) => action(n).name === "navigate");
-        assert.ok(first, "the form offers no way to add an item");
-        assert.equal(first!.text, "Add another item");
-        assert.equal((action(first!).next as Node).name, SCREEN(WORDS[0]!));
-
-        /*
-         * Coming back, the link has one fixed target and a screen of its own
-         * works out which item that means. A link cannot choose its
-         * destination, and one link per destination is four links on a screen
-         * that may hold two.
-         */
-        const again = links("WORK_AGAIN");
-        assert.equal(again.length, 1, "the form should offer exactly one link");
-        assert.equal(again[0]!.text, "Add another item");
-        assert.equal((action(again[0]!).next as Node).name, "ADD_NEXT");
-
-        const route = countCases("ADD_NEXT", "Footer");
-        WORDS.forEach((w, index) => {
-          const branch = route[w] ?? [];
-          const go = branch.find((n) => n.type === "Footer")!;
-          const next = WORDS[index + 1];
-          assert.equal(
-            (action(go).next as Node).name,
-            next ? SCREEN(next) : "WORK_AGAIN",
-            `${index + 2} items routes wrong`,
+      /*
+       * The one that cost three rounds of "Something went wrong. Try again
+       * later." on a real phone.
+       *
+       * `init-values` may only name fields that are on the screen. The old
+       * form put its item boxes inside Switch branches and named all eight of
+       * them anyway, so six of the names pointed at fields that did not
+       * exist whenever the invoice had fewer than five items — which is every
+       * invoice. Meta publishes it without a word: the validator only checks
+       * that each name appears somewhere in the JSON, which was confirmed by
+       * probe against a throwaway Flow. The phone fails, and it fails one tap
+       * later, on the next screen.
+       *
+       * Both directions, because the opposite mistake is just as bad in a
+       * quieter way: a box with no starting value opens empty, and a form
+       * somebody came back to would silently lose what was already typed.
+       */
+      it("names exactly the boxes that are on the screen, in init-values", () => {
+        for (const s of json.screens) {
+          const form = walk(s.layout).find((n) => n.type === "Form");
+          const init = (form?.["init-values"] ?? {}) as Record<string, string>;
+          const fields = new Set(
+            walk(s.layout)
+              .filter((n) => typeof n.name === "string" && /Input|TextArea|OptIn|Dropdown/.test(String(n.type)))
+              .map((n) => String(n.name)),
           );
-        });
-        // One item on the invoice means item two is the next one.
-        assert.equal((action(route.one![0]!).next as Node).name, SCREEN(WORDS[0]!));
 
-        /*
-         * An item screen offers exactly one link, and it is Remove. That is
-         * where Remove lives: the form spends its two-link allowance on Add,
-         * and this is the screen somebody is on when they change their mind
-         * about the line they are adding.
-         */
-        for (const w of WORDS) {
-          const own = links(SCREEN(w));
-          assert.equal(own.length, 1, `item ${w} should offer one link`);
-          assert.match(String(own[0]!.text), /^Remove item /);
-          assert.equal((action(own[0]!).next as Node).name, "REMOVED");
-        }
-      });
-
-      it("will not save an item with a hole in it", () => {
-        /*
-         * Both fields required, which is what greys Save out until they are
-         * filled. They were optional once, so that a screen opened by
-         * accident could not trap anybody \u2014 and what came back was an item
-         * with a description and no price, sitting on the invoice.
-         *
-         * The back arrow is still the way out. It leaves the item unsaved,
-         * which is what blank fields used to mean and is plainer about it.
-         */
-        for (const w of WORDS) {
-          assert.equal(named(SCREEN(w), `item_${w}_description`)!.required, true, `item ${w}`);
-          assert.equal(named(SCREEN(w), `item_${w}_amount`)!.required, true, `item ${w}`);
-        }
-      });
-
-      it("hands every item back to the form rather than past it", () => {
-        /*
-         * The bug this replaced, found on a real phone within an hour of the
-         * item screens going live: add a second item, tap back to check the
-         * client name, tap Next, and the second item is gone.
-         *
-         * A Flow with no data endpoint has no memory across the back arrow \u2014
-         * the earlier screen is restored with the data it was pushed with \u2014
-         * and a Footer's destination is fixed at publish, so the form could
-         * neither remember the item nor route around it. Now every item screen
-         * returns to the form, and the form holds the lot.
-         */
-        WORDS.forEach((w, index) => {
-          const f = footer(SCREEN(w));
-          assert.equal(action(f).name, "navigate");
-          assert.equal((action(f).next as Node).name, "WORK_AGAIN", `item ${w}`);
-          // A literal, because this is the screen that knows: saving item
-          // three is what makes an invoice three items long.
-          assert.equal(payloadOf(f).item_count, w, `item ${w} miscounts`);
-        });
-
-        // And the form is the only thing that ends the first half.
-        for (const id of ["WORK", "WORK_AGAIN"]) {
-          assert.equal((action(footer(id)).next as Node).name, "TERMS", id);
-        }
-      });
-
-      it("lists every item that exists, in boxes that can be typed in", () => {
-        /*
-         * Two complaints, one screen. First: the line meant to read an item
-         * back printed "Item 2: ${data.item_two_description}" on the handset \u2014
-         * the words, not the value. Dynamic text does not resolve there, and
-         * Meta's validator took it happily, which is the second time that has
-         * meant nothing after `visible`. `init-values` does resolve, so the
-         * value goes in an input and the input shows it.
-         *
-         * Second: that input was disabled, which put the item behind glass.
-         * You could read the typo and not touch it.
-         *
-         * And they all have to be listed, not just the last one. That is why
-         * each item gets a Switch keyed on its own flag rather than all of
-         * them sharing one keyed on the count: a Form refuses a field name it
-         * has already seen, so a cumulative branch would repeat item two in
-         * every case after the second. Four switches open at once are a list.
-         */
-        const form = walk(screen("WORK_AGAIN")).find((n) => n.type === "Form")!;
-        const init = (form["init-values"] ?? {}) as Record<string, string>;
-        const switches = walk(screen("WORK_AGAIN")).filter((n) => n.type === "Switch");
-
-        for (const w of WORDS) {
-          const own = switches.find((n) => n.value === `\${data.has_${w}}`);
-          assert.ok(own, `item ${w} has no switch of its own`);
-          const shown = ((own!.cases as Record<string, Node[]>).yes ?? []) as Node[];
-
-          for (const field of [`item_${w}_description`, `item_${w}_amount`]) {
-            const box = shown.find((n) => n.type === "TextInput" && n.name === field);
-            assert.ok(box, `item ${w} is not shown back`);
-            assert.notEqual(box!.enabled, false, `${field} cannot be edited`);
-            assert.notEqual(box!.required, true, `${field} cannot be cleared to drop it`);
-            assert.equal(init[field], `\${data.${field}}`, `${field} starts empty`);
+          for (const name of Object.keys(init)) {
+            assert.ok(fields.has(name), `${s.id}: init-values names "${name}", which is not a field on it`);
+          }
+          /*
+           * And the other direction, on the screens somebody comes back to:
+           * a box with no starting value opens empty, so a form reopened on a
+           * draft would quietly lose what was already typed into it.
+           *
+           * Only the form screens. An item screen is opened to add an item
+           * that does not exist yet, and TERMS initialises its own four and
+           * carries the rest.
+           */
+          if (!forms().includes(String(s.id))) continue;
+          for (const name of fields) {
+            assert.ok(init[name], `${s.id}: "${name}" is on screen with no starting value`);
           }
         }
-
-        // Nothing anywhere on this screen prints a raw binding as text: that
-        // is the thing that failed on the phone.
-        for (const n of walk(screen("WORK_AGAIN"))) {
-          if (typeof n.text === "string") {
-            assert.ok(!n.text.includes("${"), `raw binding in text: ${n.text}`);
-          }
-        }
-
-        // And a name is never repeated, which the publish validator refuses:
-        // "Duplicate name found for Form components".
-        const names = walk(screen("WORK_AGAIN"))
-          .filter((n) => n.type === "TextInput")
-          .map((n) => String(n.name));
-        assert.equal(new Set(names).size, names.length, `repeated field: ${names}`);
       });
 
-      it("turns an item on when its screen saves it, and leaves the rest alone", () => {
-        // The flags are what put the boxes on screen. An item screen owns
-        // exactly one of them and passes the others through untouched.
-        WORDS.forEach((w, index) => {
-          const payload = payloadOf(footer(SCREEN(w)));
-          assert.equal(payload[`has_${w}`], "yes", `item ${w} does not turn itself on`);
-          for (const other of WORDS.filter((x) => x !== w)) {
+      /*
+       * Nothing on these screens is conditional, and that is the design.
+       *
+       * A Switch is what made init-values lie, and it is what made the count
+       * and the boxes able to disagree. One screen per number of items costs
+       * two more screens (fifteen publish fine) and removes every way for a
+       * screen to be handed something it is not showing.
+       */
+      it("decides what is on screen when it is built, not when it is opened", () => {
+        for (const s of json.screens) {
+          assert.equal(
+            walk(s.layout).filter((n) => n.type === "Switch").length,
+            0,
+            `${s.id} still reshapes itself at runtime`,
+          );
+        }
+      });
+
+      it("gives each extra item a screen of its own", () => {
+        for (const [index, w] of WORDS.entries()) {
+          assert.ok(screen(ITEM(w)), `no screen for item ${w}`);
+          assert.ok(named(ITEM(w), `item_${w}_description`));
+          assert.ok(named(ITEM(w), `item_${w}_amount`));
+          // Both required: you cannot create half an item. Clearing the boxes
+          // on the form is how a whole one goes.
+          assert.equal(named(ITEM(w), `item_${w}_description`)!.required, true);
+          assert.equal(named(ITEM(w), `item_${w}_amount`)!.required, true);
+          assert.equal(index + 2, index + 2);
+        }
+      });
+
+      it("has one form screen per number of items, each showing all of them", () => {
+        for (let items = 1; items <= 5; items++) {
+          const id = FORM(items);
+          assert.ok(screen(id), `no form screen for ${items} items`);
+          // The first item is `description` / `amount`; the rest are named.
+          assert.ok(named(id, "description"));
+          assert.ok(named(id, "amount"));
+          for (const [i, w] of WORDS.entries()) {
+            const there = i < items - 1;
             assert.equal(
-              payload[`has_${other}`],
-              `\${data.has_${other}}`,
-              `item ${w} rewrites ${other}`,
+              Boolean(named(id, `item_${w}_description`)),
+              there,
+              `${id} ${there ? "is missing" : "should not have"} item ${i + 2}`,
             );
           }
-          assert.equal(index >= 0, true);
-        });
+          // Editable, not a read-out. The first attempt disabled these, which
+          // put somebody's own typo behind glass.
+          for (const n of inputs(id)) assert.notEqual(n.enabled, false);
+        }
+        // The entry copy is the one-item form with a number pad on Amount.
+        assert.equal(named("WORK", "amount")!["input-type"], "number");
+        assert.equal(named(FORM(1), "amount")!["input-type"], "text");
+      });
 
-        /*
-         * The form starts with none of them on \u2014 read from the link that
-         * leaves for an item screen, because the flags only travel between
-         * the form and those screens. The Next button does not carry them:
-         * TERMS does not declare them, and a payload key a screen has never
-         * heard of kills the Flow on the tap after the one that sent it.
-         */
-        const out = links("WORK").find((n) => n.text === "Add another item")!;
-        for (const w of WORDS) {
-          assert.equal(payloadOf(out)[`has_${w}`], "no", `WORK starts ${w} on`);
-          assert.equal(payloadOf(footer("WORK"))[`has_${w}`], undefined, `TERMS is sent ${w}`);
+      it("adds by going one screen forward and removes by going one back", () => {
+        for (let items = 1; items <= 5; items++) {
+          const id = FORM(items);
+          const add = linkTo(id, /add another item/i);
+          const remove = linkTo(id, /^remove item/i);
+
+          if (items < 5) assert.equal(target(add!), ITEM(WORDS[items - 1]!), `${id} adds the wrong item`);
+          else assert.equal(add, undefined, "the five-item form has nothing left to add");
+
+          if (items > 1) {
+            assert.equal(String(remove!.text), `Remove item ${items}`);
+            assert.equal(target(remove!), FORM(items - 1), `${id} removes to the wrong screen`);
+          } else {
+            assert.equal(remove, undefined, "a one-item invoice has nothing to remove");
+          }
+        }
+        assert.equal(target(linkTo("WORK", /add another item/i)!), ITEM("two"));
+      });
+
+      it("hands a saved item to the form that has room for it", () => {
+        for (const [index, w] of WORDS.entries()) {
+          const save = footer(ITEM(w));
+          assert.equal(String(save.label), "Save item");
+          assert.equal(target(save), FORM(index + 2));
+          // Its own two out of the form; everything else exactly as it came.
+          const p = payloadOf(save);
+          assert.equal(p[`item_${w}_description`], `\${form.item_${w}_description}`);
+          assert.equal(p[`item_${w}_amount`], `\${form.item_${w}_amount}`);
+
+          // And the way out leaves nothing behind.
+          const back = linkTo(ITEM(w), /^remove item/i)!;
+          assert.equal(target(back), FORM(index + 1));
+          assert.ok(!(`item_${w}_description` in payloadOf(back)));
         }
       });
 
-      it("declares every amount a string except the one it fills", () => {
+      it("reads every box on the form back out of the form", () => {
         /*
-         * Both halves of the trap at once.
-         *
-         * A `input-type: "number"` input must be initialised from a number —
-         * Meta refuses to publish otherwise. What comes back out of that same
-         * input is a string. So the money travels between screens as a string
-         * under `item_two_amount`, and the starting value rides separately
-         * under `item_two_amount_init`, which is a number and is dropped once
-         * the screen that needed it has been through.
+         * An item read from `data` while its box is on screen shows the edit,
+         * accepts it, and sends the old value — losing an item wearing a
+         * disguise. So a screen that renders a field reads that field.
          */
-        for (const w of WORDS) {
-          for (const id of ["WORK", "WORK_AGAIN", "TERMS", ...WORDS.map(SCREEN)]) {
-            const data = screen(id).data as Record<string, { type: string }>;
-            assert.equal(data[`item_${w}_amount`]!.type, "string", `${id} item ${w}`);
-          }
-        }
-
-        for (const w of WORDS) {
-          const own = screen(SCREEN(w)).data as Record<string, { type: string }>;
-          assert.equal(own[`item_${w}_amount_init`]!.type, "number", `${SCREEN(w)} starts item ${w}`);
-
-          /*
-           * Carried everywhere now, where they used to be dropped once spent.
-           * The form is reachable again after any item, so there is no longer
-           * a point in the journey where one of these is safely behind us.
-           */
-          for (const id of ["WORK", "WORK_AGAIN", ...WORDS.map(SCREEN)]) {
-            const data = screen(id).data as Record<string, { type: string }>;
-            assert.equal(data[`item_${w}_amount_init`]!.type, "number", `${id} lost the start for ${w}`);
-          }
-
-          const terms = screen("TERMS").data as Record<string, unknown>;
-          assert.equal(terms[`item_${w}_amount_init`], undefined, `TERMS declares a start for ${w}`);
-        }
-      });
-
-      it("carries every item along every route", () => {
-        /*
-         * The one that matters for money. A correction arrives with three
-         * lines and somebody taps Next on the first screen without opening
-         * the others. Every payload has to pass on what it is not editing, or
-         * those lines are gone and nothing said so.
-         */
-        const routes: Node[] = [footer("WORK"), ...links("WORK"), ...links("WORK_AGAIN")];
-        for (const w of WORDS) routes.push(footer(SCREEN(w)), ...links(SCREEN(w)));
-        // The form you come back to has a Next per count.
-        for (const nodes of Object.values(countCases("WORK_AGAIN", "Footer"))) {
-          routes.push(...nodes.filter((n) => n["on-click-action"]));
-        }
-
-        for (const node of routes) {
-          const payload = payloadOf(node);
-
-          /*
-           * Remove is the one route that writes rather than forwards: it
-           * blanks the item it drops, which is what makes the document reader
-           * leave that line out. Everything else it carries is checked below
-           * like any other route.
-           */
-          const dropped = WORDS.find((w) => payload[`item_${w}_amount`] === "");
-          if (dropped) {
-            assert.equal(payload[`item_${dropped}_description`], "", `${dropped} half-dropped`);
-            assert.equal(payload[`has_${dropped}`], "no", `${dropped} dropped but still on`);
-          }
-
-          /*
-           * Whatever has boxes on this screen is read from the form, so an
-           * edit counts; everything past it is passed on as it arrived. An
-           * item screen shows one item, and the form shows every item that
-           * exists, so "how many are read from the form" is the only thing
-           * that differs between routes.
-           */
-          const fromForm = WORDS.filter(
-            (w) => payload[`item_${w}_amount`] === `\${form.item_${w}_amount}`,
-          );
-          for (const w of WORDS) {
-            if (w === dropped) continue;
-            const want = fromForm.includes(w) ? "form" : "data";
-            assert.equal(payload[`item_${w}_description`], `\${${want}.item_${w}_description}`);
-            assert.equal(payload[`item_${w}_amount`], `\${${want}.item_${w}_amount}`);
+        for (let items = 1; items <= 5; items++) {
+          const id = FORM(items);
+          const shown = inputs(id).map((n) => String(n.name));
+          for (const n of [...links(id), footer(id)]) {
+            const p = payloadOf(n);
+            const keep =
+              /^remove item/i.test(String(n.text)) ? shown.slice(0, -2) : shown;
+            for (const name of keep) {
+              if (!(name in p)) continue;
+              assert.equal(p[name], `\${form.${name}}`, `${id} "${n.text ?? n.label}" reads ${name} from data`);
+            }
           }
         }
       });
 
       it("carries every item all the way to the submit", () => {
-        // A field that stops at a screen boundary is a line item somebody
-        // typed and never saw again.
-        const complete = walk(screen("TERMS")).find(
-          (n) => isNode(n["on-click-action"]) && (n["on-click-action"] as Node).name === "complete",
-        );
-        const payload = (complete!["on-click-action"] as Node).payload as Record<string, string>;
-
+        // The last screen sends the whole document, so every slot has to
+        // arrive even when the invoice never used it.
+        const submit = footer("TERMS");
+        assert.equal(action(submit).name, "complete");
         for (const w of WORDS) {
-          assert.equal(payload[`item_${w}_description`], `\${data.item_${w}_description}`);
-          assert.equal(payload[`item_${w}_amount`], `\${data.item_${w}_amount}`);
+          assert.equal(payloadOf(submit)[`item_${w}_description`], `\${data.item_${w}_description}`);
+          assert.equal(payloadOf(submit)[`item_${w}_amount`], `\${data.item_${w}_amount}`);
+        }
+        // And each form screen fills the slots it does not have with the
+        // empty strings TERMS declares, rather than leaving them out.
+        for (let items = 1; items <= 5; items++) {
+          const p = payloadOf(footer(FORM(items)));
+          for (const w of WORDS.slice(items - 1)) {
+            assert.equal(p[`item_${w}_description`], "");
+            assert.equal(p[`item_${w}_amount`], "");
+          }
         }
       });
 
-      it("opens each item screen on what the draft already has", () => {
-        // The correction path. Without an init-value the field comes up empty
-        // and the submit drops the line it was meant to be correcting.
-        for (const w of WORDS) {
-          const form = walk(screen(SCREEN(w))).find((n) => n.type === "Form")!;
-          const init = form["init-values"] as Record<string, string>;
-          assert.equal(init[`item_${w}_description`], `\${data.item_${w}_description}`);
-          assert.equal(init[`item_${w}_amount`], `\${data.item_${w}_amount_init}`);
+      it("keeps every screen inside the two-link budget", () => {
+        /*
+         * Probed against Meta on 23 September 2026: at most two EmbeddedLinks
+         * on a rendered screen. The error message reports the total across
+         * every Switch branch, which is why this once looked like a budget
+         * for the whole Flow.
+         */
+        for (const s of json.screens) {
+          assert.ok(
+            walk(s.layout).filter((n) => n.type === "EmbeddedLink").length <= 2,
+            `${s.id} holds more than two links`,
+          );
         }
       });
     });
@@ -779,125 +658,4 @@ describe("line items on the document forms", () => {
     const names = walk(request.json).map((n) => n.name);
     assert.ok(!names.some((n) => typeof n === "string" && n.startsWith("item_")));
   });
-});
-
-/**
- * A form field that is not on screen has no value to read.
- *
- * `${form.item_three_description}` in a payload is not a lookup that comes
- * back empty when item three has no boxes rendered. The Flow dies, and it
- * dies on the tap *after* the one that built the payload, which is why this
- * cost two rounds of "Something went wrong. Try again later." to find: the
- * screen you are staring at when it breaks is not the screen that broke it.
- *
- * Which items are on screen is decided by the count, and the boxes are laid
- * out as a prefix \u2014 two, then two and three, and so on. So an action may
- * read an item from the form only from inside the branch of the count Switch
- * that guarantees the boxes are there. An action outside that Switch, like
- * the single "Add another item" link, may read no items at all.
- */
-describe("what a Flow reads out of a form", () => {
-  const WORDS = ["two", "three", "four", "five"];
-
-  /** Every action in a tree, with the Switch branches it sits inside. */
-  function actions(
-    value: unknown,
-    within: { value: string; branch: string }[] = [],
-    out: { action: Node; label: string; within: { value: string; branch: string }[] }[] = [],
-  ) {
-    if (Array.isArray(value)) {
-      for (const v of value) actions(v, within, out);
-      return out;
-    }
-    if (!isNode(value)) return out;
-
-    const act = value["on-click-action"];
-    if (isNode(act) && act.name === "navigate") {
-      out.push({
-        action: act,
-        label: String(value.text ?? value.label ?? value.type),
-        within,
-      });
-    }
-
-    if (value.type === "Switch" && isNode(value.cases)) {
-      for (const [branch, body] of Object.entries(value.cases)) {
-        actions(body, [...within, { value: String(value.value), branch }], out);
-      }
-      return out;
-    }
-
-    for (const [k, v] of Object.entries(value)) {
-      if (k !== "on-click-action") actions(v, within, out);
-    }
-    return out;
-  }
-
-  for (const key of ["invoice", "quote"]) {
-    const flow = FLOWS.find((f) => f.key === key)!;
-    const json = flow.json as { screens: Node[] };
-
-    it(`${key}: only reads an item from the form where the form is showing it`, () => {
-      for (const screen of json.screens) {
-        /*
-         * Fields nothing can hide. An item screen renders its own two boxes
-         * straight into the Form, so its Save may read them without asking
-         * anybody — it is the form that lists items conditionally.
-         */
-        const always = new Set(
-          walk(screen.layout)
-            .filter((n) => n.type === "Switch")
-            .reduce(
-              (rest, sw) => rest.filter((n) => !walk(sw.cases).includes(n)),
-              walk(screen.layout).filter((n) => n.type === "TextInput"),
-            )
-            .map((n) => String(n.name)),
-        );
-
-        for (const { action, label, within } of actions(screen.layout)) {
-          const count = within.find((w) => w.value === "${data.item_count}");
-          // "one" is the form with no extra boxes on it, and no count
-          // Switch at all is the same thing: nothing may be read.
-          const rendered = count && count.branch !== "one" ? WORDS.indexOf(count.branch) : -1;
-
-          const payload = (action.payload ?? {}) as Record<string, unknown>;
-          for (const [field, value] of Object.entries(payload)) {
-            if (typeof value !== "string") continue;
-            const m = /^\$\{form\.item_([a-z]+)_/.exec(value);
-            if (!m) continue;
-            if (always.has(value.slice(7, -1))) continue;
-            const at = WORDS.indexOf(m[1]!);
-            assert.ok(
-              at <= rendered,
-              `${screen.id} "${label}" reads ${field} from the form, ` +
-                `but item ${m[1]} has no boxes on screen there` +
-                (count ? ` (count is "${count.branch}")` : " (no count Switch above it)"),
-            );
-          }
-        }
-      }
-    });
-
-    it(`${key}: leaves the count agreeing with the boxes after a removal`, () => {
-      for (const screen of json.screens) {
-        for (const { action, label } of actions(screen.layout)) {
-          const payload = (action.payload ?? {}) as Record<string, unknown>;
-          const dropped = WORDS.filter((w) => payload[`has_${w}`] === "no");
-          const count = payload.item_count;
-          // A payload that turns nothing off, or names no count, has
-          // nothing to disagree with.
-          if (dropped.length === 0 || typeof count !== "string" || count.startsWith("${")) continue;
-
-          const first = WORDS.indexOf(dropped[0]!);
-          const expected = first === 0 ? "one" : WORDS[first - 1]!;
-          assert.equal(
-            count,
-            expected,
-            `${screen.id} "${label}" drops item ${dropped[0]} but says the invoice is ` +
-              `"${String(count)}" items long \u2014 which sends Next to read a box that is not there`,
-          );
-        }
-      }
-    });
-  }
 });

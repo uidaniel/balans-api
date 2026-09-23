@@ -29,7 +29,7 @@ import {
 import { formatNaira } from "../../core/totals.ts";
 import { resolveDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
-import { EXTRA_ITEMS, initField, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
+import { EXTRA_ITEMS, formScreenId, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION, draftButtons } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
 
@@ -179,6 +179,15 @@ export type Effect =
        * screen's `data`, which its Form reads through `init-values`.
        */
       data?: Record<string, string | number | boolean>;
+      /**
+       * Which screen the form opens on.
+       *
+       * The document forms have one screen per number of items — WORK_ONE
+       * through WORK_FIVE — so a three-line draft has to open on the screen
+       * with three sets of boxes. Left unset, the caller uses the Flow's
+       * usual first screen, which is what every other form wants.
+       */
+      screen?: string;
       /**
        * What to say instead when there is no published Flow.
        *
@@ -1775,11 +1784,26 @@ function withDefaults(doc: PendingDoc, now: Civil): PendingDoc {
  * The date goes across as words rather than a calendar value: the field takes
  * words, and the same reader handles "8 October 2026" as handles "Friday".
  */
-function formValues(doc: PendingDoc): Record<string, string | number | boolean> {
+function formValues(doc: PendingDoc): {
+  screen: string;
+  data: Record<string, string | number | boolean>;
+} {
   const naira = (l: { unitAmountKobo: number; qty: number }): number =>
     Math.round((l.unitAmountKobo * l.qty) / 100);
 
   const first = doc.lines[0];
+
+  /*
+   * Which screen, and therefore which fields.
+   *
+   * The form is one screen per number of items now, and a screen is handed
+   * exactly the keys it declares — one extra kills the Flow, and so does one
+   * missing. So the count decides both: WORK for a single line, because its
+   * Amount is a number input and the number pad is worth having, and
+   * WORK_TWO upwards for a draft that already has more.
+   */
+  const items = Math.min(Math.max(doc.lines.length, 1), EXTRA_ITEMS.length + 1);
+  const onEntry = items <= 1;
 
   const values: Record<string, string | number | boolean> = {
     client_name: doc.clientName ?? "",
@@ -1793,7 +1817,15 @@ function formValues(doc: PendingDoc): Record<string, string | number | boolean> 
      * with line one's description against all three lines' money — and
      * tapping Next accepted it, turning ₦50k of logo work into ₦300k.
      */
-    amount: first ? naira(first) : Math.round((doc.totalKobo ?? 0) / 100),
+    /*
+     * A number on WORK and a string on every other form screen, because that
+     * is what each one declares. WORK initialises an `input-type: "number"`
+     * box; the screens you come back to take a string, since a string is all
+     * a form ever returns and Flow JSON has no cast.
+     */
+    amount: ((a) => (onEntry ? a : String(a)))(
+      first ? naira(first) : Math.round((doc.totalKobo ?? 0) / 100),
+    ),
     due_date: doc.dueDate ? formatLongDate(doc.dueDate) : "",
     plan: planIdFor({ depositPercent: doc.depositPercent, instalments: doc.instalments }),
     notes: doc.notes ?? "",
@@ -1802,24 +1834,21 @@ function formValues(doc: PendingDoc): Record<string, string | number | boolean> 
   };
 
   /*
-   * The rest of the items.
+   * The rest of the items — exactly the ones this screen has boxes for.
    *
-   * Each one has a screen of its own behind "Add another item", and each is
-   * sent twice: once as the string that travels between screens, and once as
-   * the number that fills its Amount box when that screen opens. Flow JSON
-   * has no cast and no empty number, so zero is how a blank amount is said —
-   * which renders as an empty box, not a "0". Anything past the fifth line
-   * cannot be shown at all; that is what `overflowsForm` is for.
+   * Not all four. A screen is handed the keys it declares and no others, and
+   * WORK_THREE declares two extras, so sending four is fatal in the same way
+   * sending none would be. Anything past the fifth line cannot be shown at
+   * all; that is what `overflowsForm` is for.
    */
-  EXTRA_ITEMS.forEach((w, index) => {
+  EXTRA_ITEMS.slice(0, items - 1).forEach((w, index) => {
     const line = doc.lines[index + 1];
     const f = itemFields(w);
     values[f.description] = line?.description ?? "";
     values[f.amount] = line ? String(naira(line)) : "";
-    values[initField(w)] = line ? naira(line) : 0;
   });
 
-  return values;
+  return { screen: onEntry ? "WORK" : formScreenId(items), data: values };
 }
 
 /**
@@ -2068,7 +2097,7 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
           key: "invoice",
           body: VOICE.changeInvite,
           cta: "Change the invoice",
-          data: formValues(doc),
+          ...formValues(doc),
           fallback: { line: VOICE.changeByHand, holdAt: "awaiting_confirm" },
         },
       ],

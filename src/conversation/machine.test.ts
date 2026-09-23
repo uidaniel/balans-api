@@ -4,6 +4,7 @@ import { step, VOICE, type Context, type State } from "./machine.ts";
 import type { Parsed } from "../parser/schema.ts";
 import type { Civil } from "../../core/dates.ts";
 import type { Correction } from "../parser/corrections.ts";
+import { FLOWS } from "../whatsapp/flows/definitions.ts";
 import { settingsMenu } from "../settings/messages.ts";
 
 const V = "2026-09-draft-1";
@@ -606,24 +607,18 @@ describe("a tapped button", () => {
       notes: "half now",
       vat: true,
       pass_fees: true,
-      // The four extra items, all empty, so the form opens showing one line
-      // and an "Add another item" link under it. Each is sent twice: the
-      // string that travels between screens, and the number that fills the
-      // Amount box on the screen that collects it. Zero is how a blank
-      // amount is said, and renders as an empty box.
-      item_two_description: "",
-      item_two_amount: "",
-      item_two_amount_init: 0,
-      item_three_description: "",
-      item_three_amount: "",
-      item_three_amount_init: 0,
-      item_four_description: "",
-      item_four_amount: "",
-      item_four_amount_init: 0,
-      item_five_description: "",
-      item_five_amount: "",
-      item_five_amount_init: 0,
+      /*
+       * And nothing else. The form is one screen per number of items now, so
+       * a one-line draft opens on the screen that has one set of boxes — and
+       * a screen is handed exactly the keys it declares. An extra one is as
+       * fatal as a missing one: the Flow dies with "Something went wrong.
+       * Try again later." on the tap after the mistake.
+       */
     });
+
+    // Which screen, said out loud, because the data above only makes sense
+    // against it.
+    assert.equal(out.effects.find((e) => e.type === "send_flow")?.screen, "WORK");
   });
 
   it("opens the form on every line a draft already has", () => {
@@ -654,22 +649,85 @@ describe("a tapped button", () => {
     const data = out.effects.find((e) => e.type === "send_flow")?.data as Record<string, unknown>;
 
     assert.equal(data.description, "logo");
-    assert.equal(data.amount, 50_000, "the first line's own amount, not the total");
 
     assert.equal(data.item_two_description, "website");
     assert.equal(data.item_two_amount, "250000", "carried between screens as a string");
-    assert.equal(data.item_two_amount_init, 250_000, "and as a number where the box is filled");
 
     assert.equal(data.item_three_description, "business cards");
     assert.equal(data.item_three_amount, "10000");
-    assert.equal(data.item_three_amount_init, 10_000);
 
-    // And nothing beyond what is on the draft. Zero rather than an empty
-    // string because the Amount box takes a number, and an empty number is
-    // not a thing Flow JSON can say.
-    assert.equal(data.item_four_description, "");
-    assert.equal(data.item_four_amount, "");
-    assert.equal(data.item_four_amount_init, 0);
+    /*
+     * Three lines, so the three-item screen, and nothing past it.
+     *
+     * The screen is the count: WORK_THREE has boxes for three items and
+     * declares the fields for three items. Sending item four as an empty
+     * string would be a key it has never heard of, which kills the Flow.
+     */
+    assert.equal(out.effects.find((e) => e.type === "send_flow")?.screen, "WORK_THREE");
+    assert.ok(!("item_four_description" in data), "a slot the screen does not have");
+    assert.ok(!("item_four_amount" in data));
+
+    // A string here too. Only the entry screen takes a number, because only
+    // its Amount is a number input.
+    assert.equal(data.amount, "50000");
+  });
+
+  it("opens every form screen on exactly the fields it declares", () => {
+    /*
+     * The one boundary nothing else watches.
+     *
+     * `definitions.ts` says what each screen declares; this file says what
+     * gets sent to it. Nothing in the language connects the two, and a Flow
+     * handed one key too many \u2014 or one too few \u2014 dies with "Something went
+     * wrong. Try again later." at the first tap, with no clue which key.
+     *
+     * So: every number of lines a draft can have, against the screen that
+     * number picks, both directions.
+     */
+    const flow = FLOWS.find((f) => f.key === "invoice")!.json as {
+      screens: { id: string; data?: Record<string, unknown> }[];
+    };
+
+    for (let lines = 1; lines <= 5; lines++) {
+      const out = doc(
+        "awaiting_confirm",
+        {
+          draftId: DRAFTED.draftId,
+          doc: {
+            type: "invoice",
+            clientName: "Zenith Homes",
+            lines: Array.from({ length: lines }, (_, i) => ({
+              description: `thing ${i + 1}`,
+              qty: 1,
+              unitAmountKobo: (i + 1) * 10_000_00,
+            })),
+          },
+        },
+        "change something",
+        { parsed: parse({ intent: "unknown" }), correction: null },
+      );
+
+      const effect = out.effects.find((e) => e.type === "send_flow");
+      assert.ok(effect && effect.type === "send_flow" && effect.screen, `${lines} lines: no screen`);
+      const screen = flow.screens.find((s) => s.id === effect.screen);
+      assert.ok(screen, `${lines} lines: no screen called ${effect.screen}`);
+
+      assert.deepEqual(
+        Object.keys(effect.data ?? {}).sort(),
+        Object.keys(screen.data ?? {}).sort(),
+        `${lines} lines: what is sent to ${effect.screen} is not what it declares`,
+      );
+
+      // And the types, which are checked on the phone and nowhere else.
+      for (const [key, value] of Object.entries(effect.data ?? {})) {
+        const want: string | undefined = (screen!.data?.[key] as { type?: string } | undefined)?.type;
+        assert.equal(
+          typeof value,
+          want,
+          `${lines} lines: ${effect.screen} declares ${key} as ${want}`,
+        );
+      }
+    }
   });
 
   it("keeps a draft with more lines than the form holds in words", () => {
