@@ -10,6 +10,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { deductionFor, MAX_CHARGE_SHARE_BPS } from "./subscription.ts";
 
 const N = (naira: number) => naira * 100;
@@ -96,5 +97,69 @@ describe("the cap holds whatever the numbers", () => {
       const takenTotal = N(500) + d.takeKobo;
       assert.ok(takenTotal <= N(p) * 0.2 + 1, `${p}: we took ${takenTotal}`);
     }
+  });
+});
+
+/**
+ * When Pro stops.
+ *
+ * Four separate places read `plan_expires_at`, and every one of them treats
+ * null as "no expiry": `planOf`, `stateOf`, the lapse sweep (`IS NOT NULL`)
+ * and the renewal reminder (a BETWEEN). That is the right reading \u2014 a
+ * subscription has no end date until it has one \u2014 but it means a single
+ * UPDATE that sets `plan` without setting the date gives somebody Pro
+ * permanently, silently, with no renewal ever asked for. The pay-by-link
+ * path did exactly that, which is the path where somebody pays by card.
+ *
+ * There is no database in these tests, so this reads the statements
+ * themselves. A guard on the shape of the SQL is worth having when the
+ * failure it prevents is a paying customer who is never billed again.
+ */
+describe("every way Pro is switched on", () => {
+  const source = readFileSync(new URL("./subscription.ts", import.meta.url), "utf8");
+
+  it("sets the date it expires in the same statement", () => {
+    /* Each UPDATE that turns Pro on, from `SET plan = 'pro'` to the WHERE. */
+    const statements = [...source.matchAll(/SET plan = 'pro'[\s\S]*?WHERE/g)].map((m) => m[0]);
+
+    assert.ok(statements.length >= 2, "both activation paths should be here");
+    for (const s of statements) {
+      assert.match(
+        s,
+        /plan_expires_at\s*=/,
+        "an UPDATE turns Pro on without saying when it ends:\n" + s,
+      );
+      // GREATEST, so paying early extends the period instead of cutting it
+      // short, and a second payment in one period cannot move the end back.
+      assert.match(s, /GREATEST\(COALESCE\(plan_expires_at, now\(\)\), \$2\)/, s);
+    }
+  });
+
+  it("gives the grace period the same meaning everywhere", () => {
+    /*
+     * `stateOf` here and `planOf` in the document queries both answer "what
+     * plan is this person on", and for seven days they disagreed: billing
+     * said Pro, the features said free. Somebody in their grace week lost
+     * the logo row and dropped to the free document limit, and then got a
+     * message inviting them to renew a subscription that had already
+     * visibly stopped working.
+     */
+    const queries = readFileSync(new URL("../documents/queries.ts", import.meta.url), "utf8");
+    const planOf = queries.slice(queries.indexOf("export async function planOf"));
+    assert.ok(planOf.startsWith("export async function planOf"), "planOf has moved");
+
+    /*
+     * A plain substring, not a pattern. What matters is the exact
+     * comparison: the date Pro is measured against has to be the end of
+     * the grace week, not the end of the paid period. Looking for the
+     * constant alone is not enough — its name survives in the parameter
+     * list while the comparison cuts somebody off seven days early.
+     */
+    assert.ok(
+      planOf.includes("plan_expires_at < now() - ($2 || ' days')::interval"),
+      "planOf cuts Pro off at the period end, ignoring the grace period",
+    );
+    assert.ok(planOf.includes("String(GRACE_DAYS)"));
+    assert.match(source, /inGrace = expired && now <= graceEnds/);
   });
 });

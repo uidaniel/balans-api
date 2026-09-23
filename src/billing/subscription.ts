@@ -369,7 +369,26 @@ export async function activateByReference(
   const sub = rows[0];
   if (!sub) return null;
 
-  await db().query(`UPDATE users SET plan = 'pro' WHERE id = $1`, [sub.user_id]);
+  /*
+   * The same two columns the deduction path writes, and for the same reason.
+   *
+   * This one set `plan` alone. A subscription paid by link therefore left
+   * `plan_expires_at` null, and null is not a date in the past: `planOf` and
+   * `stateOf` both read it as "no expiry", `expireLapsedSubscriptions` skips
+   * it on `IS NOT NULL`, and `renewalsDue` skips it on the BETWEEN. So
+   * somebody who paid for one month by card had Pro permanently, was never
+   * asked to renew, and was never billed again — and nothing anywhere said
+   * so, because every one of those four places was behaving as written.
+   *
+   * GREATEST, so paying early extends the period rather than truncating it.
+   */
+  await db().query(
+    `UPDATE users
+        SET plan = 'pro',
+            plan_expires_at = GREATEST(COALESCE(plan_expires_at, now()), $2)
+      WHERE id = $1`,
+    [sub.user_id, sub.period_end],
+  );
 
   log.warn(
     { userId: sub.user_id, subscriptionId: sub.id, paidKobo, until: sub.period_end },

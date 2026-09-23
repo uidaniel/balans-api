@@ -12,6 +12,7 @@
  */
 
 import { db } from "../db/pool.ts";
+import { GRACE_DAYS } from "../billing/subscription.ts";
 import { formatISO, type Civil } from "../../core/dates.ts";
 import type { Period } from "../../core/period.ts";
 
@@ -311,11 +312,28 @@ export async function documentsThisMonth(userId: string, today: Civil): Promise<
   return Number(rows[0]?.n ?? 0);
 }
 
+/**
+ * What plan somebody is on, counting the grace period.
+ *
+ * The grace days are the point of this function reading a date at all. F18
+ * gives a lapsed subscription a week before anything is taken away, and
+ * `stateOf` in the billing code honours it — but this one did not, so the two
+ * gave different answers for those seven days. Billing believed they were
+ * still Pro while the features they had paid for were already gone: the logo
+ * row vanished from settings, the document limit dropped to the free one, and
+ * the renewal reminder invited them to keep a subscription that had visibly
+ * already stopped working.
+ *
+ * A null expiry still means no expiry, which is what a subscription looks
+ * like between being activated and its first period end.
+ */
 export async function planOf(userId: string): Promise<"free" | "pro"> {
   const { rows } = await db().query<{ plan: "free" | "pro"; expired: boolean }>(
-    `SELECT plan, (plan_expires_at IS NOT NULL AND plan_expires_at < now()) AS expired
+    `SELECT plan,
+            (plan_expires_at IS NOT NULL
+             AND plan_expires_at < now() - ($2 || ' days')::interval) AS expired
        FROM users WHERE id = $1`,
-    [userId],
+    [userId, String(GRACE_DAYS)],
   );
   const r = rows[0];
   if (!r) return "free";
