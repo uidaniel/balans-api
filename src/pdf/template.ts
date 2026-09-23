@@ -48,6 +48,15 @@ export type Variant = "invoice" | "quote" | "receipt" | "sample";
 export type DocumentData = {
   variant: Variant;
   number: number | null;
+  /**
+   * The platform-wide reference, for support. Null on a sample and on
+   * anything issued before references existed.
+   *
+   * `number` above is the invoice number the client reads and it restarts at
+   * 1 for every freelancer, which is correct on the document and useless on
+   * the phone: "invoice 2 has not been paid" names one invoice per user.
+   */
+  ref?: string | null;
   /** The business issuing it. */
   businessName: string;
   businessEmail: string | null;

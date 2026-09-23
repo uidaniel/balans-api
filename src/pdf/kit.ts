@@ -99,6 +99,21 @@ body{background:#fff;color:${INK};-webkit-print-color-adjust:exact;print-color-a
   font-family:${FONT.sans};line-height:1.45;
   -webkit-font-smoothing:antialiased;
 }
+/*
+ * The support reference, in the corner of every layout.
+ *
+ * Here rather than in each of the eight templates, because a reference that
+ * is only on some of them is worse than none: the one invoice somebody rings
+ * up about would be the one without it.
+ *
+ * Absolutely positioned so it cannot push a layout that fills the page onto
+ * a second one, and quiet enough that the eye passes over it until somebody
+ * is looking for it. Nobody reads this until something has gone wrong.
+ */
+.ref{
+  position:absolute;right:0;bottom:0;padding:0 1.4em .9em 0;
+  font-size:.62em;letter-spacing:.06em;color:${ink(0.35)};
+}
 .row{display:flex}
 .tnum{font-variant-numeric:tabular-nums}
 .min0{min-width:0}
@@ -228,6 +243,7 @@ export function sheet(d: DocumentData, opts: RenderOptions, parts: SheetParts): 
 <body><div class="sheet" style="font-size:${sheetFontSize(d, rowEm)}">
 ${d.variant === "sample" ? `<div class="mark">SAMPLE</div>` : ""}
 ${body}
+${d.ref ? `<div class="ref">${esc(d.ref)}</div>` : ""}
 </div></body></html>`;
 }
 

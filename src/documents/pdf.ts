@@ -155,6 +155,7 @@ async function loadForRender(
     user_id: string;
     type: string;
     number: number | null;
+    ref: string | null;
     subtotal_kobo: number;
     vat_kobo: number;
     total_kobo: number;
@@ -175,7 +176,7 @@ async function loadForRender(
     client_name: string;
     client_email: string | null;
   }>(
-    `SELECT d.user_id, d.type, d.number, d.subtotal_kobo, d.vat_kobo, d.total_kobo,
+    `SELECT d.user_id, d.type, d.number, d.ref, d.subtotal_kobo, d.vat_kobo, d.total_kobo,
             d.amount_paid_kobo, d.issue_date, d.due_date, d.valid_until, d.notes,
             d.public_token, d.current_version,
             u.business_name, u.email AS business_email, u.address, u.tin, u.logo_url,
@@ -214,6 +215,7 @@ async function loadForRender(
     doc: {
       variant,
       number: r.number,
+      ref: r.ref,
       businessName: r.business_name ?? "A Balans user",
       businessEmail: r.business_email,
       businessAddress: r.address,

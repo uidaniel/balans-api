@@ -342,15 +342,36 @@ export async function confirmDraft(userId: string, draftId: string): Promise<Con
     // characters is 128 bits: not enumerable, and short enough for a URL.
     const publicToken = randomBytes(16).toString("hex");
 
+    /*
+     * The reference, which belongs to nobody's sequence.
+     *
+     * `number` above restarts at 1 for every freelancer, because that is what
+     * an invoice number means to the client reading it. Which makes it no use
+     * for support: "invoice 2 has not been paid" names one invoice per user
+     * on the whole platform. This one is unique across everybody, and it is
+     * what the admin panel searches.
+     *
+     * From a sequence, in this transaction, so two people sending at the same
+     * moment cannot be handed the same one — which MAX(...) + 1 would do, and
+     * the loser of that race is somebody's invoice failing to send.
+     *
+     * Padded to four digits and then simply longer. "BL-0042" survives being
+     * written on paper and read back down a phone, which is the entire job.
+     */
+    const { rows: refs } = await c.query<{ ref: string }>(
+      `SELECT 'BL-' || LPAD(nextval('document_ref_seq')::text, 4, '0') AS ref`,
+    );
+    const ref = refs[0]!.ref;
+
     await c.query(
       `UPDATE documents
-          SET number = $2, status = 'sent', public_token = $3,
+          SET number = $2, status = 'sent', public_token = $3, ref = $4,
               issue_date = CURRENT_DATE, sent_at = now()
         WHERE id = $1`,
-      [draft.id, number, publicToken],
+      [draft.id, number, publicToken, ref],
     );
 
-    return { id: draft.id, number, publicToken, type: draft.type };
+    return { id: draft.id, number, ref, publicToken, type: draft.type };
   });
 }
 
