@@ -28,6 +28,7 @@ import {
   divider,
   layout,
   LOGO_CID,
+  LOGO_DARK_CID,
   paragraph,
   steps,
   type InlineImage,
@@ -136,6 +137,12 @@ export async function sendEmail(
                   content_id: LOGO_CID,
                   content_type: "image/png",
                 },
+                {
+                  filename: "balans-dark.png",
+                  content: attachmentContent("logo-dark.png"),
+                  content_id: LOGO_DARK_CID,
+                  content_type: "image/png",
+                },
                 ...(email.images ?? []).map((i) => ({
                   filename: i.file,
                   content: attachmentContent(i.file),
@@ -225,9 +232,9 @@ const WELCOME_BANNER: InlineImage = {
   cid: "welcome-banner",
   file: "welcome-banner.png",
   alt: "Welcome. Let's get you paid.",
-  // The card is 560 wide with 36px either side, less its border.
-  width: 486,
-  height: 194,
+  // The column is 600 wide with 32px either side. The file is twice this.
+  width: 536,
+  height: 214,
 };
 
 /**
@@ -330,8 +337,8 @@ const PRO_BANNER: InlineImage = {
   cid: "pro-banner",
   file: "pro-banner.png",
   alt: "You're on Pro.",
-  width: 486,
-  height: 194,
+  width: 536,
+  height: 214,
 };
 
 /**

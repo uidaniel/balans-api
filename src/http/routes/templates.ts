@@ -380,10 +380,6 @@ export async function templateRoutes(app: FastifyInstance): Promise<void> {
     return reply
       .type("font/ttf")
       .header("cache-control", "public, max-age=31536000, immutable")
-      // Fonts are fetched under CORS. The emails ask for these from inside a
-      // mail client, whose origin is never ours, and a face refused there
-      // falls back silently to the system font.
-      .header("access-control-allow-origin", "*")
       .send(await readFile(file));
   });
 

@@ -11,7 +11,8 @@
  *
  * The files are in assets/email, each drawn from a source kept beside it:
  * logo.png from logo-source.svg (the site's logo with a white outline under
- * the wordmark), and welcome-banner.png from welcome-banner.html.
+ * the wordmark), logo-dark.png from logo-dark-source.svg (the site's logo for
+ * dark backgrounds), and each banner from the .html of the same name.
  */
 
 import { readFileSync } from "node:fs";
