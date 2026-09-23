@@ -44,12 +44,25 @@ export const COMMANDS: { command_name: string; command_description: string }[] =
  * At most four, 80 characters each. These are sentences rather than commands
  * on purpose — the product's real interface is a sentence, and a first-time
  * user tapping one learns that they can simply say what they want.
+ *
+ * All four are written for a stranger, because only a stranger ever sees
+ * them: WhatsApp shows ice breakers above an *empty* chat, so the person
+ * reading them has never sent us anything. "Who owes me?" and "How did I do
+ * this month?" were two of the four, and both answer with nothing — there
+ * are no debtors and no month behind somebody who has not signed up. Two
+ * slots in four spent proving the product is empty.
+ *
+ * So: one that starts setup, one that shows the trick before anybody has
+ * committed to anything, and two that answer the questions people have
+ * before they will do either. The money one is there because in Nigeria it
+ * is the first question about anything touching a bank account, and the
+ * people who will not ask it out loud are the ones who quietly leave.
  */
 export const PROMPTS: string[] = [
+  "\u{1F44B} Set me up",
   "Invoice Tunde 20k for logo design, due Friday",
-  "Who owes me?",
-  "How did I do this month?",
-  "Send a quote",
+  "How does Balans work?",
+  "Is my money safe?",
 ];
 
 function url(path: string): string {

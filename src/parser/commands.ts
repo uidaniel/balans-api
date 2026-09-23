@@ -17,7 +17,13 @@
 
 import type { Intent } from "./schema.ts";
 
-export type Command = { intent: Intent; documentNumber?: number; social?: SocialKind };
+export type Command = {
+  intent: Intent;
+  documentNumber?: number;
+  social?: SocialKind;
+  /** Which question, when the intent is `help` and it was a specific one. */
+  faq?: FaqKind;
+};
 
 /**
  * Slash commands.
@@ -142,6 +148,58 @@ export function socialKind(text: string): SocialKind | null {
   return null;
 }
 
+/**
+ * The two questions people ask before they will start.
+ *
+ * Both are ice breakers — the tappable suggestions above an empty chat — so
+ * the exact wording arrives verbatim and has to match. They are also asked
+ * in a dozen other ways by people typing, which is what the rest of each
+ * pattern is for.
+ *
+ * Read here rather than by the model for the usual reason: these arrive from
+ * somebody who has not signed up, a model call costs a second and a fraction
+ * of a naira, and the answer is a fixed paragraph either way. But there is a
+ * second reason that matters more. "Is my money safe?" asked of a payments
+ * product must never be answered with "I did not catch that", and the model
+ * is the one part of this that can be down.
+ *
+ * The kind is carried rather than the answer: what to say depends on where
+ * the conversation is. A stranger asking how this works wants three lines
+ * and a button; somebody set up and invoicing wants the command list.
+ */
+export type FaqKind = "how" | "safety";
+
+const FAQ: [RegExp, FaqKind][] = [
+  [
+    /^(how does (?:this|it|balans) work|how (?:does|do) balans work|how do(?:es)? this work|what is balans|what(?:'s| is) this|what does balans do|how (?:do i|to) use (?:this|balans)|explain)$/,
+    "how",
+  ],
+  [
+    /^(is my money safe|is my money secure|is this safe|is it safe|is this legit|is this a scam|na scam|you no go run with my money|do you hold my money|where does my money go|where will my money go|are you a bank|who holds the money|is my account safe)$/,
+    "safety",
+  ],
+];
+
+/**
+ * Which question this is, or null when it is not one of them.
+ *
+ * Exported for the same reason `socialKind` is: the machine decides what to
+ * say from where the conversation stands, and two lists that could disagree
+ * about what was asked is one list too many.
+ */
+export function faqKind(text: string): FaqKind | null {
+  const s = text
+    .toLowerCase()
+    .trim()
+    .replace(/[.!,?]+$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!s || s.length > 50) return null;
+  for (const [re, kind] of FAQ) if (re.test(s)) return kind;
+  return null;
+}
+
 /** "invoice 12" style commands, where the number is part of the instruction. */
 const NUMBERED: [RegExp, Intent][] = [
   [/^cancel (?:invoice|quote|inv|doc|document) #?(\d{1,6})$/, "cancel_document"],
@@ -176,6 +234,12 @@ export function asCommand(text: string): Command | null {
   // Nigerian English and must not fall through to anything that acts.
   const social = socialKind(s);
   if (social) return { intent: "social", social };
+
+  // Before EXACT, which knows "how does this work" as a request for the menu.
+  // Both are `help`; the kind only changes what gets said, and only where the
+  // person asking has no menu worth showing them yet.
+  const faq = faqKind(s);
+  if (faq) return { intent: "help", faq };
 
   if (s.startsWith("/")) {
     // "/invoice Tunde 20k" carries a sentence after the command, and the

@@ -18,7 +18,7 @@ import type { Civil } from "../../core/dates.ts";
 import { isDocumentIntent, type Parsed } from "../parser/schema.ts";
 import type { Correction } from "../parser/corrections.ts";
 import { shapeFor } from "../documents/parts.ts";
-import { asCommand, socialKind, type SocialKind } from "../parser/commands.ts";
+import { asCommand, faqKind, socialKind, type FaqKind, type SocialKind } from "../parser/commands.ts";
 import { SETTINGS_ROW_IDS } from "../settings/messages.ts";
 
 type SettingsRowId = (typeof SETTINGS_ROW_IDS)[number];
@@ -74,6 +74,24 @@ export type Context = {
   email?: string;
   /** Wrong answers in a row on the current step. */
   attempts?: number;
+
+  /**
+   * The instruction somebody opened with, kept until setup is done.
+   *
+   * "Invoice Tunde 20k for logo design, due Friday" is one of the four
+   * suggestions WhatsApp shows above an empty chat, so it is a likely first
+   * message from somebody with no account. The reply to it — "let us get you
+   * set up first, then I can do that" — was a promise nothing kept: the text
+   * was dropped on the floor and setup ended with a generic card.
+   *
+   * So it is carried through the whole of onboarding and replayed at the end
+   * as if they had just typed it. That is their first draft, four minutes
+   * after their first message, without having to say it twice.
+   *
+   * Only a real instruction is kept. A greeting, a question and a request for
+   * help are answered where they are asked and never replayed.
+   */
+  opener?: string;
 
   /**
    * The document being built, before it is worth a row in the database.
@@ -366,6 +384,21 @@ const GREETING =
   /^(hi|hello|hey|good (morning|afternoon|evening)|hola|howfa|how far)( there| sir| ma| boss| o)?[.!?]*$/i;
 
 /**
+ * "Set me up", the first of the four suggestions above an empty chat.
+ *
+ * It arrives with the emoji it is offered with, which is why the pattern
+ * allows one on the front. Without that it is an eleven-character message
+ * that does not match anything — and at `onboarding:form` anything that is
+ * not a greeting is taken as a business name, so the account would have come
+ * out called "👋 Set me up".
+ */
+const SETUP_ME =
+  /^(?:\p{Extended_Pictographic}\uFE0F?\s*)?(?:set (?:me )?up|setup|sign me up|get me started|let'?s (?:start|go|do it)|start)[.!]*$/iu;
+
+/** What to do next, under an answer that has the setup button beneath it. */
+const SETUP_NUDGE = "Tap below to set up. It takes about a minute.";
+
+/**
  * Everything the bot says during setup.
  *
  * Two things shape the copy. Bold marks values and actions, so a glance finds
@@ -393,6 +426,48 @@ export const VOICE = {
   setupFirst: para(
     "👋 Let us get you set up first, then I can do that.",
     b("Tap below. It takes about a minute."),
+  ),
+
+  /**
+   * "How does Balans work?", asked by somebody who has not signed up.
+   *
+   * One of the four suggestions above an empty chat, so this is read by a
+   * stranger — which rules out the command menu. A list of ten slash
+   * commands answers "what can I type" for somebody who has already decided;
+   * this question is asked by somebody who has not, and what they want is
+   * the shape of the thing in three lines.
+   *
+   * Numbered rather than bulleted because it is a sequence, and the order is
+   * the whole explanation.
+   */
+  howItWorks: para(
+    `\u{1F4A1} ${b("Three steps, all in this chat.")}`,
+    lines(
+      `1. Tell me who to bill and what for \u2014 ${i("invoice Tunde 20k for logo design")}.`,
+      "2. I write the invoice in your business name and add a payment link.",
+      "3. They tap it and pay. The money goes to your bank, and I tell you.",
+    ),
+  ),
+
+  /**
+   * "Is my money safe?"
+   *
+   * The first question anybody in Nigeria asks about something that touches
+   * a bank account, and the people who will not ask it out loud are the ones
+   * who quietly leave instead. So it is one of the four things offered above
+   * an empty chat, and the answer is the plainest sentence we have.
+   *
+   * The same words the invoice page and the welcome email use, deliberately.
+   * A product that describes where the money goes in three different ways in
+   * three different places is a product nobody believes.
+   */
+  moneySafe: para(
+    `\u{1F512} ${b("Your money never passes through us.")}`,
+    lines(
+      "Monnify, a licensed Nigerian payment processor, takes the payment.",
+      "It settles straight into your own bank account \u2014 the one you give us here.",
+      "Balans is not a bank and never holds your money.",
+    ),
   ),
 
   /** They closed the form, or would rather type. Both are fine. */
@@ -542,6 +617,19 @@ export const VOICE = {
   doneCaption: para(
     `\u{1F389} ${b("You are set up.")}`,
     "Type it like a text, or tap below.",
+  ),
+
+  /**
+   * Set up, for somebody who asked for something before any of this started.
+   *
+   * No example and no button: the next message is their own first draft,
+   * built from the sentence they opened with. Showing them how to ask for an
+   * invoice immediately before answering the one they already asked for
+   * would be the bot talking over itself.
+   */
+  doneNowThat: para(
+    `\u{1F389} ${b("You are set up.")}`,
+    "Now, the one you asked for.",
   ),
 
   /** Refusing a command that has nothing to work with yet. */
@@ -977,13 +1065,44 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
    * `context` and `state` are both passed through untouched: asking what this
    * thing can do must never cost somebody the draft they were halfway through.
    */
-  if (HELP.test(text) || msg.parsed?.intent === "help") {
+  /*
+   * Not at "new", which answers every message with the setup card and has
+   * its own words for each of these. The menu is ten slash commands, nine of
+   * which need the account that does not exist yet, and handing that to
+   * somebody's first message is the worst answer in the product.
+   */
+  if ((HELP.test(text) || msg.parsed?.intent === "help") && state !== "new") {
+    const faq = faqKind(text);
+
     if (state.startsWith("onboarding")) {
       // Mid-onboarding, help is about the question on the screen. Offering the
       // whole menu there invites somebody to wander off a form they are three
       // fields into — and half of that menu needs an account to work.
-      return { replies: [onboardingHelp(state)], next: state, context, effects: [] };
+      //
+      // A named question is answered first, then the step repeated. Somebody
+      // asking where their money goes while typing their account number is
+      // asking about the thing they are being asked to hand over, and
+      // "what is your bank?" on its own is not an answer to it.
+      return {
+        replies: [faq ? para(faqAnswer(faq), onboardingHelp(state)) : onboardingHelp(state)],
+        next: state,
+        context,
+        effects: [],
+      };
     }
+
+    /*
+     * "Is my money safe?", from somebody already set up.
+     *
+     * The menu does not answer it and never will — there is no command for
+     * where the money goes. "How does this work" is different: somebody with
+     * an account asking that wants the list of what they can type, which is
+     * exactly what the menu is.
+     */
+    if (faq === "safety") {
+      return { replies: [VOICE.moneySafe], next: state, context, effects: [] };
+    }
+
     return {
       replies: [],
       next: state,
@@ -1066,7 +1185,7 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
   }
 
   switch (state) {
-    case "new":
+    case "new": {
       /*
        * Anything at all begins onboarding. A greeting is the common case, but
        * someone who opens with "invoice Tunde 20k" should not be told off:
@@ -1076,21 +1195,48 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
        * and account number are four things they already know, and asking for
        * them one at a time is four chances to wander off — plus four
        * chargeable messages from October 2026.
+       *
+       * Four things can arrive here, because four things are offered above an
+       * empty chat, and each gets its own opening line under the same card
+       * and the same button. One message either way: the answer and the way
+       * to start are the same bubble, so nothing is a dead end.
        */
+      const faq = faqKind(text);
+      const asking = faq !== null || HELP.test(text);
+      const starting = SETUP_ME.test(text.trim()) || GREETING.test(text);
+
+      const body = faq
+        ? para(faqAnswer(faq), SETUP_NUDGE)
+        : HELP.test(text)
+          ? // "Help", from a stranger, is the same question as "how does this
+            // work" and wants the same three lines rather than the menu.
+            para(VOICE.howItWorks, SETUP_NUDGE)
+          : starting
+            ? VOICE.setupInvite
+            : VOICE.setupFirst;
+
       return {
         replies: [],
         next: "onboarding:form",
-        context: {},
+        /*
+         * Their instruction, kept — this is the whole of "then I can do that".
+         *
+         * Only an instruction. A greeting, a question and a request for help
+         * were all answered just now, and replaying one of them at the end of
+         * setup would be the bot repeating itself four minutes later.
+         */
+        context: asking || starting ? {} : { opener: text },
         effects: [
           {
             type: "send_flow",
             key: "onboarding",
-            body: GREETING.test(text) ? VOICE.setupInvite : VOICE.setupFirst,
+            body,
             cta: "Set up Balans",
             image: WELCOME_CARD,
           },
         ],
       };
+    }
 
     case "onboarding:form":
       /*
@@ -1103,8 +1249,28 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
        * certainly already the answer to it, and throwing that away to ask for
        * it again is the rudest thing this branch could do.
        */
+      /*
+       * "Set me up", tapped while the form is already on screen.
+       *
+       * The suggestion is still there to tap until they send something, and
+       * a second tap is an ordinary thing to do when a form has not opened.
+       * Without this it is not a greeting, so it becomes the answer to the
+       * question underneath — and the business goes on every invoice they
+       * ever send called "👋 Set me up".
+       */
+      if (SETUP_ME.test(text.trim())) {
+        return {
+          replies: [
+            para(`\u{1F44B} ${b("The form is the message just above.")}`, onboardingHelp(state)),
+          ],
+          next: "onboarding:form",
+          context,
+          effects: [],
+        };
+      }
+
       if (GREETING.test(text)) {
-        return { replies: [VOICE.setupByHand], next: "onboarding:business_name", context: {}, effects: [] };
+        return { replies: [VOICE.setupByHand], next: "onboarding:business_name", context, effects: [] };
       }
       return takeBusinessName(text, context, msg);
 
@@ -2606,6 +2772,24 @@ function takeCode(text: string, ctx: Context): Step {
 
 function takeConsent(text: string, ctx: Context, version: string): Step {
   if (/\b(i agree|agree|agreed|yes|accept|i accept)\b/i.test(text)) {
+    /*
+     * Setup is done, and they asked for something before any of it started.
+     *
+     * The card here invites them to create an invoice. Somebody whose first
+     * message was "invoice Tunde 20k for logo design" has already asked for
+     * one, and being offered a button to say it again is the bot admitting
+     * it was not listening. Their own sentence is replayed instead, by the
+     * caller, which is what `opener` has been carried through setup for.
+     */
+    if (ctx.opener) {
+      return {
+        replies: [VOICE.doneNowThat],
+        next: "idle",
+        context: { ...ctx, attempts: 0 },
+        effects: [{ type: "record_consent", version }],
+      };
+    }
+
     return {
       // The card and the button are one message, so a reply here would be a
       // second bubble saying the same thing.
@@ -2657,6 +2841,18 @@ function retry(state: State, ctx: Context, message: string): Step {
     );
   }
   return { replies, next: state, context: { ...ctx, attempts }, effects: [] };
+}
+
+/**
+ * The fixed paragraph for one of the two questions asked before signing up.
+ *
+ * A function rather than a lookup at each call site so that every place that
+ * answers one of these answers it with the same words — the point of writing
+ * them down once is that somebody asking mid-setup and somebody asking on
+ * their first message get the same product.
+ */
+function faqAnswer(kind: FaqKind): string {
+  return kind === "safety" ? VOICE.moneySafe : VOICE.howItWorks;
 }
 
 function onboardingHelp(state: State): string {

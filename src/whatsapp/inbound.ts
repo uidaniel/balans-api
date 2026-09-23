@@ -52,6 +52,21 @@ export type Inbound = {
    * to the conversation that asked for it.
    */
   flow?: { token: string; fields: Record<string, string> };
+
+  /**
+   * A message we are handing back to ourselves, not one Meta delivered.
+   *
+   * There is one: the sentence somebody opened with before they had an
+   * account, replayed the moment setup finishes so it produces the draft
+   * they asked for. It is the same text through the same pipeline, which is
+   * the point — a second path that builds drafts a slightly different way is
+   * a second path that can be wrong.
+   *
+   * What it changes: nothing is recorded as inbound, because nothing
+   * arrived, and no read receipt is sent, because there is no message on
+   * Meta's side to mark.
+   */
+  replay?: true;
 };
 
 export type StatusUpdate = {

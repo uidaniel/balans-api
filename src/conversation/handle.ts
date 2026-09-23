@@ -353,7 +353,10 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   const [first, loaded] = await Promise.all([
     // Meta redelivers on any doubt. Storing the id first means a repeat stops
     // here rather than producing a second reply to the same sentence.
-    recordInbound(user.id, msg.waMessageId, msg.kind),
+    //
+    // A replay has no id to store, because nothing was delivered: it is a
+    // sentence this service is handing back to itself. See `Inbound.replay`.
+    msg.replay ? Promise.resolve(true) : recordInbound(user.id, msg.waMessageId, msg.kind),
     loadConversation(user.id),
   ]);
 
@@ -386,7 +389,7 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
 
   // Blue ticks and the typing bubble, before the thinking starts. Not awaited:
   // it is decoration, and the reply must not wait on a read receipt.
-  void markRead(msg.waMessageId, { typing: true, to: msg.from });
+  if (!msg.replay) void markRead(msg.waMessageId, { typing: true, to: msg.from });
 
   // Said before setup begins, so the fresh questions are not a surprise to
   // somebody who expects us to remember them.
@@ -685,6 +688,20 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
    */
   const buttonsImage = outcome.buttons ? outcome.buttonsImage : undefined;
 
+  /*
+   * Setup has just finished and a sentence has been waiting the whole time.
+   *
+   * Taken off the context before it is saved, so this can only happen once.
+   * If the replay itself fails, what it was going to build is lost — which
+   * is the right way round: the alternative is a sentence that produces a
+   * draft every time the conversation touches idle.
+   */
+  const opener = next === "idle" ? context.opener : undefined;
+  if (opener) {
+    const { opener: _replayed, ...rest } = context;
+    context = rest;
+  }
+
   await saveConversation(user.id, next, context);
   await reply(user.id, msg.from, replies, log, buttons, buttonsImage);
 
@@ -692,6 +709,48 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     { userId: user.id, from: state, to: next, effects: result.effects.map((e) => e.type) },
     "conversation advanced",
   );
+
+  if (opener) await replayOpener(user.id, msg.from, opener, log);
+}
+
+/**
+ * Hands the sentence somebody opened with back to ourselves, now they have an
+ * account to do it with.
+ *
+ * Through the front door on purpose. Everything that turns "invoice Tunde 20k
+ * for logo design, due Friday" into a draft — the parser, the machine, the
+ * effects, the plan limits — is in the path a typed message takes, and a
+ * second path that built drafts its own way would be a second path that could
+ * be wrong about money.
+ *
+ * Never throws. Setup has already succeeded and been confirmed; a draft that
+ * cannot be built is a disappointment, not a failure, and the person can type
+ * the sentence again.
+ */
+async function replayOpener(
+  userId: string,
+  phone: string,
+  text: string,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  try {
+    log.info({ userId }, "replaying the sentence they opened with");
+    await handleInbound(
+      {
+        // Nothing stores this: a replay skips `recordInbound` because nothing
+        // was delivered. It is here because an Inbound has to have one.
+        waMessageId: `replay:${userId}`,
+        from: phone,
+        kind: "text",
+        text,
+        sentAt: new Date(),
+        replay: true,
+      },
+      log,
+    );
+  } catch (e) {
+    log.error({ userId, err: (e as Error).message }, "could not replay the opening message");
+  }
 }
 
 /**
@@ -2177,6 +2236,18 @@ async function handleOnboardingForm(
   const email = (fields.email ?? "").trim().toLowerCase();
   const accountNumber = (fields.account_number ?? "").replace(/\D/g, "");
 
+  /*
+   * What survives a step that rewrites the whole context.
+   *
+   * Every save below replaces the context rather than adding to it, which is
+   * right for a form: it arrives as a complete set of answers and nothing
+   * half-typed should outlive it. One thing has to cross it anyway — the
+   * sentence somebody opened with, which is only useful at the far end of
+   * setup and would otherwise be dropped by the first of these.
+   */
+  const { context: had } = await loadConversation(userId);
+  const keep = had.opener ? { opener: had.opener } : {};
+
   // "Other" means the dropdown did not have their bank, so the free-text box
   // beside it is the real answer.
   const chosen = (fields.bank ?? "").trim();
@@ -2187,7 +2258,7 @@ async function handleOnboardingForm(
   if (!businessName || !email || !bankQuery || accountNumber.length !== 10) {
     // The form marks these required, so getting here means something odd.
     // Falling back to the questions is better than guessing at a blank.
-    await saveConversation(userId, "onboarding:business_name", {});
+    await saveConversation(userId, "onboarding:business_name", keep);
     await reply(userId, phone, [VOICE.setupByHand], log);
     return;
   }
@@ -2197,7 +2268,7 @@ async function handleOnboardingForm(
   const banks = await listBanks();
   const bank = matchBank(bankQuery, banks);
   if (!bank) {
-    await saveConversation(userId, "onboarding:bank", { email });
+    await saveConversation(userId, "onboarding:bank", { ...keep, email });
     await reply(
       userId,
       phone,
@@ -2209,7 +2280,7 @@ async function handleOnboardingForm(
 
   const resolved = await resolveAccount(accountNumber, bank.code);
   if (!resolved.ok) {
-    await saveConversation(userId, "onboarding:bank", { email });
+    await saveConversation(userId, "onboarding:bank", { ...keep, email });
     await reply(
       userId,
       phone,
@@ -2234,6 +2305,7 @@ async function handleOnboardingForm(
   });
 
   await saveConversation(userId, "onboarding:confirm_account", {
+    ...keep,
     email,
     resolvedAccountName: resolved.account.accountName,
   });
@@ -2295,10 +2367,16 @@ async function handleConsentForm(
   fields: Record<string, string>,
   log: FastifyBaseLogger,
 ): Promise<void> {
+  // Read before either branch clears the context: the sentence somebody
+  // opened with has been carried the whole way here, and a form that comes
+  // back without its agreement is a step in setup rather than the end of it.
+  const { context: had } = await loadConversation(userId);
+  const keep = had.opener ? { opener: had.opener } : {};
+
   // An OptIn comes back as the string "true", not a boolean.
   if (fields.agreed !== "true") {
     log.warn({ userId }, "consent form came back without an agreement");
-    await saveConversation(userId, "onboarding:consent", {});
+    await saveConversation(userId, "onboarding:consent", keep);
     await reply(userId, phone, [VOICE.confirmedAskConsent], log, VOICE.consentButtons());
     return;
   }
@@ -2307,6 +2385,20 @@ async function handleConsentForm(
   log.info({ userId, version: legalConsentVersion }, "consent recorded");
 
   await saveConversation(userId, "idle", {});
+
+  /*
+   * They asked for something before any of this started.
+   *
+   * The card below offers a button to create an invoice, which is the wrong
+   * thing to hand somebody who asked for one four minutes ago and has been
+   * filling in a form ever since. Their own words go through instead, and
+   * what comes back is a draft rather than an invitation.
+   */
+  if (had.opener) {
+    await reply(userId, phone, [VOICE.doneNowThat], log);
+    await replayOpener(userId, phone, had.opener, log);
+    return;
+  }
 
   // The same finish as the typed path: the card, and the way into an invoice.
   const outcome = await runEffects(
