@@ -29,6 +29,7 @@ import {
   VOICE,
   LIMIT_CARD,
   UPGRADE_CARD,
+  SETUP_DONE_CARD,
   type Effect,
   type PendingDoc,
   type State,
@@ -195,12 +196,52 @@ async function limitCard(
   return { stop: true, words };
 }
 
+/**
+ * The terms, as a form rather than two links.
+ *
+ * Nobody opens a legal page on their phone in the middle of signing up, so
+ * the links version meant people agreeing to something they had not read —
+ * the situation consent exists to avoid. The form says the five things that
+ * actually affect somebody and keeps the full documents one tap away.
+ *
+ * Returns false when there is no form to send, and the caller falls back to
+ * the message and the button. That path is not theoretical: Meta will not
+ * publish a Flow until the business is verified, and nobody should be unable
+ * to finish signing up because of it.
+ */
+async function sendConsentForm(
+  userId: string,
+  phone: string | undefined,
+  log: FastifyBaseLogger,
+): Promise<boolean> {
+  const id = await flowId("consent");
+  if (!id || !phone) return false;
+
+  const sent = await sendFlow(phone, {
+    body: VOICE.confirmedAskConsent,
+    cta: "Read and agree",
+    flowId: id,
+    token: `consent:${userId}`,
+    screen: FLOW_SCREEN.consent,
+    draft: env.WA_FLOWS_DRAFT === "true",
+  });
+
+  if (!sent.ok) {
+    log.warn({ userId, reason: sent.reason }, "consent form failed, asking in words");
+    return false;
+  }
+
+  await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+  return true;
+}
+
 /** The screen each Flow opens on. */
 const FLOW_SCREEN = {
   onboarding: "BUSINESS",
   business_details: "DETAILS",
   invoice: "WORK",
   quote: "WORK",
+  consent: "TERMS",
   request: "WORK",
 } as const;
 import { OTHER_BANK } from "../whatsapp/flows/banks.ts";
@@ -312,6 +353,10 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     }
     if (key === "onboarding") {
       await handleOnboardingForm(user.id, msg.from, msg.flow.fields, log);
+      return;
+    }
+    if (key === "consent") {
+      await handleConsentForm(user.id, msg.from, msg.flow.fields, log);
       return;
     }
     if (key === "business_details") {
@@ -957,8 +1002,24 @@ async function runEffects(
             // The machine moved to consent but has nothing to say about it: only
             // this branch knows the code was right. Without this the flow ends in
             // silence at the last step.
-            extra.push(VOICE.confirmedAskConsent);
-            buttons = VOICE.consentButtons();
+            /*
+             * The terms, in a form rather than as two links.
+             *
+             * Nobody opens a legal page on their phone in the middle of
+             * signing up, so the links version meant people agreeing to
+             * something they had not seen \u2014 the situation consent exists to
+             * avoid. The form says the five things that actually affect them
+             * and keeps the documents one tap away.
+             *
+             * The fallback is the old message and button, which still has to
+             * work: until the business is verified Meta will not publish a
+             * Flow, and somebody cannot be left unable to finish signing up
+             * because of that.
+             */
+            if (!(await sendConsentForm(userId, ctx.phone, log))) {
+              extra.push(VOICE.confirmedAskConsent);
+              buttons = VOICE.consentButtons();
+            }
             break;
           }
 
@@ -1863,6 +1924,59 @@ async function handleOnboardingForm(
     log,
     VOICE.yesNo("✅ That's me", "❌ Not me"),
   );
+}
+
+/**
+ * The terms, agreed.
+ *
+ * The OptIn is required in the form, so a submission that arrives without it
+ * is not somebody declining — it is a form that did not do what it says. It
+ * falls back to asking rather than recording an agreement nobody gave, which
+ * is the one thing this function must never do.
+ *
+ * What is recorded is the version, not the words. That is what makes it
+ * possible to say later which terms a given person accepted.
+ */
+async function handleConsentForm(
+  userId: string,
+  phone: string,
+  fields: Record<string, string>,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  // An OptIn comes back as the string "true", not a boolean.
+  if (fields.agreed !== "true") {
+    log.warn({ userId }, "consent form came back without an agreement");
+    await saveConversation(userId, "onboarding:consent", {});
+    await reply(userId, phone, [VOICE.confirmedAskConsent], log, VOICE.consentButtons());
+    return;
+  }
+
+  await recordConsent(userId, legalConsentVersion);
+  log.info({ userId, version: legalConsentVersion }, "consent recorded");
+
+  await saveConversation(userId, "idle", {});
+
+  // The same finish as the typed path: the card, and the way into an invoice.
+  const outcome = await runEffects(
+    [
+      {
+        type: "send_flow",
+        key: "invoice",
+        body: VOICE.doneCaption,
+        cta: "Create invoice",
+        image: SETUP_DONE_CARD,
+        fallback: { line: VOICE.done, holdAt: "idle" },
+      },
+    ],
+    userId,
+    undefined,
+    log,
+    { today: todayIn(defaults.behaviour.timezone), phone },
+  );
+
+  if (outcome.lines.length) {
+    await reply(userId, phone, outcome.lines, log, outcome.buttons, outcome.buttonsImage);
+  }
 }
 
 /**

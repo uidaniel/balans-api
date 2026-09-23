@@ -64,6 +64,10 @@
  */
 
 import { bankOptions } from "./banks.ts";
+import { env } from "../../config.ts";
+
+/** The marketing site, which owns the legal documents. */
+const site = env.SITE_URL.replace(/[/]$/, "");
 
 /*
  * Meta validates against this and rejects anything it has retired.
@@ -788,12 +792,100 @@ const request: FlowDefinition = {
   },
 };
 
+/**
+ * Agreeing to the terms, without leaving the chat to do it.
+ *
+ * It used to be two URLs and a button. Nobody opens a link to a legal page on
+ * their phone in the middle of signing up, so in practice people agreed to
+ * something they had not seen \u2014 which is exactly the situation consent is
+ * supposed to avoid.
+ *
+ * So the screen says, in plain words, the five things that actually affect
+ * somebody: we are not a bank, the money is theirs, what it costs, that they
+ * can stop, and what we do with their data. The full documents are one tap
+ * away for anyone who wants them.
+ *
+ * The summary is a summary and the documents are the agreement, which is why
+ * the text is not duplicated here: a second copy of a legal document is a
+ * copy that will eventually disagree with the first, and then somebody has
+ * agreed to words nobody can produce. The site stays the only source.
+ */
+const consent: FlowDefinition = {
+  key: "consent",
+  name: "Balans terms",
+  categories: ["SIGN_UP"],
+  json: {
+    version: VERSION,
+    screens: [
+      {
+        id: "TERMS",
+        title: "Before you finish",
+        terminal: true,
+        success: true,
+        data: {},
+        layout: {
+          type: "SingleColumnLayout",
+          children: [
+            {
+              type: "TextSubheading",
+              text: "What you are agreeing to",
+            },
+            {
+              type: "TextBody",
+              text: "Balans is not a bank and never holds your money. Payments settle straight to your own bank account.",
+            },
+            {
+              type: "TextBody",
+              text: "Free covers 5 documents a month with a 1% fee on payments. Pro is \u20a64,000 a month with no fee. Cancel any time \u2014 your invoices and records stay where they are.",
+            },
+            {
+              type: "TextBody",
+              text: "We keep what you send us to make your invoices and to meet Nigerian record-keeping law. We never sell it.",
+            },
+            {
+              type: "EmbeddedLink",
+              text: "Read the full Terms of use",
+              "on-click-action": { name: "open_url", url: `${site}/terms` },
+            },
+            {
+              type: "EmbeddedLink",
+              text: "Read the Privacy Notice",
+              "on-click-action": { name: "open_url", url: `${site}/privacy` },
+            },
+            {
+              type: "Form",
+              name: "consent_form",
+              children: [
+                {
+                  type: "OptIn",
+                  name: "agreed",
+                  label: "I agree to the Terms and the Privacy Notice",
+                  required: true,
+                },
+                {
+                  type: "Footer",
+                  label: "Agree and finish",
+                  "on-click-action": {
+                    name: "complete",
+                    payload: { agreed: "${form.agreed}" },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  },
+};
+
 export const FLOWS: readonly FlowDefinition[] = [
   onboarding,
   businessDetails,
   invoice,
   quote,
   request,
+  consent,
 ];
 
 export const flowByKey = (key: string): FlowDefinition | undefined =>

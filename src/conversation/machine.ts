@@ -155,7 +155,7 @@ export type Effect =
    */
   | {
       type: "send_flow";
-      key: "onboarding" | "business_details" | "invoice" | "quote" | "request";
+      key: "onboarding" | "business_details" | "invoice" | "quote" | "request" | "consent";
       body: string;
       cta: string;
       /**
@@ -314,7 +314,7 @@ const brand = (file: string): string =>
   `${env.PUBLIC_BASE_URL.replace(/[/]$/, "")}/brand/${file}`;
 
 const WELCOME_CARD = brand("welcome.png");
-const SETUP_DONE_CARD = brand("setup-done.png");
+export const SETUP_DONE_CARD = brand("setup-done.png");
 export const LIMIT_CARD = brand("limit.png");
 export const UPGRADE_CARD = brand("upgrade.png");
 export const PRO_CARD = brand("pro.png");
