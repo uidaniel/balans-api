@@ -388,6 +388,16 @@ describe("line items on the document forms", () => {
     const action = (n: Node) => n["on-click-action"] as Node;
     const payloadOf = (n: Node) => (action(n).payload ?? {}) as Record<string, string>;
     const footer = (id: string) => walk(screen(id)).find((n) => n.type === "Footer")!;
+    /** The count-keyed Switch whose branches hold nodes of this type. */
+    const countCases = (id: string, holds: string) => {
+      const sw = walk(screen(id)).find(
+        (n) =>
+          n.type === "Switch" &&
+          n.value === "${data.item_count}" &&
+          Object.values(n.cases as Record<string, Node[]>).some((b) => b.some((c) => c.type === holds)),
+      )!;
+      return (sw.cases ?? {}) as Record<string, Node[]>;
+    };
 
     describe(key, () => {
       it("gives each extra item a screen of its own", () => {
@@ -427,9 +437,8 @@ describe("line items on the document forms", () => {
         assert.equal((action(first!).next as Node).name, SCREEN(WORDS[0]!));
 
         // Coming back, where the link points depends on how many items there
-        // already are, which is the whole reason for the Switch.
-        const cases = (walk(screen("WORK_AGAIN")).find((n) => n.type === "Switch")!.cases ??
-          {}) as Record<string, Node[]>;
+        // already are, which is the whole reason for the count Switch.
+        const cases = countCases("WORK_AGAIN", "EmbeddedLink");
 
         WORDS.forEach((_, index) => {
           const branch = cases[WORDS[index]!];
@@ -491,47 +500,78 @@ describe("line items on the document forms", () => {
         }
       });
 
-      it("shows the item just saved, in a box rather than in text", () => {
+      it("lists every item that exists, in boxes that can be typed in", () => {
         /*
-         * The other half of the same complaint: somebody who added an item
-         * had no way to see it again. The first attempt was a caption reading
-         * "Item 2: ${data.item_two_description}" \u2014 and that is what the phone
-         * printed, the words and not the value. Meta's validator took it
-         * happily, which is the second time that has meant nothing.
+         * Two complaints, one screen. First: the line meant to read an item
+         * back printed "Item 2: ${data.item_two_description}" on the handset \u2014
+         * the words, not the value. Dynamic text does not resolve there, and
+         * Meta's validator took it happily, which is the second time that has
+         * meant nothing after `visible`. `init-values` does resolve, so the
+         * value goes in an input and the input shows it.
          *
-         * `init-values` does resolve, so the value goes in a disabled input.
-         * One item per branch, because a Form refuses a field name twice.
+         * Second: that input was disabled, which put the item behind glass.
+         * You could read the typo and not touch it.
+         *
+         * And they all have to be listed, not just the last one. That is why
+         * each item gets a Switch keyed on its own flag rather than all of
+         * them sharing one keyed on the count: a Form refuses a field name it
+         * has already seen, so a cumulative branch would repeat item two in
+         * every case after the second. Four switches open at once are a list.
          */
         const form = walk(screen("WORK_AGAIN")).find((n) => n.type === "Form")!;
         const init = (form["init-values"] ?? {}) as Record<string, string>;
-        const cases = (walk(screen("WORK_AGAIN")).find((n) => n.type === "Switch")!.cases ??
-          {}) as Record<string, Node[]>;
+        const switches = walk(screen("WORK_AGAIN")).filter((n) => n.type === "Switch");
 
-        WORDS.forEach((w, index) => {
-          const branch = cases[w] ?? [];
+        for (const w of WORDS) {
+          const own = switches.find((n) => n.value === `\${data.has_${w}}`);
+          assert.ok(own, `item ${w} has no switch of its own`);
+          const shown = ((own!.cases as Record<string, Node[]>).yes ?? []) as Node[];
+
           for (const field of [`item_${w}_description`, `item_${w}_amount`]) {
-            const box = branch.find((n) => n.type === "TextInput" && n.name === field);
+            const box = shown.find((n) => n.type === "TextInput" && n.name === field);
             assert.ok(box, `item ${w} is not shown back`);
-            assert.equal(box!.enabled, false, `${field} can be typed in`);
+            assert.notEqual(box!.enabled, false, `${field} cannot be edited`);
+            assert.notEqual(box!.required, true, `${field} cannot be cleared to drop it`);
             assert.equal(init[field], `\${data.${field}}`, `${field} starts empty`);
           }
+        }
 
-          // No text binding anywhere near it: that is the thing that failed.
-          const text = branch
-            .filter((n) => n.type === "TextCaption")
-            .map((n) => String(n.text))
-            .join(" ");
-          assert.ok(!text.includes("${"), `${w} branch prints a raw binding`);
-          assert.match(text, new RegExp(`${index + 2} items`));
-        });
+        // Nothing anywhere on this screen prints a raw binding as text: that
+        // is the thing that failed on the phone.
+        for (const n of walk(screen("WORK_AGAIN"))) {
+          if (typeof n.text === "string") {
+            assert.ok(!n.text.includes("${"), `raw binding in text: ${n.text}`);
+          }
+        }
 
         // And a name is never repeated, which the publish validator refuses:
         // "Duplicate name found for Form components".
-        const names = Object.values(cases)
-          .flat()
+        const names = walk(screen("WORK_AGAIN"))
           .filter((n) => n.type === "TextInput")
           .map((n) => String(n.name));
         assert.equal(new Set(names).size, names.length, `repeated field: ${names}`);
+      });
+
+      it("turns an item on when its screen saves it, and leaves the rest alone", () => {
+        // The flags are what put the boxes on screen. An item screen owns
+        // exactly one of them and passes the others through untouched.
+        WORDS.forEach((w, index) => {
+          const payload = payloadOf(footer(SCREEN(w)));
+          assert.equal(payload[`has_${w}`], "yes", `item ${w} does not turn itself on`);
+          for (const other of WORDS.filter((x) => x !== w)) {
+            assert.equal(
+              payload[`has_${other}`],
+              `\${data.has_${other}}`,
+              `item ${w} rewrites ${other}`,
+            );
+          }
+          assert.equal(index >= 0, true);
+        });
+
+        // And the form starts with none of them on.
+        for (const w of WORDS) {
+          assert.equal(payloadOf(footer("WORK"))[`has_${w}`], "no", `WORK starts ${w} on`);
+        }
       });
 
       it("declares every amount a string except the one it fills", () => {
@@ -578,18 +618,31 @@ describe("line items on the document forms", () => {
          * the others. Every payload has to pass on what it is not editing, or
          * those lines are gone and nothing said so.
          */
-        const routes: Node[] = [];
-        for (const id of ["WORK", "WORK_AGAIN", ...WORDS.map(SCREEN)]) {
-          routes.push(footer(id), ...links(id));
+        const routes: Node[] = [footer("WORK"), ...links("WORK")];
+        for (const w of WORDS) routes.push(footer(SCREEN(w)), ...links(SCREEN(w)));
+        // The form you come back to has a button and a link per count.
+        for (const branch of [countCases("WORK_AGAIN", "Footer"), countCases("WORK_AGAIN", "EmbeddedLink")]) {
+          // The five-item branch offers a note instead of a link, and a note
+          // goes nowhere.
+          for (const nodes of Object.values(branch)) {
+            routes.push(...nodes.filter((n) => n["on-click-action"]));
+          }
         }
 
         for (const node of routes) {
           const payload = payloadOf(node);
-          const editing = WORDS.find(
+          /*
+           * Whatever has boxes on this screen is read from the form, so an
+           * edit counts; everything past it is passed on as it arrived. An
+           * item screen shows one item, and the form shows every item that
+           * exists, so "how many are read from the form" is the only thing
+           * that differs between routes.
+           */
+          const fromForm = WORDS.filter(
             (w) => payload[`item_${w}_amount`] === `\${form.item_${w}_amount}`,
           );
           for (const w of WORDS) {
-            const want = w === editing ? "form" : "data";
+            const want = fromForm.includes(w) ? "form" : "data";
             assert.equal(payload[`item_${w}_description`], `\${${want}.item_${w}_description}`);
             assert.equal(payload[`item_${w}_amount`], `\${${want}.item_${w}_amount}`);
           }
