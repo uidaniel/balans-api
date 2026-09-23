@@ -6,13 +6,13 @@
  * inline styles — not because it is nice, but because it is the only thing
  * that arrives looking the same everywhere.
  *
- * The design is a letter, not a card: one 600px column on the page itself,
- * with no frame drawn around it and no second colour behind it. The logo, a
- * heading, a few lines of prose, the facts in a quiet panel, one button, and
- * the small print under a hairline. A frame on a phone is a rounded shape
- * inside a square one, two outlines disagreeing about the same corner, and on
- * a desktop it is the look of a marketing template. Without it the message
- * reads like what it is — a note from the product the reader uses.
+ * The design is WebTopper's, as it arrives on a phone: the message on a
+ * near-white sheet with a hairline across the top of it, the logo 32px under
+ * that, then a heading, a few lines of prose, the facts in a quiet panel, one
+ * button, and the small print under another hairline. On a desktop the sheet
+ * is a card on a grey page; under 480px the card stops being one, because a
+ * rounded shape inside a phone's square screen is two outlines disagreeing
+ * about the same corner.
  *
  * Set in the system's own sans. A web font would have to be fetched on open,
  * which Gmail refuses outright and which tells whoever serves the file that
@@ -29,27 +29,36 @@
 
 import { env } from "../config.ts";
 
-/** brand/BRAND.md. Hex, because email has no custom properties. */
+/**
+ * Hex, because email has no custom properties.
+ *
+ * The neutrals are WebTopper's, deliberately. They are chosen to survive
+ * Gmail's dark mode, which inverts by its own rules: a warm cream panel came
+ * back from it a muddy brown, and these come back as greys. The brand is in
+ * the ink, the marigold and the mark.
+ */
 const LIGHT = {
-  paper: "#FFFFFF",
-  /** The panel the facts sit in: cream, most of the way to white. */
-  mist: "#F7F3EA",
-  line: "#E9E3D6",
-  faint: "#6B7872",
-  slate: "#46544E",
+  paper: "#FCFCFB",
+  mist: "#F0F1ED",
+  line: "#DFE0DA",
+  faint: "#71746A",
+  slate: "#5F6259",
   ink: "#10231C",
   marigold: "#F5B82E",
+  /** The page behind the card on a desktop. Mist is too close to paper to separate. */
+  canvas: "#E9EAE4",
 } as const;
 
-/** For the clients that honour `prefers-color-scheme`: the site's ink, inverted. */
+/** For the clients that honour `prefers-color-scheme`. */
 const DARK = {
-  paper: "#10231C",
-  mist: "#173128",
-  line: "#24453A",
-  faint: "#8FA39A",
-  slate: "#B9C4BE",
-  ink: "#F6F1E7",
+  paper: "#101210",
+  mist: "#1A1D19",
+  line: "#2A2E28",
+  faint: "#84887C",
+  slate: "#A5A99D",
+  ink: "#F2F3EE",
   marigold: "#F5B82E",
+  canvas: "#080907",
 } as const;
 
 const FONT =
@@ -68,16 +77,15 @@ const esc = (s: string) =>
 const P = `margin:0;font-family:${FONT};`;
 
 /**
- * The content ids the logo is attached under, light and dark.
+ * The content id the coin is attached under.
  *
- * Exported so the sender can attach the files with matching ids: the two must
+ * Exported so the sender can attach the file with a matching id: the two must
  * agree or the image renders as a broken box.
  */
-export const LOGO_CID = "balans-logo";
-export const LOGO_DARK_CID = "balans-logo-dark";
+export const MARK_CID = "balans-mark";
 
-/** The logo's size in the message. The files are three times this. */
-const LOGO = { width: 94, height: 28 };
+/** The coin's size in the message. The file is three times this. */
+const MARK = 26;
 
 /** An image attached to the message and shown inline. */
 export type InlineImage = {
@@ -110,8 +118,8 @@ export type LayoutOptions = {
  * style, which otherwise always wins.
  *
  * Gmail ignores `prefers-color-scheme` and inverts colours by its own rules,
- * which is why the light logo carries a white outline round its letters — the
- * one thing an inversion cannot reach is the inside of a picture.
+ * which is why the light design is built to survive being inverted rather
+ * than relying on this.
  */
 function styles(): string {
   return `
@@ -122,40 +130,44 @@ function styles(): string {
       /* Stop iOS turning dates and amounts into blue links of its own. */
       a[x-apple-data-detectors] { color:inherit !important; text-decoration:none !important; }
       @media (prefers-color-scheme: dark) {
-        .bl-paper { background:${DARK.paper} !important; }
+        .bl-canvas { background:${DARK.canvas} !important; }
+        .bl-card { background:${DARK.paper} !important; border-color:${DARK.line} !important; }
         .bl-ink { color:${DARK.ink} !important; }
         .bl-slate { color:${DARK.slate} !important; }
         .bl-faint, .bl-faint a { color:${DARK.faint} !important; }
         .bl-mist { background:${DARK.mist} !important; }
         .bl-rule { border-color:${DARK.line} !important; }
-        .bl-logo-light { display:none !important; }
-        .bl-logo-dark { display:block !important; max-height:none !important; overflow:visible !important; }
       }
       @media only screen and (max-width: 480px) {
+        /* Edge to edge. Below 480px there is no room for a card to be a
+           card, so it keeps the hairline along its top and stops there. */
+        .bl-shell { padding:0 !important; }
+        .bl-card { border-radius:0 !important; border-left:0 !important; border-right:0 !important; }
         .bl-pad { padding-left:22px !important; padding-right:22px !important; }
-        .bl-shell { padding-top:8px !important; }
       }`;
 }
 
 /**
- * The logo, twice.
+ * The logo: the coin as a picture, the name as text.
  *
- * The ink one is what everybody sees. The cream one is hidden unless the
- * client has declared a dark theme, where ink on the dark page would be the
- * logo's coin and nothing beside it. Hidden with every property a client
- * might otherwise let through, because Outlook ignores `display:none` alone.
+ * The name was a picture too, and Gmail's dark mode showed why it cannot be:
+ * it recolours text and leaves images alone, so the ink letters sat on its
+ * dark page with nothing to read them by. As text, every client colours it
+ * for its own background. The coin stays a picture because marigold and ink
+ * read on either.
+ *
+ * The name is in the system's bold rather than the logo's face, which no mail
+ * client has. Same size, weight and tracking as the drawn one.
  */
 function logoHtml(): string {
-  const img = (cid: string, cls: string) =>
-    `<img src="cid:${cid}" width="${LOGO.width}" height="${LOGO.height}" alt="Balans" class="${cls}"
-         style="display:block;width:${LOGO.width}px;height:${LOGO.height}px;border:0;outline:none;text-decoration:none;">`;
-  return `<a href="${esc(env.SITE_URL)}" style="text-decoration:none;display:inline-block;">
-      ${img(LOGO_CID, "bl-logo-light")}
-      <!--[if !mso]><!-- -->
-      <div class="bl-logo-dark" style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
-        ${img(LOGO_DARK_CID, "")}
-      </div>
-      <!--<![endif]-->
+  return `<a href="${esc(env.SITE_URL)}" style="text-decoration:none;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td valign="middle" style="padding-right:8px;font-size:0;line-height:0;">
+          <img src="cid:${MARK_CID}" width="${MARK}" height="${MARK}" alt=""
+               style="display:block;width:${MARK}px;height:${MARK}px;border:0;outline:none;text-decoration:none;">
+        </td>
+        <td valign="middle" style="font-family:${FONT};font-size:21px;line-height:26px;font-weight:700;letter-spacing:-0.035em;color:${LIGHT.ink};" class="bl-ink">balans</td>
+      </tr></table>
     </a>`;
 }
 
@@ -180,21 +192,21 @@ export function layout({ preheader, heading, eyebrow, banner, body }: LayoutOpti
 <style type="text/css">${styles()}
 </style>
 </head>
-<body style="margin:0;padding:0;background:${LIGHT.paper};" class="bl-paper">
+<body style="margin:0;padding:0;background:${LIGHT.canvas};" class="bl-canvas">
 <!-- Preheader: what the inbox list shows after the subject. The trailing
      entities push the body copy out of the preview, which otherwise runs on
      with whatever the first paragraph happens to start with. -->
-<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:${LIGHT.paper};">${esc(preheader)}${"&#847;&zwnj;&nbsp;".repeat(60)}</div>
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:${LIGHT.canvas};">${esc(preheader)}${"&#847;&zwnj;&nbsp;".repeat(60)}</div>
 
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${LIGHT.paper};" class="bl-paper">
-<tr><td align="center" class="bl-shell" style="padding:24px 0 32px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${LIGHT.canvas};" class="bl-canvas">
+<tr><td align="center" class="bl-shell" style="padding:40px 0;">
 
 <!--[if mso]><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${WIDTH}"><tr><td><![endif]-->
 <!-- Fluid to the viewport, capped at ${WIDTH}px. Outlook ignores max-width,
      so it gets the fixed table above instead. -->
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;max-width:${WIDTH}px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;max-width:${WIDTH}px;background:${LIGHT.paper};border:1px solid ${LIGHT.line};border-radius:14px;" class="bl-card bl-rule">
 
-  <tr><td class="bl-pad" style="padding:8px ${GUTTER}px 4px ${GUTTER}px;">${logoHtml()}</td></tr>
+  <tr><td class="bl-pad" style="padding:32px ${GUTTER}px 4px ${GUTTER}px;">${logoHtml()}</td></tr>
 
   ${
     banner

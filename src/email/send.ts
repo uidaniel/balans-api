@@ -27,8 +27,7 @@ import {
   detailCard,
   divider,
   layout,
-  LOGO_CID,
-  LOGO_DARK_CID,
+  MARK_CID,
   paragraph,
   steps,
   type InlineImage,
@@ -133,14 +132,8 @@ export async function sendEmail(
               attachments: [
                 {
                   filename: "balans.png",
-                  content: attachmentContent("logo.png"),
-                  content_id: LOGO_CID,
-                  content_type: "image/png",
-                },
-                {
-                  filename: "balans-dark.png",
-                  content: attachmentContent("logo-dark.png"),
-                  content_id: LOGO_DARK_CID,
+                  content: attachmentContent("mark.png"),
+                  content_id: MARK_CID,
                   content_type: "image/png",
                 },
                 ...(email.images ?? []).map((i) => ({

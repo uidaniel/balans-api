@@ -9,10 +9,9 @@
  * empty box on first open for most people. It also means the emails do not
  * wait on the marketing site being deployed.
  *
- * The files are in assets/email, each drawn from a source kept beside it:
- * logo.png from logo-source.svg (the site's logo with a white outline under
- * the wordmark), logo-dark.png from logo-dark-source.svg (the site's logo for
- * dark backgrounds), and each banner from the .html of the same name.
+ * The files are in assets/email: mark.png is assets/balans-mark.svg at three
+ * times its size in the message, and each banner is drawn in the .html file
+ * of the same name.
  */
 
 import { readFileSync } from "node:fs";

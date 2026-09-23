@@ -18,22 +18,26 @@ const html = layout({
 });
 
 describe("the email shell", () => {
-  it("is a column on the page, not a card on a background", () => {
-    // No frame and no second colour: the body and the column are the same
-    // paper, and nothing draws a border round it.
-    const body = html.match(/<body[^>]*style="([^"]*)"/)![1]!;
-    assert.match(body, /background:#FFFFFF/);
-    assert.doesNotMatch(html, /border:1px solid/);
-    assert.doesNotMatch(html, /#F6F1E7;/, "no cream canvas behind the column");
+  it("is a card on a desktop and edge to edge on a phone", () => {
+    const card = html.match(/<table[^>]*class="bl-card[^"]*"/)![0];
+    assert.match(card, /background:#FCFCFB/);
+    assert.match(card, /border:1px solid #DFE0DA/);
+    // Under 480px the frame goes and the hairline along the top stays.
+    assert.match(html, /\.bl-card \{ border-radius:0 !important; border-left:0 !important; border-right:0 !important; \}/);
+    assert.match(html, /\.bl-shell \{ padding:0 !important; \}/);
   });
 
-  it("carries a logo for each theme, both as attachments", () => {
+  it("writes the name as text, so a client that darkens it can recolour it", () => {
+    // Gmail's dark mode recolours text and never images. The name was a
+    // picture, and arrived as ink on its dark page.
+    assert.match(html, /class="bl-ink">balans<\/td>/);
+    assert.match(html, /src="cid:balans-mark"/);
+  });
+
+  it("keeps every picture as an attachment, not a hosted image", () => {
     // Gmail and Outlook block remote images on first open. A logo that only
     // appears for people who click "display images" is not a logo.
-    assert.match(html, /src="cid:balans-logo"/);
-    assert.match(html, /src="cid:balans-logo-dark"/);
     assert.doesNotMatch(html, /<img[^>]+src="https?:/);
-
     const withBanner = layout({
       preheader: "p",
       heading: "h",
@@ -56,6 +60,6 @@ describe("the email shell", () => {
 
   it("declares both themes, and overrides the inline light one for dark", () => {
     assert.match(html, /name="color-scheme" content="light dark"/);
-    assert.match(html, /\.bl-paper \{ background:#10231C !important; \}/);
+    assert.match(html, /\.bl-card \{ background:#101210 !important;/);
   });
 });
