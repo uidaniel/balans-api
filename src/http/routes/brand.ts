@@ -29,6 +29,9 @@ const FILES: Record<string, { file: string; type: string }> = {
   "paid-tomorrow.png": { file: "paid-tomorrow.png", type: "image/png" },
   // The Free limit, with what Pro costs and what it removes.
   "limit.png": { file: "limit.png", type: "image/png" },
+  // The same offer without the "five done" headline, for anyone who asks
+  // for Pro before they have run out.
+  "upgrade.png": { file: "upgrade.png", type: "image/png" },
 };
 
 /**

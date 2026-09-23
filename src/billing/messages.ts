@@ -44,6 +44,37 @@ export function proOffer(used: number): string {
 }
 
 /**
+ * The same offer, under the Pro card.
+ *
+ * The card carries the price, the feature list, the word to reply and the
+ * promise that nothing is lost on cancelling. Repeating any of it here would
+ * be the same pitch twice in one bubble, and the copy on the picture is the
+ * one people actually read.
+ *
+ * What the picture cannot know is how far through the month this person is.
+ * That is the whole caption.
+ *
+ * Two cards, not one, and they are not interchangeable. This one is headed
+ * "Upgrade to Pro." and is true whoever is reading it. The other is headed
+ * "Five done. Go unlimited." and is a statement of fact about somebody who
+ * has used all five — so it belongs only on the message that says so, and
+ * showing it to a person on their second invoice would be a false claim in
+ * the one message whose whole job is to be trusted about money.
+ */
+export function proOfferCaption(used: number): string {
+  const left = free.documentsPerMonth === null ? null : free.documentsPerMonth - used;
+
+  return para(
+    `⭐ ${b("Balans Pro")}`,
+    left === null
+      ? `You have sent ${used} this month.`
+      : left > 0
+        ? `You have sent ${used} of your ${free.documentsPerMonth} free documents this month.`
+        : `You have used all ${free.documentsPerMonth} of your free documents this month.`,
+  );
+}
+
+/**
  * The two ways to start Pro.
  *
  * Ids are the phrases the parser already reads, so a tap and a typed reply

@@ -288,6 +288,7 @@ const brand = (file: string): string =>
 const WELCOME_CARD = brand("welcome.png");
 const SETUP_DONE_CARD = brand("setup-done.png");
 export const LIMIT_CARD = brand("limit.png");
+export const UPGRADE_CARD = brand("upgrade.png");
 const TERMS_URL = site + "/terms";
 const PRIVACY_URL = site + "/privacy";
 
@@ -1643,7 +1644,10 @@ function commandEscape(msg: Inbound, ctx: Context, now: Civil): Step | null {
 /** The two answers to the Pro offer (F18). Fixed phrases, not a model call. */
 function asProChoice(text: string): "link" | "deduct_from_invoice" | null {
   const s = text.toLowerCase().trim().replace(/[.!]+$/, "");
-  if (/^(pay now|pay link|payment link|send me the link|card|pay by card)$/.test(s)) return "link";
+  // "pay" on its own is on the Pro card, in bold, as the thing to reply.
+  if (/^(pay|pay now|pay link|payment link|send me the link|card|pay by card)$/.test(s)) {
+    return "link";
+  }
   if (/^(from my invoices?|deduct|deduct from invoices?|take it from my invoices?|take from invoice|from invoice)$/.test(s)) {
     return "deduct_from_invoice";
   }

@@ -24,7 +24,15 @@ import { checkCode, issueCode } from "../lib/codes.ts";
 import { sendEmail, transport, verificationEmail } from "../email/send.ts";
 import { markEmailVerified, setEmail, recordConsent, saveBankAccount, activateBankAccount, getPendingBank } from "./store.ts";
 import type { Inbound } from "../whatsapp/inbound.ts";
-import { step, VOICE, LIMIT_CARD, type Effect, type PendingDoc, type State } from "./machine.ts";
+import {
+  step,
+  VOICE,
+  LIMIT_CARD,
+  UPGRADE_CARD,
+  type Effect,
+  type PendingDoc,
+  type State,
+} from "./machine.ts";
 import { splitForPlan } from "../whatsapp/flows/definitions.ts";
 import { VAT_PERCENT } from "../parser/extract.ts";
 import { parseAmountToKobo } from "../../core/amount.ts";
@@ -74,7 +82,14 @@ import {
 } from "../settings/bank-change.ts";
 import { raiseSecurityAlert } from "../settings/alerts.ts";
 import { attachPaymentReference, openSubscription, stateOf } from "../billing/subscription.ts";
-import { deductChosen, payLinkMessage, proActive, proOffer, proOfferButtons } from "../billing/messages.ts";
+import {
+  deductChosen,
+  payLinkMessage,
+  proActive,
+  proOffer,
+  proOfferButtons,
+  proOfferCaption,
+} from "../billing/messages.ts";
 import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
 import { sendCta, sendFlow, sendList } from "../whatsapp/client.ts";
 import { helpButtons } from "./menu.ts";
@@ -510,6 +525,24 @@ type EffectOutcome = {
    * summary asking "Send it?" — owns the last message of the turn.
    */
   buttons?: ReplyButton[];
+  /**
+   * A picture above the button message.
+   *
+   * Only meaningful with `buttons`, because reply buttons are the one
+   * interactive type Meta accepts an image header on — a list is rejected
+   * outright. See `sendButtons`.
+   */
+  buttonsImage?: string;
+  /**
+   * The body to fall back to when a message with a picture fails to send.
+   *
+   * Meta fetches a header image from this API, and a fetch that fails takes
+   * the whole message with it. Where the caption leans on the picture to
+   * carry the offer — the Pro card does — resending that same caption alone
+   * would be a message with the point missing. This is the version that
+   * stands on its own.
+   */
+  buttonsFallback?: string;
   /** A resolved bank change, waiting on the user's yes. */
   pendingBankChange?: {
     bankCode: string;
@@ -581,6 +614,8 @@ async function runEffects(
   let draftId: string | undefined;
   /** Tappable answers for the last line an effect pushed into `extra`. */
   let buttons: ReplyButton[] | undefined;
+  let buttonsImage: string | undefined;
+  let buttonsFallback: string | undefined;
   let clearDraft: boolean | undefined;
 
   for (const effect of effects) {
@@ -1472,7 +1507,21 @@ async function runEffects(
             break;
           }
           const used = await documentsThisMonth(userId, ctx.today);
-          extra.push(proOffer(used));
+
+          /*
+           * The upgrade card, for anybody who asks.
+           *
+           * Headed "Upgrade to Pro.", which is true whoever is reading it.
+           * The other card is headed "Five done. Go unlimited." and belongs
+           * only on the message that says they have run out — see the limit
+           * card. Swapping the two would tell somebody on their second
+           * invoice that they had finished five.
+           */
+          extra.push(proOfferCaption(used));
+          buttonsImage = UPGRADE_CARD;
+          // The caption leans on the card for the price and the list, so the
+          // words-only version has to carry them itself.
+          buttonsFallback = proOffer(used);
           buttons = proOfferButtons();
           break;
         }
@@ -1614,7 +1663,18 @@ async function runEffects(
     );
   }
 
-  return { lines: extra, holdAt, failed, resolvedName, draftId, clearDraft, pendingBankChange, buttons };
+  return {
+    lines: extra,
+    holdAt,
+    failed,
+    resolvedName,
+    draftId,
+    clearDraft,
+    pendingBankChange,
+    buttons,
+    buttonsImage,
+    buttonsFallback,
+  };
 }
 
 
@@ -1900,7 +1960,15 @@ async function handleInvoiceForm(
     outcome.holdAt ?? (outcome.draftId ? "awaiting_confirm" : "idle"),
     outcome.draftId ? context : {},
   );
-  await reply(userId, phone, outcome.lines, log, outcome.buttons);
+  await reply(
+    userId,
+    phone,
+    outcome.lines,
+    log,
+    outcome.buttons,
+    outcome.buttonsImage,
+    outcome.buttonsFallback,
+  );
 
   log.info({ userId, draftId: outcome.draftId, depositPercent, instalments }, "draft from a form");
 }
@@ -2086,6 +2154,10 @@ async function reply(
    * carrying the question — the lines before it are context.
    */
   buttons?: ReplyButton[],
+  /** A picture above that last message. Only used when there are buttons. */
+  buttonsImage?: string,
+  /** What to send instead if the message with the picture will not go. */
+  buttonsFallback?: string,
 ): Promise<void> {
   const send = lines.filter((l) => l.trim());
 
@@ -2104,9 +2176,24 @@ async function reply(
     const last = i === send.length - 1;
     const withButtons = last && buttons && buttons.length > 0 && buttons.length <= 3;
 
-    const res = withButtons
-      ? await sendButtons(to, { body, buttons })
+    let res = withButtons
+      ? await sendButtons(to, { body, buttons, headerImage: buttonsImage })
       : await sendText(to, body);
+
+    /*
+     * A picture that will not send should not take the message with it.
+     *
+     * Meta fetches the header image from this API. A slow deploy, a cold
+     * cache or a DNS blip and the whole interactive message is rejected —
+     * and the caption on its own is often not the point, because the picture
+     * was carrying the offer. So retry once in words, with the version
+     * written to stand alone.
+     */
+    if (!res.ok && withButtons && buttonsImage && !res.outsideWindow) {
+      log.warn({ userId, reason: res.reason }, "card failed, sending it as words");
+      res = await sendText(to, buttonsFallback ?? body);
+    }
+
     if (res.ok) {
       await recordOutbound(userId, res.waMessageId, "sent", withButtons ? { kind: "interactive" } : undefined);
     } else {
