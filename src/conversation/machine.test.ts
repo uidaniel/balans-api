@@ -272,7 +272,21 @@ describe("what setup costs to run", () => {
 });
 
 describe("how the messages read", () => {
-  const rendered = Object.values(VOICE).map((v) => (typeof v === "function" ? v("kemi@studio.ng") : v));
+  /*
+   * Every message in the product, rendered.
+   *
+   * Most VOICE functions take one string, so one sample covers them. `social`
+   * takes a kind instead, and each of its replies is prose somebody reads —
+   * so they are rendered separately rather than skipped, and audited by every
+   * rule below like anything else. A greeting is not among them: it is
+   * answered with the menu, not a sentence.
+   */
+  const rendered: unknown[] = [
+    ...Object.entries(VOICE)
+      .filter(([name]) => name !== "social")
+      .map(([, v]) => (typeof v === "function" ? (v as (s: string) => unknown)("kemi@studio.ng") : v)),
+    ...(["thanks", "praise", "farewell"] as const).map((k) => VOICE.social(k)),
+  ];
 
   // The prose. Button sets live in VOICE too and are audited below against
   // their own rules, which are Meta's, not the design system's.

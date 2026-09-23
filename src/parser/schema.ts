@@ -40,6 +40,16 @@ export const INTENTS = [
   "help",
   "confirm",
   "reject",
+  /**
+   * Somebody being a person: "thank you", "good morning", "this is nice".
+   *
+   * Its own intent rather than "unknown", because the two need opposite
+   * answers. Unknown means the message asked for something this tool cannot
+   * do, and the right reply is to say what it does. "Thank you" asked for
+   * nothing — answering it with "I only do quotes, invoices and payments"
+   * reads as a machine that was not listening.
+   */
+  "social",
   "unknown",
 ] as const;
 

@@ -17,7 +17,7 @@
 
 import type { Intent } from "./schema.ts";
 
-export type Command = { intent: Intent; documentNumber?: number };
+export type Command = { intent: Intent; documentNumber?: number; social?: SocialKind };
 
 /**
  * Slash commands.
@@ -84,6 +84,64 @@ const EXACT: [RegExp, Intent][] = [
   [/^(dashboard|my dashboard|web|website|link to dashboard)$/, "summary"],
 ];
 
+/**
+ * Somebody being a person rather than asking for something.
+ *
+ * Matched here, before any model call, because these are the cheapest
+ * messages in the product to recognise and were getting the most expensive
+ * possible answer: a round trip to a model that labelled them "unknown", and
+ * then a reply explaining what this tool does to somebody who had just said
+ * thank you.
+ *
+ * Four kinds, because one reply for all four would be barely better than
+ * what it replaced. "Good morning" and "thanks" are not the same message and
+ * do not want the same answer.
+ *
+ * Nigerian English throughout: "well done" is a greeting here and not praise,
+ * "no wahala" and "you try" are acknowledgement, and somebody typing "thanks
+ * boss" at one in the morning is the most likely message in this whole list.
+ */
+export type SocialKind = "thanks" | "greeting" | "praise" | "farewell";
+
+const SOCIAL: [RegExp, SocialKind][] = [
+  [
+    /^(thanks?|thank you|thank u|tanks|thx|ty|thanks? (?:a lot|so much|boss|o+|jare|sir|ma)|much appreciated|appreciate(?:d| it| you)?|i appreciate|god bless(?: you)?|bless you|no wahala|you try|well done o)$/,
+    "thanks",
+  ],
+  [
+    /^(hi|hey|hello|helo|yo|sup|howfar|how far|good morning|good afternoon|good evening|morning|afternoon|evening|well done|hi there|hello there|greetings|salut)$/,
+    "greeting",
+  ],
+  [
+    /^(nice|nice one|very nice|this is nice|thats? nice|cool|great|lovely|beautiful|sweet|perfect|excellent|amazing|brilliant|love it|i love (?:this|it)|this is (?:nice|good|great|cool|sweet)|good (?:job|work)|well done (?:guys|team)|you guys try|na correct thing)$/,
+    "praise",
+  ],
+  [
+    /^(bye|goodbye|bye bye|good night|goodnight|night|later|see you|see ya|talk later|catch you later|i'?m off|thats? all|that'?s all for now|done for today)$/,
+    "farewell",
+  ],
+];
+
+/**
+ * Which kind of pleasantry this is, or null when it is not one.
+ *
+ * Exported so the model path can reuse it: when the model labels something
+ * "social" the machine still has to decide which of the four to answer with,
+ * and two lists that could disagree is one list too many.
+ */
+export function socialKind(text: string): SocialKind | null {
+  const s = text
+    .toLowerCase()
+    .trim()
+    .replace(/[.!,?]+$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!s || s.length > 40) return null;
+  for (const [re, kind] of SOCIAL) if (re.test(s)) return kind;
+  return null;
+}
+
 /** "invoice 12" style commands, where the number is part of the instruction. */
 const NUMBERED: [RegExp, Intent][] = [
   [/^cancel (?:invoice|quote|inv|doc|document) #?(\d{1,6})$/, "cancel_document"],
@@ -113,6 +171,11 @@ export function asCommand(text: string): Command | null {
 
   // "/" is a request for the list, not a command that does anything.
   if (SLASH_MENU.test(s)) return { intent: "help" };
+
+  // Before the slash handling and before EXACT: "well done" is a greeting in
+  // Nigerian English and must not fall through to anything that acts.
+  const social = socialKind(s);
+  if (social) return { intent: "social", social };
 
   if (s.startsWith("/")) {
     // "/invoice Tunde 20k" carries a sentence after the command, and the

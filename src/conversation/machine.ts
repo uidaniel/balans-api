@@ -17,6 +17,7 @@ import { b, field, i, lines, para } from "../whatsapp/format.ts";
 import type { Civil } from "../../core/dates.ts";
 import { isDocumentIntent, type Parsed } from "../parser/schema.ts";
 import type { Correction } from "../parser/corrections.ts";
+import { socialKind, type SocialKind } from "../parser/commands.ts";
 import { parseAmountToKobo } from "../../core/amount.ts";
 import { resolveDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
@@ -528,6 +529,35 @@ export const VOICE = {
     `\u2702\ufe0f ${b("That message is too long for me.")}`,
     "Send the short version — who, how much, what for, and when.",
   ),
+
+  /**
+   * Somebody being a person rather than asking for something.
+   *
+   * These used to reach `outOfScope`, so "thank you" was answered with "I
+   * only do quotes, invoices and payments — try: Invoice Tunde 20k". The
+   * sentence is accurate and it is the wrong answer: nobody asked what this
+   * does. It reads as a machine that was not listening, which is the one
+   * impression a product living inside a chat cannot afford.
+   *
+   * Three replies rather than one, because a compliment and a goodnight do
+   * not want the same answer. None of them carries a nudge: a prompt to go
+   * and invoice somebody, attached to "thanks", is a shop assistant
+   * following you to the door.
+   *
+   * A greeting is the fourth kind and is not here, because it already has a
+   * better answer than a sentence — the tappable menu, which is what "hi"
+   * has always opened. See the social branch.
+   */
+  social: (kind: Exclude<SocialKind, "greeting">): string => {
+    switch (kind) {
+      case "thanks":
+        return `👍 ${b("Any time.")}`;
+      case "praise":
+        return `🙏 ${b("Glad it is working for you.")}`;
+      case "farewell":
+        return `👋 ${b("Talk soon.")}`;
+    }
+  },
 
   outOfScope: para(
     `👋 ${b("I only do quotes, invoices and payments.")}`,
@@ -1199,6 +1229,34 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
         context: ctx,
         effects: [{ type: "document_action", intent: p.intent, number: p.documentNumber }],
       };
+
+    /*
+     * A pleasantry. Answered as one, and nothing else happens.
+     *
+     * The kind is worked out from the message here rather than carried on the
+     * parse, so the pattern path and the model path read the same list. When
+     * the model calls something social that the list does not recognise, a
+     * plain thank-you is the safest of the four: it acknowledges without
+     * assuming the message was a greeting or a compliment.
+     */
+    case "social": {
+      const kind = socialKind(msg.text) ?? "thanks";
+
+      // A greeting opens the menu, which is what "hi" has always done and is
+      // a better answer than a sentence: something to tap rather than a list
+      // of words to retype. Routed here too so the model path and the
+      // pattern path cannot answer the same "good morning" differently.
+      if (kind === "greeting") {
+        return {
+          replies: [],
+          next: "idle",
+          context: ctx,
+          effects: [{ type: "show_help", fallback: VOICE.helpIdle }],
+        };
+      }
+
+      return { replies: [VOICE.social(kind)], next: "idle", context: ctx, effects: [] };
+    }
 
     // A stray "yes" with nothing to confirm, and everything unrecognised.
     case "confirm":

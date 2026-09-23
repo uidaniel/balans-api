@@ -98,9 +98,11 @@ A payment split is either a deposit or a set of equal instalments, never both: "
 
 Nigerian usage you will see: "350k" is 350,000. "1.2m" is 1,200,000. "5h" is 500. Light Pidgin is normal — "abeg bill Tunde 20k for logo" is create_invoice for Tunde. "Who dey owe me" is debtors. "Na so" is confirm.
 
-Intents: create_invoice, create_quote, convert_quote, payment_request, status, debtors, summary, edit_document, cancel_document, resend_document, record_payment, settings, upgrade, referral, stop_reminders, templates, help, confirm, reject, unknown.
+Intents: create_invoice, create_quote, convert_quote, payment_request, status, debtors, summary, edit_document, cancel_document, resend_document, record_payment, settings, upgrade, referral, stop_reminders, templates, help, confirm, reject, social, unknown.
 
-"settings" means the user's own account: business name, payout bank, due days, closing the account. A question about how an invoice or an email LOOKS is "templates", not "settings". Anything you cannot place is "unknown" — guessing the nearest intent sends somebody into a menu that cannot answer them.`;
+"settings" means the user's own account: business name, payout bank, due days, closing the account. A question about how an invoice or an email LOOKS is "templates", not "settings". Anything you cannot place is "unknown" — guessing the nearest intent sends somebody into a menu that cannot answer them.
+
+"social" is somebody being a person and asking for nothing: thanks, a greeting, a compliment, saying goodnight. "Thank you", "good morning", "this is nice", "God bless you", "no wahala", "well done" (a greeting in Nigeria, not praise). It is not the same as "unknown": unknown asked for something this tool cannot do and is answered by saying what it does, and answering "thank you" that way reads as not having listened. If a message is a pleasantry AND a request — "thanks, now invoice Tunde 20k" — it is the request.`;
 
 export type ModelResult =
   | { ok: true; parse: RawParse; latencyMs: number; model: string }
