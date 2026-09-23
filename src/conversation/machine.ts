@@ -17,7 +17,7 @@ import { b, field, i, lines, para } from "../whatsapp/format.ts";
 import type { Civil } from "../../core/dates.ts";
 import { isDocumentIntent, type Parsed } from "../parser/schema.ts";
 import type { Correction } from "../parser/corrections.ts";
-import { socialKind, type SocialKind } from "../parser/commands.ts";
+import { asCommand, socialKind, type SocialKind } from "../parser/commands.ts";
 import { parseAmountToKobo } from "../../core/amount.ts";
 import { resolveDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
@@ -52,6 +52,8 @@ export type State =
   | "settings:bank_details"
   | "settings:bank_confirm"
   | "settings:delete_confirm"
+  /** A picture arrived and we have asked whether it is their logo. */
+  | "awaiting_logo_confirm"
   | "paused";
 
 export type Context = {
@@ -89,6 +91,16 @@ export type Context = {
     accountName: string;
     subAccountCode: string;
   };
+
+  /**
+   * A picture we have been sent and not yet done anything with.
+   *
+   * Held while we ask whether it is a logo. The id is Meta's and stays
+   * downloadable for long enough that fetching it on the answer rather than
+   * on arrival costs nothing — and saves fetching every screenshot somebody
+   * sends.
+   */
+  pendingLogo?: string;
 };
 
 /** A document under construction. Amounts are kobo; nothing here is a string. */
@@ -196,6 +208,8 @@ export type Effect =
   | { type: "remove_logo" }
   | { type: "show_upgrade" }
   | { type: "show_referral" }
+  /** A picture they have confirmed is their logo. */
+  | { type: "save_logo"; mediaId: string }
   | { type: "document_action"; intent: Parsed["intent"]; number: number | null }
   /* -- Settings (F17) ---------------------------------------------------- */
   | { type: "set_business_name"; name: string }
@@ -559,6 +573,33 @@ export const VOICE = {
     }
   },
 
+  /**
+   * A picture arrived, and we do not assume what it is for.
+   *
+   * Every image used to be saved as a logo on sight, on the reasoning that
+   * the only sensible thing to send an invoicing bot is a logo. People send
+   * screenshots — of a bank alert, of a chat, of an invoice that looks wrong
+   * — and every one of those quietly replaced the logo on all their future
+   * invoices, with a message saying so that is easy to scroll past.
+   *
+   * One question costs one message and removes the whole class of it.
+   */
+  isThisYourLogo: para(
+    `🖼️ ${b("Is this your logo?")}`,
+    "If it is, it goes on every invoice and quote you send from now on.",
+  ),
+
+  logoButtons: (): ReplyButton[] => [
+    { id: "yes", title: "Yes, use it" },
+    { id: "no", title: "No" },
+  ],
+
+  /** They said no. Nothing was saved and nothing needs explaining. */
+  logoDeclined: para(
+    `👍 ${b("Left it alone.")}`,
+    "Your invoices are unchanged. Send it again any time if you change your mind.",
+  ),
+
   outOfScope: para(
     `👋 ${b("I only do quotes, invoices and payments.")}`,
     lines(
@@ -886,6 +927,43 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
 
     case "onboarding:consent":
       return takeConsent(text, context, consentVersion);
+
+    /*
+     * "Is this your logo?", answered.
+     *
+     * A picture used to be saved as a logo on sight. People send screenshots
+     * — a bank alert, a chat, an invoice that looks wrong — and every one of
+     * them silently replaced the logo on all their future invoices.
+     *
+     * Anything that is not a yes or a no drops the picture and is read as an
+     * ordinary message, which is section 5's rule: a new command always wins
+     * over a pending question, so nobody is trapped. Somebody who sends a
+     * screenshot and then types "invoice Tunde 20k" gets the invoice.
+     */
+    case "awaiting_logo_confirm": {
+      const pending = context.pendingLogo;
+      const { pendingLogo: _drop, ...rest } = context;
+
+      // `asCommand` owns the list of what counts as yes and no, including
+      // "na so" and "e correct". A third regex here would be a third answer
+      // to a question already settled twice.
+      const answer = asCommand(text)?.intent;
+
+      if (pending && answer === "confirm") {
+        return {
+          replies: [],
+          next: "idle",
+          context: rest,
+          effects: [{ type: "save_logo", mediaId: pending }],
+        };
+      }
+
+      if (answer === "reject") {
+        return { replies: [VOICE.logoDeclined], next: "idle", context: rest, effects: [] };
+      }
+
+      return step("idle", rest, msg, consentVersion);
+    }
 
     case "idle": {
       if (GREETING.test(text)) {

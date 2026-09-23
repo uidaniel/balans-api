@@ -264,16 +264,28 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   }
 
   /*
-   * An image is a logo (F21).
+   * An image might be a logo (F21), so we ask.
    *
-   * Handled before the machine rather than as a state, because it arrives
-   * unannounced: nobody is asked to send a logo, they just send one, and the
-   * only sensible reading of a picture sent to an invoicing bot is "put this
-   * on my invoices". Dealt with here it also cannot disturb a draft somebody
-   * is halfway through confirming.
+   * It used to be saved as one on sight, on the reasoning that the only
+   * sensible thing to send an invoicing bot is a logo. That is not what
+   * happens. People send screenshots — a bank alert, a chat with a client,
+   * an invoice that looks wrong — and every one of them silently replaced
+   * the logo on all their future invoices, with a confirmation message that
+   * is easy to scroll past.
+   *
+   * One question costs one message and removes the whole class of it. The
+   * picture is not downloaded until the answer, so a screenshot costs
+   * nothing but the question.
+   *
+   * Still handled before the machine, because a picture arrives unannounced
+   * and must not disturb a draft somebody is halfway through confirming.
    */
   if (msg.kind === "image" && msg.mediaId) {
-    await handleLogo(user.id, msg.mediaId, msg.from, log);
+    await saveConversation(user.id, "awaiting_logo_confirm", {
+      ...saved.context,
+      pendingLogo: msg.mediaId,
+    });
+    await reply(user.id, msg.from, [VOICE.isThisYourLogo], log, VOICE.logoButtons());
     return;
   }
 
@@ -560,6 +572,10 @@ type EffectOutcome = {
  */
 const NEEDS_PARSE = new Set<State>([
   "idle",
+  // "Is this your logo?" takes yes or no for free, through asCommand. Anything
+  // else is read as an ordinary message and has to be understood, or somebody
+  // who sends a screenshot and then types an invoice loses the invoice.
+  "awaiting_logo_confirm",
   "awaiting_confirm",
   "awaiting_field:client_name",
   "awaiting_field:amount",
@@ -1560,6 +1576,10 @@ async function runEffects(
           extra.push(payLinkMessage(init.checkoutUrl));
           break;
         }
+        case "save_logo":
+          await handleLogo(userId, effect.mediaId, ctx.phone ?? "", log);
+          break;
+
         case "show_referral":
           extra.push(VOICE.notBuiltYet("Referrals"));
           break;
