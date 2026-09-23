@@ -131,6 +131,21 @@ export const rawCorrection = z.object({
   /** Words naming a line to take off, or its number: "the SEO line", "2". */
   remove_line: z.string().trim().min(1).max(120).nullish().transform((v) => v ?? null),
   /**
+   * Rewording a line that is already there, keeping its price.
+   *
+   * Its own field because the obvious alternative — remove it and add it
+   * back — deletes the line and its money whenever the replacement arrives
+   * without a price, which is most of the time when somebody is only fixing
+   * the wording.
+   */
+  rename_line: z
+    .object({
+      match: z.string().trim().min(1).max(200),
+      to: z.string().trim().min(1).max(200),
+    })
+    .nullish()
+    .transform((v) => v ?? null),
+  /**
    * A date for one part of the payment plan, rather than for the document.
    *
    * "deposit" and "balance" rather than a number, because which number they
@@ -339,12 +354,32 @@ function asCorrection(raw: RawCorrection | null, today: Civil): Correction | nul
    * photoshoot" names work without saying what it costs, and a ₦0 line on
    * somebody's invoice is worse than no line at all.
    */
-  const added = raw.add_lines
-    .map((l) => ({
-      description: l.description,
-      unitAmountKobo: l.unit_amount === null ? null : parseAmountToKobo(l.unit_amount),
-    }))
-    .filter((l): l is { description: string; unitAmountKobo: number } => (l.unitAmountKobo ?? 0) > 0);
+  /*
+   * Lines added, and one taken away.
+   *
+   * A line with no price cannot be added: "add the photoshoot" names work
+   * without saying what it costs, and a ₦0 line on somebody's invoice is
+   * worse than no line at all.
+   *
+   * But dropping it on its own is what turned a misreading into deleted
+   * money. "change the commercial for opay to commercial for Opay Nigeria"
+   * came back from the model as a removal plus an addition — a reasonable
+   * way to say "rename" with no rename field to use. The addition had no
+   * price and was dropped; the removal was not, so a ₦2,500,000 line
+   * vanished and the invoice fell to ₦215,000, with nothing saying why.
+   *
+   * So a dropped line drops the whole correction. The message goes back as
+   * "I did not catch that", which costs somebody one more sentence — against
+   * an invoice that is quietly missing its largest item.
+   */
+  const priced = raw.add_lines.map((l) => ({
+    description: l.description,
+    unitAmountKobo: l.unit_amount === null ? null : parseAmountToKobo(l.unit_amount),
+  }));
+  const added = priced.filter(
+    (l): l is { description: string; unitAmountKobo: number } => (l.unitAmountKobo ?? 0) > 0,
+  );
+  if (added.length !== priced.length) return null;
   if (added.length) out.addLines = added;
 
   if (raw.stage_due) {
@@ -362,6 +397,8 @@ function asCorrection(raw: RawCorrection | null, today: Civil): Correction | nul
       };
     }
   }
+
+  if (raw.rename_line) out.renameLine = raw.rename_line;
 
   if (raw.remove_line) {
     const position = /^(?:item|line|number|no\.?)?\s*(\d{1,2})(?:st|nd|rd|th)?$/i.exec(raw.remove_line);

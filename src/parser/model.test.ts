@@ -480,6 +480,71 @@ describe("a correction the free reader could not read", () => {
     assert.deepEqual(out.parsed.correction?.dueDate, { y: 2026, m: 10, d: 1 });
   });
 
+  it("refuses the whole correction when a line it would add has no price", async () => {
+    /*
+     * The exact shape that deleted \u20a62,500,000 off a live draft.
+     *
+     * "change the commercial for opay to commercial for Opay Nigeria" had no
+     * rename field to use, so the model said it as a removal plus an
+     * addition. The addition carried no price and was dropped for being half
+     * an item; the removal was not. The line went, its money went with it,
+     * and nothing said a line had been deleted.
+     *
+     * Everything or nothing. The message goes back as "I did not catch
+     * that", which costs one more sentence \u2014 against an invoice quietly
+     * missing its largest item.
+     */
+    const { impl } = stub(
+      toolUse({
+        intent: "correct_draft",
+        confidence: 0.95,
+        correction: {
+          remove_line: "commercial for opay",
+          add_lines: [{ description: "Commercial for Opay Nigeria" }],
+        },
+      }),
+    );
+    const out = await parseMessage("change the commercial for opay to commercial for Opay Nigeria", {
+      today: TODAY,
+      fetchImpl: impl,
+      onScreen: DRAFT,
+    });
+
+    assert.ok(out.ok);
+    assert.equal(out.parsed.correction, null, "a half-understood correction must not be applied");
+  });
+
+  it("takes a rename as a rename, keeping the line and its price", async () => {
+    const { impl } = stub(
+      toolUse({
+        intent: "correct_draft",
+        confidence: 0.95,
+        correction: {
+          rename_line: { match: "commercial for opay", to: "Commercial for Opay Nigeria" },
+        },
+      }),
+    );
+    const out = await parseMessage("change the commercial for opay to commercial for Opay Nigeria", {
+      today: TODAY,
+      fetchImpl: impl,
+      onScreen: DRAFT,
+    });
+
+    assert.ok(out.ok);
+    assert.deepEqual(out.parsed.correction?.renameLine, {
+      match: "commercial for opay",
+      to: "Commercial for Opay Nigeria",
+    });
+    assert.equal(out.parsed.correction?.removeLine, undefined);
+  });
+
+  it("tells the model in writing not to say a rename as a removal", async () => {
+    // The schema alone does not stop it: remove-plus-add is a reasonable way
+    // to express a rename, and it was the only way available before.
+    assert.match(_internal.SYSTEM, /rename_line/);
+    assert.match(_internal.SYSTEM, /deleted along with its money/i);
+  });
+
   it("drops an amount it cannot read instead of guessing at one", async () => {
     // The same rule as everywhere else here: a number nobody can check is
     // worse than a question.

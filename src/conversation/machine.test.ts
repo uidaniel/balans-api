@@ -844,6 +844,46 @@ describe("a tapped button", () => {
     });
   });
 
+  describe("rewording a line without losing it", () => {
+    const twoLines = {
+      draftId: DRAFTED.draftId,
+      doc: {
+        type: "invoice" as const,
+        clientName: "Uwak Joshua",
+        lines: [
+          { description: "Commercial for Opay", qty: 1, unitAmountKobo: 2_500_000_00 },
+          { description: "Revisions", qty: 1, unitAmountKobo: 200_000_00 },
+        ],
+      },
+    };
+
+    const after = (said: string) =>
+      doc("awaiting_confirm", twoLines, said, {
+        parsed: parse({ intent: "correct_draft" }),
+        correction: readCorrection(said, { y: 2026, m: 9, d: 23 }),
+      }).context.doc?.lines ?? [];
+
+    it("keeps the price and the line count", () => {
+      /*
+       * The reported failure, as a test. Before this, the draft came back
+       * with one line and \u20a62,500,000 gone.
+       */
+      const lines = after("change the commercial for opay to commercial for Opay Nigeria");
+      assert.equal(lines.length, 2);
+      assert.deepEqual(lines[0], {
+        description: "commercial for Opay Nigeria",
+        qty: 1,
+        unitAmountKobo: 2_500_000_00,
+      });
+      assert.deepEqual(lines[1], twoLines.doc.lines[1]);
+    });
+
+    it("leaves the draft alone when nothing matches", () => {
+      // Better an unchanged draft than renaming whichever line came first.
+      assert.deepEqual(after("change the catering to the catering deposit"), twoLines.doc.lines);
+    });
+  });
+
   it("keeps a draft with more lines than the form holds in words", () => {
     // Five slots against twenty lines from a sentence. Opening the form would
     // show five and drop the rest on submit — an invoice shrinking inside the

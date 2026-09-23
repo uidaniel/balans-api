@@ -348,3 +348,54 @@ describe("changing where the client's copy goes", () => {
     assert.equal(read("make it 400k")?.clientEmail, undefined);
   });
 });
+
+/**
+ * Rewording a line, which used to delete it.
+ *
+ * "change the commercial for opay to commercial for Opay Nigeria" had no
+ * home in the schema, so the model said it the only way it could: remove
+ * that line, add a new one. The new one carried no price and was dropped for
+ * being half an item. The removal was not. A \u20a62,500,000 line vanished off
+ * the draft, the invoice fell to \u20a6215,000, and nothing anywhere said a line
+ * had been deleted.
+ */
+describe("rewording a line that is already there", () => {
+  const today = { y: 2026, m: 9, d: 23 } as const;
+  const read = (s: string) => readCorrection(s, today);
+
+  it("reads the two halves either side of \u201cto\u201d", () => {
+    assert.deepEqual(read("change the commercial for opay to commercial for Opay Nigeria")?.renameLine, {
+      match: "commercial for opay",
+      to: "commercial for Opay Nigeria",
+    });
+    assert.deepEqual(read("rename the logo to logo design")?.renameLine, {
+      match: "logo",
+      to: "logo design",
+    });
+  });
+
+  it("never takes a sentence a named field already owns", () => {
+    /*
+     * This rule is last for a reason: every one of these is "change X to Y"
+     * and none of them is a rename. Run it any earlier and "change the
+     * amount to 400k" renames a line to "400k" and leaves the price alone.
+     */
+    for (const [said, field] of [
+      ["change the amount to 400k", "totalKobo"],
+      ["change the client to Daniel", "clientName"],
+      ["change the item to photography", "description"],
+      ["change the email to a@b.com", "clientEmail"],
+    ] as const) {
+      const c = read(said)!;
+      assert.ok(c[field] !== undefined, said);
+      assert.equal(c.renameLine, undefined, said);
+    }
+  });
+
+  it("is not a removal", () => {
+    // The whole point. A rename keeps the line and its money.
+    const c = read("change revisions to extra revisions")!;
+    assert.equal(c.removeLine, undefined);
+    assert.equal(c.addLines, undefined);
+  });
+});

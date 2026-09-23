@@ -120,6 +120,19 @@ const TOOL = {
               required: ["description"],
             },
           },
+          rename_line: {
+            type: ["object", "null"],
+            description:
+              "Rewording a line that is ALREADY on the draft, keeping its price: " +
+              '"change the commercial for opay to commercial for Opay Nigeria" is ' +
+              '{match: "commercial for opay", to: "Commercial for Opay Nigeria"}. ' +
+              "NEVER express this as remove_line plus add_lines - that deletes the line and its money.",
+            properties: {
+              match: { type: "string", description: "Words out of the line as they wrote them." },
+              to: { type: "string", description: "What the line should say instead." },
+            },
+            required: ["match", "to"],
+          },
           remove_line: {
             type: ["string", "null"],
             description:
@@ -201,6 +214,11 @@ When a <draft> block appears, a draft is on the user's screen and they have just
   alone. "due next Friday", with no part named, is the invoice's date.
 - An address goes in client_email, never in client_name: "send it to daniel@studio.ng" is an
   email, not a person called Daniel. "no email" is ["email"] in clear.
+- "change X to Y", where X is a line already on the draft, is rename_line. It keeps the price.
+  Never say this with remove_line and add_lines together: the replacement usually carries no
+  price, and the line is then deleted along with its money.
+- Every line in add_lines needs a unit_amount. If they named work without a price, leave
+  add_lines empty rather than guessing one.
 - A first payment with a share named is a deposit, not instalments: "break it into two milestones, 20% for the first" is deposit_percent 20 and nothing else, because the deposit and the balance are already the two parts. Equal parts with no share named are instalments: "split it into three" is instalments 3.
 - Only what they actually said. A message about the price says nothing about the date, and a date that moves on its own is a bug somebody finds after the invoice is sent.
 

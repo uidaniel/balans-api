@@ -37,6 +37,21 @@ export type Correction = {
    * machine's job, because only the machine has the draft.
    */
   removeLine?: { position: number } | { match: string };
+  /**
+   * Rewording a line that is already there, keeping its price.
+   *
+   * There was no way to say this, and the gap cost real money. "change the
+   * commercial for opay to commercial for Opay Nigeria" went to the model,
+   * which expressed it the only way the schema allowed — remove that line,
+   * add a new one — and the new one carried no price, so it was dropped for
+   * being half an item. The removal was not. A ₦2,500,000 line disappeared
+   * off the draft and the total fell to ₦215,000, with nothing anywhere
+   * saying a line had been deleted.
+   *
+   * `match` is words out of the line as they typed them; the machine finds
+   * it, because only the machine holds the draft.
+   */
+  renameLine?: { match: string; to: string };
   dueDate?: Civil;
   /** The phrase, so the summary can echo how they said it. */
   duePhrase?: string;
@@ -191,6 +206,16 @@ const SET_EMAIL = new RegExp(
     String.raw`)(${EMAIL})(?:\s+(?:instead|please|pls|abeg|o|thanks))?\s*$`,
   "i",
 );
+
+/**
+ * "change X to Y", where X is a line already on the invoice.
+ *
+ * Last of the rules, so every shape with a field name in it — the amount,
+ * the date, the client, the description — has already been taken. What is
+ * left saying "change ... to ..." is somebody renaming a line.
+ */
+const RENAME_LINE =
+  /^(?:change|rename|correct|fix|update|edit)\s+(?:the\s+)?(.+?)\s+(?:to|into)\s+(.+)$/i;
 
 /** "no email", "remove the email", "don't email it". */
 const NO_EMAIL =
@@ -497,6 +522,26 @@ export function readCorrection(text: string, today: Civil): Correction | null {
    * of that sentence at once. Being certain is the only thing a regex has
    * over a model, and a regex that guesses has nothing.
    */
+  /*
+   * Renaming a line, which is the last thing this reader tries.
+   *
+   * Only reached when nothing above claimed the sentence, so "change the
+   * amount to 400k" and "change the client to Daniel" are long gone. What
+   * survives to here is two pieces of text either side of "to", which on an
+   * invoice means a line being reworded.
+   */
+  if (!Object.keys(out).length) {
+    const renaming = RENAME_LINE.exec(rest);
+    if (renaming) {
+      const from = clean(renaming[1]!);
+      const to = clean(renaming[2]!);
+      if (from && to && from.toLowerCase() !== to.toLowerCase()) {
+        out.renameLine = { match: from, to };
+        rest = "";
+      }
+    }
+  }
+
   if (unexplained(rest)) return null;
 
   return Object.keys(out).length ? out : null;

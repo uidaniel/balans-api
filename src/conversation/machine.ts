@@ -2199,6 +2199,24 @@ function applyCorrection(doc: PendingDoc, c: Correction): PendingDoc {
     next.totalKobo = undefined;
   }
 
+  /*
+   * Rewording a line, keeping its price.
+   *
+   * Before the removal, and deliberately not expressible as one: a rename
+   * that arrives as remove-then-add loses the whole line the moment the add
+   * is dropped for having no price. A name that matches nothing leaves the
+   * draft alone rather than renaming whichever line came first.
+   */
+  if (c.renameLine) {
+    const needle = c.renameLine.match.toLowerCase();
+    const at = next.lines.findIndex((l) => l.description.toLowerCase().includes(needle));
+    if (at >= 0) {
+      next.lines = next.lines.map((l, i) =>
+        i === at ? { ...l, description: c.renameLine!.to } : l,
+      );
+    }
+  }
+
   if (c.removeLine && next.lines.length > 1) {
     /*
      * Only ever one line, and never the last one.
