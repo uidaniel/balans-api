@@ -21,7 +21,12 @@ import { asCommand, socialKind, type SocialKind } from "../parser/commands.ts";
 import { SETTINGS_ROW_IDS } from "../settings/messages.ts";
 
 type SettingsRowId = (typeof SETTINGS_ROW_IDS)[number];
-import { parseAmountToKobo } from "../../core/amount.ts";
+import {
+  MAX_INVOICE_KOBO,
+  MIN_INVOICE_KOBO,
+  parseAmountToKobo,
+} from "../../core/amount.ts";
+import { formatNaira } from "../../core/totals.ts";
 import { resolveDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
 import { EXTRA_ITEMS, initField, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
@@ -544,6 +549,43 @@ export const VOICE = {
     `✏️ ${b("This one has too many items for the form.")}`,
     `Tell me the change instead — ${b("make it 400k")}, ${b("due next Friday")}, ${b("client is Zenith Homes")}.`,
   ),
+
+
+  /**
+   * Too small to be worth sending, with the reason rather than the rule.
+   *
+   * "Minimum ₦1,000" is a policy nobody agreed to. The fees are the actual
+   * reason — on the free plan they start at ₦100 whatever the invoice is
+   * worth, so a ₦400 invoice hands over a quarter of itself and a ₦100 one
+   * would settle for less than nothing. Saying that is also the only version
+   * somebody can act on: bill for more, or bill for several things at once.
+   */
+  amountTooSmall: (totalKobo: number): string =>
+    para(
+      `🪙 ${b(`${formatNaira(totalKobo)} is too small to invoice.`)}`,
+      lines(
+        `The smallest is ${b(formatNaira(MIN_INVOICE_KOBO))} — under that the fees take most of it,`,
+        "because they start at a flat ₦100 however small the invoice is.",
+      ),
+      "Bill for more, or put a few things on one invoice.",
+    ),
+
+  /**
+   * Too large to be a real invoice, which is almost always a stray digit.
+   *
+   * It says the figure back. Somebody who meant ₦500,000 and typed a zero too
+   * many reads "₦5,000,000" and sees it at once; a message that only quoted
+   * the limit would leave them working out what they had actually typed.
+   */
+  amountTooLarge: (totalKobo: number): string =>
+    para(
+      `🔍 ${b(`${formatNaira(totalKobo)} — is that right?`)}`,
+      lines(
+        `That is over ${b(formatNaira(MAX_INVOICE_KOBO))}, which is the most one invoice can be.`,
+        "I have not drafted it, in case a digit slipped.",
+      ),
+      "If it really is that large, send it as more than one invoice.",
+    ),
 
   done: para(
     `🎉 ${b("You are set up.")}`,

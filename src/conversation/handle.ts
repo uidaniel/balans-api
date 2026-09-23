@@ -252,6 +252,8 @@ const FLOW_SCREEN = {
   consent: "TERMS",
   request: "WORK",
 } as const;
+import { invoiceableKobo } from "../../core/amount.ts";
+import { totalsFor } from "../../core/totals.ts";
 import { OTHER_BANK } from "../whatsapp/flows/banks.ts";
 import { sendDocument, uploadDocument } from "../whatsapp/client.ts";
 import {
@@ -1102,6 +1104,27 @@ async function runEffects(
            * afterwards would be worse, because by then they have read and
            * approved it.
            */
+          /*
+           * What the invoice is worth, checked here for the same reason as
+           * the limit above: this is the last point at which refusing costs
+           * the user nothing, and it is the one place a form, a sentence and
+           * a correction all arrive at.
+           *
+           * On the total rather than on a line. A ₦500 delivery charge inside
+           * a ₦50,000 invoice is a real item, and refusing it would be
+           * refusing arithmetic that is perfectly correct.
+           */
+          const totalKobo = totalsFor(doc.lines, doc.vatPercent ?? null).totalKobo;
+          const worth = invoiceableKobo(totalKobo);
+          if (worth) {
+            extra.push(
+              worth === "small" ? VOICE.amountTooSmall(totalKobo) : VOICE.amountTooLarge(totalKobo),
+            );
+            log.info({ userId, totalKobo, why: worth }, "draft refused on amount");
+            holdAt = "idle";
+            break;
+          }
+
           const gate = await limitCard(userId, ctx.phone, ctx.today, log);
           if (gate.stop) {
             if (gate.words) extra.push(gate.words);
