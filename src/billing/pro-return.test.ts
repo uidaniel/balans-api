@@ -18,7 +18,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 
-const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
+const read = (p: string) =>
+  readFileSync(new URL(p, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const route = read("../http/routes/public.ts");
 // Bounded by the end of the handler rather than by a character count: the
 // branch has grown twice and a fixed window stopped reaching the lines it was
@@ -37,22 +38,32 @@ describe("coming back from a Pro payment", () => {
     assert.ok(sub < doc, "asked before a lookup that cannot succeed for one");
   });
 
-  it("closes itself back to the chat rather than opening a web page", () => {
+  it("lands on the success page and stays there", () => {
     /*
-     * The checkout runs in WhatsApp's own browser, so finishing leaves
-     * somebody looking at a page on top of the conversation they started in
-     * — while the confirmation they want is a message in that conversation.
-     * WhatsApp gives a page no way to dismiss its browser, but it does
-     * intercept its own links, so the page navigates to wa.me.
+     * It used to render its own page here, which navigated to `wa.me` after
+     * four hundred milliseconds — WhatsApp intercepts its own links, so the
+     * browser would go away and there would be nothing to close.
+     *
+     * The trick is real. The problem is that it fired whether or not it
+     * worked, so somebody who had just paid ₦4,000 saw an acknowledgement
+     * for four hundred milliseconds and then WhatsApp's own landing page.
+     * No page can dismiss that browser reliably, so the page says what
+     * happened, tries to close, and tells them they can close it.
      */
-    assert.match(callback, /renderProDone\(/, "a page that takes them back");
-    assert.doesNotMatch(callback, /\/pro\/success/, "not a marketing page to close by hand");
+    // On what runs, not on what is written about it: the comment above the
+    // branch names the thing it replaced, and has to be free to say so.
+    const code = callback.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+
+    assert.match(code, /\/pro\/success/, "the page built for this");
+    assert.doesNotMatch(code, /renderProDone/, "not a second page saying the same thing");
+    assert.doesNotMatch(code, /wa\.me/, "and nothing that navigates off it");
   });
 
   it("only says Pro is on once it actually is", () => {
     // The webhook is what activates a subscription and the browser can
-    // arrive first, so this is a fact to check rather than assume.
-    assert.match(callback, /active: status === "active"/);
+    // arrive first, so this is a fact to check rather than assume. The page
+    // reads it from the query string and says the other thing instead.
+    assert.match(callback, /status === "active" \? "" : "\?state=confirming"/);
   });
 
   it("still returns an invoice payer to their invoice", () => {
@@ -70,6 +81,7 @@ describe("coming back from a Pro payment", () => {
 describe("the page it lands on", () => {
   const page = read("../../../balans/src/app/pro/success/page.tsx");
   const button = read("../../../balans/src/app/pro/success/back-to-chat.tsx");
+  const closer = read("../../../balans/src/app/pro/success/close-window.tsx");
 
   it("is kept out of search results", () => {
     // The end of a private flow. A stranger arriving on "payment received"
@@ -92,6 +104,42 @@ describe("the page it lands on", () => {
     assert.doesNotMatch(page, /\d{10,}/);
     assert.match(button, /chatHref\(\)/, "the number comes from config or not at all");
     assert.match(button, /if \(!href\)/, "and there is a fallback for when it is not there");
+  });
+
+  it("tries to close the window it is left in", () => {
+    /*
+     * The checkout opens over the chat, so finishing leaves a window sitting
+     * on top of the conversation. `window.close()` only works on a window a
+     * script opened, which this one usually is not — so it is an attempt, not
+     * the plan.
+     */
+    assert.match(closer, /window\.close\(\)/);
+    assert.match(closer, /catch/, "a browser refusing is expected, not an error");
+  });
+
+  it("tells them they can close it, once closing has failed", () => {
+    /*
+     * The order is the whole point. A page that says "closing…" and then does
+     * not is worse than one that never said so, because the person waits for
+     * it. So the line is written on the assumption the attempt failed, and
+     * only appears once it has.
+     */
+    const rendered = closer.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+
+    assert.match(rendered, /You can close this window/);
+    assert.match(rendered, /setTimeout/, "said after the attempt, not before it");
+    assert.match(rendered, /if \(!stuck\) return null/, "and nothing at all until then");
+  });
+
+  it("never navigates away from the acknowledgement", () => {
+    /*
+     * What this replaced: a redirect to `wa.me` four hundred milliseconds
+     * after the page rendered. It fired whether or not WhatsApp caught the
+     * link, so the page somebody paid ₦4,000 to reach was gone before it
+     * could be read. Closing leaves the chat underneath; navigating does not.
+     */
+    assert.doesNotMatch(closer, /location\.(replace|assign|href)/);
+    assert.doesNotMatch(closer, /wa\.me/);
   });
 
   it("does not tell a paying customer the number is revealing soon", () => {

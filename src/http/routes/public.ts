@@ -20,8 +20,6 @@ import { balansFee, settle, type BalansRates } from "../../../core/fees.ts";
 import { initBankTransfer, initTransaction } from "../../payments/monnify.ts";
 import { findByToken, markViewed, outstandingKobo, payable, payableNowKobo } from "../../documents/public.ts";
 import { renderDocument, renderNotFound, type TransferPanel } from "../../documents/page.ts";
-import { renderProDone } from "../../billing/pro-done.ts";
-import { displayNumber } from "../../whatsapp/number.ts";
 import {
   liveTransferFor,
   paymentProgress,
@@ -413,26 +411,27 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
         if (!status) return reply.redirect(SITE, 303);
 
         /*
-         * Back to the chat, rather than on to a web page.
+         * On to the page that was built for this.
          *
-         * The checkout ran in WhatsApp's own browser, so finishing leaves
-         * somebody looking at a page on top of the conversation they started
-         * in — while the confirmation they actually want is a message in
-         * that conversation. Sending them to a marketing page was one more
-         * thing to close.
+         * It used to render a page here that navigated straight to `wa.me`,
+         * on the reasoning that WhatsApp intercepts its own links and the
+         * browser would go away — leaving nothing to close. The trick is
+         * real, but the redirect fired whether or not it worked, so what
+         * somebody actually got after paying ₦4,000 was a success page for
+         * four hundred milliseconds and then WhatsApp's own landing page.
+         * The acknowledgement they paid for went past too fast to read.
          *
-         * WhatsApp gives a page no way to dismiss its browser, but it does
-         * intercept its own links, so this page navigates to `wa.me` and the
-         * browser goes away. It says what happened first, because that trick
-         * can fail and a blank screen is the wrong failure on a phone that
-         * has just taken somebody's money.
+         * So: land on the page, and stop trying to leave it. `/pro/success`
+         * says what happened, tries to close itself, and tells them they can
+         * close it if that does not work — which is the honest order, since
+         * no page can dismiss WhatsApp's browser on its own.
          *
          * Whether it claims Pro is on is still a checked fact: the webhook
-         * is what activates a subscription and the browser can arrive first.
+         * is what activates a subscription and the browser can arrive first,
+         * so the page is told which of the two this is.
          */
-        return reply
-          .type(HTML)
-          .send(renderProDone({ waNumber: await displayNumber(), active: status === "active" }));
+        const done = `${SITE}/pro/success${status === "active" ? "" : "?state=confirming"}`;
+        return reply.redirect(done, 303);
       }
 
       const token = await tokenForReference(reference);
