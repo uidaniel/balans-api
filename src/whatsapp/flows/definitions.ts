@@ -619,12 +619,24 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
             [f.amount]: `\${data.${initField(word)}}`,
           },
           children: [
+            /*
+             * Both required, which is what greys Save out until they are
+             * filled in.
+             *
+             * They used to be optional, on the reasoning that a screen
+             * somebody opened by accident should not trap them. What happened
+             * instead is that a half-filled item saved, and the form came back
+             * showing a line with no price on it. The back arrow is still the
+             * way out of a screen opened by mistake — it leaves the item
+             * unsaved, which is what blank fields used to mean and is clearer
+             * about it.
+             */
             {
               type: "TextInput",
               name: f.description,
               label: "Item",
-              "helper-text": "Leave both blank to drop this item.",
-              required: false,
+              "helper-text": "What this line is for.",
+              required: true,
               "input-type": "text",
               "max-chars": 100,
             },
@@ -633,7 +645,7 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
               name: f.amount,
               label: "Amount",
               "helper-text": "Naira, before VAT. Digits only.",
-              required: false,
+              required: true,
               "input-type": "number",
               "max-chars": 12,
             },
@@ -726,13 +738,44 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
     },
   });
 
-  /** One saved item, read back to the person who typed it. */
-  const savedLine = (index: number) => {
+  /**
+   * The item just added, read back in two boxes nobody can type in.
+   *
+   * Not a line of text. Dynamic text does not resolve on a handset: the first
+   * attempt was a caption reading `Item 2: ${data.item_two_description}`, and
+   * that is precisely what the phone showed — the words, not the value. Meta's
+   * validator accepts it, which by now counts for nothing on its own.
+   *
+   * `init-values` does resolve, because it is how the client's own name comes
+   * back when a correction reopens the form. So the value goes into a disabled
+   * input: a box with the text in it and no keyboard behind it.
+   *
+   * One item per branch rather than all of them, because a Form refuses a
+   * field name it has already seen — "Duplicate name found for Form
+   * components" — and a cumulative list would repeat item two in every branch
+   * after the second. What is shown is the one just saved, which is the one
+   * somebody is looking for.
+   */
+  const savedFields = (index: number) => {
     const f = itemFields(EXTRA_ITEMS[index]!);
-    return {
-      type: "TextCaption",
-      text: `Item ${index + 2}: \${data.${f.description}} — ₦\${data.${f.amount}}`,
-    };
+    return [
+      {
+        type: "TextInput",
+        name: f.description,
+        label: `Item ${index + 2}`,
+        required: false,
+        enabled: false,
+        "input-type": "text",
+      },
+      {
+        type: "TextInput",
+        name: f.amount,
+        label: "Amount",
+        required: false,
+        enabled: false,
+        "input-type": "text",
+      },
+    ];
   };
 
   /*
@@ -755,19 +798,37 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
    */
   const cases: Record<string, unknown[]> = {};
   EXTRA_ITEMS.forEach((_, index) => {
-    const shown: unknown[] = [];
-    for (let i = 0; i <= index; i++) shown.push(savedLine(i));
     const next = EXTRA_ITEMS[index + 1];
-    shown.push(
+    cases[EXTRA_ITEMS[index]!] = [
+      ...savedFields(index),
+      // Static, so it renders. The count is the one fact a branch knows about
+      // itself without having to ask the data for anything.
+      { type: "TextCaption", text: `${index + 2} items on this invoice.` },
       next
         ? addLink(itemScreenId(next))
         : {
             type: "TextCaption",
             text: "Five items is the most this form takes. Send a sentence for a longer invoice.",
           },
-    );
-    cases[EXTRA_ITEMS[index]!] = shown;
+    ];
   });
+
+  /*
+   * Starting values for those boxes.
+   *
+   * Every declared key has to match a field that exists somewhere on the
+   * screen — "declared but not used in the init-values" is a publish error —
+   * and each field appears in exactly one branch, so the two lists are the
+   * same length by construction.
+   */
+  const savedInit: Record<string, string> = {};
+  if (again) {
+    for (const w of EXTRA_ITEMS) {
+      const f = itemFields(w);
+      savedInit[f.description] = `\${data.${f.description}}`;
+      savedInit[f.amount] = `\${data.${f.amount}}`;
+    }
+  }
 
   return {
     id: again ? "WORK_AGAIN" : "WORK",
@@ -811,6 +872,7 @@ function workScreen(o: DocumentFlow, again: boolean): Record<string, unknown> {
             description: "${data.description}",
             amount: "${data.amount}",
             due_date: "${data.due_date}",
+            ...savedInit,
           },
           children: [
             {

@@ -448,12 +448,19 @@ describe("line items on the document forms", () => {
         for (const w of WORDS) assert.equal(links(SCREEN(w)).length, 0, `item ${w} has a link`);
       });
 
-      it("never makes an item required", () => {
-        // An item nobody filled in is not an item, and a required field on a
-        // screen somebody opened by accident is a form they cannot leave.
+      it("will not save an item with a hole in it", () => {
+        /*
+         * Both fields required, which is what greys Save out until they are
+         * filled. They were optional once, so that a screen opened by
+         * accident could not trap anybody \u2014 and what came back was an item
+         * with a description and no price, sitting on the invoice.
+         *
+         * The back arrow is still the way out. It leaves the item unsaved,
+         * which is what blank fields used to mean and is plainer about it.
+         */
         for (const w of WORDS) {
-          assert.notEqual(named(SCREEN(w), `item_${w}_description`)!.required, true, `item ${w}`);
-          assert.notEqual(named(SCREEN(w), `item_${w}_amount`)!.required, true, `item ${w}`);
+          assert.equal(named(SCREEN(w), `item_${w}_description`)!.required, true, `item ${w}`);
+          assert.equal(named(SCREEN(w), `item_${w}_amount`)!.required, true, `item ${w}`);
         }
       });
 
@@ -484,23 +491,47 @@ describe("line items on the document forms", () => {
         }
       });
 
-      it("shows what has already been added", () => {
-        // The other half of the same complaint: somebody who added an item
-        // had no way to see it again. Each branch of the Switch reads back
-        // every item up to its own count.
+      it("shows the item just saved, in a box rather than in text", () => {
+        /*
+         * The other half of the same complaint: somebody who added an item
+         * had no way to see it again. The first attempt was a caption reading
+         * "Item 2: ${data.item_two_description}" \u2014 and that is what the phone
+         * printed, the words and not the value. Meta's validator took it
+         * happily, which is the second time that has meant nothing.
+         *
+         * `init-values` does resolve, so the value goes in a disabled input.
+         * One item per branch, because a Form refuses a field name twice.
+         */
+        const form = walk(screen("WORK_AGAIN")).find((n) => n.type === "Form")!;
+        const init = (form["init-values"] ?? {}) as Record<string, string>;
         const cases = (walk(screen("WORK_AGAIN")).find((n) => n.type === "Switch")!.cases ??
           {}) as Record<string, Node[]>;
 
-        WORDS.forEach((_, index) => {
-          const text = (cases[WORDS[index]!] ?? [])
+        WORDS.forEach((w, index) => {
+          const branch = cases[w] ?? [];
+          for (const field of [`item_${w}_description`, `item_${w}_amount`]) {
+            const box = branch.find((n) => n.type === "TextInput" && n.name === field);
+            assert.ok(box, `item ${w} is not shown back`);
+            assert.equal(box!.enabled, false, `${field} can be typed in`);
+            assert.equal(init[field], `\${data.${field}}`, `${field} starts empty`);
+          }
+
+          // No text binding anywhere near it: that is the thing that failed.
+          const text = branch
             .filter((n) => n.type === "TextCaption")
             .map((n) => String(n.text))
             .join(" ");
-          for (let i = 0; i <= index; i++) {
-            assert.match(text, new RegExp(`item_${WORDS[i]}_description`), `${index + 2} items`);
-            assert.match(text, new RegExp(`item_${WORDS[i]}_amount`), `${index + 2} items`);
-          }
+          assert.ok(!text.includes("${"), `${w} branch prints a raw binding`);
+          assert.match(text, new RegExp(`${index + 2} items`));
         });
+
+        // And a name is never repeated, which the publish validator refuses:
+        // "Duplicate name found for Form components".
+        const names = Object.values(cases)
+          .flat()
+          .filter((n) => n.type === "TextInput")
+          .map((n) => String(n.name));
+        assert.equal(new Set(names).size, names.length, `repeated field: ${names}`);
       });
 
       it("declares every amount a string except the one it fills", () => {
