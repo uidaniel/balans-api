@@ -289,13 +289,31 @@ export async function activateBankAccount(userId: string, subAccountCode: string
  * The version matters as much as the fact: when the terms change we have to
  * know who agreed to which text.
  */
-export async function recordConsent(userId: string, version: string): Promise<void> {
-  await db().query(
+export async function recordConsent(
+  userId: string,
+  version: string,
+): Promise<{ first: boolean; email: string | null; businessName: string | null }> {
+  /*
+   * Also says whether this finished signing up, which is what the welcome
+   * email is sent on. Agreeing is the last step, and it is taken again
+   * whenever the terms change — so "first" is read off the activation stamp,
+   * which is only ever set once, rather than off the agreement itself.
+   * `now()` is fixed for the statement, so a stamp set just now equals it.
+   *
+   * The email only comes back verified: a welcome sent to an address nobody
+   * proved they own is a welcome sent to a stranger.
+   */
+  const { rows } = await db().query<{ first: boolean; email: string | null; business_name: string | null }>(
     `UPDATE users
         SET consent_version = $2, consented_at = now(), activated_setup_at = COALESCE(activated_setup_at, now())
-      WHERE id = $1`,
+      WHERE id = $1
+  RETURNING activated_setup_at = now() AS first,
+            CASE WHEN email_verified_at IS NOT NULL THEN email END AS email,
+            business_name`,
     [userId, version],
   );
+  const r = rows[0];
+  return { first: r?.first ?? false, email: r?.email ?? null, businessName: r?.business_name ?? null };
 }
 
 /**

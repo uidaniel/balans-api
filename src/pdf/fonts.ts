@@ -99,9 +99,9 @@ function dataUri(file: string): string {
   return uri;
 }
 
-const face = (f: Face, src: string): string =>
+const face = (f: Face, src: string, display: "block" | "swap" = "block"): string =>
   `@font-face{font-family:"${f.family}";font-style:${f.style};font-weight:${f.weight};` +
-  `font-display:block;src:url(${src}) format("truetype")}`;
+  `font-display:${display};src:url("${src}") format("truetype")}`;
 
 /**
  * `@font-face` rules for the sets a sheet actually uses.
@@ -122,4 +122,17 @@ export function fontStylesheet(base = "/designs/fonts"): string {
     .flat()
     .map((f) => face(f, `${base}/${f.file}`))
     .join("\n");
+}
+
+/**
+ * Rules for a page a person reads, rather than a sheet that is captured.
+ *
+ * `swap`, not `block`. A capture waits for the faces and must not show a
+ * fallback; a person on a slow connection should read the invoice in the
+ * phone's own font for a second rather than stare at a blank page for three.
+ * Inlined by the caller, so the only requests are for the faces a browser
+ * actually uses on that page.
+ */
+export function fontFacesForPage(sets: FontSet[], base = "/designs/fonts"): string {
+  return sets.flatMap((set) => FACES[set].map((f) => face(f, `${base}/${f.file}`, "swap"))).join("");
 }

@@ -1,0 +1,73 @@
+<!doctype html>
+<!--
+  The banner at the top of the Pro email, as it was drawn.
+
+  pro-banner.png is this page captured at 560x224 with a device scale of 2 and
+  a transparent background, exactly as welcome-banner.png is. It is the Pro
+  card from the WhatsApp message (assets/brand/pro.png) turned on its side,
+  without the month: an email is kept, and a card that said September would
+  still say it in March.
+
+  "No Balans fee" is true while Pro's fee is zero (config.ts). If that
+  changes, this has to be redrawn with it.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face{font-family:"Geist";font-weight:700;src:url("../fonts/Geist-Bold.ttf")}
+@font-face{font-family:"Geist";font-weight:800;src:url("../fonts/Geist-ExtraBold.ttf")}
+@font-face{font-family:"Instrument Sans";font-weight:600;src:url("../fonts/InstrumentSans-SemiBold.ttf")}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:560px;height:224px;background:transparent}
+.banner{position:relative;width:560px;height:224px;overflow:hidden;border-radius:16px;
+  background:#10231C;color:#F6F1E7;font-family:"Instrument Sans",sans-serif}
+.copy{position:absolute;left:32px;top:36px}
+.paid{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 12px 0 10px;
+  border-radius:999px;background:#183A2B;color:#6FDC9C;font-size:12px;font-weight:600}
+.paid svg{width:12px;height:12px}
+h1{margin-top:16px;font-family:"Geist",sans-serif;font-weight:800;font-size:40px;line-height:1;
+  letter-spacing:-.045em}
+.chips{margin-top:18px;display:flex;gap:6px}
+.chips span{height:24px;padding:0 10px;display:inline-flex;align-items:center;border-radius:999px;
+  box-shadow:inset 0 0 0 1.5px #F5B82E;font-size:11px;font-weight:600;white-space:nowrap}
+.card-shadow,.card{position:absolute;width:196px;height:124px;border-radius:14px;transform:rotate(-6deg)}
+.card-shadow{right:22px;top:62px;background:#0A1712}
+.card{right:30px;top:52px;background:#F5B82E;color:#10231C;overflow:hidden}
+.card .glow{position:absolute;right:-40px;top:-60px;width:150px;height:150px;border-radius:50%;background:#E6AA27}
+.card .coin{position:absolute;left:16px;top:14px;width:30px;height:30px}
+.card .name{position:absolute;right:16px;top:16px;font-family:"Geist",sans-serif;font-weight:700;
+  font-size:10px;letter-spacing:.24em}
+.card .pro{position:absolute;left:14px;bottom:10px;font-family:"Geist",sans-serif;font-weight:800;
+  font-size:44px;line-height:1;letter-spacing:-.04em}
+</style>
+</head>
+<body>
+<div class="banner">
+  <div class="copy">
+    <span class="paid">
+      <svg viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <path d="M2 6.3 4.8 9 10 3.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Payment received
+    </span>
+    <h1>You're on Pro.</h1>
+    <div class="chips"><span>Unlimited invoices</span><span>No Balans fee</span></div>
+  </div>
+
+  <div class="card-shadow"></div>
+  <div class="card">
+    <div class="glow"></div>
+    <svg class="coin" viewBox="0 0 120 120" aria-hidden="true">
+      <circle cx="60" cy="60" r="60" fill="#10231C"/>
+      <rect x="38" y="18" width="15" height="82" rx="3" fill="#F5B82E"/>
+      <circle cx="68" cy="74" r="19" fill="none" stroke="#F5B82E" stroke-width="14"/>
+      <rect x="25" y="25" width="41" height="8" rx="2" fill="#F5B82E"/>
+      <rect x="25" y="38" width="41" height="8" rx="2" fill="#F5B82E"/>
+    </svg>
+    <p class="name">BALANS</p>
+    <p class="pro">PRO</p>
+  </div>
+</div>
+</body>
+</html>

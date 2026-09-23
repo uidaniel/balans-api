@@ -1,0 +1,57 @@
+<!doctype html>
+<!--
+  The banner at the top of the welcome email, as it was drawn.
+
+  welcome-banner.png is this page captured at 560x224 with a device scale of
+  2 and a transparent background. Keep this file beside it: the picture is
+  the only thing the email sends, but this is the only thing that can be
+  edited when the copy changes.
+
+  The corners are rounded in the image rather than by CSS in the email,
+  because Outlook ignores border-radius on an <img> and draws square corners
+  over the card behind it.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face{font-family:"Geist";font-weight:800;src:url("../fonts/Geist-ExtraBold.ttf")}
+@font-face{font-family:"Instrument Sans";font-weight:400;src:url("../fonts/InstrumentSans-Regular.ttf")}
+@font-face{font-family:"Instrument Sans";font-weight:600;src:url("../fonts/InstrumentSans-SemiBold.ttf")}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:560px;height:224px;background:transparent}
+.banner{position:relative;width:560px;height:224px;overflow:hidden;border-radius:16px;
+  background:#F5B82E;color:#10231C;font-family:"Instrument Sans",sans-serif}
+.halo{position:absolute;right:-70px;bottom:-120px;width:300px;height:300px;border-radius:50%;
+  background:#E3A92A}
+.coin{position:absolute;right:34px;bottom:30px;width:104px;height:104px}
+.copy{position:absolute;left:32px;top:30px}
+h1{font-family:"Geist",sans-serif;font-weight:800;font-size:38px;line-height:.98;
+  letter-spacing:-.045em}
+.chat{margin-top:22px;display:inline-flex;align-items:center;gap:10px;
+  padding:10px 14px 10px 14px;border-radius:14px 14px 14px 4px;background:#FFFDF8;
+  box-shadow:0 1px 0 rgba(16,35,28,.12)}
+.chat p{font-size:14.5px;font-weight:600;letter-spacing:-.005em}
+.chat span{font-size:11px;color:rgba(16,35,28,.45);white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="banner">
+  <div class="halo"></div>
+  <svg class="coin" viewBox="0 0 120 120" aria-hidden="true">
+    <circle cx="60" cy="60" r="60" fill="#10231C"/>
+    <rect x="38" y="18" width="15" height="82" rx="3" fill="#F5B82E"/>
+    <circle cx="68" cy="74" r="19" fill="none" stroke="#F5B82E" stroke-width="14"/>
+    <rect x="25" y="25" width="41" height="8" rx="2" fill="#F5B82E"/>
+    <rect x="25" y="38" width="41" height="8" rx="2" fill="#F5B82E"/>
+  </svg>
+  <div class="copy">
+    <h1>Welcome.<br>Let's get you paid.</h1>
+    <div class="chat">
+      <p>Invoice Tunde 150k, due Friday</p>
+      <span>09:41 ✓✓</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

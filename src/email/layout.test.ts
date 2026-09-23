@@ -24,27 +24,38 @@ const html = layout({
   body: "<p>Body copy.</p>",
 });
 
-/** Every inline style on the rendered email, whitespace flattened. */
-const styles = [...html.matchAll(/style="([^"]*)"/g)].map((m) => m[1]!.replace(/\s+/g, " "));
-
 describe("the email shell", () => {
-  it("gives the wordmark a background to be read against", () => {
-    const wordmark = styles.filter((s) => /font-size:19px/.test(s));
-    assert.equal(wordmark.length, 1, "one wordmark, or this test is looking at the wrong thing");
-    assert.match(wordmark[0]!, /background-color:#F6F1E7/, "on cream, declared");
-    assert.match(wordmark[0]!, /(?<!-)color:#10231C/, "in ink");
+  it("draws the logo as a picture, with a background declared beside every colour", () => {
+    // No mail client has the face the wordmark is drawn in, so it is an
+    // image; and an image cannot be recoloured, so the text around it has to
+    // carry its own background for Gmail to reason about.
+    assert.match(html, /<img src="cid:balans-logo"[^>]+alt="Balans"/);
+    const h1 = html.match(/<h1[^>]*style="([^"]*)"/)![1]!.replace(/\s+/g, " ");
+    assert.match(h1, /(?<!-)color:#10231C/, "in ink");
+    assert.match(h1, /background-color:#FFFFFF/, "on the card, declared");
   });
 
-  it("keeps the mark as an attachment, not a hosted image", () => {
+  it("keeps every picture as an attachment, not a hosted image", () => {
     // Gmail and Outlook block remote images on first open. A logo that only
     // appears for people who click "display images" is not a logo.
-    assert.match(html, /src="cid:balans-mark"/);
-    assert.doesNotMatch(html, /<img[^>]+src="https?:/);
+    const withBanner = layout({
+      preheader: "p",
+      heading: "h",
+      body: "",
+      banner: { cid: "welcome-banner", file: "welcome-banner.png", alt: "A banner", width: 486, height: 194 },
+    });
+    assert.match(withBanner, /src="cid:welcome-banner"/);
+    assert.doesNotMatch(withBanner, /<img[^>]+src="https?:/);
+  });
+
+  it("puts the two required lines in the footer", () => {
+    assert.match(html, /Balans is a product of /);
+    assert.match(html, /Payments are processed by Monnify/);
   });
 
   it("asks the client not to invert it in the first place", () => {
-    // Apple Mail honours this. Gmail does not, which is why the wordmark
-    // needed the background as well.
+    // Apple Mail honours this. Gmail does not, which is why the colours
+    // carry backgrounds and the logo carries an outline.
     assert.match(html, /name="color-scheme" content="light"/);
   });
 });

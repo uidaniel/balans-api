@@ -19,6 +19,8 @@ import { defaults, env } from "../config.ts";
 import { renderReceiptPdf } from "../documents/pdf.ts";
 import { proStarted } from "../billing/messages.ts";
 import { PRO_CARD } from "../conversation/machine.ts";
+import { proEmail, sendEmail } from "../email/send.ts";
+import { displayNumber } from "../whatsapp/number.ts";
 
 /**
  * The membership card for the month somebody joined in.
@@ -206,5 +208,56 @@ export async function notifyProActive(
 
   if (outcome.kind === "failed") {
     log.error({ userId, reason: outcome.reason }, "could not confirm Pro activation");
+  }
+}
+
+/**
+ * The same news by email, to the verified address only.
+ *
+ * Whether it is their first month is counted rather than remembered: a
+ * subscription that has taken any money is a month they have paid for, and
+ * the one that just activated is among them. One means this is the start.
+ *
+ * Best effort, like the message above it. The month is already theirs.
+ */
+export async function emailProActive(
+  userId: string,
+  until: Date,
+  paidKobo: number,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  try {
+    const { rows } = await db().query<{
+      email: string | null;
+      business_name: string | null;
+      paid_periods: number;
+    }>(
+      `SELECT CASE WHEN u.email_verified_at IS NOT NULL THEN u.email END AS email,
+              u.business_name,
+              (SELECT count(*)::int FROM subscriptions s
+                WHERE s.user_id = u.id AND s.amount_collected_kobo > 0) AS paid_periods
+         FROM users u
+        WHERE u.id = $1`,
+      [userId],
+    );
+    const r = rows[0];
+    if (!r?.email) return;
+
+    const sent = await sendEmail(
+      {
+        to: r.email,
+        ...proEmail({
+          businessName: r.business_name,
+          first: r.paid_periods <= 1,
+          amountKobo: paidKobo,
+          until,
+          waNumber: await displayNumber(),
+        }),
+      },
+      log,
+    );
+    if (!sent.ok) log.warn({ userId, reason: sent.reason }, "Pro email not sent");
+  } catch (err) {
+    log.error({ userId, err: (err as Error).message }, "Pro email failed");
   }
 }

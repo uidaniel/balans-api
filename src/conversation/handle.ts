@@ -21,7 +21,8 @@ import {
   resolveAccount,
 } from "../payments/monnify.ts";
 import { checkCode, issueCode } from "../lib/codes.ts";
-import { sendEmail, transport, verificationEmail } from "../email/send.ts";
+import { sendEmail, transport, verificationEmail, welcomeEmail } from "../email/send.ts";
+import { displayNumber } from "../whatsapp/number.ts";
 import { markEmailVerified, setEmail, recordConsent, saveBankAccount, activateBankAccount, getPendingBank } from "./store.ts";
 import type { Inbound } from "../whatsapp/inbound.ts";
 import {
@@ -1111,7 +1112,7 @@ async function runEffects(
         }
 
         case "record_consent":
-          await recordConsent(userId, effect.version);
+          sendWelcome(userId, await recordConsent(userId, effect.version), log);
           log.info({ userId, version: effect.version }, "consent recorded");
           break;
 
@@ -2099,6 +2100,32 @@ async function handleOnboardingForm(
 }
 
 /**
+ * The welcome email, the first time somebody finishes signing up.
+ *
+ * Not awaited. The chat is where they are, and the message saying they are
+ * set up must not wait up to fifteen seconds on an email provider; a welcome
+ * that fails to send is logged and not retried, because a late welcome is
+ * worse than none.
+ */
+function sendWelcome(
+  userId: string,
+  consent: Awaited<ReturnType<typeof recordConsent>>,
+  log: FastifyBaseLogger,
+): void {
+  if (!consent.first || !consent.email) return;
+  const to = consent.email;
+
+  void (async () => {
+    const sent = await sendEmail(
+      { to, ...welcomeEmail({ businessName: consent.businessName, email: to, waNumber: await displayNumber() }) },
+      log,
+    );
+    if (sent.ok) log.info({ userId, delivered: sent.delivered }, "welcome email sent");
+    else log.warn({ userId, reason: sent.reason }, "welcome email not sent");
+  })().catch((e) => log.error({ userId, err: (e as Error).message }, "welcome email failed"));
+}
+
+/**
  * The terms, agreed.
  *
  * The OptIn is required in the form, so a submission that arrives without it
@@ -2123,7 +2150,7 @@ async function handleConsentForm(
     return;
   }
 
-  await recordConsent(userId, legalConsentVersion);
+  sendWelcome(userId, await recordConsent(userId, legalConsentVersion), log);
   log.info({ userId, version: legalConsentVersion }, "consent recorded");
 
   await saveConversation(userId, "idle", {});

@@ -18,7 +18,7 @@ import { env, require_ } from "../../config.ts";
 import { db } from "../../db/pool.ts";
 import { verifyMonnifySignature } from "../../lib/crypto.ts";
 import { confirmPayment } from "../../payments/confirm.ts";
-import { notifyPaid, notifyProActive } from "../../payments/notify.ts";
+import { emailProActive, notifyPaid, notifyProActive } from "../../payments/notify.ts";
 import { reversePayment } from "../../payments/refund.ts";
 
 /** The part of Monnify's payload we act on. All of it is stored regardless. */
@@ -166,6 +166,9 @@ export async function monnifyRoutes(app: FastifyInstance): Promise<void> {
         // Somebody paid for Pro rather than an invoice. Same rule as above:
         // the subscription is already active, so telling them is best effort.
         void notifyProActive(outcome.userId, outcome.until, req.log);
+        // And in writing, where it can be found again: the chat scrolls away,
+        // and this is the only record of the payment outside it.
+        void emailProActive(outcome.userId, outcome.until, outcome.paidKobo, req.log);
         return reply.send({ ok: true });
 
       case "unverifiable":

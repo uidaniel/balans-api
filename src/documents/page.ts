@@ -14,7 +14,8 @@
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { outstandingKobo, payable, payableLabel, payableNowKobo, type PublicDocument } from "./public.ts";
-import { logoAvailable, logoSvg, monnifyLogo } from "../brand/logo.ts";
+import { logoAvailable, logoSvg, markSvg, monnifyLogo } from "../brand/logo.ts";
+import { FONT, fontFacesForPage } from "../pdf/fonts.ts";
 
 /** HTML-escapes text. Also escapes quotes, for anything inside an attribute. */
 export function esc(s: string): string {
@@ -27,132 +28,151 @@ export function esc(s: string): string {
 }
 
 /* Brand tokens, copied from the web app's globals.css. Duplicated on purpose:
-   this page must render from a cold server with no shared stylesheet. */
+   this page must render from a cold server with no shared stylesheet. The
+   faces are the site's too — Instrument Sans for reading, Geist for the
+   figures — served by this API and inlined as rules, so the only requests
+   are for the few files a phone actually uses. */
 const CSS = `
-:root{--marigold:#f5b82e;--marigold-deep:#d99a12;--ink:#10231c;--ink-2:#173128;
---cream:#f6f1e7;--sand:#e9e1d0;--sand-2:#ddd3bf;--moss:#3f8f5f;--clay:#c2462e}
+${fontFacesForPage(["sans", "display"])}
+:root{--marigold:#f5b82e;--marigold-hi:#ffc848;--ink:#10231c;--ink-2:#173128;
+--cream:#f6f1e7;--sand:#e9e1d0;--paper:#fffdf8;--moss:#3f8f5f;--moss-deep:#2f6b47;--clay:#c2462e;
+--ink-65:rgba(16,35,28,.65);--ink-50:rgba(16,35,28,.5);--ink-10:rgba(16,35,28,.1);--ink-6:rgba(16,35,28,.06);
+--sans:${FONT.sans};--display:${FONT.display}}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--cream);color:var(--ink);
-font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
--webkit-font-smoothing:antialiased;line-height:1.5;padding:24px 16px 64px}
-.sheet{max-width:640px;margin:0 auto;background:#fff;border:1px solid var(--sand-2);
-border-radius:20px;overflow:hidden}
+body{background:var(--cream);color:var(--ink);font-family:var(--sans);
+-webkit-font-smoothing:antialiased;line-height:1.5;padding:28px 16px 56px}
+.sheet{max-width:600px;margin:0 auto;background:var(--paper);border-radius:24px;
+box-shadow:0 0 0 1px var(--ink-6),0 1px 2px var(--ink-6);overflow:hidden}
 .top{padding:28px 28px 0}
-.brand{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:-.03em;
-font-size:20px;color:var(--ink)}
-.brand svg{height:36px;width:auto;display:block}
-.dot{width:14px;height:14px;border-radius:50%;background:var(--marigold);flex:none}
-.kind{margin-top:22px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;
-color:#6b7d74;font-weight:600}
-h1{font-size:30px;letter-spacing:-.045em;font-weight:700;margin-top:4px;line-height:1.15}
-.from{margin-top:14px;font-size:15px;color:#4a5d54}
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;
+letter-spacing:-.03em;font-size:20px}
+.dot{width:22px;height:22px;border-radius:50%;background:var(--marigold);flex:none}
+/* The site's .label: small, spaced capitals that say what a figure is. */
+.kind,th,.teyebrow,.part.phead .who{font-size:11.5px;font-weight:600;letter-spacing:.06em;
+text-transform:uppercase}
+.kind{margin-top:28px;color:var(--ink-50)}
+h1{font-family:var(--display);font-size:44px;font-weight:800;letter-spacing:-.045em;
+line-height:1.05;margin-top:8px;font-variant-numeric:tabular-nums}
+.from{margin-top:10px;font-size:15px;color:var(--ink-65)}
 .from b{color:var(--ink);font-weight:600}
-.pill{display:inline-block;margin-top:16px;padding:5px 12px;border-radius:999px;
-font-size:12.5px;font-weight:650;letter-spacing:.01em}
+.pill{display:inline-flex;align-items:center;height:28px;margin-top:16px;padding:0 12px;
+border-radius:999px;font-size:12.5px;font-weight:600}
 .pill.due{background:var(--sand);color:var(--ink-2)}
-.pill.paid{background:#e4f2e9;color:#256b41}
-.pill.overdue{background:#fbe6e1;color:var(--clay)}
-.pill.cancelled{background:#eceae6;color:#6b7d74}
-table{width:100%;border-collapse:collapse;margin-top:26px}
-th{text-align:left;font-size:12px;letter-spacing:.07em;text-transform:uppercase;
-color:#6b7d74;font-weight:600;padding:0 28px 10px;border-bottom:1px solid var(--sand)}
+.pill.paid{background:rgba(63,143,95,.13);color:var(--moss-deep)}
+.pill.overdue{background:rgba(194,70,46,.1);color:var(--clay)}
+.pill.cancelled{background:var(--ink-6);color:var(--ink-65)}
+table{width:100%;border-collapse:collapse;margin-top:28px}
+th{text-align:left;color:var(--ink-50);padding:0 28px 10px;border-bottom:1px solid var(--ink-10)}
 th.r,td.r{text-align:right}
-td{padding:14px 28px;border-bottom:1px solid #f0ece3;font-size:15px;vertical-align:top}
-td .qty{display:block;font-size:13px;color:#6b7d74;margin-top:2px}
-.totals{padding:18px 28px 0}
-.row{display:flex;justify-content:space-between;font-size:15px;color:#4a5d54;padding:5px 0}
-.row.grand{margin-top:10px;padding-top:16px;border-top:2px solid var(--ink);
-font-size:20px;color:var(--ink);font-weight:700;letter-spacing:-.02em}
+td{padding:14px 28px;border-bottom:1px solid var(--ink-6);font-size:15px;vertical-align:top}
+td.r{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+td .qty{display:block;font-size:13px;color:var(--ink-50);margin-top:2px;font-variant-numeric:tabular-nums}
+.totals{padding:16px 28px 0}
+.row{display:flex;justify-content:space-between;gap:16px;font-size:15px;color:var(--ink-65);
+padding:5px 0;font-variant-numeric:tabular-nums}
+.row.grand{margin-top:8px;padding-top:14px;border-top:1px solid var(--ink);color:var(--ink);
+font-family:var(--display);font-size:22px;font-weight:700;letter-spacing:-.03em}
 .row.paidoff{color:var(--moss)}
-.note{margin:20px 28px 0;padding:14px 16px;background:var(--cream);
-border-radius:12px;font-size:14px;color:#4a5d54;white-space:pre-wrap}
-.pay{padding:26px 16px 30px}
-button.pay-btn,a.pay-btn{display:block;width:100%;padding:16px;border:0;border-radius:14px;
-background:var(--marigold);color:var(--ink);font-size:17px;font-weight:700;
-letter-spacing:-.01em;cursor:pointer;text-align:center;text-decoration:none;
-font-family:inherit}
-button.pay-btn:hover,a.pay-btn:hover{background:var(--marigold-deep)}
+.note{margin:22px 28px 0;padding:14px 16px;background:var(--cream);border-radius:14px;
+font-size:14px;line-height:1.6;color:var(--ink-65);white-space:pre-wrap}
+.pay{padding:28px 28px 4px}
+/* The site's primary button: a marigold pill, the width of the page here
+   because it is the only thing on it to press. */
+button.pay-btn,a.pay-btn,button.tcopy{display:flex;align-items:center;justify-content:center;
+width:100%;height:54px;padding:0 24px;border:0;border-radius:999px;background:var(--marigold);
+color:var(--ink);font:600 16px/1 var(--sans);cursor:pointer;text-decoration:none;
+transition:background-color .2s,transform .2s;-webkit-tap-highlight-color:transparent}
+button.pay-btn:hover,a.pay-btn:hover,button.tcopy:hover{background:var(--marigold-hi)}
+button.pay-btn:active,button.tcopy:active{transform:scale(.98)}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 button.pay-btn:disabled{opacity:.5;cursor:default}
-.secure{margin-top:12px;text-align:center;font-size:12.5px;color:#6b7d74}
-.banner{margin:26px 28px 30px;padding:16px;border-radius:14px;font-size:15px;text-align:center}
-.banner.paid{background:#e4f2e9;color:#256b41;font-weight:600}
-.banner.cancelled{background:#eceae6;color:#57665e}
-.banner.quote{background:var(--cream);color:#4a5d54}
-.parts{padding:16px 28px 0}
-.part{display:flex;justify-content:space-between;align-items:center;
-padding:11px 0;border-bottom:1px solid #f0ece3;font-size:14.5px}
+.secure{margin-top:12px;text-align:center;font-size:13px;color:var(--ink-50)}
+.banner{margin:28px 28px 4px;padding:16px 18px;border-radius:16px;font-size:14.5px;
+line-height:1.55;text-align:center}
+.banner.paid{background:rgba(63,143,95,.12);color:var(--moss-deep);font-weight:600}
+.banner.cancelled{background:var(--ink-6);color:var(--ink-65)}
+.banner.quote{background:var(--cream);color:var(--ink-65)}
+.parts{padding:18px 28px 0}
+.part{display:flex;justify-content:space-between;align-items:center;gap:16px;
+padding:12px 0;border-bottom:1px solid var(--ink-6);font-size:14.5px}
 .part:last-child{border-bottom:0}
-.part .who{color:#4a5d54}
-.part .amt{font-weight:650}
+.part .who{color:var(--ink-65)}
+.part .amt{font-weight:600;font-variant-numeric:tabular-nums}
 .part.done .who,.part.done .amt{color:var(--moss)}
 .part.phead{border-bottom:0;padding-bottom:2px}
-.part.phead .who{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#7b8b83}
-.part .tag{font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;
-color:#8a9a92;margin-left:8px;font-weight:600}
+.part.phead .who{color:var(--ink-50)}
+.part .tag{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;
+background:var(--ink-6);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;
+color:var(--ink-65);font-weight:600;vertical-align:1px}
+.part.done .tag{background:rgba(63,143,95,.12);color:var(--moss-deep)}
 /* The date sits under the label rather than beside it: three things on one
    line wraps badly at 320px, and the label is what is being scanned. */
-.part .on{display:block;font-size:12.5px;color:#8a9a92;margin-top:3px}
-.trust{margin:24px 28px 0;padding:18px 20px;background:var(--cream);
-border:1px solid var(--sand);border-radius:14px}
-.tline{display:flex;align-items:center;justify-content:center;gap:9px;
-font-size:13.5px;color:#4a5d54;font-weight:550;flex-wrap:wrap}
-.tline .shield{width:16px;height:16px;color:var(--moss);flex:none}
-.tline .mlogo{height:22px;width:auto;display:block}
-.tsmall{margin-top:11px;text-align:center;font-size:12.5px;line-height:1.65;color:#7d8d85}
-.tsmall b{color:#5c6f66;font-weight:600}
-.files{padding:22px 28px 26px;text-align:center;font-size:13.5px}
-.files a{color:#5c6f66;text-decoration:underline;text-underline-offset:3px}
-.foot{max-width:640px;margin:18px auto 0;text-align:center;font-size:13px;color:#7d8d85}
-.foot a{color:#7d8d85}
+.part .on{display:block;font-size:12.5px;color:var(--ink-50);margin-top:3px}
+/* The processor, as the site shows it: one quiet pill, not a boxed panel
+   competing with the amount for attention. */
+.trust{margin:26px 28px 0;text-align:center}
+.badge{display:inline-flex;align-items:center;gap:8px;padding:6px 14px 6px 10px;
+border-radius:999px;background:#fff;box-shadow:inset 0 0 0 1px var(--ink-10);
+font-size:11.5px;font-weight:500;color:var(--ink-65);white-space:nowrap}
+.badge svg{width:14px;height:14px;color:var(--moss);flex:none}
+.badge img{height:12px;width:auto;display:block}
+.tsmall{margin:12px auto 0;max-width:420px;font-size:12.5px;line-height:1.6;color:var(--ink-50)}
+.tsmall b{color:var(--ink-65);font-weight:600}
+.files{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;padding:22px 28px 28px}
+.files a{display:inline-flex;align-items:center;height:40px;padding:0 18px;border-radius:999px;
+font-size:13.5px;font-weight:600;color:var(--ink);text-decoration:none;
+box-shadow:inset 0 0 0 1.5px rgba(16,35,28,.2);transition:box-shadow .2s}
+.files a:hover{box-shadow:inset 0 0 0 1.5px var(--ink)}
+.foot{display:flex;align-items:center;justify-content:center;gap:8px;max-width:600px;
+margin:20px auto 0;font-size:12.5px;color:var(--ink-50)}
+.foot a{color:inherit;text-underline-offset:3px}
+.foot svg{width:16px;height:16px;flex:none}
 /* The transfer step is the one thing on this page that is an action rather
-   than a document, so it sits on ink and everything above it stays paper. */
-.tcard{background:var(--ink);border-radius:18px;padding:26px 22px 22px;text-align:center}
-.teyebrow{font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;
-font-weight:650;color:#7f918a}
-.tamt{font-size:17px;font-weight:700;letter-spacing:-.02em}
-.tbox{margin-top:18px;background:#18302a;border-radius:13px;overflow:hidden;text-align:left}
+   than a document, so it sits on ink and everything above it stays paper —
+   the same move as the pay panel on the site. */
+.tcard{background:var(--ink);color:var(--cream);border-radius:24px;padding:24px 20px 20px;text-align:center}
+.teyebrow{color:rgba(246,241,231,.5)}
+.tamt{font-family:var(--display);font-size:17px;font-weight:700;letter-spacing:-.02em;
+font-variant-numeric:tabular-nums}
+.tbox{margin-top:16px;background:var(--ink-2);border-radius:16px;overflow:hidden;text-align:left}
 .trow{display:flex;align-items:center;justify-content:space-between;gap:14px;
-padding:13px 16px;border-top:1px solid #254236}
+padding:13px 16px;border-top:1px solid rgba(246,241,231,.07)}
 .trow:first-child{border-top:0}
 .trow.wide{display:block}
 /* The account number reads as one of the four details, on its line, in the
    same shape as the rest. It was on a line of its own at 26px, which made it
    look like a different kind of thing from the bank and the amount beside it. */
-.tk{color:#869790;font-size:13px;flex:none}
-.tv{font-weight:650;text-align:right;color:var(--cream);min-width:0;font-size:14.5px}
+.tk{color:rgba(246,241,231,.5);font-size:13px;flex:none}
+.tv{font-weight:600;text-align:right;color:var(--cream);min-width:0;font-size:14.5px}
 .trow.wide .tv{text-align:left;margin-top:5px}
-.tv .acct{font-variant-numeric:tabular-nums;letter-spacing:.04em;
-font-size:20px;font-weight:700;color:var(--cream);line-height:1.2}
-button.tcopy{display:block;width:100%;margin-top:18px;padding:15px;border:0;
-border-radius:13px;background:var(--marigold);color:var(--ink);font-size:16px;
-font-weight:700;letter-spacing:-.01em;cursor:pointer;font-family:inherit}
-button.tcopy:hover{background:var(--marigold-deep)}
-button.tcopy.done{background:#2f6b47;color:#e8f5ed}
-.tfine{margin:16px 4px 0;font-size:13.5px;line-height:1.65;color:#6b7d74;text-align:center}
-.tfine strong{color:var(--ink);font-weight:650}
-.twait{margin-top:16px;font-size:13px;color:#8fa199;text-align:center;line-height:1.7}
+.tv .acct{font-family:var(--display);font-variant-numeric:tabular-nums;letter-spacing:.03em;
+font-size:20px;font-weight:700;line-height:1.2}
+button.tcopy{height:52px;margin-top:16px}
+button.tcopy.done{background:var(--moss);color:var(--cream)}
+.tfine{margin:16px 4px 0;font-size:13.5px;line-height:1.65;color:var(--ink-65);text-align:center}
+.tfine strong{color:var(--ink);font-weight:600}
+.twait{margin-top:16px;font-size:13px;color:rgba(246,241,231,.6);text-align:center;line-height:1.7}
 .twait .dot{display:inline-block;vertical-align:baseline;width:7px;height:7px;
 border-radius:50%;background:var(--marigold);margin-right:8px;animation:pulse 1.8s ease-in-out infinite}
-.twait .tleft{color:#6d807a}
+.twait .tleft{color:rgba(246,241,231,.45)}
 @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
 @media(prefers-reduced-motion:reduce){.twait .dot{animation:none;opacity:.8}}
-.tussd{margin-top:12px;text-align:center;font-size:13.5px;color:#6b7d74}
+.tussd{margin-top:12px;text-align:center;font-size:13.5px;color:var(--ink-65)}
 @media(max-width:520px){
-  .tcard{padding:22px 16px 18px}
+  body{padding:12px 10px 44px}
+  .sheet{border-radius:20px}
+  .top{padding:22px 20px 0}
+  .kind{margin-top:24px}
+  h1{font-size:38px}
+  th{padding:0 20px 10px}
+  td{padding:13px 20px}
+  .totals,.parts{padding-left:20px;padding-right:20px}
+  .note,.trust,.banner{margin-left:20px;margin-right:20px}
+  .pay{padding:24px 12px 4px}
+  .files{padding:20px 20px 24px}
+  .tcard{padding:22px 14px 16px;border-radius:20px}
   .trow{padding:12px 13px}
-  .tv .acct{font-size:18px;letter-spacing:.03em}
-}
-@media(max-width:520px){
-  body{padding:14px 10px 48px}
-  .sheet{border-radius:16px}
-  .top{padding:22px 18px 0}
-  h1{font-size:25px}
-  th{padding:0 18px 10px}
-  td{padding:12px 18px}
-  .totals{padding:16px 18px 0}
-  .pay,.banner{padding:20px 10px 24px;margin-left:8px;margin-right:8px}
-  .trust{margin-left:18px;margin-right:18px;padding:14px 14px}
-  .note{margin-left:18px;margin-right:18px}
+  .tv .acct{font-size:18px;letter-spacing:.02em}
 }
 `;
 
@@ -292,7 +312,7 @@ export function renderDocument(
     <div class="brand">${
       // The real logo where we have it; the wordmark in text if the asset is
       // missing, because a payment page must render either way.
-      logoAvailable() ? logoSvg("36px") : `<span class="dot"></span>balans`
+      logoAvailable() ? logoSvg("28px") : `<span class="dot"></span>balans`
     }</div>
     <div class="kind">${label} ${doc.number}</div>
     <h1>${formatNaira(doc.totalKobo)}</h1>
@@ -335,12 +355,12 @@ export function renderDocument(
     }
     ${
       doc.amountPaidKobo > 0
-        ? `${doc.type === "payment_request" ? "" : " &middot; "}<a href="/i/${esc(opts.token)}/receipt">Receipt</a>`
+        ? `<a href="/i/${esc(opts.token)}/receipt">Download receipt</a>`
         : ""
     }
   </div>
 </div>
-<p class="foot">Invoiced with balans &middot; <a href="https://balans.ng">balans.ng</a></p>
+<p class="foot">${markSvg("16px")}<span>Invoiced with <a href="https://balans.ng">Balans</a></span></p>
 ${opts.transfer ? `<script>${TRANSFER_JS}</script>` : ""}
 </body></html>`;
 }
@@ -559,16 +579,16 @@ function trustBlock(doc: PublicDocument): string {
     doc.status !== "accepted";
 
   return `<div class="trust">
-    <div class="tline">
-      <svg class="shield" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <path d="M8 1.75 2.75 3.6v3.9c0 3.1 2.2 5.6 5.25 6.75 3.05-1.15 5.25-3.65 5.25-6.75V3.6L8 1.75Z"
-              stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-        <path d="m5.6 8 1.7 1.7 3.1-3.3" stroke="currentColor" stroke-width="1.4"
-              stroke-linecap="round" stroke-linejoin="round"/>
+    <span class="badge">
+      <!-- An arrow into a bank, as on the site: what actually happens to the
+           money. A shield said "protected", which nothing here promises. -->
+      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M2 14h12M3.5 11.5v-4M8 11.5v-4M12.5 11.5v-4M8 1.5 14 5H2l6-3.5Z" stroke="currentColor"
+              stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      <span>${quote ? "Payments handled by" : "Payments processed by"}</span>
-      ${mark ? `<img class="mlogo" src="${mark}" alt="Monnify" width="88" height="20">` : `<b>Monnify</b>`}
-    </div>
+      ${quote ? "Payments handled by" : "Payments processed by"}
+      ${mark ? `<img src="${mark}" alt="Monnify" width="74" height="12">` : `<b>Monnify</b>`}
+    </span>
     <p class="tsmall">
       Balans is not a bank and does not hold your money.${
         open
@@ -589,12 +609,12 @@ export function renderNotFound(): string {
 <meta name="format-detection" content="telephone=no">
 <title>Not found</title><meta name="robots" content="noindex,nofollow">
 <style>${CSS}</style></head><body>
-<div class="sheet"><div class="top" style="padding-bottom:28px">
-  <div class="brand">${logoAvailable() ? logoSvg("36px") : `<span class="dot"></span>balans`}</div>
+<div class="sheet"><div class="top" style="padding-bottom:32px">
+  <div class="brand">${logoAvailable() ? logoSvg("28px") : `<span class="dot"></span>balans`}</div>
   <h1 style="margin-top:22px">Nothing here</h1>
   <p class="from">This link has expired, or it was never quite right. Ask whoever sent it for a new one.</p>
 </div></div>
-<p class="foot"><a href="https://balans.ng">balans.ng</a></p>
+<p class="foot">${markSvg("16px")}<a href="https://balans.ng">balans.ng</a></p>
 </body></html>`;
 }
 

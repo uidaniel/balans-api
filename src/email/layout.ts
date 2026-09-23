@@ -2,22 +2,24 @@
  * The shell every Balans email is built in.
  *
  * Email is not the web. Gmail strips much of a `<style>` block, Outlook renders
- * through Word, and neither supports flexbox, grid or custom fonts. So this is
- * tables and inline styles — not because it is nice, but because it is the only
- * thing that arrives looking the same everywhere.
+ * through Word, and neither supports flexbox or grid. So this is tables and
+ * inline styles — not because it is nice, but because it is the only thing
+ * that arrives looking the same everywhere.
  *
- * The design is the quiet end of the brand: a white sheet on cream, a hairline
- * around it, the wordmark above it and small print below. There is no coloured
- * banner, no full-width button shouting at the reader and no second typeface —
- * the things that make a message look like a marketing template rather than
- * something a person sent. What structure there is comes from rules and space,
- * which is how the invoices themselves are drawn.
+ * The design is a single card: the logo, a heading, a few lines of prose, the
+ * facts in a quiet panel, one button, and the small print under a hairline at
+ * the foot of the same card. No coloured header bar, no second column, no
+ * row of social icons — nothing that makes a message look like it came off a
+ * marketing template rather than from the product the reader uses.
  *
- * The brand mark is a real image, attached to the message and referenced by
- * content id rather than fetched from a URL. Gmail and Outlook block remote
- * images by default, so a hosted logo arrives as an empty box for most people
- * on first open; an embedded one always renders, and does not depend on the
- * marketing site being deployed.
+ * Images travel with the message and are referenced by content id rather than
+ * fetched from a URL. Gmail and Outlook block remote images by default, so a
+ * hosted logo arrives as an empty box for most people on first open; an
+ * embedded one always renders, and does not depend on the site being up.
+ *
+ * The brand faces are asked for too, from our own host. Apple Mail and iOS
+ * Mail load them; Gmail does not, and falls back to the system stack below —
+ * which is why nothing here depends on the face being the brand's.
  *
  * PRD section 12 requires two lines on every email, and they are in the footer
  * where they cannot be forgotten.
@@ -31,39 +33,70 @@ const C = {
   marigold: "#F5B82E",
   cream: "#F6F1E7",
   white: "#FFFFFF",
+  /** The panel the facts sit in: cream, lifted most of the way to white. */
+  panel: "#FAF7F0",
   /** Body text that is not the heading. A solid value: opacity is unreliable. */
   body: "#3C4B45",
   /** Labels, small print. */
-  muted: "#5C6B65",
+  muted: "#6B7872",
   /** The hairline everything is separated by. */
-  line: "#E7DFCE",
+  line: "#ECE5D6",
 };
 
-const FONT =
-  "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+const SANS =
+  "'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+const DISPLAY = `'Geist', ${SANS}`;
 
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /**
- * The content id the mark is attached under.
+ * The content id the logo is attached under.
  *
  * Exported so the sender can attach the file with a matching id: the two must
  * agree or the image renders as a broken box.
  */
-export const MARK_CID = "balans-mark";
+export const LOGO_CID = "balans-logo";
+
+/** The logo's size in the message. The file is three times this. */
+const LOGO = { width: 94, height: 28 };
+
+/** An image attached to the message and shown inline. */
+export type InlineImage = {
+  cid: string;
+  /** A file in assets/email. */
+  file: string;
+  alt: string;
+  width: number;
+  height: number;
+};
 
 export type LayoutOptions = {
   /** The line shown in the inbox list, after the subject. */
   preheader: string;
   heading: string;
-  /** Small caps over the heading: what kind of message this is. Optional. */
+  /** A short line over the heading: who or what this is about. Optional. */
   eyebrow?: string;
+  /** A picture under the logo. The sender must attach the same file. */
+  banner?: InlineImage;
   /** Already-escaped HTML for the body. */
   body: string;
 };
 
-export function layout({ preheader, heading, eyebrow, body }: LayoutOptions): string {
+/** Rules for the clients that read a `<style>` block. Everything else is inline. */
+const HEAD_CSS = `
+@font-face{font-family:'Instrument Sans';font-weight:400;src:url('${env.PUBLIC_BASE_URL}/designs/fonts/InstrumentSans-Regular.ttf') format('truetype')}
+@font-face{font-family:'Instrument Sans';font-weight:600;src:url('${env.PUBLIC_BASE_URL}/designs/fonts/InstrumentSans-SemiBold.ttf') format('truetype')}
+@font-face{font-family:'Instrument Sans';font-weight:700;src:url('${env.PUBLIC_BASE_URL}/designs/fonts/InstrumentSans-Bold.ttf') format('truetype')}
+@font-face{font-family:'Geist';font-weight:700;src:url('${env.PUBLIC_BASE_URL}/designs/fonts/Geist-Bold.ttf') format('truetype')}
+a{color:${C.ink}}
+@media (max-width:600px){
+  .card{padding:28px 22px 24px !important}
+  .h1{font-size:22px !important}
+  .banner{width:100% !important;height:auto !important}
+}`;
+
+export function layout({ preheader, heading, eyebrow, banner, body }: LayoutOptions): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -73,6 +106,7 @@ export function layout({ preheader, heading, eyebrow, body }: LayoutOptions): st
 <meta name="color-scheme" content="light">
 <meta name="supported-color-schemes" content="light">
 <title>${esc(heading)}</title>
+<style>${HEAD_CSS}</style>
 </head>
 <body style="margin:0;padding:0;background-color:${C.cream};">
 
@@ -86,75 +120,66 @@ export function layout({ preheader, heading, eyebrow, body }: LayoutOptions): st
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
          style="background-color:${C.cream};">
     <tr>
-      <td align="center" style="padding:36px 16px 44px;">
+      <td align="center" style="padding:32px 12px 40px;background-color:${C.cream};">
 
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0"
                style="width:100%;max-width:560px;">
-
-          <!-- Wordmark.
-               The cell carries an explicit background as well as a colour, and
-               it has to. Gmail's dark mode rewrites a colour it considers too
-               dark to read, but it decides that by looking at the background
-               declared on the same element — and a cell with only a colour on
-               it has none to look at. So the page behind the wordmark went
-               dark and the ink stayed put, leaving #10231C on near-black:
-               legible as nothing but its green cast. -->
           <tr>
-            <td style="padding:0 2px 16px;background-color:${C.cream};">
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <!-- Every cell declares its background beside its colour. Gmail's
+                 dark mode decides whether to rewrite a colour by looking at
+                 the background on the same element, and a colour on its own
+                 gets rewritten into something nobody chose. -->
+            <td class="card" style="padding:36px 36px 28px;background-color:${C.white};
+                border:1px solid ${C.line};border-radius:16px;font-family:${SANS};">
+
+              <!-- The logo is a picture of the logo, not a wordmark in text:
+                   no mail client has the face it is drawn in. The file has a
+                   thin white outline round the letters, invisible on this
+                   card and the only thing keeping them legible when a client
+                   darkens the card behind a transparent image. -->
+              <img src="cid:${LOGO_CID}" width="${LOGO.width}" height="${LOGO.height}" alt="Balans"
+                   style="display:block;width:${LOGO.width}px;height:${LOGO.height}px;border:0;outline:none;text-decoration:none;">
+
+              ${
+                banner
+                  ? `<img class="banner" src="cid:${banner.cid}" width="${banner.width}" height="${banner.height}"
+                     alt="${esc(banner.alt)}"
+                     style="display:block;width:100%;max-width:${banner.width}px;height:auto;margin-top:28px;
+                            border:0;outline:none;text-decoration:none;border-radius:16px;">`
+                  : ""
+              }
+
+              ${
+                eyebrow
+                  ? `<p style="margin:32px 0 0;font-size:13px;line-height:1.4;font-weight:600;
+                              color:${C.muted};background-color:${C.white};">${esc(eyebrow)}</p>`
+                  : ""
+              }
+              <h1 class="h1" style="margin:${eyebrow ? "6px" : banner ? "28px" : "32px"} 0 14px;font-family:${DISPLAY};
+                         font-size:24px;line-height:1.25;font-weight:700;letter-spacing:-0.02em;
+                         color:${C.ink};background-color:${C.white};">${esc(heading)}</h1>
+
+              ${body}
+
+              <!-- Footer. Section 12 requires both lines on every email. -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                     style="margin-top:32px;">
                 <tr>
-                  <td style="vertical-align:middle;">
-                    <img src="cid:${MARK_CID}" width="26" height="26" alt="Balans"
-                         style="display:block;width:26px;height:26px;border:0;outline:none;
-                                text-decoration:none;border-radius:13px;">
+                  <td style="border-top:1px solid ${C.line};padding-top:20px;font-family:${SANS};
+                      font-size:12px;line-height:1.7;color:${C.muted};background-color:${C.white};">
+                    Balans is a product of ${esc(env.LEGAL_ENTITY_NAME)}. Payments are processed by Monnify.<br>
+                    <a href="${esc(env.SITE_URL)}/terms" style="color:${C.muted};text-decoration:underline;">Terms</a>
+                    &nbsp;·&nbsp;
+                    <a href="${esc(env.SITE_URL)}/privacy" style="color:${C.muted};text-decoration:underline;">Privacy</a>
+                    &nbsp;·&nbsp;
+                    <a href="mailto:${esc(env.SUPPORT_EMAIL)}" style="color:${C.muted};text-decoration:underline;">${esc(env.SUPPORT_EMAIL)}</a><br>
+                    © ${new Date().getFullYear()} Balans
                   </td>
-                  <td style="padding-left:9px;font-family:${FONT};font-size:19px;
-                             font-weight:700;letter-spacing:-0.02em;
-                             background-color:${C.cream};color:${C.ink};
-                             vertical-align:middle;">balans</td>
                 </tr>
               </table>
+
             </td>
           </tr>
-
-          <!-- The sheet -->
-          <tr>
-            <td style="background-color:${C.white};border:1px solid ${C.line};border-radius:14px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td style="padding:34px 32px 30px;font-family:${FONT};background-color:${C.white};">
-                    ${
-                      eyebrow
-                        ? `<p style="margin:0 0 10px;font-size:11px;font-weight:600;
-                                     letter-spacing:0.12em;text-transform:uppercase;
-                                     color:${C.muted};">${esc(eyebrow)}</p>`
-                        : ""
-                    }
-                    <h1 style="margin:0 0 16px;font-size:21px;line-height:1.3;font-weight:700;
-                               letter-spacing:-0.015em;color:${C.ink};">${esc(heading)}</h1>
-                    ${body}
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer. Section 12 requires both lines on every email. -->
-          <tr>
-            <td style="padding:20px 4px 0;font-family:${FONT};font-size:12px;
-                       line-height:1.65;color:${C.muted};background-color:${C.cream};">
-              <p style="margin:0;">Balans is a product of ${esc(env.LEGAL_ENTITY_NAME)}.</p>
-              <p style="margin:0;">Payments are processed by Monnify.</p>
-              <p style="margin:10px 0 0;">
-                <a href="${esc(env.PUBLIC_BASE_URL)}/terms" style="color:${C.muted};text-decoration:underline;">Terms</a>
-                &nbsp;·&nbsp;
-                <a href="${esc(env.PUBLIC_BASE_URL)}/privacy" style="color:${C.muted};text-decoration:underline;">Privacy</a>
-                &nbsp;·&nbsp;
-                <a href="mailto:${esc(env.SUPPORT_EMAIL)}" style="color:${C.muted};text-decoration:underline;">${esc(env.SUPPORT_EMAIL)}</a>
-              </p>
-            </td>
-          </tr>
-
         </table>
       </td>
     </tr>
@@ -176,9 +201,9 @@ export function layout({ preheader, heading, eyebrow, body }: LayoutOptions): st
  * `<strong>` in the product arrived as visible angle brackets.
  */
 export function paragraph(text: string, muted = false): string {
-  return `<p style="margin:0 0 14px;font-size:15px;line-height:1.65;color:${
+  return `<p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.7;color:${
     muted ? C.muted : C.body
-  };">${text}</p>`;
+  };background-color:${C.white};">${text}</p>`;
 }
 
 /**
@@ -191,16 +216,16 @@ export function paragraph(text: string, muted = false): string {
 export function amount(label: string, value: string, sub?: string): string {
   return `
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-         style="margin:4px 0 22px;">
+         style="margin:8px 0 24px;">
     <tr>
-      <td style="font-family:${FONT};background-color:${C.white};">
-        <p style="margin:0 0 4px;font-size:11px;font-weight:600;letter-spacing:0.12em;
+      <td style="padding:20px 22px;background-color:${C.panel};border-radius:12px;font-family:${SANS};">
+        <p style="margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:0.1em;
                   text-transform:uppercase;color:${C.muted};">${esc(label)}</p>
-        <p style="margin:0;font-size:32px;line-height:1.1;font-weight:700;
+        <p style="margin:0;font-family:${DISPLAY};font-size:30px;line-height:1.1;font-weight:700;
                   letter-spacing:-0.03em;color:${C.ink};">${esc(value)}</p>
         ${
           sub
-            ? `<p style="margin:6px 0 0;font-size:13px;color:${C.muted};">${esc(sub)}</p>`
+            ? `<p style="margin:6px 0 0;font-size:13px;line-height:1.5;color:${C.muted};">${esc(sub)}</p>`
             : ""
         }
       </td>
@@ -218,11 +243,10 @@ export function amount(label: string, value: string, sub?: string): string {
 export function codeBlock(code: string): string {
   return `
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-         style="margin:20px 0 18px;">
+         style="margin:8px 0 20px;">
     <tr>
-      <td align="center" style="background-color:${C.white};border:1px solid ${C.line};
-          border-radius:12px;padding:20px 16px;">
-        <div style="font-family:${FONT};font-size:30px;font-weight:700;letter-spacing:0.24em;
+      <td align="center" style="background-color:${C.panel};border-radius:12px;padding:22px 16px;">
+        <div style="font-family:${DISPLAY};font-size:32px;font-weight:700;letter-spacing:0.24em;
                     color:${C.ink};line-height:1.1;user-select:all;
                     /* The trailing letter-space would push it off-centre. */
                     text-indent:0.24em;">${esc(code)}</div>
@@ -235,29 +259,62 @@ export function codeBlock(code: string): string {
  * A panel of label-and-value rows.
  *
  * The facts of the message, pulled out of the prose so they can be checked at
- * a glance. Hairlines rather than a filled box: the rows are the content, and
- * a coloured card around them only makes the message look like an
- * advertisement for itself.
+ * a glance: a quiet filled panel with hairlines between the rows, and the
+ * value on the right where the eye lands looking for it.
  */
 export function detailCard(rows: { label: string; value: string }[]): string {
   if (!rows.length) return "";
 
   const cells = rows
     .map(
-      (r) => `<tr>
-        <td align="left" style="border-top:1px solid ${C.line};padding:11px 0;font-family:${FONT};
-            font-size:14px;line-height:1.45;color:${C.muted};background-color:${C.white};">${esc(r.label)}</td>
-        <td align="right" style="border-top:1px solid ${C.line};padding:11px 0;font-family:${FONT};
+      (r, i) => `<tr>
+        <td align="left" style="${i ? `border-top:1px solid ${C.line};` : ""}padding:14px 0;font-family:${SANS};
+            font-size:14px;line-height:1.45;color:${C.muted};background-color:${C.panel};white-space:nowrap;">${esc(r.label)}</td>
+        <td align="right" style="${i ? `border-top:1px solid ${C.line};` : ""}padding:14px 0 14px 16px;font-family:${SANS};
             font-size:14px;line-height:1.45;font-weight:600;color:${C.ink};
-            background-color:${C.white};">${esc(r.value)}</td>
+            background-color:${C.panel};">${esc(r.value)}</td>
       </tr>`,
     )
     .join("");
 
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-    style="margin:18px 0 22px;border-bottom:1px solid ${C.line};">
-    ${cells}
+    style="margin:8px 0 24px;">
+    <tr>
+      <td style="padding:4px 20px;background-color:${C.panel};border-radius:12px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${cells}</table>
+      </td>
+    </tr>
   </table>`;
+}
+
+/**
+ * A short numbered list: what to do first, in order.
+ *
+ * Each step is a line in bold and a line of explanation. A welcome is the one
+ * message that has to teach something, and three things the reader can do
+ * teach more than a paragraph about what the product is.
+ */
+export function steps(items: { title: string; text: string }[]): string {
+  if (!items.length) return "";
+
+  const rows = items
+    .map(
+      (s, i) => `<tr>
+        <td width="28" valign="top" style="padding:${i ? "18px" : "2px"} 14px 0 0;background-color:${C.white};">
+          <div style="width:26px;height:26px;border-radius:13px;background-color:${C.marigold};
+                      font-family:${DISPLAY};font-size:13px;font-weight:700;line-height:26px;
+                      text-align:center;color:${C.ink};">${i + 1}</div>
+        </td>
+        <td valign="top" style="padding:${i ? "18px" : "2px"} 0 0;font-family:${SANS};background-color:${C.white};">
+          <p style="margin:0;font-size:15px;line-height:1.5;font-weight:600;color:${C.ink};">${s.title}</p>
+          <p style="margin:3px 0 0;font-size:14px;line-height:1.6;color:${C.body};">${s.text}</p>
+        </td>
+      </tr>`,
+    )
+    .join("");
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+    style="margin:8px 0 26px;">${rows}</table>`;
 }
 
 /**
@@ -271,36 +328,35 @@ export function noteBlock(lines: string[]): string {
   const body = lines
     .map(
       (l, i) =>
-        `<p style="margin:${i ? "6px" : "0"} 0 0;font-size:14px;line-height:1.55;color:${C.body};">${esc(l)}</p>`,
+        `<p style="margin:${i ? "6px" : "0"} 0 0;font-size:14px;line-height:1.6;color:${C.body};">${esc(l)}</p>`,
     )
     .join("");
 
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-    style="margin:18px 0 20px;">
+    style="margin:8px 0 22px;">
     <tr>
-      <td style="padding:2px 0 2px 16px;border-left:2px solid ${C.marigold};
-          font-family:${FONT};background-color:${C.white};">${body}</td>
+      <td style="padding:16px 20px;border-left:3px solid ${C.marigold};border-radius:4px 12px 12px 4px;
+          font-family:${SANS};background-color:${C.panel};">${body}</td>
     </tr>
   </table>`;
 }
 
 /**
- * The one thing to press, as a pill.
+ * The one thing to press.
  *
- * Ink rather than marigold, and the width of its own label rather than the
- * width of the message: a full-width yellow bar is the house style of every
- * mailing list, and this is a letter. Bulletproof enough for Outlook, which
- * renders the padding on the anchor and ignores the radius.
+ * The site's primary button: a marigold pill with ink on it, the width of its
+ * own label. Bulletproof enough for Outlook, which renders the padding on the
+ * anchor and ignores the radius.
  */
 export function button(label: string, href: string): string {
   return `
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px;">
     <tr>
-      <td style="background-color:${C.ink};border-radius:999px;">
+      <td style="background-color:${C.marigold};border-radius:999px;">
         <a href="${esc(href)}"
-           style="display:inline-block;padding:13px 28px;font-family:${FONT};font-size:15px;
-                  font-weight:600;color:${C.cream};text-decoration:none;
-                  background-color:${C.ink};border-radius:999px;">${esc(label)}</a>
+           style="display:inline-block;padding:14px 30px;font-family:${SANS};font-size:15px;line-height:1.2;
+                  font-weight:600;color:${C.ink};text-decoration:none;
+                  background-color:${C.marigold};border-radius:999px;">${esc(label)}</a>
       </td>
     </tr>
   </table>`;
@@ -309,5 +365,5 @@ export function button(label: string, href: string): string {
 /** A quiet horizontal rule. */
 export function divider(): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-    style="margin:22px 0;"><tr><td style="height:1px;background-color:${C.line};font-size:0;line-height:0;">&nbsp;</td></tr></table>`;
+    style="margin:24px 0;"><tr><td style="height:1px;background-color:${C.line};font-size:0;line-height:0;">&nbsp;</td></tr></table>`;
 }

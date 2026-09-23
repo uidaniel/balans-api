@@ -1,26 +1,33 @@
 /**
- * Brand files the emails carry with them.
+ * Pictures the emails carry with them.
  *
- * The mark is read from disk once and kept as base64, because every message
- * attaches the same bytes and re-reading a 16KB file per send is pointless.
+ * Read from disk once and kept as base64, because every message attaches the
+ * same bytes and re-reading a file per send is pointless.
  *
- * It travels with the message rather than being fetched from a URL: Gmail and
- * Outlook block remote images by default, so a hosted logo shows as an empty
- * box on first open for most people. It also means the emails do not wait on
- * the marketing site being deployed.
+ * They travel with the message rather than being fetched from a URL: Gmail
+ * and Outlook block remote images by default, so a hosted logo shows as an
+ * empty box on first open for most people. It also means the emails do not
+ * wait on the marketing site being deployed.
+ *
+ * The files are in assets/email, each drawn from a source kept beside it:
+ * logo.png from logo-source.svg (the site's logo with a white outline under
+ * the wordmark), and welcome-banner.png from welcome-banner.html.
  */
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const MARK = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "assets", "balans-mark.png");
+const DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "assets", "email");
 
-let cached: string | undefined;
+const cache = new Map<string, string>();
 
-/** The mark as base64, for an attachment's `content` field. */
-export function markAttachment(): string {
-  if (cached) return cached;
-  cached = readFileSync(MARK).toString("base64");
-  return cached;
+/** A file in assets/email as base64, for an attachment's `content` field. */
+export function attachmentContent(file: string): string {
+  let b64 = cache.get(file);
+  if (!b64) {
+    b64 = readFileSync(join(DIR, file)).toString("base64");
+    cache.set(file, b64);
+  }
+  return b64;
 }

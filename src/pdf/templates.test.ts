@@ -139,7 +139,7 @@ test("every layout", async (t) => {
       // host happens to have, which is the whole reason these are embedded.
       const html = renderTemplate(spec.id, DOC)!;
       assert.match(html, /@font-face/);
-      assert.match(html, /url\(data:font\/ttf;base64,/);
+      assert.match(html, /url\("?data:font\/ttf;base64,/);
       assert.doesNotMatch(html, /<link/i);
     });
 
