@@ -78,6 +78,48 @@ describe("things that are instructions, not names", () => {
   });
 });
 
+describe("renaming from settings, which is the same field", () => {
+  /*
+   * The branch that actually corrupted the live account.
+   *
+   * `takeNewBusinessName` checked the length and nothing else, so everything
+   * setup refuses — an email address, a URL, "delete my account" — was
+   * accepted here and written straight onto the invoices. Two validators for
+   * one field was the whole bug, so there is now one, and this asks both
+   * paths the same questions.
+   */
+  const renamed = (name: string) =>
+    at("settings:business_name" as State, name).effects.some((e) => e.type === "set_business_name");
+
+  it("accepts the same names setup does", () => {
+    for (const name of ["Kemi Adeyemi Studio", "Stop Motion Studios", "9ja Prints", "Premium Cuts"]) {
+      assert.ok(renamed(name), `"${name}" should be allowed`);
+      assert.ok(accepted(name), "and setup should agree");
+    }
+  });
+
+  it("refuses the same things setup refuses", () => {
+    for (const said of [
+      "delete my account",
+      "Delete My Account",
+      "close my account",
+      "help",
+      "hello@kemi.ng",
+      "https://kemi.ng",
+      "/pro",
+      "a",
+    ]) {
+      assert.ok(!renamed(said), `"${said}" was saved as a name from settings`);
+      assert.ok(!accepted(said), "and setup should agree");
+    }
+  });
+
+  it("says why, rather than just asking again", () => {
+    const out = at("settings:business_name" as State, "hello@kemi.ng");
+    assert.match(out.replies[0]!, /email address/);
+  });
+});
+
 describe("the commands still being commands", () => {
   it("answers help mid-setup, with or without punctuation", () => {
     for (const text of ["help", "help!", "menu"]) {

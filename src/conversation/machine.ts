@@ -1107,9 +1107,27 @@ function atSettingsMenu(text: string, ctx: Context, msg: Inbound): Step {
 
 function takeNewBusinessName(text: string, ctx: Context): Step {
   const name = text.replace(/\s+/g, " ").trim();
-  if (name.length < 2 || name.length > 80) {
-    return retry("settings:business_name", ctx, VOICE.askNewBusinessName);
+
+  /*
+   * The same rules as setup, because it is the same field.
+   *
+   * This checked the length and nothing else, so everything onboarding
+   * refuses — an email address, a URL, "delete my account" — was accepted
+   * here and written straight to the invoices. A live account is called
+   * "Delete My Account" because of this branch: the phrase is an instruction
+   * everywhere else in the product and a name only here.
+   *
+   * Two validators for one field was the whole bug, so there is now one.
+   */
+  const wrong = nameProblem(name);
+  if (wrong) {
+    return retry(
+      "settings:business_name",
+      ctx,
+      lines(wrong, `Send the name your clients would recognise — like ${b("Kemi Adeyemi Studio")}.`),
+    );
   }
+
   return {
     replies: [],
     next: "idle",
@@ -1875,16 +1893,26 @@ const NOT_A_NAME: { test: RegExp; why: string }[] = [
   { test: /^\P{L}+$/u, why: "A name needs at least one letter in it." },
 ];
 
+/**
+ * Why this cannot be a business name, or null if it can.
+ *
+ * One function, used by setup and by the settings rename, because they are
+ * the same field and disagreeing about it is how the field gets corrupted.
+ *
+ * A slash command is never a name. `step` refuses those before they reach
+ * either caller; this does not take that on trust, because this is the field
+ * that was actually corrupted by one.
+ */
+function nameProblem(name: string): string | null {
+  if (name.length < 2 || name.length > 80 || name.startsWith("/")) {
+    return "That does not look like a business name.";
+  }
+  return NOT_A_NAME.find((r) => r.test.test(name))?.why ?? null;
+}
+
 function takeBusinessName(text: string, ctx: Context, msg: Inbound): Step {
   const name = text.replace(/\s+/g, " ").trim();
-
-  // A slash command is never a business name. `step` refuses these before
-  // they reach here; this is the field that was actually corrupted by one, so
-  // it does not take that on trust.
-  const wrong =
-    name.length < 2 || name.length > 80 || name.startsWith("/")
-      ? "That does not look like a business name."
-      : NOT_A_NAME.find((r) => r.test.test(name))?.why;
+  const wrong = nameProblem(name);
 
   if (wrong) {
     return retry(
