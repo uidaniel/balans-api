@@ -220,12 +220,18 @@ export function draftSummary(
 
   // Subtotal only when VAT makes it differ from the total: showing the same
   // number twice is noise on the one line somebody is checking.
-  if (draft.vatKobo > 0) {
-    sections.push([row("Subtotal", formatNaira(draft.subtotalKobo))]);
-    sections.push([row(`VAT ${draft.vatPercent}%`, formatNaira(draft.vatKobo))]);
-  }
-
-  sections.push([row("Amount", b(formatNaira(draft.totalKobo)))]);
+  // One group, because it is one sum: the subtotal and the VAT are the
+  // arithmetic that produces the amount, and reading them apart makes three
+  // facts out of a single addition somebody is checking in one glance.
+  sections.push([
+    ...(draft.vatKobo > 0
+      ? [
+          row("Subtotal", formatNaira(draft.subtotalKobo)),
+          row(`VAT ${draft.vatPercent}%`, formatNaira(draft.vatKobo)),
+        ]
+      : []),
+    row("Amount", b(formatNaira(draft.totalKobo))),
+  ]);
 
   /*
    * The date the last money is expected, which is not always the date on the

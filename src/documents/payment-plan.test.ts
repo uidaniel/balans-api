@@ -178,9 +178,9 @@ describe("the shape of a draft on screen", () => {
       "INVOICE DRAFT",
       "Client: Edidiong Uwak",
       "Items:",
+      // The subtotal, the VAT and the amount are one paragraph, because
+      // they are one addition — checked in a glance, not three facts.
       "Subtotal: ₦650,000",
-      "VAT 7.5%: ₦48,750",
-      "Amount: ₦698,750",
       "Due: Tue, 29 Sep",
       "Payment plan:",
       "Email to: uwakblessing1@gmail.com",
@@ -197,6 +197,11 @@ describe("the shape of a draft on screen", () => {
     const text = shown();
     assert.match(text, /Items:\n {2}· Software Development[^\n]*\n {2}· Mobile App Design/);
     assert.match(text, /Payment plan:\n {2}· 50% deposit[^\n]*\n {2}· Balance/);
+  });
+
+  it("keeps the arithmetic on consecutive lines", () => {
+    const money = /Subtotal: [^\n]*\nVAT 7\.5%: [^\n]*\nAmount: /;
+    assert.match(shown(), money);
   });
 
   it("leaves out the groups the draft has nothing for", () => {
