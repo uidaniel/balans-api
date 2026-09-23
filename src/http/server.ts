@@ -10,6 +10,7 @@ import { healthRoutes } from "./routes/health.ts";
 import { brandRoutes } from "./routes/brand.ts";
 import { whatsappRoutes } from "./routes/whatsapp.ts";
 import { publicRoutes } from "./routes/public.ts";
+import { proRoutes } from "./routes/pro.ts";
 import { monnifyRoutes } from "./routes/monnify.ts";
 import { templateRoutes } from "./routes/templates.ts";
 
@@ -115,6 +116,7 @@ export function buildServer(): FastifyInstance {
   // No prefix: /i/{token} is a link people paste into WhatsApp, and every
   // character of it is one more chance to mistype.
   app.register(publicRoutes);
+  app.register(proRoutes);
   // Also unprefixed: /designs/{token} is a link opened from a phone.
   app.register(templateRoutes);
   app.register(monnifyRoutes, { prefix: "/webhooks/monnify" });

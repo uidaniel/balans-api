@@ -427,7 +427,22 @@ export function sendTemplate(
  */
 export function sendCta(
   to: string,
-  content: { body: string; label: string; url: string; header?: string; footer?: string },
+  content: {
+    body: string;
+    label: string;
+    url: string;
+    header?: string;
+    /**
+     * A picture above the message.
+     *
+     * Takes precedence over `header`: a header is one thing or the other.
+     * Meta documents image headers on `cta_url`, and documents them on
+     * `list` too where they are refused outright — so the caller is expected
+     * to cope with this being rejected rather than to trust the docs.
+     */
+    headerImage?: string;
+    footer?: string;
+  },
   opts: { fetchImpl?: Transport } = {},
 ): Promise<SendResult> {
   const phone = normalisePhone(to);
@@ -450,7 +465,11 @@ export function sendCta(
       type: "interactive",
       interactive: {
         type: "cta_url",
-        ...(content.header ? { header: { type: "text", text: content.header.slice(0, 60) } } : {}),
+        ...(content.headerImage
+          ? { header: { type: "image", image: { link: content.headerImage } } }
+          : content.header
+            ? { header: { type: "text", text: content.header.slice(0, 60) } }
+            : {}),
         body: { text: content.body.slice(0, 1024) },
         ...(content.footer ? { footer: { text: content.footer.slice(0, 60) } } : {}),
         action: {

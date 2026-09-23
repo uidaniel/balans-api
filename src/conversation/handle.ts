@@ -53,6 +53,7 @@ import {
 } from "../documents/summary.ts";
 import { partsFor } from "../documents/parts.ts";
 import { formatNaira } from "../../core/totals.ts";
+import { proStartUrl } from "../billing/pro-link.ts";
 import { pickerUrlFor } from "../http/routes/templates.ts";
 import { clearLogo, saveLogo } from "../brand/user-logo.ts";
 import {
@@ -1603,6 +1604,56 @@ async function runEffects(
            * card. Swapping the two would tell somebody on their second
            * invoice that they had finished five.
            */
+          /*
+           * One message, and the button is the payment.
+           *
+           * "Pay Now" used to be a reply button: tapping it sent the words
+           * "Pay Now" into the chat, the bot answered with a second message,
+           * and the link was on that one. Two taps and three bubbles to reach
+           * a checkout, with the middle bubble saying nothing anybody needed.
+           *
+           * A message carries reply buttons or one link button, never both,
+           * so making the offer's own button the link is the whole change.
+           * It goes to our own page rather than to Monnify, because this
+           * message will still be in the chat next week and a checkout URL
+           * will not \u2014 see `proStartUrl`.
+           */
+          const offer = ctx.phone
+            ? await sendCta(ctx.phone, {
+                body: proOffer(used),
+                label: "Pay Now",
+                url: proStartUrl(userId),
+                headerImage: UPGRADE_CARD,
+              })
+            : null;
+
+          if (offer?.ok) {
+            await recordOutbound(userId, offer.waMessageId, "sent", { kind: "interactive" });
+            break;
+          }
+
+          /*
+           * Without the card, then without the button.
+           *
+           * Meta documents image headers on cta_url and refuses them outright
+           * on a list, so this is not taken on trust. Losing the picture is
+           * worth keeping the button; losing the button costs the tap.
+           */
+          const plain = ctx.phone
+            ? await sendCta(ctx.phone, {
+                body: proOffer(used),
+                label: "Pay Now",
+                url: proStartUrl(userId),
+              })
+            : null;
+
+          if (plain?.ok) {
+            log.warn({ userId }, "Pro card rejected as a cta_url header; sent without it");
+            await recordOutbound(userId, plain.waMessageId, "sent", { kind: "interactive" });
+            break;
+          }
+
+          if (plain) log.warn({ userId, reason: plain.reason }, "Pro offer button failed");
           extra.push(proOffer(used));
           buttonsImage = UPGRADE_CARD;
           buttons = proOfferButtons();

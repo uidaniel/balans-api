@@ -54,11 +54,20 @@ describe("the two Pro cards", () => {
     const limitFn = handle.slice(handle.indexOf("async function limitCard("));
     assert.match(limitFn.slice(0, 1600), /LIMIT_CARD/, "the limit message keeps 'Five done'");
 
-    // The upgrade screen gets the one that is true for everybody.
-    const upgrade = handle.slice(handle.indexOf('case "show_upgrade"'));
-    assert.match(upgrade.slice(0, 1400), /UPGRADE_CARD/);
+    /*
+     * The upgrade screen gets the one that is true for everybody.
+     *
+     * Bounded by the next case rather than by a character count: the branch
+     * grew and a fixed window stopped reaching the line it was checking, so
+     * the test failed while the code was right.
+     */
+    const from = handle.indexOf('case "show_upgrade"');
+    const upgrade = handle.slice(from, handle.indexOf('case "start_pro"', from));
+
+    assert.ok(upgrade.length > 100, "the branch should be findable");
+    assert.match(upgrade, /UPGRADE_CARD/);
     assert.doesNotMatch(
-      upgrade.slice(0, 1400),
+      upgrade,
       /LIMIT_CARD/,
       "'Five done' must not go to somebody who has not finished five",
     );
@@ -128,7 +137,55 @@ describe("the card reaching the message", () => {
   });
 });
 
-describe("paying for it", () => {
+describe("the Pay Now button", () => {
+  /*
+   * It used to be a reply button.
+   *
+   * Tapping it sent the words "Pay Now" into the chat, the bot answered with
+   * a second message, and the link was on that one — two taps and three
+   * bubbles to reach a checkout, with the middle bubble saying nothing
+   * anybody needed. A WhatsApp message carries reply buttons or one link
+   * button and never both, so the offer's own button had to become the link.
+   */
+  const handle = read("../conversation/handle.ts");
+  const from = handle.indexOf('case "show_upgrade"');
+  const offer = handle.slice(from, handle.indexOf('case "start_pro"', from));
+
+  it("is the link itself, not a reply that asks for one", () => {
+    assert.match(offer, /sendCta\(/, "the offer goes out as a link button");
+    assert.match(offer, /label: "Pay Now"/);
+    assert.match(offer, /url: proStartUrl\(userId\)/);
+  });
+
+  it("points at our own page, not straight at the checkout", () => {
+    /*
+     * A WhatsApp message sits in the chat for ever and a Monnify checkout
+     * URL does not. Somebody scrolling back to last week's offer has to find
+     * a live link, and the transaction is made when they press it — so
+     * reading the offer costs nothing at Monnify.
+     */
+    const link = readFileSync(new URL("./pro-link.ts", import.meta.url), "utf8");
+    assert.match(link, /\/pro\/start\?t=/);
+
+    // Asserted on the code, not the file: the comment above this branch
+    // explains the choice and says the provider's name while doing it.
+    const code = offer.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+    assert.doesNotMatch(code, /monnify|checkoutUrl/i, "the button must not carry a checkout URL");
+  });
+
+  it("falls back without the picture before it falls back without the button", () => {
+    // Meta documents image headers on cta_url and refuses them on a list, so
+    // this is not taken on trust. Losing the picture beats losing the tap.
+    const withCard = offer.indexOf("headerImage: UPGRADE_CARD");
+    const withoutCard = offer.indexOf("const plain");
+    const words = offer.indexOf("buttons = proOfferButtons()");
+
+    assert.ok(withCard > -1 && withoutCard > withCard, "picture first, then without it");
+    assert.ok(words > withoutCard, "and only then back to a reply button");
+  });
+});
+
+describe("paying for it, by typing", () => {
   const handle = read("../conversation/handle.ts");
   const start = handle.slice(handle.indexOf('case "start_pro"'));
   const branch = start.slice(0, 3000);
