@@ -483,8 +483,18 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   const buttons =
     outcome.buttons ?? (outcome.holdAt || outcome.failed ? undefined : result.buttons);
 
+  /*
+   * The picture goes with the effect's buttons, and only with those.
+   *
+   * A card is the header of one specific message. If the effect did not add
+   * the buttons — because it held, or faulted, and the machine's question is
+   * the one being asked — then the message the card belongs above was never
+   * sent, and putting it over an unrelated question is worse than dropping it.
+   */
+  const buttonsImage = outcome.buttons ? outcome.buttonsImage : undefined;
+
   await saveConversation(user.id, next, context);
-  await reply(user.id, msg.from, replies, log, buttons);
+  await reply(user.id, msg.from, replies, log, buttons, buttonsImage);
 
   log.info(
     { userId: user.id, from: state, to: next, effects: result.effects.map((e) => e.type) },

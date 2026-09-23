@@ -84,6 +84,50 @@ describe("the Pro message", () => {
   });
 });
 
+describe("the card reaching the message", () => {
+  /*
+   * The bug this block exists for.
+   *
+   * Setting `buttonsImage` in the effect is not the same as it arriving at
+   * WhatsApp. There are two paths out of here — an ordinary inbound message
+   * and a submitted Flow — each with its own call to `reply`, and for a
+   * while only the Flow one passed the picture on. So "/pro" set the card
+   * and then dropped it one function later, and every test passed, because
+   * they all stopped at the branch that set it.
+   */
+  const handle = read("../conversation/handle.ts");
+
+  it("is passed on by every path that answers a message", () => {
+    const calls = handle.match(/await reply\([^;]*?\);/gs) ?? [];
+    // Calls forwarding an outcome's buttons, not ones passing a literal set:
+    // a literal has no card to lose.
+    const forwarding = calls.filter((c) => /(buttons|outcome\.buttons)[,)]/.test(c));
+
+    assert.ok(forwarding.length >= 2, "an ordinary message and a submitted form, at least");
+    for (const call of forwarding) {
+      assert.match(
+        call.replace(/\s+/g, " "),
+        /buttonsImage/,
+        "this path forwards buttons but drops the card",
+      );
+    }
+  });
+
+  it("reaches the send call itself", () => {
+    assert.match(
+      handle,
+      /sendButtons\(to, \{ body, buttons, headerImage: buttonsImage \}\)/,
+      "the last step is the one that actually puts it on the message",
+    );
+  });
+
+  it("is not put over a question the effect never asked", () => {
+    // A card is the header of one specific message. If the machine's buttons
+    // won, the message the card belongs above was never sent.
+    assert.match(handle, /const buttonsImage = outcome\.buttons \? outcome\.buttonsImage : undefined;/);
+  });
+});
+
 describe("when the card cannot be sent", () => {
   it("retries in words rather than dropping the message", () => {
     const handle = read("../conversation/handle.ts");

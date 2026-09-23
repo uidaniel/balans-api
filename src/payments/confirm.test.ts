@@ -71,7 +71,8 @@ describe("the message that says you got paid", () => {
     assert.match(m, /PART PAYMENT/);
     assert.match(m, /^Received: \*₦100,000\*$/m);
     assert.match(m, /^Still owed: ₦250,000$/m);
-    assert.doesNotMatch(m, /PAID/);
+    // Not "PAID" on a message whose whole point is that it is not paid yet.
+    assert.doesNotMatch(m, /\bPAID\b/);
   });
 
   it("names the night the money lands, and never sooner", () => {
