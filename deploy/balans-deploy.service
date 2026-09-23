@@ -1,0 +1,32 @@
+# Deploys whatever is on main, when main moves. Started by the timer.
+#
+# Not a long-running service: it does one check and exits. systemd will not
+# start a second copy while one is running, which is the whole of the
+# concurrency control — a deploy that takes three minutes simply means the
+# next few ticks do nothing.
+
+[Unit]
+Description=Deploy Balans when main moves
+Documentation=file:/opt/balans/app/deploy/watch.sh
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+
+# The user the checkout belongs to. As root, git refuses to work in a
+# directory somebody else owns ("dubious ownership") and every build would
+# fail on a message about repository permissions.
+User=ubuntu
+WorkingDirectory=/opt/balans/app
+
+# A build with Chromium in it is not quick, and a deploy killed half way
+# through leaves a container that is neither the old one nor the new one.
+TimeoutStartSec=900
+
+ExecStart=/opt/balans/app/deploy/watch.sh
+
+# Output goes to the journal:  journalctl -u balans-deploy -f
+StandardOutput=journal
+StandardError=journal

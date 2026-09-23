@@ -14,7 +14,7 @@
     "migrate": "node --env-file=.env.local --experimental-strip-types src/db/migrate.ts",
     "reset": "node --env-file=.env.local --experimental-strip-types src/db/reset-user.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test --test-reporter=spec \"src/**/*.test.ts\" \"core/**/*.test.ts\"",
+    "test": "node --experimental-strip-types --test --test-reporter=spec \"src/**/*.test.ts\" \"core/**/*.test.ts\" \"deploy/**/*.test.ts\"",
     "test:db": "node --env-file=.env.local --experimental-strip-types --test --test-reporter=spec \"src/**/*.db.test.ts\"",
     "templates": "node --env-file=.env.local --experimental-strip-types src/whatsapp/register-templates.ts",
     "jobs": "node --env-file=.env.local --experimental-strip-types src/jobs/run-once.ts",

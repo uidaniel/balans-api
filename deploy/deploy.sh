@@ -15,9 +15,19 @@ say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 cd "$APP"
 
 BEFORE=$(git rev-parse --short HEAD)
-say "Fetching"
-git fetch --quiet origin main
-git reset --hard --quiet origin/main
+
+# `DEPLOY_NO_FETCH=1` builds whatever is checked out instead of going to
+# main. Only watch.sh sets it, and only to put a known-good commit back after
+# a bad one: rolling back means building something main has moved past, and
+# the fetch below would undo the rollback on the way to doing it.
+if [ "${DEPLOY_NO_FETCH:-}" = "1" ]; then
+  say "Building what is checked out ($BEFORE), not fetching"
+else
+  say "Fetching"
+  git fetch --quiet origin main
+  git reset --hard --quiet origin/main
+fi
+
 AFTER=$(git rev-parse --short HEAD)
 
 if [ "$BEFORE" = "$AFTER" ]; then

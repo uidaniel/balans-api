@@ -1,0 +1,31 @@
+# Checks main every minute.
+#
+# A minute is the delay between pushing and the change being live, and a
+# `git fetch` against a repository that has not moved costs almost nothing —
+# so the frequency is set by how long you want to wait, not by load.
+#
+# Polling rather than a webhook on purpose. A webhook means opening a port to
+# GitHub or putting a deploy key in a CI secret; this box already pulls from
+# that repository and needs nothing new exposed to do it.
+
+[Unit]
+Description=Check main for new commits every minute
+Requires=balans-deploy.service
+
+[Timer]
+# Not on the boot itself: docker is still bringing the containers up, and a
+# deploy racing that start is a confusing way to begin the day.
+OnBootSec=3min
+
+# From the end of the last run, so a long build does not queue up behind
+# itself.
+OnUnitActiveSec=1min
+
+# Nothing here needs to happen on the second, and loose timers let systemd
+# wake the box less often.
+AccuracySec=15s
+
+Unit=balans-deploy.service
+
+[Install]
+WantedBy=timers.target
