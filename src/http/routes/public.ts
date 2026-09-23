@@ -236,9 +236,19 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       return showAccount(existing);
     }
 
-    // The fee is worked out here, from the row, and never from the request.
+    /*
+     * The fee is worked out here, from the row, and never from the request.
+     *
+     * `paidBeforeKobo` is what makes our cap a cap on the invoice rather than
+     * on each payment of it. Charged per payment, a ₦200,000 invoice on Free
+     * cost ₦1,000 paid in one go and ₦1,400 paid as a deposit and a balance —
+     * over a cap we advertise, taken out of the user's share, and only ever
+     * in our favour. Monnify's cut stays per payment: theirs is a charge for
+     * moving money, and two transfers are two transfers.
+     */
     const split = settle(outstanding, ratesFor(doc.plan), {
       passToClient: doc.passFeesToClient,
+      paidBeforeKobo: doc.amountPaidKobo,
     });
 
     // Our own reference, so the webhook can find this document again without

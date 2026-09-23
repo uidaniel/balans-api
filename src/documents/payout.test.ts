@@ -62,20 +62,62 @@ describe("what the user is told they will receive", () => {
     });
   });
 
-  it("charges the fees per payment, not per invoice", () => {
+  it("charges the processor per payment, because that is what it charges", () => {
     /*
-     * The one worth having a test for. Fees are taken as each payment lands,
-     * so the processor's flat ₦100 is met once for a single payment and three
-     * times for three instalments. Taking the fee off the total instead would
-     * have overstated a deposit invoice by ₦100 and a three-part plan by
-     * ₦200 — small enough to look like rounding and wrong every time.
+     * Monnify's cut is a charge for moving money, so the flat ₦100 is met
+     * once for a single payment and three times for three instalments.
+     * Taking it off the total instead would have understated a deposit
+     * invoice by ₦100 and a three-part plan by ₦200 — small enough to look
+     * like rounding and wrong every time.
      */
-    const one = payout(draft({}), "free").receivesKobo;
-    const two = payout(draft({ depositPercent: 50 }), "free").receivesKobo;
-    const three = payout(draft({ instalments: 3 }), "free").receivesKobo;
+    const one = payout(draft({}), "free").processorFeeKobo;
+    const two = payout(draft({ depositPercent: 50 }), "free").processorFeeKobo;
+    const three = payout(draft({ instalments: 3 }), "free").processorFeeKobo;
 
-    assert.equal(two, one - N(100), "a deposit meets the flat charge twice");
-    assert.equal(three, one - N(200), "three instalments meet it three times");
+    assert.equal(two, one + N(100), "a deposit meets the flat charge twice");
+
+    // Three does not divide ₦50,000, and the percentage is rounded up on each
+    // part — the convention this file inherits, which assumes the processor
+    // takes the larger amount so a gross-up never leaves the user short. That
+    // puts the third charge 2 kobo past ₦200, and 2 kobo is the right answer
+    // rather than a tolerance worth hiding behind.
+    assert.equal(three, one + N(200) + 2, "three instalments meet it three times");
+  });
+
+  it("charges our own fee on the invoice, however many payments it arrives in", () => {
+    /*
+     * The opposite rule, and the bug it was written for. Our cap is a promise
+     * about the invoice: one percent, never more than ₦1,000. Charged per
+     * payment it was not a cap at all — a ₦200,000 invoice cost ₦1,000 paid
+     * in one go and ₦1,400 paid as a deposit and a balance, and three
+     * instalments came to ₦1,999.98, which is the cap twice. Every kobo of
+     * that came out of the user's share and into ours.
+     */
+    const big = { totalKobo: N(200_000), subtotalKobo: N(200_000) };
+    const whole = payout(draft(big), "free").balansFeeKobo;
+
+    assert.equal(whole, N(1_000), "one percent of ₦200,000, capped");
+    assert.equal(payout(draft({ ...big, depositPercent: 20 }), "free").balansFeeKobo, whole);
+    assert.equal(payout(draft({ ...big, instalments: 3 }), "free").balansFeeKobo, whole);
+
+    // And the floor, which is the same promise pointing the other way: ₦100
+    // is met once by a small invoice, not once by each instalment of it.
+    const small = { totalKobo: N(3_000), subtotalKobo: N(3_000) };
+    assert.equal(payout(draft(small), "free").balansFeeKobo, N(100));
+    assert.equal(payout(draft({ ...small, instalments: 3 }), "free").balansFeeKobo, N(100));
+  });
+
+  it("loses nothing to rounding when it splits our fee across payments", () => {
+    // Each payment is charged the difference it makes to the fee on
+    // everything before it, so the parts add up to the whole by construction
+    // rather than by a rule that could drift. Thirds are where that shows.
+    for (const naira of [50_000, 33_333, 10_001, 7]) {
+      const flat = payout(draft({ totalKobo: N(naira), subtotalKobo: N(naira) }), "free");
+      for (const over of [{ depositPercent: 50 }, { instalments: 3 }, { instalments: 7 }]) {
+        const split = payout(draft({ totalKobo: N(naira), subtotalKobo: N(naira), ...over }), "free");
+        assert.equal(split.balansFeeKobo, flat.balansFeeKobo, `₦${naira} ${JSON.stringify(over)}`);
+      }
+    }
   });
 
   it("gives Pro back what Pro pays for", () => {

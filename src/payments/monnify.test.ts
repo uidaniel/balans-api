@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 process.env.MONNIFY_BASE_URL = "https://sandbox.monnify.com";
 process.env.MONNIFY_API_KEY = "MK_TEST_KEY";
@@ -675,5 +676,34 @@ describe("a bank name resolves to a bank that can be paid", () => {
   it("returns nothing rather than guessing", () => {
     assert.equal(matchBank("not a bank at all", LIST), null);
     assert.equal(matchBank("", LIST), null);
+  });
+});
+
+describe("what the pay route asks for the split", () => {
+  /*
+   * Read from the source. The route needs a database, a live document and
+   * Monnify, and none of that belongs here — but the one line that decides
+   * how much of somebody's money we keep is worth pinning where it can be
+   * seen.
+   *
+   * The bug: our fee was computed on each payment on its own, so the cap
+   * applied per payment rather than per invoice. A ₦200,000 invoice on Free
+   * cost the user ₦1,000 paid in one go and ₦1,400 paid as a deposit and a
+   * balance. Nobody had paid anything yet, so no real money moved wrongly.
+   */
+  const source = readFileSync(new URL("../http/routes/public.ts", import.meta.url), "utf8");
+  const call = source.slice(
+    source.indexOf("const split = settle("),
+    source.indexOf("const reference = "),
+  );
+
+  it("tells settle what has already been paid", () => {
+    assert.match(call, /paidBeforeKobo: doc\.amountPaidKobo/);
+  });
+
+  it("still reads the plan from the row rather than the request", () => {
+    // The oldest rule here: nothing about money comes from the browser.
+    assert.match(call, /ratesFor\(doc\.plan\)/);
+    assert.match(call, /passToClient: doc\.passFeesToClient/);
   });
 });

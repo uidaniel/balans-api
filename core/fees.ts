@@ -95,6 +95,43 @@ export function balansFee(
   return opts.referralHalved ? Math.floor(capped / 2) : capped;
 }
 
+/**
+ * Our fee on one payment of an invoice being paid in parts.
+ *
+ * The cap is on the invoice, not on the payment. Section 9 says our fee is
+ * "computed on the invoice amount", and an invoice does not become a more
+ * expensive invoice because the client pays it in two goes — the work is the
+ * same work and the cap is a promise about it.
+ *
+ * Charging each payment on its own broke that promise, quietly and in our
+ * favour. A ₦200,000 invoice on Free costs ₦1,000: one percent is ₦2,000 and
+ * the cap takes it to ₦1,000. Split 20/80 it was charged ₦400 and then
+ * ₦1,000 — ₦1,400, forty percent over a cap we advertise. Three instalments
+ * came to ₦1,999.98, which is the cap twice.
+ *
+ * So the fee is the *difference* the payment makes to the fee on everything
+ * paid so far. The increments add up to exactly the fee on the whole invoice,
+ * however it is split, in whatever order, because the last one closes the gap
+ * by construction rather than by a separate rule that could disagree. The
+ * floor behaves the same way: ₦100 is met once by the invoice and not once by
+ * every instalment of it.
+ *
+ * Monnify's cut is per payment and stays per payment. Theirs is a charge for
+ * moving money and two transfers really are two transfers.
+ */
+export function balansFeeStep(
+  paidBeforeKobo: number,
+  paymentKobo: number,
+  rates: BalansRates,
+  opts: { referralHalved?: boolean } = {},
+): number {
+  const before = balansFee(paidBeforeKobo, rates, opts);
+  const after = balansFee(paidBeforeKobo + paymentKobo, rates, opts);
+  // Never negative, so a stored total that has drifted cannot hand money back
+  // out of our share on a later payment.
+  return Math.max(0, after - before);
+}
+
 /* -------------------------------------------------------------------------- */
 
 export type Settlement = {
@@ -125,12 +162,20 @@ export function settle(
     processor?: ProcessorRates;
     /** Added to our share when the user pays Pro by deduction (section 9). */
     subscriptionDeductionKobo?: number;
+    /**
+     * What has already been paid towards this invoice, when this is one part
+     * of a plan. Our cap and our floor are both promises about the invoice,
+     * so they have to be worked out against the whole of it. See
+     * `balansFeeStep`.
+     */
+    paidBeforeKobo?: number;
   } = {},
 ): Settlement {
   const rates = opts.processor ?? DEFAULT_PROCESSOR;
   const ours =
-    balansFee(invoiceKobo, balans, { referralHalved: opts.referralHalved }) +
-    (opts.subscriptionDeductionKobo ?? 0);
+    balansFeeStep(opts.paidBeforeKobo ?? 0, invoiceKobo, balans, {
+      referralHalved: opts.referralHalved,
+    }) + (opts.subscriptionDeductionKobo ?? 0);
 
   const clientPaysKobo = opts.passToClient ? grossUp(invoiceKobo, rates) : invoiceKobo;
   const processorFeeKobo = processorFee(clientPaysKobo, rates);

@@ -81,6 +81,18 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
    */
   const grossedUp = money.clientPaysKobo !== draft.totalKobo;
 
+  /*
+   * Monnify charges per payment, so a split invoice pays their fee twice.
+   *
+   * Unlabelled, that reads as a broken promise: their cut is capped at ₦2,000
+   * and a ₦200,000 invoice split in two shows ₦2,700. Both numbers are right
+   * — two transfers are two charges, each capped on its own — but nothing on
+   * the card said which. Our own fee needs no such note, because it is capped
+   * across the invoice however many payments it arrives in.
+   */
+  const monnifyLabel =
+    stages.length > 1 ? `Monnify fee (${stages.length} payments)` : "Monnify fee";
+
   return `<!doctype html>
 <html><head><meta charset="utf-8"><style>
   /* The faces travel with the render. A PNG is drawn from HTML with no
@@ -162,7 +174,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
 
     <div class="rows">
       ${grossedUp ? row("Client pays", formatNaira(money.clientPaysKobo)) : ""}
-      ${row("Monnify fee", `−${formatNaira(money.processorFeeKobo)}`, { muted: true })}
+      ${row(monnifyLabel, `−${formatNaira(money.processorFeeKobo)}`, { muted: true })}
       ${
         money.balansFeeKobo > 0
           ? row(`Balans fee (${plan === "pro" ? "Pro" : "Free"})`, `−${formatNaira(money.balansFeeKobo)}`, {

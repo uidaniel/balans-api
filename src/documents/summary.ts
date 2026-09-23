@@ -138,8 +138,22 @@ export function payout(
   let balansFeeKobo = 0;
   let receivesKobo = 0;
 
+  /*
+   * Our fee is capped across the invoice, Monnify's is charged per payment.
+   *
+   * So the running total goes in, and each payment is only charged the
+   * difference it makes to the fee on everything before it. Without it a
+   * ₦200,000 invoice split 20/80 showed ₦1,400 of Balans fee against a cap of
+   * ₦1,000 — and worse, charged it.
+   */
+  let paidBeforeKobo = 0;
+
   for (const amountKobo of payments) {
-    const part = settle(amountKobo, rates, { passToClient: draft.passFeesToClient });
+    const part = settle(amountKobo, rates, {
+      passToClient: draft.passFeesToClient,
+      paidBeforeKobo,
+    });
+    paidBeforeKobo += amountKobo;
     clientPaysKobo += part.clientPaysKobo;
     processorFeeKobo += part.processorFeeKobo;
     balansFeeKobo += part.balansFeeKobo;
