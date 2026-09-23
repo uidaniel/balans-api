@@ -307,9 +307,25 @@ export const UPGRADE_CARD = brand("upgrade.png");
 const TERMS_URL = site + "/terms";
 const PRIVACY_URL = site + "/privacy";
 
-const HELP = /^(help|menu|what can you do|abeg help)\b/i;
-const CANCEL = /^(cancel|stop|start over|restart)\b/i;
-const GREETING = /^(hi|hello|hey|good (morning|afternoon|evening)|hola|howfa|how far)\b/i;
+/*
+ * These match the whole message, not the start of it.
+ *
+ * They were prefix matches with a word boundary, which reads fine until
+ * somebody's business is called Stop Motion Studios. "Stop" at the front
+ * matched, setup restarted, and there was no name that person could type to
+ * get past it — every attempt began with the word that threw the attempt
+ * away. Cancel Culture Media and Help Desk Nigeria are the same trap, and
+ * Hi-Tech Solutions hit it on the greeting.
+ *
+ * Trailing punctuation still counts, because "help!" is help. A greeting
+ * keeps the words people attach to one. Anything longer is a sentence, and a
+ * sentence opening with "stop" is far more likely to be a name than an
+ * instruction: the instruction is one word and people send it on its own.
+ */
+const HELP = /^(help|menu|what can you do|abeg help)[.!?]*$/i;
+const CANCEL = /^(cancel|stop|start over|restart)[.!?]*$/i;
+const GREETING =
+  /^(hi|hello|hey|good (morning|afternoon|evening)|hola|howfa|how far)( there| sir| ma| boss| o)?[.!?]*$/i;
 
 /**
  * Everything the bot says during setup.
@@ -1834,7 +1850,28 @@ const forget = (ctx: Context): Context => {
 const NOT_A_NAME: { test: RegExp; why: string }[] = [
   { test: /^\S+@\S+\.\S+$/, why: "That looks like an email address." },
   { test: /^(?:https?:\/\/|www\.)/i, why: "That looks like a web address." },
-  // Last, so the two above get to name themselves first.
+  /*
+   * Things we say to this number, which are never anybody's business name.
+   *
+   * A live account is called "Delete My Account", because somebody typed that
+   * during setup and it was taken as a name — it is letters, it is the right
+   * length, and every rule above let it through. It then printed on their
+   * invoices and on the payment page their client opens, which is where it
+   * was found.
+   *
+   * Narrow on purpose, and narrower than "anything asCommand recognises":
+   * that list includes "premium" and "dashboard", and a real business is
+   * allowed to be called either. These are phrases that only ever mean an
+   * instruction to us. The asymmetry above still holds — refusing a real name
+   * is worse than accepting a wrong one — which is why this is a short list
+   * and not a clever one.
+   */
+  {
+    test: /^(?:delete|close|cancel|remove|stop)(?:\s+(?:my|the))?\s*(?:account|balans|everything)?$/i,
+    why: "That is something you can tell me to do, not a name.",
+  },
+  { test: /^(?:help|menu|settings?|upgrade|cancel|stop|yes|no|start|restart)$/i, why: "That is a command, not a name." },
+  // Last, so the ones above get to name themselves first.
   { test: /^\P{L}+$/u, why: "A name needs at least one letter in it." },
 ];
 
