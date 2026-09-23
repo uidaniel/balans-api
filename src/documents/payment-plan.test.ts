@@ -25,6 +25,7 @@ import { describe, it } from "node:test";
 import { draftSummary, sentMessage, planLines } from "./summary.ts";
 import { shapeFor } from "./parts.ts";
 import type { Draft } from "./store.ts";
+import type { Civil } from "../../core/dates.ts";
 
 const N = (naira: number) => naira * 100;
 const today = { y: 2026, m: 9, d: 23 };
@@ -133,5 +134,86 @@ describe("the figures on the message are the figures in the database", () => {
         );
       }
     }
+  });
+});
+
+/**
+ * How the draft is laid out, which is the only thing about it anybody reads.
+ *
+ * Fourteen labelled lines with nothing between them is a wall, and somebody
+ * checking a draft is scanning it for one number. The groups are the things
+ * they check: who it is for, what is on it, the arithmetic, the date, the
+ * plan, where it goes.
+ */
+describe("the shape of a draft on screen", () => {
+  const today: Civil = { y: 2026, m: 9, d: 23 };
+  const draft = {
+    type: "invoice" as const,
+    clientName: "Edidiong Uwak",
+    clientEmail: "uwakblessing1@gmail.com",
+    lines: [
+      { description: "Software Development", qty: 1, unitAmountKobo: 500_000_00 },
+      { description: "Mobile App Design", qty: 1, unitAmountKobo: 150_000_00 },
+    ],
+    subtotalKobo: 650_000_00,
+    vatPercent: 7.5,
+    vatKobo: 48_750_00,
+    totalKobo: 698_750_00,
+    dueDate: { y: 2026, m: 9, d: 29 } as Civil | null,
+    depositPercent: 50,
+    instalments: null,
+    passFeesToClient: false,
+    notes: null,
+  };
+
+  const shown = (over: object = {}) =>
+    draftSummary({ ...draft, ...over } as never, today, "pro", false);
+
+  it("puts a blank line between the things somebody checks", () => {
+    const paragraphs = shown()
+      .split("\n\n")
+      .map((s) => s.split("\n")[0]!.replace(/[*🧾]/g, "").trim());
+
+    assert.deepEqual(paragraphs, [
+      "INVOICE DRAFT",
+      "Client: Edidiong Uwak",
+      "Items:",
+      "Subtotal: ₦650,000",
+      "VAT 7.5%: ₦48,750",
+      "Amount: ₦698,750",
+      "Due: Tue, 29 Sep",
+      "Payment plan:",
+      "Email to: uwakblessing1@gmail.com",
+      "Send it?",
+    ]);
+  });
+
+  it("keeps a list in one piece", () => {
+    /*
+     * The items and the payment plan are lists. A blank line between two
+     * things being billed for reads as two invoices, and one between the
+     * deposit and the balance reads as two arrangements.
+     */
+    const text = shown();
+    assert.match(text, /Items:\n {2}· Software Development[^\n]*\n {2}· Mobile App Design/);
+    assert.match(text, /Payment plan:\n {2}· 50% deposit[^\n]*\n {2}· Balance/);
+  });
+
+  it("leaves out the groups the draft has nothing for", () => {
+    // No empty gaps where a section would have been: an invoice with no VAT,
+    // no plan and no email is four short paragraphs, not four and three
+    // blank ones.
+    const text = shown({
+      lines: [draft.lines[0]!],
+      subtotalKobo: 500_000_00,
+      vatKobo: 0,
+      vatPercent: null,
+      totalKobo: 500_000_00,
+      depositPercent: null,
+      clientEmail: null,
+    });
+    assert.ok(!text.includes("\n\n\n"), text);
+    assert.ok(!text.includes("Subtotal"), text);
+    assert.ok(!text.includes("Payment plan"), text);
   });
 });

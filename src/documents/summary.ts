@@ -187,7 +187,15 @@ export function draftSummary(
    */
   fees = true,
 ): string {
-  const rows: (string | false)[] = [row("Client", draft.clientName)];
+  /*
+   * One group per thing somebody checks, with a blank line between them.
+   *
+   * A section rather than a row, because `block` joins everything with single
+   * newlines and drops empty strings on the way — there is no way to ask it
+   * for a gap. Fourteen lines of label-and-value with nothing between them is
+   * a wall, and the reader is scanning for one number in it.
+   */
+  const sections: (string | false)[][] = [[row("Client", draft.clientName)]];
 
   // One line reads as a single "Item" row. Several deserve their own lines,
   // because the itemisation is the part a client queries.
@@ -197,23 +205,27 @@ export function draftSummary(
   // it was asked in reads like a different field.
   if (draft.lines.length === 1) {
     const only = draft.lines[0]!;
-    rows.push(row("Item", `${only.description}${only.qty === 1 ? "" : ` x${only.qty}`}`));
+    sections.push([row("Item", `${only.description}${only.qty === 1 ? "" : ` x${only.qty}`}`)]);
   } else {
-    rows.push("Items:");
-    for (const line of draft.lines) {
-      const each = line.qty === 1 ? "" : ` x${line.qty}`;
-      rows.push(`  · ${line.description}${each} — ${formatNaira(line.unitAmountKobo * line.qty)}`);
-    }
+    // The items stay together as one group: they are a list, and a blank line
+    // between two things being billed for would read as two invoices.
+    sections.push([
+      "Items:",
+      ...draft.lines.map((line) => {
+        const each = line.qty === 1 ? "" : ` x${line.qty}`;
+        return `  · ${line.description}${each} — ${formatNaira(line.unitAmountKobo * line.qty)}`;
+      }),
+    ]);
   }
 
   // Subtotal only when VAT makes it differ from the total: showing the same
   // number twice is noise on the one line somebody is checking.
   if (draft.vatKobo > 0) {
-    rows.push(row("Subtotal", formatNaira(draft.subtotalKobo)));
-    rows.push(row(`VAT ${draft.vatPercent}%`, formatNaira(draft.vatKobo)));
+    sections.push([row("Subtotal", formatNaira(draft.subtotalKobo))]);
+    sections.push([row(`VAT ${draft.vatPercent}%`, formatNaira(draft.vatKobo))]);
   }
 
-  rows.push(row("Amount", b(formatNaira(draft.totalKobo))));
+  sections.push([row("Amount", b(formatNaira(draft.totalKobo)))]);
 
   /*
    * The date the last money is expected, which is not always the date on the
@@ -226,11 +238,16 @@ export function draftSummary(
    */
   const due = dueDateWithStages(draft, draft.totalKobo, today) ?? draft.dueDate;
   if (due) {
-    rows.push(row(draft.type === "quote" ? "Valid until" : "Due", formatFriendly(due, today)));
+    sections.push([row(draft.type === "quote" ? "Valid until" : "Due", formatFriendly(due, today))]);
   }
-  rows.push(...planLines(draft, today));
-  if (draft.passFeesToClient) rows.push(row("Fees", "Client pays the transaction fee"));
-  if (draft.clientEmail) rows.push(row("Email to", draft.clientEmail));
+
+  // The plan is a list like the items, and stays in one piece for the same
+  // reason: its parts are halves of one arrangement.
+  const planRows = planLines(draft, today);
+  if (planRows.length) sections.push(planRows);
+
+  if (draft.passFeesToClient) sections.push([row("Fees", "Client pays the transaction fee")]);
+  if (draft.clientEmail) sections.push([row("Email to", draft.clientEmail)]);
 
   /*
    * What they will actually be paid, under the amount they are approving.
@@ -256,7 +273,8 @@ export function draftSummary(
   // Then just the question. The three answers arrive as buttons under it, so
   // spelling them out here would print the instructions twice.
   return para(
-    block(`🧾 ${b(`${LABEL[draft.type].toUpperCase()} DRAFT`)}`, rows),
+    `🧾 ${b(`${LABEL[draft.type].toUpperCase()} DRAFT`)}`,
+    ...sections.map((s) => lines(...s)).filter(Boolean),
     ps,
     b("Send it?"),
   );
