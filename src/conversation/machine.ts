@@ -442,15 +442,31 @@ export const VOICE = {
     { id: "change", title: "Other email" },
   ],
 
-  /** Confirmation, the terms and the thing to reply: one message, not three. */
-  confirmedAskConsent: para(
+  /**
+   * The same moment, carried by the consent Flow.
+   *
+   * No links in the body, because the Flow already has both of them as taps
+   * on the screen this message opens — and two bare URLs above a button that
+   * leads to the same two documents is the reader doing the work of deciding
+   * which copy to trust. The message says what is coming; the screen holds
+   * the summary and the documents.
+   */
+  consentFormBody: para(
     "✅ Email confirmed.",
-    lines("One last thing — our terms and privacy notice:", TERMS_URL, PRIVACY_URL),
+    "One last thing — our terms and privacy notice.",
     b("Agree to finish?"),
   ),
 
-  askConsent: para(
-    lines("📄 Our terms and privacy notice:", TERMS_URL, PRIVACY_URL),
+  /**
+   * The same thing in words, for when there is no Flow to open.
+   *
+   * Here the links have to be in the message: until the business is verified
+   * Meta will not publish a Flow, and somebody in that window still has to be
+   * able to read what they are agreeing to before they agree to it.
+   */
+  confirmedAskConsent: para(
+    "✅ Email confirmed.",
+    lines("One last thing — our terms and privacy notice:", TERMS_URL, PRIVACY_URL),
     b("Agree to finish?"),
   ),
 

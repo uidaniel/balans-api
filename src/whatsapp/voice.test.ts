@@ -15,6 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { VOICE } from "../conversation/machine.ts";
+import { FLOWS } from "./flows/definitions.ts";
 import * as reports from "../documents/reports.ts";
 import * as summary from "../documents/summary.ts";
 import * as notify from "../payments/notify.ts";
@@ -219,4 +220,44 @@ test("every message the bot sends", async (t) => {
     // A guard against this file quietly becoming a list of three.
     assert.ok(all.length >= 60, `only ${all.length} messages checked`);
   });
+});
+
+test("a Flow's message does not repeat the links on its own screen", () => {
+  /*
+   * The consent message used to print both URLs in the bubble, above a button
+   * that opened a screen carrying the same two documents as taps. Two copies
+   * of a link is the reader deciding which one to trust, and the screen is
+   * the one with the plain-words summary next to it.
+   *
+   * The other half of the rule matters more. There is a path with no Flow at
+   * all — until the business is verified Meta will not publish one — and on
+   * that path the links have to be in the message, or somebody is agreeing to
+   * documents they were never shown. So this checks both directions: gone
+   * from the Flow's body, still there in the words.
+   */
+  const consent = FLOWS.find((f) => f.key === "consent")!;
+
+  const urls = new Set<string>();
+  const collect = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(collect);
+    if (!node || typeof node !== "object") return;
+    const n = node as Record<string, unknown>;
+    const action = n["on-click-action"] as Record<string, unknown> | undefined;
+    if (action?.name === "open_url" && typeof action.url === "string") urls.add(action.url);
+    Object.values(n).forEach(collect);
+  };
+  collect(consent.json);
+
+  assert.ok(urls.size >= 2, `the consent screen holds ${urls.size} documents, expected both`);
+
+  for (const url of urls) {
+    assert.ok(
+      !VOICE.consentFormBody.includes(url),
+      `the Flow's message repeats ${url}, which is already a tap on the screen it opens`,
+    );
+    assert.ok(
+      VOICE.confirmedAskConsent.includes(url),
+      `the words fallback has no Flow to open and has lost ${url}`,
+    );
+  }
 });

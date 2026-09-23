@@ -221,7 +221,7 @@ async function sendConsentForm(
   if (!id || !phone) return false;
 
   const sent = await sendFlow(phone, {
-    body: VOICE.confirmedAskConsent,
+    body: VOICE.consentFormBody,
     cta: "Read and agree",
     flowId: id,
     token: `consent:${userId}`,
