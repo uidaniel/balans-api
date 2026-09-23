@@ -48,6 +48,26 @@ export function normalisePhone(raw: string): string | null {
   return digits.length >= 11 && digits.length <= 15 ? digits : null;
 }
 
+/**
+ * Typing indicators still in the air, by recipient.
+ *
+ * The bubble is started the moment a message arrives and deliberately not
+ * waited on, so the thinking can begin. That was fine while thinking took a
+ * while. It stopped being fine when it did not: a fast turn sent the reply
+ * before Meta had processed the read receipt, so the bubble appeared *after*
+ * the answer — and then sat there, because what clears it is the next message
+ * and the next message had already gone. Meta's own timeout, about
+ * twenty-five seconds, became the only thing that dismissed it.
+ *
+ * So the send waits for the bubble to land first. In the ordinary case the
+ * receipt settled long ago and this costs nothing; in the fast case it costs
+ * the tail of one Graph call and puts the two in the right order.
+ *
+ * Keyed by recipient, because one person's read receipt is no reason to hold
+ * up a message to somebody else.
+ */
+const typingInFlight = new Map<string, Promise<unknown>>();
+
 async function call(
   path: string,
   body: unknown,
@@ -55,6 +75,14 @@ async function call(
   attempt = 0,
 ): Promise<SendResult> {
   require_("WA_PHONE_NUMBER_ID", "WA_ACCESS_TOKEN");
+
+  /*
+   * Every sender puts the recipient in `to`; the read receipt has no `to`,
+   * which is what keeps this from waiting on itself.
+   */
+  const to = typeof (body as { to?: unknown } | null)?.to === "string" ? (body as { to: string }).to : null;
+  const bubble = to ? typingInFlight.get(to) : undefined;
+  if (bubble) await bubble;
 
   let res: Response;
   try {
@@ -154,20 +182,49 @@ export function sendText(
  */
 export async function markRead(
   waMessageId: string,
-  opts: { typing?: boolean; fetchImpl?: Transport } = {},
+  opts: {
+    typing?: boolean;
+    /**
+     * Who is being shown the bubble.
+     *
+     * Only used to hold their next message until the bubble has landed, so
+     * the two arrive in the order they read in. Without it the receipt still
+     * goes out; it just races the reply.
+     */
+    to?: string;
+    fetchImpl?: Transport;
+  } = {},
 ): Promise<void> {
-  try {
-    await call(
-      `${env.WA_PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        status: "read",
-        message_id: waMessageId,
-        ...(opts.typing ? { typing_indicator: { type: "text" } } : {}),
-      },
-      opts.fetchImpl ?? fetch,
-      MAX_ATTEMPTS - 1,
+  const work = call(
+    `${env.WA_PHONE_NUMBER_ID}/messages`,
+    {
+      messaging_product: "whatsapp",
+      status: "read",
+      message_id: waMessageId,
+      ...(opts.typing ? { typing_indicator: { type: "text" } } : {}),
+    },
+    opts.fetchImpl ?? fetch,
+    MAX_ATTEMPTS - 1,
+  );
+
+  const phone = opts.typing && opts.to ? normalisePhone(opts.to) : null;
+  if (phone) {
+    // Settled rather than resolved: a failed receipt must not hold a reply,
+    // and an unwatched rejection must not take the process down.
+    const settled = work.then(
+      () => undefined,
+      () => undefined,
     );
+    typingInFlight.set(phone, settled);
+    void settled.finally(() => {
+      // Only if it is still ours. A second message from the same person
+      // starts a new bubble, and that one owns the slot.
+      if (typingInFlight.get(phone) === settled) typingInFlight.delete(phone);
+    });
+  }
+
+  try {
+    await work;
   } catch {
     /* Best effort. */
   }

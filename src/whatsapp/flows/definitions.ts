@@ -409,6 +409,148 @@ export function planIdFor(o: { depositPercent?: number | null; instalments?: num
   return "one";
 }
 
+/* -------------------------------------------------------------------------- */
+/* Line items                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The items after the first, which the form can hold.
+ *
+ * Words rather than digits because a Flow screen id and a field name may only
+ * contain letters and underscores — `ITEM_2` is refused on upload.
+ *
+ * Four extra is a judgement, not a limit of the format. It covers the invoices
+ * people actually build a line at a time, and the sentence path still takes up
+ * to twenty for anything longer. Every slot exists in the JSON whether it is
+ * used or not, so the cost of raising this is paid by every invoice.
+ */
+export const EXTRA_ITEMS = ["two", "three", "four", "five"] as const;
+
+/** Field names for one item, in the order they appear on the screen. */
+export const itemFields = (w: string): { description: string; amount: string } => ({
+  description: `item_${w}_description`,
+  amount: `item_${w}_amount`,
+});
+
+/** The checkbox that reveals an item. */
+export const addField = (w: string): string => `add_${w}`;
+
+/**
+ * Items two to five, each behind its own checkbox.
+ *
+ * Flow JSON has no repeater, and nothing on a screen can add one. `update_data`
+ * is not an action at 7.1 — probed against Meta on 23 September 2026, which
+ * answered that an `on-click-action` may only be `data_exchange`, `navigate` or
+ * `complete`. A server round trip per added line would mean a data endpoint,
+ * which these Flows deliberately do not have (see the note at the top).
+ *
+ * So the rows are all in the JSON and a checkbox decides whether they are on
+ * screen. Each checkbox is itself hidden behind the one above it, so a single
+ * line invoice — which is most invoices — shows one "Add another item" and
+ * nothing more. Unticking is the remove: the fields go away and the handler
+ * drops an item with no description.
+ *
+ * Optional, never required. A hidden required input passes the publish
+ * validator, but the validator does not run on a phone, and the failure it
+ * would hide is somebody unable to submit a form with no visible problem on
+ * it. An opted-in item left empty is simply not an item.
+ */
+function extraItemChildren(): unknown[] {
+  const children: unknown[] = [];
+  let revealedBy: string | null = null;
+
+  for (const w of EXTRA_ITEMS) {
+    const f = itemFields(w);
+    children.push({
+      type: "OptIn",
+      name: addField(w),
+      label: "Add another item",
+      required: false,
+      ...(revealedBy ? { visible: revealedBy } : {}),
+    });
+
+    const visible = `\${form.${addField(w)}}`;
+    children.push(
+      {
+        type: "TextInput",
+        name: f.description,
+        label: "Work",
+        required: false,
+        "input-type": "text",
+        "max-chars": 100,
+        visible,
+      },
+      {
+        type: "TextInput",
+        name: f.amount,
+        label: "Amount",
+        "helper-text": "Naira, before VAT. Digits only.",
+        required: false,
+        "input-type": "number",
+        "max-chars": 12,
+        visible,
+      },
+    );
+    revealedBy = visible;
+  }
+
+  return children;
+}
+
+/** Starting values for the extra items, so a correction reopens on them. */
+function extraItemInitValues(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const w of EXTRA_ITEMS) {
+    const f = itemFields(w);
+    out[addField(w)] = `\${data.${addField(w)}}`;
+    out[f.description] = `\${data.${f.description}}`;
+    out[f.amount] = `\${data.${f.amount}}`;
+  }
+  return out;
+}
+
+/**
+ * The extra items as screen data.
+ *
+ * `amountType` is the whole reason this takes an argument. WORK declares an
+ * amount a number because it initialises a `input-type: "number"` field, and
+ * TERMS declares it a string because what arrives there is `${form.…}`, which
+ * is a string whatever the input was. Getting that backwards passes the
+ * publish validator and fails on a phone — the same trap `amount` already
+ * carries a long comment about, now multiplied by four.
+ */
+function extraItemData(
+  amountType: "number" | "string",
+  /*
+   * WORK needs the checkboxes so a correction reopens with the items that
+   * are already on the draft showing. TERMS must not declare them: a screen's
+   * data has to arrive in the navigate payload that reaches it, and WORK
+   * sends on the items, not the boxes that revealed them.
+   */
+  optIns: "with_opt_ins" | "items_only",
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const w of EXTRA_ITEMS) {
+    const f = itemFields(w);
+    if (optIns === "with_opt_ins") out[addField(w)] = { type: "boolean", __example__: false };
+    out[f.description] = { type: "string", __example__: "" };
+    out[f.amount] =
+      amountType === "number" ? { type: "number", __example__: 0 } : { type: "string", __example__: "" };
+  }
+  return out;
+}
+
+/** The extra items in a navigate or complete payload, read from `form` or `data`. */
+function extraItemPayload(source: "form" | "data"): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const w of EXTRA_ITEMS) {
+    const f = itemFields(w);
+    out[f.description] = `\${${source}.${f.description}}`;
+    out[f.amount] = `\${${source}.${f.amount}}`;
+  }
+  return out;
+}
+
 /**
  * Two screens: who and what, then how it is paid.
  *
@@ -477,6 +619,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           notes: { type: "string", __example__: "" },
           vat: { type: "boolean", __example__: false },
           pass_fees: { type: "boolean", __example__: false },
+          ...extraItemData("number", "with_opt_ins"),
         },
         layout: {
           type: "SingleColumnLayout",
@@ -496,6 +639,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                 description: "${data.description}",
                 amount: "${data.amount}",
                 due_date: "${data.due_date}",
+                ...extraItemInitValues(),
               },
               children: [
                 {
@@ -524,6 +668,9 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                   "input-type": "number",
                   "max-chars": 12,
                 },
+                // Straight after the first item's amount, because that is
+                // where somebody realises there is a second thing to bill for.
+                ...extraItemChildren(),
                 {
                   type: "TextInput",
                   name: "due_date",
@@ -553,6 +700,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       client_email: "${form.client_email}",
                       description: "${form.description}",
                       amount: "${form.amount}",
+                      ...extraItemPayload("form"),
                       due_date: "${form.due_date}",
                       plan: "${data.plan}",
                       notes: "${data.notes}",
@@ -598,6 +746,8 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           notes: { type: "string", __example__: "" },
           vat: { type: "boolean", __example__: false },
           pass_fees: { type: "boolean", __example__: false },
+          // Strings here, numbers on WORK. See extraItemData.
+          ...extraItemData("string", "items_only"),
         },
         layout: {
           type: "SingleColumnLayout",
@@ -651,6 +801,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       client_email: "${data.client_email}",
                       description: "${data.description}",
                       amount: "${data.amount}",
+                      ...extraItemPayload("data"),
                       due_date: "${data.due_date}",
                       plan: "${form.plan}",
                       vat: "${form.vat}",

@@ -24,8 +24,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { step, type Context, type State } from "./machine.ts";
-import { SETTINGS_ROW_IDS, settingsList } from "../settings/messages.ts";
+import { step, VOICE, type Context, type State } from "./machine.ts";
+import { readFileSync } from "node:fs";
+
+import { deletionStarted, SETTINGS_ROW_IDS, settingsList } from "../settings/messages.ts";
 
 const today = { y: 2026, m: 9, d: 23 };
 const at = (state: State, text: string, tapped: boolean, ctx: Context = {}) =>
@@ -129,5 +131,50 @@ describe("confirming the deletion", () => {
     assert.match(warning, /invoices are cancelled/i);
     assert.match(warning, /payout account is disconnected/i);
     assert.match(warning, /delete my account/, "and names the words to type");
+  });
+});
+
+/**
+ * What happens when they write again afterwards.
+ *
+ * Nothing did. `handleInbound` saw `status = 'closed'`, logged and returned,
+ * so the number went dead: messages were read and dropped with no reply and
+ * no way to find out why. The bug was a missing branch, and the only thing
+ * that catches a missing branch is an assertion that it is there.
+ */
+describe("writing to us after closing", () => {
+  const handle = readFileSync(new URL("./handle.ts", import.meta.url), "utf8");
+  const gate = handle.slice(
+    handle.indexOf('const reopened = user.status === "closed"'),
+    handle.indexOf("// A paused account is paused"),
+  );
+
+  it("has a branch for it at all", () => {
+    assert.ok(gate.length > 0, "the closed check no longer reopens anything");
+  });
+
+  it("answers instead of going silent", () => {
+    assert.doesNotMatch(gate, /\breturn;/, "a bare return here is the original bug");
+    assert.match(gate, /reopenAccount\(user\.id\)/);
+  });
+
+  it("says the setup is starting over before it starts", () => {
+    assert.match(gate, /VOICE\.welcomeBack/);
+    assert.match(VOICE.welcomeBack, /Welcome back/);
+    assert.match(VOICE.welcomeBack, /set you up again/i, "and what is about to happen");
+  });
+
+  it("does not carry the closed account's conversation into the new one", () => {
+    // `saved` was read before the reopening wiped it, so its context still
+    // describes documents the closing cancelled.
+    assert.match(gate, /reopened \? \{ state: "new", context: \{\} \}/);
+  });
+
+  it("tells them on the way out that a message is the way back", () => {
+    // The closing message used to offer only an email address, which is a
+    // worse answer now that the chat itself reopens the account.
+    const bye = deletionStarted();
+    assert.match(bye, /send me a message/i);
+    assert.doesNotMatch(bye, /within 30 days/, "no deadline we do not enforce");
   });
 });

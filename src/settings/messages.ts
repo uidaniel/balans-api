@@ -83,7 +83,9 @@ export function deletionStarted(): string {
       "Unpaid invoices are cancelled and your payout account is disconnected.",
       "Records of money that already moved are kept, as the law requires.",
     ),
-    "If this was a mistake, email hello@balans.ng within 30 days.",
+    // Not an email address. The way back is the chat they are already in:
+    // a message reopens the account and starts setup over.
+    "Changed your mind? Send me a message any time and we will set you up again.",
   );
 }
 

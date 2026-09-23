@@ -117,6 +117,48 @@ describe("slash commands during setup", () => {
     assert.ok(out.effects.some((e) => e.type === "send_flow"), "cancel should restart setup");
   });
 
+  it("refuses one while the form is open, and says nothing else", () => {
+    /*
+     * The state this list forgot.
+     *
+     * `onboarding:form` had no case in `onboardingHelp`, so it fell through
+     * to the default and the refusal arrived with the entire "What I can do"
+     * menu stapled underneath it: nine commands listed, almost all of them
+     * refused for the same reason as the one just tried. The caller's own
+     * comment says the whole menu is the thing to avoid mid-setup.
+     */
+    const out = say("onboarding:form", "/pro");
+    const said = out.replies.join(" ");
+
+    assert.doesNotMatch(said, /What I can do/i, "the menu is back");
+
+    // Equality, not a match. `para` joins its parts into one string, so
+    // counting replies or grepping for the menu would both pass while
+    // something else was still stapled underneath the refusal.
+    assert.deepEqual(out.replies, [VOICE.setupBeforeCommands], "the refusal and nothing else");
+    assert.equal(out.next, "onboarding:form", "and the form is still open");
+  });
+
+  it("does not list commands it is in the middle of refusing", () => {
+    // Every one of these is refused at this point, so naming them is an
+    // invitation to try eight more locked doors.
+    const said = say("onboarding:form", "/pro").replies.join(" ");
+    for (const cmd of ["/invoice", "/quote", "/collect", "/owed", "/summary", "/status", "/settings", "/design"]) {
+      assert.ok(!said.includes(cmd), `${cmd} is offered to somebody who cannot use it`);
+    }
+  });
+
+  it("still points somebody at the form when they ask for help", () => {
+    // The other caller of the same branch. Help mid-form is about the form,
+    // not about the commands that form unlocks.
+    const said = say("onboarding:form", "/help", helpParse).replies.join(" ");
+
+    assert.doesNotMatch(said, /once you are set up/i, "help is not a refusal");
+    assert.doesNotMatch(said, /What I can do/i);
+    assert.match(said, /Set up Balans/, "it names the button on screen");
+    assert.match(said, /business name/i, "and the way to do it by hand");
+  });
+
   it("does not interfere once setup is done", () => {
     // At idle the commands are the point of the product.
     const out = say("idle", "/pro");

@@ -36,7 +36,6 @@ import {
 } from "./machine.ts";
 import { splitForPlan } from "../whatsapp/flows/definitions.ts";
 import { VAT_PERCENT } from "../parser/extract.ts";
-import { parseAmountToKobo } from "../../core/amount.ts";
 import { forLog, type Parsed } from "../parser/schema.ts";
 import { b, i, lines, para, row } from "../whatsapp/format.ts";
 import { parseMessage } from "../parser/parse.ts";
@@ -52,6 +51,7 @@ import {
   convertedForward,
 } from "../documents/summary.ts";
 import { partsFor } from "../documents/parts.ts";
+import { linesFromForm } from "../documents/form-lines.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { proStartUrl } from "../billing/pro-link.ts";
 import { pickerUrlFor } from "../http/routes/templates.ts";
@@ -254,9 +254,11 @@ import {
   recordInbound,
   hasChosenTemplate,
   recordOutbound,
+  reopenAccount,
   saveConversation,
   setBusinessName,
   upsertUser,
+  type Conversation,
 } from "./store.ts";
 
 export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promise<void> {
@@ -272,7 +274,7 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
    * On a redelivery this reads a conversation it then throws away. That is a
    * wasted read on the rare path to save a round trip on the common one.
    */
-  const [first, saved] = await Promise.all([
+  const [first, loaded] = await Promise.all([
     // Meta redelivers on any doubt. Storing the id first means a repeat stops
     // here rather than producing a second reply to the same sentence.
     recordInbound(user.id, msg.waMessageId, msg.kind),
@@ -284,14 +286,35 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     return;
   }
 
-  if (user.status === "closed") {
-    log.warn({ userId: user.id }, "message from a closed account, ignored");
-    return;
+  /*
+   * Somebody is writing to us after closing their account.
+   *
+   * This used to return here and the number simply went dead: every message
+   * after the closing one was read, logged and dropped, with nothing sent
+   * back and no way to find out why. Closing is a thing people do and then
+   * reconsider — that is the ordinary reason to write to us again — so the
+   * message reopens the account and setup starts from the first question.
+   *
+   * Nothing of the old arrangement returns with it. `reopenAccount` says what
+   * survives and what does not.
+   */
+  const reopened = user.status === "closed";
+  if (reopened) {
+    await reopenAccount(user.id);
+    log.warn({ userId: user.id }, "closed account reopened by a message");
   }
+
+  // The conversation was read before the reopening wiped it, and its context
+  // describes an account that no longer exists.
+  const saved: Conversation = reopened ? { state: "new", context: {} } : loaded;
 
   // Blue ticks and the typing bubble, before the thinking starts. Not awaited:
   // it is decoration, and the reply must not wait on a read receipt.
-  void markRead(msg.waMessageId, { typing: true });
+  void markRead(msg.waMessageId, { typing: true, to: msg.from });
+
+  // Said before setup begins, so the fresh questions are not a surprise to
+  // somebody who expects us to remember them.
+  if (reopened) await reply(user.id, msg.from, [VOICE.welcomeBack], log);
 
   // A paused account is paused whatever the conversation last said.
   const state: State = user.status === "paused" ? "paused" : saved.state;
@@ -2167,26 +2190,50 @@ async function handleInvoiceForm(
   today: Civil,
 ): Promise<void> {
   const clientName = (fields.client_name ?? "").trim();
-  const description = (fields.description ?? "").trim();
   const email = (fields.client_email ?? "").trim().toLowerCase();
   const notes = (fields.notes ?? "").trim();
   const duePhrase = (fields.due_date ?? "").trim();
 
-  // The amount field is a number in the Flow, so it can arrive as one.
-  const totalKobo = parseAmountToKobo(String(fields.amount ?? "").trim());
+  // The form holds up to five items, four of them behind checkboxes, so what
+  // arrives is sparse. A slot with words but no money stops the form rather
+  // than being dropped — see form-lines.ts.
+  const items = linesFromForm(fields);
+
+  if (!items.ok) {
+    log.warn({ userId, reason: items.reason }, "invoice form was incomplete");
+    await reply(
+      userId,
+      phone,
+      [
+        items.reason === "half"
+          ? para(
+              `🤔 ${b(`Item ${items.position} is only half filled in.`)}`,
+              items.hasDescription
+                ? "It has the work but no amount. Add one, or untick it if you did not mean to bill for it."
+                : "It has an amount but nothing saying what it is for.",
+            )
+          : para(
+              `🤔 ${b("That form came back missing something.")}`,
+              "A client, what the work is, and an amount. Try again, or just tell me in a sentence.",
+            ),
+      ],
+      log,
+    );
+    return;
+  }
 
   // Required in the form, so an empty one means the form was not the thing
   // that sent this. Saying which field rather than "something went wrong"
   // leaves them somewhere they can act.
-  if (!clientName || !description || totalKobo === null || totalKobo <= 0) {
-    log.warn({ userId, hasClient: Boolean(clientName), totalKobo }, "invoice form was incomplete");
+  if (!clientName) {
+    log.warn({ userId }, "invoice form came back with no client");
     await reply(
       userId,
       phone,
       [
         para(
-          `🤔 ${b("That form came back missing something.")}`,
-          "A client, what the work is, and an amount. Try again, or just tell me in a sentence.",
+          `🤔 ${b("That form came back without a client.")}`,
+          "Who is it for? Try again, or just tell me in a sentence.",
         ),
       ],
       log,
@@ -2209,7 +2256,7 @@ async function handleInvoiceForm(
     type,
     clientName,
     clientEmail: email || null,
-    lines: [{ description, qty: 1, unitAmountKobo: totalKobo }],
+    lines: items.lines,
     dueDate: resolved?.date ?? null,
     // An OptIn comes back as the string "true", not a boolean.
     vatPercent: fields.vat === "true" ? VAT_PERCENT : null,

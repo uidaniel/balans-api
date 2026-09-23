@@ -24,7 +24,7 @@ type SettingsRowId = (typeof SETTINGS_ROW_IDS)[number];
 import { parseAmountToKobo } from "../../core/amount.ts";
 import { resolveDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
-import { planIdFor } from "../whatsapp/flows/definitions.ts";
+import { addField, EXTRA_ITEMS, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
 
@@ -377,6 +377,21 @@ export const VOICE = {
     lines(b("What is your business called?"), "This is the name your clients see on every invoice."),
   ),
 
+  /**
+   * The first thing a closed account hears when it writes again.
+   *
+   * It says the setup is starting over before the setup starts, because the
+   * alternative is being asked your own business name by something that
+   * clearly knew it last week.
+   */
+  welcomeBack: para(
+    `👋 ${b("Welcome back.")}`,
+    lines(
+      "Your account was closed, so there is nothing left to pick up — we will set you up again from the start.",
+      "Records of money that already moved are still kept, as the law requires.",
+    ),
+  ),
+
   askBusinessName: para(
     "👋 Welcome to Balans.",
     lines(
@@ -501,6 +516,17 @@ export const VOICE = {
   changeByHand: lines(
     `✏️ ${b("What should I change?")}`,
     `Say it however you like — ${b("make it 400k")}, ${b("due next Friday")}, ${b("client is Zenith Homes")}.`,
+  ),
+
+  /**
+   * A draft with more lines on it than the form can show.
+   *
+   * It says why, because "use words instead" with no reason reads like the
+   * form is broken. The form holds five; this draft has more.
+   */
+  tooManyLinesToForm: lines(
+    `✏️ ${b("This one has too many items for the form.")}`,
+    `Tell me the change instead — ${b("make it 400k")}, ${b("due next Friday")}, ${b("client is Zenith Homes")}.`,
   ),
 
   done: para(
@@ -870,8 +896,17 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
    * CANCEL, so somebody can still get out.
    */
   if (state.startsWith("onboarding") && text.trim().startsWith("/")) {
+    /*
+     * Just the refusal while the form is open.
+     *
+     * It used to carry the whole "What I can do" menu underneath — every
+     * command listed, almost all of them refused for the same reason as the
+     * one they just tried. Somebody asking for one command does not need a
+     * list of nine they cannot use yet.
+     */
+    const question = pendingQuestion(state);
     return {
-      replies: [para(VOICE.setupBeforeCommands, onboardingHelp(state))],
+      replies: [question ? para(VOICE.setupBeforeCommands, question) : VOICE.setupBeforeCommands],
       next: state,
       context,
       effects: [],
@@ -1581,18 +1616,59 @@ function withDefaults(doc: PendingDoc, now: Civil): PendingDoc {
  * words, and the same reader handles "8 October 2026" as handles "Friday".
  */
 function formValues(doc: PendingDoc): Record<string, string | number | boolean> {
-  return {
+  const naira = (l: { unitAmountKobo: number; qty: number }): number =>
+    Math.round((l.unitAmountKobo * l.qty) / 100);
+
+  const first = doc.lines[0];
+
+  const values: Record<string, string | number | boolean> = {
     client_name: doc.clientName ?? "",
     client_email: doc.clientEmail ?? "",
-    description: doc.lines[0]?.description ?? "",
-    amount: Math.round(totalOf(doc) / 100),
+    description: first?.description ?? "",
+    /*
+     * The first item's own amount, not the document total.
+     *
+     * It used to be the total, which was the same number while a form could
+     * only hold one line. A three-line draft from a sentence would reopen
+     * with line one's description against all three lines' money — and
+     * tapping Next accepted it, turning ₦50k of logo work into ₦300k.
+     */
+    amount: first ? naira(first) : Math.round((doc.totalKobo ?? 0) / 100),
     due_date: doc.dueDate ? formatLongDate(doc.dueDate) : "",
     plan: planIdFor({ depositPercent: doc.depositPercent, instalments: doc.instalments }),
     notes: doc.notes ?? "",
     vat: doc.vatPercent != null,
     pass_fees: doc.passFeesToClient === true,
   };
+
+  /*
+   * The rest of the items, with their checkboxes already ticked.
+   *
+   * A slot left unticked is hidden, so a draft's fourth line would be
+   * invisible in the form that is meant to be correcting it — and the submit
+   * would drop it. Anything past the fifth line cannot be shown at all; that
+   * is what `overflowsForm` is for.
+   */
+  EXTRA_ITEMS.forEach((w, index) => {
+    const line = doc.lines[index + 1];
+    const f = itemFields(w);
+    values[addField(w)] = Boolean(line);
+    values[f.description] = line?.description ?? "";
+    values[f.amount] = line ? naira(line) : 0;
+  });
+
+  return values;
 }
+
+/**
+ * Whether a draft has more lines than the form can hold.
+ *
+ * A sentence takes up to twenty items and the form takes five, so this is
+ * reachable by ordinary use. Opening the form on such a draft would show the
+ * first five and silently drop the rest on submit, which is somebody's
+ * invoice quietly shrinking, so the caller offers words instead.
+ */
+export const overflowsForm = (doc: PendingDoc): boolean => doc.lines.length > EXTRA_ITEMS.length + 1;
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -1769,6 +1845,19 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
      * loses their VAT setting by opening a form to fix a client name will not
      * work out why.
      */
+    /*
+     * A draft with more lines than the form holds stays in words.
+     *
+     * The form has five slots and a sentence takes twenty, so this is
+     * ordinary use rather than an edge. Opening the form here would show the
+     * first five lines and drop the rest the moment they tapped Next — an
+     * invoice quietly shrinking inside the thing that was meant to correct
+     * it. Typing the change never had that problem.
+     */
+    if (overflowsForm(doc)) {
+      return retry("awaiting_confirm", { ...ctx, attempts: 0 }, VOICE.tooManyLinesToForm);
+    }
+
     return {
       replies: [],
       next: "awaiting_confirm",
@@ -2231,8 +2320,31 @@ function onboardingHelp(state: State): string {
         `then reply ${b("I agree")}.`,
       );
     default:
-      return VOICE.helpIdle;
+      /*
+       * The form is on their phone, so there is no typed question to repeat.
+       *
+       * This used to be `VOICE.helpIdle` — the whole "What I can do" menu,
+       * which is what the caller above exists to avoid: it invites somebody
+       * to wander off a form they are part-way through, and most of what it
+       * lists needs the account that form is creating. Point at the form
+       * instead, and at the way to do it by hand.
+       */
+      return lines(
+        `Tap ${b("Set up Balans")} above to finish.`,
+        "Or send your business name here and we will do it in the chat.",
+      );
   }
+}
+
+/**
+ * The question somebody is part-way through answering, if there is one.
+ *
+ * Null while the form is open: nothing has been asked in the chat, so there
+ * is nothing to repeat, and a refused command should be one line rather than
+ * a line plus instructions for a question nobody was asked.
+ */
+function pendingQuestion(state: State): string | null {
+  return state === "onboarding:form" ? null : onboardingHelp(state);
 }
 
 /** Exported for the onboarding tests and the eventual bank-change flow (F17). */

@@ -605,7 +605,90 @@ describe("a tapped button", () => {
       notes: "half now",
       vat: true,
       pass_fees: true,
+      // The four extra item slots, all empty and all unticked, so the form
+      // opens showing one line and one "Add another item".
+      add_two: false,
+      item_two_description: "",
+      item_two_amount: 0,
+      add_three: false,
+      item_three_description: "",
+      item_three_amount: 0,
+      add_four: false,
+      item_four_description: "",
+      item_four_amount: 0,
+      add_five: false,
+      item_five_description: "",
+      item_five_amount: 0,
     });
+  });
+
+  it("opens the form on every line a draft already has", () => {
+    /*
+     * A draft from a sentence can have several lines. The form used to take
+     * `lines[0].description` and the document total, so a three-line draft
+     * reopened as line one's words against all three lines' money — and
+     * tapping Next accepted it, turning ₦50,000 of logo work into ₦310,000.
+     */
+    const out = doc(
+      "awaiting_confirm",
+      {
+        draftId: DRAFTED.draftId,
+        doc: {
+          type: "invoice",
+          clientName: "Zenith Homes",
+          lines: [
+            { description: "logo", qty: 1, unitAmountKobo: 50_000_00 },
+            { description: "website", qty: 1, unitAmountKobo: 250_000_00 },
+            { description: "business cards", qty: 1, unitAmountKobo: 10_000_00 },
+          ],
+        },
+      },
+      "change something",
+      { parsed: parse({ intent: "unknown" }), correction: null },
+    );
+
+    const data = out.effects.find((e) => e.type === "send_flow")?.data as Record<string, unknown>;
+
+    assert.equal(data.description, "logo");
+    assert.equal(data.amount, 50_000, "the first line's own amount, not the total");
+
+    assert.equal(data.add_two, true, "the second line's slot has to be showing");
+    assert.equal(data.item_two_description, "website");
+    assert.equal(data.item_two_amount, 250_000);
+
+    assert.equal(data.add_three, true);
+    assert.equal(data.item_three_description, "business cards");
+    assert.equal(data.item_three_amount, 10_000);
+
+    assert.equal(data.add_four, false, "and nothing beyond what is on the draft");
+    assert.equal(data.item_four_description, "");
+  });
+
+  it("keeps a draft with more lines than the form holds in words", () => {
+    // Five slots against twenty lines from a sentence. Opening the form would
+    // show five and drop the rest on submit — an invoice shrinking inside the
+    // thing that was meant to correct it.
+    const many = Array.from({ length: 7 }, (_, i) => ({
+      description: `thing ${i + 1}`,
+      qty: 1,
+      unitAmountKobo: 10_000_00,
+    }));
+
+    const out = doc(
+      "awaiting_confirm",
+      { draftId: DRAFTED.draftId, doc: { type: "invoice", clientName: "Zenith Homes", lines: many } },
+      "change something",
+      { parsed: parse({ intent: "unknown" }), correction: null },
+    );
+
+    assert.equal(
+      out.effects.find((e) => e.type === "send_flow"),
+      undefined,
+      "the form must not open on a draft it would truncate",
+    );
+    assert.match(out.replies.join(" "), /too many items for the form/i);
+    assert.match(out.replies.join(" "), /make it 400k/i, "and it still says how to do it");
+    assert.equal(out.next, "awaiting_confirm", "the draft is still there");
   });
 
   it("does not mistake a sentence about changing for the button", () => {

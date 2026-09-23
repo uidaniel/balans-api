@@ -220,6 +220,46 @@ export async function getPendingBank(userId: string): Promise<PendingBank | null
 }
 
 /**
+ * Brings a closed account back, as an empty one.
+ *
+ * Closing is not a wall. Somebody who closed their account and then writes
+ * again has changed their mind, which is the ordinary reason to write to us,
+ * and the number going quiet on them is the worst answer available.
+ *
+ * What comes back is the account, not the setup. The payout account was
+ * retired when they closed and stays retired; the business name goes here.
+ * Setup then runs from the first question, so nobody is handed back an
+ * arrangement they had asked us to end — least of all a bank account that
+ * money would go to.
+ *
+ * The ledger is untouched. Records of money that moved were never ours to
+ * delete, and the closing message says so.
+ */
+export async function reopenAccount(userId: string): Promise<void> {
+  await tx(async (c) => {
+    await c.query(
+      `UPDATE users SET status = 'active', deleted_at = NULL, business_name = NULL WHERE id = $1`,
+      [userId],
+    );
+
+    /*
+     * The deletion flag is a job for a person: anonymise the personal data
+     * once the retention period is up. Left open it would have somebody
+     * anonymise an account that is live again, so reopening withdraws it.
+     */
+    await c.query(
+      `UPDATE risk_flags SET status = 'resolved'
+        WHERE user_id = $1 AND kind = 'account_deletion' AND status = 'open'`,
+      [userId],
+    );
+
+    // Whatever the conversation was doing when it closed is gone with it. An
+    // old draft id would point at a document the closing cancelled.
+    await c.query(`DELETE FROM conversations WHERE user_id = $1`, [userId]);
+  });
+}
+
+/**
  * Makes the pending account the live one.
  *
  * Any previous active account is retired in the same statement, because the

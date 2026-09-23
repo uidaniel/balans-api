@@ -322,3 +322,147 @@ describe("the bank dropdown", () => {
     for (const r of rows) assert.equal(r.id, r.title);
   });
 });
+
+/**
+ * More than one thing on an invoice.
+ *
+ * The form held one description and one amount, so billing for three things
+ * meant a sentence or one squashed line — "logo, website and business cards"
+ * at a single price. Flow JSON has no repeater and `update_data` is not an
+ * action at 7.1, so the rows all exist in the JSON and checkboxes decide
+ * which are on screen.
+ *
+ * That makes the wiring the whole feature, and most of it is invisible to
+ * TypeScript: everything below `json` is `unknown`.
+ */
+describe("line items on the document forms", () => {
+  const WORDS = ["two", "three", "four", "five"];
+
+  for (const key of ["invoice", "quote"]) {
+    const flow = FLOWS.find((f) => f.key === key)!;
+    const json = flow.json as { screens: Node[] };
+    const screen = (id: string) => json.screens.find((s) => s.id === id)!;
+    const inputs = (id: string) =>
+      walk(screen(id)).filter((n) => n.type === "TextInput" || n.type === "OptIn");
+    const named = (id: string, name: string) => inputs(id).find((n) => n.name === name);
+
+    describe(key, () => {
+      it("has a slot for a second, third, fourth and fifth item", () => {
+        for (const w of WORDS) {
+          assert.ok(named("WORK", `item_${w}_description`), `no description field for item ${w}`);
+          assert.ok(named("WORK", `item_${w}_amount`), `no amount field for item ${w}`);
+        }
+      });
+
+      it("never makes one of them required", () => {
+        /*
+         * A required input that is hidden passes Meta's publish validator —
+         * probed on 23 September 2026 — but the validator does not run on a
+         * phone. If a hidden required field does block the footer there, it
+         * blocks it with nothing on screen to explain why.
+         */
+        for (const w of WORDS) {
+          assert.notEqual(named("WORK", `item_${w}_description`)!.required, true, `item ${w}`);
+          assert.notEqual(named("WORK", `item_${w}_amount`)!.required, true, `item ${w}`);
+          assert.notEqual(named("WORK", `add_${w}`)!.required, true, `checkbox ${w}`);
+        }
+      });
+
+      it("hides each item behind its own checkbox", () => {
+        for (const w of WORDS) {
+          const want = `\${form.add_${w}}`;
+          assert.equal(named("WORK", `item_${w}_description`)!.visible, want, `item ${w}`);
+          assert.equal(named("WORK", `item_${w}_amount`)!.visible, want, `item ${w}`);
+        }
+      });
+
+      it("hides each checkbox behind the one above it", () => {
+        // Otherwise a one-line invoice opens showing four "Add another item"
+        // boxes at once, which is the clutter the whole arrangement avoids.
+        assert.equal(named("WORK", "add_two")!.visible, undefined, "the first is always offered");
+        for (let i = 1; i < WORDS.length; i++) {
+          assert.equal(
+            named("WORK", `add_${WORDS[i]}`)!.visible,
+            `\${form.add_${WORDS[i - 1]}}`,
+            `checkbox ${WORDS[i]}`,
+          );
+        }
+      });
+
+      it("puts the checkbox before the item it reveals", () => {
+        const order = inputs("WORK").map((n) => n.name);
+        for (const w of WORDS) {
+          assert.ok(
+            order.indexOf(`add_${w}`) < order.indexOf(`item_${w}_description`),
+            `the box for item ${w} is below the fields it controls`,
+          );
+        }
+      });
+
+      it("declares the amounts as numbers on WORK and strings on TERMS", () => {
+        /*
+         * The trap `amount` already carries a long comment about, now four
+         * times over. WORK initialises a `input-type: "number"` input, so its
+         * declaration must be a number; TERMS receives `${form...}`, which is
+         * a string whatever the input was. Getting it backwards passes the
+         * publish validator and fails on a real phone at the moment somebody
+         * taps Next.
+         */
+        const work = screen("WORK").data as Record<string, { type: string }>;
+        const terms = screen("TERMS").data as Record<string, { type: string }>;
+
+        for (const w of WORDS) {
+          assert.equal(work[`item_${w}_amount`]!.type, "number", `WORK item ${w}`);
+          assert.equal(terms[`item_${w}_amount`]!.type, "string", `TERMS item ${w}`);
+        }
+      });
+
+      it("does not declare the checkboxes on TERMS", () => {
+        // A screen's data has to arrive in the payload that reaches it, and
+        // WORK sends on the items rather than the boxes that revealed them.
+        const terms = screen("TERMS").data as Record<string, unknown>;
+        for (const w of WORDS) {
+          assert.equal(terms[`add_${w}`], undefined, `TERMS declares add_${w} but is never sent it`);
+        }
+      });
+
+      it("carries every item all the way to the submit", () => {
+        // A field that stops at a screen boundary is a line item somebody
+        // typed and never saw again.
+        const complete = walk(screen("TERMS")).find(
+          (n) => isNode(n["on-click-action"]) && (n["on-click-action"] as Node).name === "complete",
+        );
+        const payload = (complete!["on-click-action"] as Node).payload as Record<string, string>;
+
+        for (const w of WORDS) {
+          assert.equal(payload[`item_${w}_description`], `\${data.item_${w}_description}`);
+          assert.equal(payload[`item_${w}_amount`], `\${data.item_${w}_amount}`);
+        }
+      });
+
+      it("opens on the items a draft already has", () => {
+        // The correction path. Without an init-value the field comes up empty
+        // and the submit drops the line it was meant to be correcting.
+        const form = walk(screen("WORK")).find((n) => n.type === "Form")!;
+        const init = form["init-values"] as Record<string, string>;
+
+        for (const w of WORDS) {
+          assert.equal(init[`add_${w}`], `\${data.add_${w}}`);
+          assert.equal(init[`item_${w}_description`], `\${data.item_${w}_description}`);
+          assert.equal(init[`item_${w}_amount`], `\${data.item_${w}_amount}`);
+        }
+      });
+    });
+  }
+
+  it("leaves the payment request alone", () => {
+    /*
+     * A request is "a lightweight payable with no PDF" — there is no document
+     * for a second line to print on, and adding one would be inventing the
+     * paperwork its whole point is not having.
+     */
+    const request = FLOWS.find((f) => f.key === "request")!;
+    const names = walk(request.json).map((n) => n.name);
+    assert.ok(!names.some((n) => typeof n === "string" && n.startsWith("item_")));
+  });
+});
