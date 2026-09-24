@@ -22,6 +22,17 @@ export type InitialisedPayment = {
   providerReference: string;
   /** What the client is being charged. */
   amountKobo: number;
+  /**
+   * What this settles against the invoice.
+   *
+   * The same as `amountKobo` until fees are passed to the client. When they
+   * are, the client is charged the invoice amount grossed up by the
+   * processor's cut, and the difference is a surcharge for moving money
+   * rather than part of what was billed. Crediting the invoice with the
+   * surcharge left an invoice disagreeing with its own payment plan about
+   * what was still owed — see migration 0020.
+   */
+  invoiceAmountKobo: number;
   balansFeeKobo: number;
   /**
    * What we expect the processor to take, from our own rate table.
@@ -38,8 +49,9 @@ export async function recordInitialisedPayment(p: InitialisedPayment): Promise<v
   await db().query(
     `INSERT INTO payments
        (document_id, reference, provider_reference, amount_kobo, client_total_kobo,
-        provider_fee_kobo, balans_fee_kobo, fee_bearer, status, raw_verify_json)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'user', 'initialised', $8)
+        invoice_amount_kobo, provider_fee_kobo, balans_fee_kobo, fee_bearer, status,
+        raw_verify_json)
+     VALUES ($1, $2, $3, $4, $5, $9, $6, $7, 'user', 'initialised', $8)
      ON CONFLICT (reference) DO NOTHING`,
     [
       p.documentId,
@@ -53,6 +65,7 @@ export async function recordInitialisedPayment(p: InitialisedPayment): Promise<v
       p.expectedProcessorFeeKobo,
       p.balansFeeKobo,
       JSON.stringify({ providerReference: p.providerReference, stage: "initialised" }),
+      p.invoiceAmountKobo,
     ],
   );
 }

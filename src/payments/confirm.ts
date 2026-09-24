@@ -153,9 +153,10 @@ export async function confirmPayment(
     document_id: string;
     status: string;
     client_total_kobo: number;
+    invoice_amount_kobo: number | null;
     balans_fee_kobo: number;
   }>(
-    `SELECT id, document_id, status, client_total_kobo, balans_fee_kobo
+    `SELECT id, document_id, status, client_total_kobo, invoice_amount_kobo, balans_fee_kobo
        FROM payments WHERE reference = $1`,
     [reference],
   );
@@ -220,7 +221,22 @@ export async function confirmPayment(
   }
 
   /* Rule 4: apply it once. --------------------------------------------------- */
-  const applied = await apply(payment.id, payment.document_id, t);
+  /*
+   * What this settles against the invoice, which is not always what arrived.
+   *
+   * When fees are passed to the client they pay the invoice amount grossed
+   * up by the processor's cut, so the freelancer still receives the whole of
+   * it. The surcharge is a charge for moving money and settles nothing: an
+   * invoice credited with it disagreed with its own payment plan about what
+   * was still owed, and showed the smaller figure in the larger type.
+   *
+   * Falls back to what was charged, which is the same number on every
+   * payment that did not pass fees on, and is what rows written before
+   * migration 0020 were backfilled with.
+   */
+  const creditKobo = payment.invoice_amount_kobo ?? payment.client_total_kobo;
+
+  const applied = await apply(payment.id, payment.document_id, t, creditKobo);
   if (!applied) return { kind: "already_confirmed", reference };
 
   // F18: take what the cap allows towards an open subscription. After the
@@ -313,6 +329,8 @@ async function apply(
   paymentId: string,
   documentId: string,
   t: VerifiedTransaction,
+  /** What this settles against the invoice; see the caller. */
+  creditKobo: number,
 ): Promise<Applied | null> {
   return tx(async (c) => {
     const claimed = await c.query(
@@ -358,12 +376,12 @@ async function apply(
     // F7: settle whichever parts this payment covers, and open the next one.
     // Done inside the same transaction as the document update, so a document
     // can never be part_paid with no part marked.
-    await settleParts(documentId, t.amountPaidKobo).catch(() => undefined);
+    await settleParts(documentId, creditKobo).catch(() => undefined);
 
     // `documents_paid_within_total` will not hold more than the total, and an
     // overpayment is a refund question rather than a bigger invoice. The
     // payment row keeps what really arrived.
-    const paid = Math.min(doc.amount_paid_kobo + t.amountPaidKobo, doc.total_kobo);
+    const paid = Math.min(doc.amount_paid_kobo + creditKobo, doc.total_kobo);
     const fullyPaid = paid >= doc.total_kobo;
 
     await c.query(

@@ -86,8 +86,21 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
     await closeDb();
   });
 
-  /** A sent invoice with a payment waiting on it. */
-  async function scenario(totalKobo: number, alreadyPaidKobo = 0) {
+  /**
+   * A sent invoice with a payment waiting on it.
+   *
+   * `stageKobo` is what this payment settles — the whole balance unless a
+   * payment plan is being paid a part at a time. `surchargeKobo` is what the
+   * client is charged on top when the invoice passes fees to them: they pay
+   * more so the freelancer still receives the whole of the stage, and the
+   * extra settles nothing.
+   */
+  async function scenario(
+    totalKobo: number,
+    alreadyPaidKobo = 0,
+    surchargeKobo = 0,
+    stageKobo = totalKobo - alreadyPaidKobo,
+  ) {
     const d = await db().query<{ id: string }>(
       `INSERT INTO documents
          (user_id, client_id, type, number, status, subtotal_kobo, total_kobo,
@@ -105,7 +118,8 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
     await recordInitialisedPayment({
       documentId, userId, reference,
       providerReference: "MNFY|test",
-      amountKobo: totalKobo - alreadyPaidKobo,
+      amountKobo: stageKobo + surchargeKobo,
+      invoiceAmountKobo: stageKobo,
       balansFeeKobo: 500_00,
       expectedProcessorFeeKobo: 850_00,
     });
@@ -139,6 +153,42 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
     assert.equal(doc.amount_paid_kobo, 50_000_00);
     assert.ok(doc.paid_at, "paid_at must be stamped");
     assert.equal((await payRow(reference)).status, "success");
+  });
+
+  it("credits the invoice, not the surcharge on top of it", async () => {
+    /*
+     * A ₦215,000 invoice with a 25% deposit, passing fees to the client.
+     *
+     * The deposit stage is ₦53,750 and the client was charged ₦54,670.06 —
+     * grossed up so the freelancer still receives the whole ₦53,750. The
+     * extra ₦920.06 is a charge for moving money and settles nothing.
+     *
+     * It was credited to the invoice anyway, and the page then read
+     * "Still owed ₦160,329.94" above a plan row reading "Balance ₦161,250":
+     * two figures for one debt, with the wrong one in the larger type.
+     */
+    // Nothing paid yet, and this is the 25% deposit rather than the whole
+    // invoice — so an over-credit shows up instead of being hidden by the cap
+    // that stops a document holding more than its total.
+    const { documentId, reference } = await scenario(215_000_00, 0, 920_06, 53_750_00);
+
+    const out = await confirmPayment(
+      { paymentReference: reference, transactionReference: "MNFY|test" },
+      quiet,
+      // What arrives is the grossed-up figure, and the amount check is
+      // against that — the client really was asked to send it.
+      saying({ paymentReference: reference, amountPaidKobo: 54_670_06, totalPayableKobo: 54_670_06 }),
+    );
+
+    assert.equal(out.kind, "confirmed");
+    const doc = await docRow(documentId);
+    assert.equal(
+      doc.amount_paid_kobo,
+      53_750_00,
+      "the invoice was credited with the surcharge as well as the deposit",
+    );
+    // Which is the figure the page subtracts, so the two agree again.
+    assert.equal(215_000_00 - doc.amount_paid_kobo, 161_250_00, "still owed must be the balance");
   });
 
   it("changes nothing on a second delivery", async () => {

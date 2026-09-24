@@ -148,6 +148,31 @@ padding:13px 16px;border-top:1px solid rgba(246,241,231,.07)}
 .tv .acct{font-family:var(--display);font-variant-numeric:tabular-nums;letter-spacing:.03em;
 font-size:20px;font-weight:700;line-height:1.2}
 button.tcopy{height:52px;margin-top:16px}
+/* Copying the amount.
+   The figure can carry kobo — 54,670.06 — because it was grossed up so the
+   freelancer still receives the whole of what they billed. These accounts are
+   matched on the amount as well as the number, so a mistyped kobo is not a
+   short payment, it is a payment that never arrives and a page that waits
+   forever. Nobody should have to retype that. The icon sits inside the row
+   with the figure rather than under it, because it belongs to that number and
+   not to the panel.
+   (No mention here of what kind of document this is: the stylesheet is served
+   with the not-found page too, and that page must not hint whether a token
+   was ever real.) */
+button.icopy{flex:none;display:grid;place-items:center;width:34px;height:34px;margin:-6px -6px -6px 0;
+border:0;border-radius:10px;background:transparent;color:rgba(246,241,231,.55);cursor:pointer;
+-webkit-tap-highlight-color:transparent}
+button.icopy:hover,button.icopy:focus-visible{background:rgba(246,241,231,.08);color:var(--cream)}
+button.icopy:active{transform:scale(.94)}
+button.icopy svg{width:17px;height:17px;display:block;fill:none;stroke:currentColor;
+stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+/* The tick replaces the sheets in place: swapping textContent, which is what
+   the wide button does, would throw the icon away. */
+button.icopy .i-yes{display:none}
+button.icopy.done{color:#6fdc9c}
+button.icopy.done .i-no{display:none}
+button.icopy.done .i-yes{display:block}
+.trow .tv{display:flex;align-items:center;justify-content:flex-end;gap:8px}
 button.tcopy.done{background:var(--moss);color:var(--cream)}
 .tfine{margin:16px 4px 0;font-size:13.5px;line-height:1.65;color:var(--ink-65);text-align:center}
 .tfine strong{color:var(--ink);font-weight:600}
@@ -199,6 +224,14 @@ const TRANSFER_JS = `
     if (!b) return;
     var text = b.getAttribute('data-copy') || '';
     var done = function () {
+      // An icon button says so by swapping its picture, which CSS does from
+      // the class. Rewriting textContent would throw the icon away and leave
+      // the word "Copied" where a 34px square used to be.
+      if (b.classList.contains('icopy')) {
+        b.classList.add('done');
+        setTimeout(function () { b.classList.remove('done'); }, 1600);
+        return;
+      }
       var was = b.textContent;
       b.textContent = 'Copied';
       b.classList.add('done');
@@ -503,6 +536,31 @@ function payBlock(
 function transferBlock(doc: PublicDocument, t: TransferPanel, token: string): string {
   const amount = formatNaira(t.amountKobo);
 
+  /*
+   * The figure as a banking app wants it typed: digits, a dot, and nothing
+   * else. No naira sign, no thousands separators, and no trailing ".00" —
+   * every one of those is something to delete before the transfer can be
+   * sent, and this exists to save exactly that.
+   */
+  const typed =
+    t.amountKobo % 100 === 0
+      ? String(t.amountKobo / 100)
+      : (t.amountKobo / 100).toFixed(2);
+
+  /*
+   * Two sheets of paper, and a tick. Both are in the button and CSS shows
+   * whichever applies, because the copy handler swaps a class and cannot
+   * rebuild an icon.
+   */
+  const copyIcon = (what: string, value: string) =>
+    `<button class="icopy copy" type="button" data-copy="${esc(value)}" aria-label="Copy the ${what}">` +
+    `<svg class="i-no" viewBox="0 0 24 24" aria-hidden="true">` +
+    `<rect x="9" y="9" width="11" height="11" rx="2.5"/>` +
+    `<path d="M5 15V5.5A2.5 2.5 0 0 1 7.5 3H15"/></svg>` +
+    `<svg class="i-yes" viewBox="0 0 24 24" aria-hidden="true">` +
+    `<path d="M4.5 12.5 9.5 17.5 19.5 6.5"/></svg>` +
+    `</button>`;
+
   const row = (k: string, v: string, cls = "") =>
     `<div class="trow${cls ? ` ${cls}` : ""}"><span class="tk">${k}</span><span class="tv">${v}</span></div>`;
 
@@ -514,7 +572,7 @@ function transferBlock(doc: PublicDocument, t: TransferPanel, token: string): st
       ${row("Bank", esc(t.bankName))}
       ${row("Account number", `<span class="acct">${esc(t.accountNumber)}</span>`)}
       ${t.accountName ? row("Account name", esc(t.accountName)) : ""}
-      ${row("Amount", `<span class="tamt">${amount}</span>`)}
+      ${row("Amount", `<span class="tamt">${amount}</span>${copyIcon("amount", typed)}`)}
     </div>
 
     <button class="tcopy copy" type="button" data-copy="${esc(t.accountNumber)}">Copy account number</button>

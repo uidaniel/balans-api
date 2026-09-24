@@ -88,7 +88,25 @@ const panelFor = (t: LiveTransfer): TransferPanel => ({
 export async function publicRoutes(app: FastifyInstance): Promise<void> {
   /* -- The page ----------------------------------------------------------- */
 
-  app.get<{ Params: { token: string } }>("/i/:token", async (req, reply) => {
+  /**
+   * Why a payment that went wrong says so through the query string.
+   *
+   * The page a payer sees has to survive being reloaded, and the one thing
+   * guaranteed to reload it is the payment landing — the page polls, and calls
+   * `location.reload()` the moment it is told the money arrived. So nothing
+   * the payer looks at may live at a URL that only answers POST. See the Pay
+   * button below: it redirects here, and these are how its failures travel.
+   */
+  const PAY_ERRORS: Record<string, string> = {
+    busy: "Too many attempts just now. Wait a moment and try again.",
+    unpayable: "This invoice cannot be paid right now.",
+    provider: "We could not reach the payment provider. Please try again in a moment.",
+    account: "We could not get the account details just now. Please try again in a moment.",
+  };
+
+  app.get<{ Params: { token: string }; Querystring: { e?: string } }>(
+    "/i/:token",
+    async (req, reply) => {
     const doc = await findByToken(req.params.token);
     if (!doc) return reply.status(404).type(HTML).send(renderNotFound());
 
@@ -113,9 +131,31 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
         renderDocument(doc, todayIn(defaults.behaviour.timezone), {
           token: req.params.token,
           transfer: live ? panelFor(live) : null,
+          // Only one we wrote. Anything else in the query string is somebody
+          // playing, and gets no words of ours on a page about their money.
+          error: req.query.e ? PAY_ERRORS[req.query.e] : undefined,
         }),
       );
-  });
+    },
+  );
+
+  /**
+   * The Pay button's own address, arrived at by a browser rather than a form.
+   *
+   * It used to answer nothing at all, and the one moment it was asked was the
+   * worst one in the product: the payer pressed Pay, the account panel came
+   * back as the body of the POST, and the address bar read `/i/{token}/pay`.
+   * They paid. The page polled, saw the payment, called `location.reload()` —
+   * which the in-app browser sent as a GET — and the person who had just
+   * transferred ₦163,250 was shown "Route GET:/i/.../pay not found".
+   *
+   * The POST redirects now, so this should not happen again. It stays because
+   * that URL is in browser histories and in the back button, and a 404 is the
+   * last thing anybody who has paid should ever see.
+   */
+  app.get<{ Params: { token: string } }>("/i/:token/pay", async (req, reply) =>
+    reply.redirect(`/i/${encodeURIComponent(req.params.token)}`, 303),
+  );
 
   /* -- Their own numbers ---------------------------------------------------- */
 
@@ -267,26 +307,34 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     const doc = await findByToken(token);
     if (!doc) return reply.status(404).type(HTML).send(renderNotFound());
 
-    const again = (error: string) =>
-      reply.type(HTML).header("cache-control", "no-store, private")
-        .send(renderDocument(doc, today, { token, error }));
+    /*
+     * Everything this route does ends in a redirect, not a page.
+     *
+     * Post/Redirect/Get, and here it is not a nicety. The page shown to a
+     * payer polls for their payment and calls `location.reload()` the moment
+     * it lands — so whatever address that page is sitting at will be asked
+     * for again, as a GET, at the single most important moment in the
+     * product. Answering the POST with HTML left it sitting at `/pay`, which
+     * answered GET with a 404. Somebody saw that immediately after paying.
+     *
+     * So the account panel is rendered by GET /i/:token, which already
+     * rebuilds it from the live transfer, and failures come back as a code in
+     * the query string. Nothing a payer can see lives at a POST-only URL.
+     */
+    const back = (error?: keyof typeof PAY_ERRORS) =>
+      reply.redirect(`/i/${encodeURIComponent(token)}${error ? `?e=${error}` : ""}`, 303);
 
-    const showAccount = (t: LiveTransfer) =>
-      reply
-        .type(HTML)
-        .header("cache-control", "no-store, private")
-        .header("referrer-policy", "no-referrer")
-        .send(renderDocument(doc, today, { token, transfer: panelFor(t) }));
+    const again = (error: keyof typeof PAY_ERRORS) => back(error);
 
     if (tooMany(token)) {
       req.log.warn({ documentId: doc.id }, "pay rate limited");
-      return again("Too many attempts just now. Wait a moment and try again.");
+      return again("busy");
     }
 
     const can = payable(doc);
     if (!can.ok) {
       req.log.info({ documentId: doc.id, why: can.why }, "pay refused");
-      return again("This invoice cannot be paid right now.");
+      return again("unpayable");
     }
 
     // F7: the next unpaid part, or the whole balance when there are none.
@@ -298,7 +346,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     const existing = await liveTransferFor(doc.id, outstanding);
     if (existing) {
       req.log.info({ documentId: doc.id, reference: existing.reference }, "reusing live transfer account");
-      return showAccount(existing);
+      return back();
     }
 
     /*
@@ -343,7 +391,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
 
     if (!init.ok) {
       req.log.error({ documentId: doc.id, message: init.message }, "could not start payment");
-      return again("We could not reach the payment provider. Please try again in a moment.");
+      return again("provider");
     }
 
     await recordInitialisedPayment({
@@ -352,6 +400,10 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       reference,
       providerReference: init.transactionReference,
       amountKobo: split.clientPaysKobo,
+      // What the invoice is credited with when this lands. `outstanding` is
+      // the figure the plan and the page both quote; `clientPaysKobo` is that
+      // plus the surcharge, when the client is the one carrying the fees.
+      invoiceAmountKobo: outstanding,
       balansFeeKobo: split.balansFeeKobo,
       expectedProcessorFeeKobo: split.processorFeeKobo,
     });
@@ -385,7 +437,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
         { documentId: doc.id, reference, message: transfer.message },
         "could not get transfer details",
       );
-      return again("We could not get the account details just now. Please try again in a moment.");
+      return again("account");
     }
 
     await recordTransferAccount(reference, transfer.account);
@@ -400,16 +452,15 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       "transfer account issued",
     );
 
-    return showAccount({
-      reference,
-      providerReference: init.transactionReference,
-      amountKobo: split.clientPaysKobo,
-      bankName: transfer.account.bankName,
-      accountNumber: transfer.account.accountNumber,
-      accountName: transfer.account.accountName,
-      ussd: transfer.account.ussd,
-      expiresAt: transfer.account.expiresAt,
-    });
+    /*
+     * Back to the invoice, which draws the panel from what was just stored.
+     *
+     * The details are not carried over in the response: `recordTransferAccount`
+     * has written them, and GET /i/:token reads them back through
+     * `liveTransferFor`. One place builds that panel, so a reload, a return
+     * from a banking app, and this redirect cannot show three different things.
+     */
+    return back();
   });
 
   /* -- Has it landed yet? --------------------------------------------------- */
