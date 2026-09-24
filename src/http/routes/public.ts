@@ -34,6 +34,7 @@ import {
 } from "../../documents/public.ts";
 import { renderDocument, renderNotFound, type TransferPanel } from "../../documents/page.ts";
 import {
+  liveCardCheckoutFor,
   liveTransferFor,
   pendingPaymentsFor,
   recordInitialisedPayment,
@@ -394,6 +395,25 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       processor: withVat(DEFAULT_INTL_PROCESSOR, defaults.international.feeVatPercent),
     });
 
+    /*
+     * A checkout already open for this invoice is the one they go back to.
+     *
+     * The transfer side has always worked this way. Without it every press of
+     * Pay opened another Paystack transaction, and two of them have been seen
+     * on real invoices — one pair 363ms apart, which is the browser
+     * submitting the form twice rather than a person. Two live transactions
+     * for one invoice is how a client pays the same bill twice, and the rate
+     * limiter does not help: eight a minute are eight ways to be charged.
+     */
+    const open = await liveCardCheckoutFor(doc.id, outstandingKobo);
+    if (open) {
+      req.log.info(
+        { documentId: doc.id, reference: open.reference },
+        "reusing the card checkout already open",
+      );
+      return reply.redirect(open.checkoutUrl, 303);
+    }
+
     const reference = `bal_${doc.id.replace(/-/g, "").slice(0, 16)}_${randomUUID().slice(0, 8)}`;
 
     const init = await initPaystack({
@@ -433,6 +453,8 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       balansFeeKobo: split.balansFeeKobo,
       expectedProcessorFeeKobo: split.processorFeeKobo,
       provider: "paystack",
+      // So the next press of Pay comes back here rather than opening another.
+      checkoutUrl: init.authorizationUrl,
     });
 
     req.log.info(

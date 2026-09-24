@@ -53,6 +53,13 @@ export type InitialisedPayment = {
    * other provider would find and try to confirm.
    */
   provider?: "monnify" | "paystack";
+  /**
+   * Where the client goes to type their card, for a card payment.
+   *
+   * Kept so that pressing Pay again lands on the transaction that is already
+   * open instead of starting a second one. See `liveCardCheckoutFor`.
+   */
+  checkoutUrl?: string;
 };
 
 export async function recordInitialisedPayment(p: InitialisedPayment): Promise<void> {
@@ -74,7 +81,11 @@ export async function recordInitialisedPayment(p: InitialisedPayment): Promise<v
       p.amountKobo,
       p.expectedProcessorFeeKobo,
       p.balansFeeKobo,
-      JSON.stringify({ providerReference: p.providerReference, stage: "initialised" }),
+      JSON.stringify({
+        providerReference: p.providerReference,
+        stage: "initialised",
+        ...(p.checkoutUrl ? { checkoutUrl: p.checkoutUrl } : {}),
+      }),
       p.invoiceAmountKobo,
       p.provider ?? "monnify",
     ],
@@ -264,4 +275,56 @@ export async function pendingPaymentsFor(
      */
     provider: r.provider === "paystack" ? "paystack" : "monnify",
   }));
+}
+
+/**
+ * How long a checkout that is already open is offered again instead of a new
+ * one.
+ *
+ * Long enough to cover the two ways somebody presses Pay twice — a browser
+ * submitting the form twice in the same second, and a person who opened
+ * checkout, thought better of it and came back a minute later. Short enough
+ * that a link Paystack has since timed out is not handed to somebody as
+ * though it were live.
+ */
+const CHECKOUT_REUSE_MINUTES = 10;
+
+/**
+ * The card checkout already open on this document, if there is one.
+ *
+ * The transfer side has always done this — `liveTransferFor` hands back the
+ * account that was already issued, because somebody returning from their
+ * banking app must meet the same account they copied. The card side had no
+ * equivalent, so every press of Pay opened *another* Paystack transaction.
+ *
+ * Seen twice on real invoices: two references 363ms apart, which is a browser
+ * submitting the form twice rather than a person, and two 61 seconds apart,
+ * which is a person. Each left a stray `initialised` row behind, and each was
+ * a live transaction a client could have paid — two open transactions for one
+ * invoice is how the same bill gets paid twice.
+ *
+ * Matched on the amount as well as the document, so that a part payment
+ * landing in between does not hand somebody a checkout for a figure that is
+ * no longer owed.
+ */
+export async function liveCardCheckoutFor(
+  documentId: string,
+  amountKobo: number,
+): Promise<{ reference: string; checkoutUrl: string } | null> {
+  const { rows } = await db().query<{ reference: string; checkout_url: string | null }>(
+    `SELECT reference, raw_verify_json ->> 'checkoutUrl' AS checkout_url
+       FROM payments
+      WHERE document_id = $1
+        AND provider = 'paystack'
+        AND status = 'initialised'
+        AND created_at > now() - ($3 || ' minutes')::interval
+        AND COALESCE(invoice_amount_kobo, client_total_kobo) = $2
+        AND raw_verify_json ->> 'checkoutUrl' IS NOT NULL
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [documentId, amountKobo, String(CHECKOUT_REUSE_MINUTES)],
+  );
+
+  const r = rows[0];
+  return r?.checkout_url ? { reference: r.reference, checkoutUrl: r.checkout_url } : null;
 }
