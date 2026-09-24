@@ -12,13 +12,26 @@
  *     number; what is owed is read from the row.
  */
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
 import { defaults, env } from "../../config.ts";
 import { todayIn } from "../../../core/dates.ts";
-import { balansFee, settle, type BalansRates } from "../../../core/fees.ts";
+import {
+  balansFee,
+  settle,
+  withVat,
+  DEFAULT_INTL_PROCESSOR,
+  type BalansRates,
+} from "../../../core/fees.ts";
 import { initBankTransfer, initTransaction } from "../../payments/monnify.ts";
-import { findByToken, markViewed, outstandingKobo, payable, payableNowKobo } from "../../documents/public.ts";
+import {
+  findByToken,
+  markViewed,
+  outstandingKobo,
+  payable,
+  payableNowKobo,
+  type PublicDocument,
+} from "../../documents/public.ts";
 import { renderDocument, renderNotFound, type TransferPanel } from "../../documents/page.ts";
 import {
   liveTransferFor,
@@ -31,6 +44,11 @@ import { renderSummary } from "../../documents/summary-page.ts";
 import { summaryFor, userForSummaryToken } from "../../documents/queries.ts";
 import { renderDocumentPdf } from "../../documents/pdf.ts";
 import { confirmPayment } from "../../payments/confirm.ts";
+import {
+  initTransaction as initPaystack,
+  paystackConfigured,
+} from "../../payments/paystack.ts";
+import { paystackSubaccountFor } from "../../payments/paystack-subaccount.ts";
 import { notifyPaid } from "../../payments/notify.ts";
 import { get as getFile, getCard } from "../../storage/files.ts";
 import { fileName } from "../../storage/files.ts";
@@ -102,6 +120,10 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     unpayable: "This invoice cannot be paid right now.",
     provider: "We could not reach the payment provider. Please try again in a moment.",
     account: "We could not get the account details just now. Please try again in a moment.",
+    // The freelancer's payout account is not set up for card payments, which
+    // is theirs to fix and not the client's. Said without blame and without
+    // detail: this page belongs to somebody who is trying to pay a bill.
+    card_unavailable: "Card payment is not available on this invoice yet. Please contact the sender.",
   };
 
   app.get<{ Params: { token: string }; Querystring: { e?: string } }>(
@@ -300,6 +322,107 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
 
   /* -- The Pay button ------------------------------------------------------ */
 
+  /**
+   * The Paystack half of Pay (International PRD section 8).
+   *
+   * Different in shape from the naira path, not just in provider. There is no
+   * account number to read and no panel to sit on: the client goes to
+   * Paystack's checkout, pays by card, and comes back. So this ends in a
+   * redirect *away* rather than back to the invoice, and the confirmation
+   * still arrives by webhook — the return is a browser doing what it was
+   * told, and proves nothing.
+   *
+   * What is charged is the naira figure already on the document. Never
+   * reconverted here: the rate was locked when the invoice was made, and
+   * re-converting at pay time would charge a number neither the client nor
+   * the freelancer has ever seen.
+   */
+  async function payByCard(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    doc: PublicDocument,
+    outstandingKobo: number,
+    back: (error?: keyof typeof PAY_ERRORS) => unknown,
+    again: (error: keyof typeof PAY_ERRORS) => unknown,
+  ): Promise<unknown> {
+    void back;
+
+    if (!paystackConfigured()) {
+      req.log.error({ documentId: doc.id }, "foreign invoice with no Paystack key configured");
+      return again("card_unavailable");
+    }
+
+    const sub = await paystackSubaccountFor(doc.userId, req.log);
+    if (!sub.ok) {
+      req.log.error({ documentId: doc.id, why: sub.why, message: sub.message }, "no Paystack subaccount");
+      // A provider wobble is worth trying again; a bank Paystack does not
+      // list, or a payout account that was never finished, is not.
+      return again(sub.why === "provider" ? "provider" : "card_unavailable");
+    }
+
+    /*
+     * Pro, so no Balans fee, and the processor's cut is borne by the
+     * subaccount — which is set on the transaction, not worked out here.
+     * `settle` is still asked, because it is the one place that knows whether
+     * fees are passed to the client, and on a fee-passing invoice the client
+     * is charged the grossed-up figure.
+     */
+    const split = settle(outstandingKobo, ratesFor(doc.plan), {
+      passToClient: doc.passFeesToClient,
+      paidBeforeKobo: doc.amountPaidKobo,
+      processor: withVat(DEFAULT_INTL_PROCESSOR, defaults.international.feeVatPercent),
+    });
+
+    const reference = `bal_${doc.id.replace(/-/g, "").slice(0, 16)}_${randomUUID().slice(0, 8)}`;
+
+    const init = await initPaystack({
+      // Paystack requires an email and sends its own receipt to it. The
+      // client's is often unknown, so a per-payment address on our own domain
+      // stands in rather than a placeholder that might belong to somebody real.
+      email: `${reference}@receipts.balans.ng`,
+      amountKobo: split.clientPaysKobo,
+      reference,
+      subaccountCode: sub.code,
+      callbackUrl: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/pay/callback?ref=${reference}`,
+      metadata: {
+        document_id: doc.id,
+        user_id: doc.userId,
+        original_currency: doc.foreign?.currency ?? null,
+        original_amount_minor: doc.foreign?.amountMinor ?? null,
+        fx_rate: doc.foreign?.rate ?? null,
+        invoice_amount_kobo: outstandingKobo,
+        balans_fee_kobo: split.balansFeeKobo,
+      },
+    });
+
+    if (!init.ok) {
+      req.log.error({ documentId: doc.id, message: init.message }, "could not start card payment");
+      return again("provider");
+    }
+
+    await recordInitialisedPayment({
+      documentId: doc.id,
+      userId: doc.userId,
+      reference,
+      providerReference: reference,
+      amountKobo: split.clientPaysKobo,
+      // What the invoice is credited with when this lands, which is the
+      // figure on the document rather than the figure on the card.
+      invoiceAmountKobo: outstandingKobo,
+      balansFeeKobo: split.balansFeeKobo,
+      expectedProcessorFeeKobo: split.processorFeeKobo,
+      provider: "paystack",
+    });
+
+    req.log.info(
+      { documentId: doc.id, reference, chargedKobo: split.clientPaysKobo, subaccount: sub.code },
+      "card payment initialised",
+    );
+
+    // Away to Paystack. 303, so the browser makes it a GET.
+    return reply.redirect(init.authorizationUrl, 303);
+  }
+
   app.post<{ Params: { token: string } }>("/i/:token/pay", async (req, reply) => {
     const today = todayIn(defaults.behaviour.timezone);
     const token = req.params.token;
@@ -339,6 +462,24 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
 
     // F7: the next unpaid part, or the whole balance when there are none.
     const outstanding = payableNowKobo(doc);
+
+    /*
+     * An invoice priced abroad is a card payment, and cards are Paystack.
+     *
+     * Everything below this branch is the naira path: a Monnify reserved
+     * account the client transfers into, matched on the account *and* the
+     * amount. A client in London has no way to make a NIP transfer, so
+     * offering them one is offering nothing.
+     *
+     * The charge is the naira figure on the document. It is not recomputed
+     * from the foreign price here and must never be: the rate was locked when
+     * the invoice was made, and re-converting at pay time would charge a
+     * different number than the one the client agreed to and the freelancer
+     * sent.
+     */
+    if (doc.foreign) {
+      return payByCard(req, reply, doc, outstanding, back, again);
+    }
 
     // Pressing Pay twice must not mint a second account. Monnify matches a
     // transfer on the account *and* the amount, so two live accounts for the
@@ -518,10 +659,22 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
    * told, and anyone can visit this URL. So it does exactly one thing: send
    * the client back to the document, which shows the truth.
    */
-  app.get<{ Querystring: { ref?: string; paymentReference?: string } }>(
-    "/pay/callback",
-    async (req, reply) => {
-      const reference = req.query.ref ?? req.query.paymentReference;
+  app.get<{
+    Querystring: { ref?: string; paymentReference?: string; reference?: string; trxref?: string };
+  }>("/pay/callback", async (req, reply) => {
+      /*
+       * Four names for one thing, because two processors send a payer back
+       * here and neither asked what we called it. `ref` is ours, on the URL
+       * we hand over; `paymentReference` is Monnify's; Paystack appends both
+       * `reference` and `trxref` to whatever callback it was given, and
+       * appends them whether or not ours is already there.
+       *
+       * Ours first. It is the one we control and the one the payment row is
+       * keyed on, and preferring it means a processor changing its parameter
+       * names cannot strand somebody who has just paid on the marketing site.
+       */
+      const reference =
+        req.query.ref ?? req.query.paymentReference ?? req.query.reference ?? req.query.trxref;
       if (!reference) return reply.redirect(SITE, 303);
 
       /*

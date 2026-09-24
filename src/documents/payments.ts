@@ -43,6 +43,15 @@ export type InitialisedPayment = {
    * different processor.
    */
   expectedProcessorFeeKobo: number;
+  /**
+   * Which processor is collecting this one.
+   *
+   * Defaults to Monnify, which is every naira invoice and so nearly all of
+   * them. A payment recorded under the wrong provider is one the nightly
+   * reconciliation looks for in the wrong place — and one the webhook for the
+   * other provider would find and try to confirm.
+   */
+  provider?: "monnify" | "paystack";
 };
 
 export async function recordInitialisedPayment(p: InitialisedPayment): Promise<void> {
@@ -50,8 +59,8 @@ export async function recordInitialisedPayment(p: InitialisedPayment): Promise<v
     `INSERT INTO payments
        (document_id, reference, provider_reference, amount_kobo, client_total_kobo,
         invoice_amount_kobo, provider_fee_kobo, balans_fee_kobo, fee_bearer, status,
-        raw_verify_json)
-     VALUES ($1, $2, $3, $4, $5, $9, $6, $7, 'user', 'initialised', $8)
+        raw_verify_json, provider)
+     VALUES ($1, $2, $3, $4, $5, $9, $6, $7, 'user', 'initialised', $8, $10)
      ON CONFLICT (reference) DO NOTHING`,
     [
       p.documentId,
@@ -66,6 +75,7 @@ export async function recordInitialisedPayment(p: InitialisedPayment): Promise<v
       p.balansFeeKobo,
       JSON.stringify({ providerReference: p.providerReference, stage: "initialised" }),
       p.invoiceAmountKobo,
+      p.provider ?? "monnify",
     ],
   );
 }
