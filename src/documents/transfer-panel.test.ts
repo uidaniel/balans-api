@@ -199,7 +199,7 @@ describe("the page a payer is left looking at", () => {
   it("carries a failure in the query string, where a reload can survive it", () => {
     // The error messages moved to the GET so that the page showing one is a
     // page that can be refreshed.
-    assert.match(routes, /const PAY_ERRORS: Record<string, string> = \{/);
+    assert.match(routes, /const PAY_ERRORS: Record<string, \{ text: string; retryable: boolean \}> = \{/);
     for (const key of ["busy", "unpayable", "provider", "account"]) {
       assert.match(routes, new RegExp(`return again\\("${key}"\\)`), `${key} is not reachable`);
     }

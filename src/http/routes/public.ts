@@ -115,16 +115,35 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
    * `location.reload()` the moment it is told the money arrived. So nothing
    * the payer looks at may live at a URL that only answers POST. See the Pay
    * button below: it redirects here, and these are how its failures travel.
+   *
+   * `retryable` is not decoration: it decides whether the Pay button comes
+   * back with the message.
+   *
+   * A wobble at the provider is worth another tap. A payout account that
+   * cannot take cards is not — no number of taps will fix it, and leaving the
+   * button live under the words "not available" gives somebody trying to pay
+   * a bill two contradictory instructions and a loop to get stuck in. Seen
+   * live on 24 Sep 2026: six taps in fifteen seconds, every one refused for
+   * the same unfixable reason.
    */
-  const PAY_ERRORS: Record<string, string> = {
-    busy: "Too many attempts just now. Wait a moment and try again.",
-    unpayable: "This invoice cannot be paid right now.",
-    provider: "We could not reach the payment provider. Please try again in a moment.",
-    account: "We could not get the account details just now. Please try again in a moment.",
+  const PAY_ERRORS: Record<string, { text: string; retryable: boolean }> = {
+    busy: { text: "Too many attempts just now. Wait a moment and try again.", retryable: true },
+    unpayable: { text: "This invoice cannot be paid right now.", retryable: false },
+    provider: {
+      text: "We could not reach the payment provider. Please try again in a moment.",
+      retryable: true,
+    },
+    account: {
+      text: "We could not get the account details just now. Please try again in a moment.",
+      retryable: true,
+    },
     // The freelancer's payout account is not set up for card payments, which
     // is theirs to fix and not the client's. Said without blame and without
     // detail: this page belongs to somebody who is trying to pay a bill.
-    card_unavailable: "Card payment is not available on this invoice yet. Please contact the sender.",
+    card_unavailable: {
+      text: "Card payment is not available on this invoice yet. Please contact the sender.",
+      retryable: false,
+    },
   };
 
   app.get<{ Params: { token: string }; Querystring: { e?: string } }>(

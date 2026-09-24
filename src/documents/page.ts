@@ -325,6 +325,16 @@ export type TransferPanel = {
 };
 
 /**
+ * Something that went wrong on the last attempt to pay.
+ *
+ * `retryable` travels with the words because the page cannot infer it: the
+ * two read the same to a client, and only the caller knows whether pressing
+ * Pay again could ever work. A message that is not retryable takes the button
+ * away rather than sitting above it.
+ */
+export type PayError = { text: string; retryable: boolean };
+
+/**
  * A figure in the currency it was agreed in, falling back to naira.
  *
  * Every line on an invoice priced abroad carries both: the kobo that will be
@@ -357,7 +367,7 @@ function convertedLine(doc: PublicDocument): string {
 export function renderDocument(
   doc: PublicDocument,
   today: Civil,
-  opts: { token: string; error?: string; transfer?: TransferPanel | null } = { token: "" },
+  opts: { token: string; error?: PayError; transfer?: TransferPanel | null } = { token: "" },
 ): string {
   const label = LABEL[doc.type];
   const outstanding = outstandingKobo(doc);
@@ -529,7 +539,7 @@ function payBlock(
   doc: PublicDocument,
   can: ReturnType<typeof payable>,
   amount: number,
-  opts: { token: string; error?: string; transfer?: TransferPanel | null },
+  opts: { token: string; error?: PayError; transfer?: TransferPanel | null },
   partLabel: string | null,
 ): string {
   if (can.ok) {
@@ -537,9 +547,23 @@ function payBlock(
     // has gone to their banking app and come back must meet the same account.
     if (opts.transfer) return transferBlock(doc, opts.transfer, opts.token);
 
+    /*
+     * A failure that trying again cannot fix takes the button away with it.
+     *
+     * The invoice is still payable in principle — `can.ok` — so the button
+     * would otherwise come back under its own error message, inviting exactly
+     * the tap that just failed. "Card payment is not available" above a live
+     * "Pay by card" button is two contradictory instructions given to a
+     * stranger about their own money, and the one who saw it pressed six
+     * times in fifteen seconds before giving up.
+     */
+    if (opts.error && !opts.error.retryable) {
+      return `<div class="banner cancelled">${esc(opts.error.text)}</div>`;
+    }
+
     // A plain form post, so the button works with no JavaScript at all.
     return `<div class="pay">
-    ${opts.error ? `<p class="banner cancelled" style="margin:0 0 14px">${esc(opts.error)}</p>` : ""}
+    ${opts.error ? `<p class="banner cancelled" style="margin:0 0 14px">${esc(opts.error.text)}</p>` : ""}
     <form method="post" action="/i/${esc(opts.token)}/pay">
       <button class="pay-btn" type="submit">Pay ${formatNaira(amount)}${
         /*

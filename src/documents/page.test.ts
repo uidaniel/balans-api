@@ -356,3 +356,45 @@ describe("the messages that report on the books", () => {
     for (const m of messages()) assert.ok(!m.includes("**"), `Markdown bold in: ${m}`);
   });
 });
+
+describe("a failure the payer cannot do anything about", () => {
+  /*
+   * The bug: "Card payment is not available on this invoice yet" rendered as
+   * a banner directly above a live "Pay ₦28,527.28 by card" button. The
+   * invoice really was payable, so `can.ok` held and the button came back
+   * under its own error message — telling a stranger both that they cannot
+   * pay and to press here to pay.
+   *
+   * The one who met it pressed six times in fifteen seconds, and every
+   * attempt failed for the same reason it was always going to fail: their
+   * sender's payout bank had no Paystack code.
+   */
+  const withError = (retryable: boolean) =>
+    renderDocument(doc({ foreign: { currency: "USD", amountMinor: 20_00, rate: 1426 } }), TODAY, {
+      token: "a".repeat(32),
+      error: { text: "Card payment is not available on this invoice yet.", retryable },
+    });
+
+  // `.pay-btn` is also a rule in the stylesheet, so the class name alone
+  // proves nothing about what is on the page. The markup is the question.
+  const BUTTON = /<button class="pay-btn"/;
+
+  it("says so once, and takes the button away with it", () => {
+    const html = withError(false);
+    assert.match(html, /Card payment is not available/);
+    assert.ok(!BUTTON.test(html), "the button that just failed is offered again");
+    assert.ok(!html.includes("</form>"), "and the form behind it");
+  });
+
+  it("keeps the button when trying again could actually work", () => {
+    // A provider wobble is worth another tap, and removing the button there
+    // would strand somebody who could have paid a second later.
+    const html = withError(true);
+    assert.match(html, /Card payment is not available/);
+    assert.match(html, BUTTON, "a retryable failure must still offer the retry");
+  });
+
+  it("offers the button when nothing went wrong at all", () => {
+    assert.match(render(doc()), BUTTON);
+  });
+});

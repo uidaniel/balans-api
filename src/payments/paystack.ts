@@ -213,16 +213,61 @@ const key = (s: string): string =>
     .replace(/[^a-z0-9]/g, "");
 
 /**
+ * The same institution, under the name each provider happens to use.
+ *
+ * Normalising case and punctuation is not enough, because the two lists
+ * genuinely disagree about what these banks are called: we store Monnify's
+ * "GTBank" and Paystack lists "Guaranty Trust Bank". No amount of string
+ * tidying turns one into the other, so every GTBank user — one of the largest
+ * banks in the country — was told card payment was unavailable, for ever.
+ *
+ * Every row here was checked against both live lists on 24 Sep 2026, and the
+ * check is that *the two providers' codes agree*: Monnify's "GTBank" is 058
+ * and Paystack's "Guaranty Trust Bank" is 058. That agreement is independent
+ * corroboration that it is one institution, which is what makes this a
+ * verified table rather than a list of guesses.
+ *
+ * Where the codes disagree there is no row, however alike the names look, and
+ * Coronation is why. Monnify lists "Coronation Bank" at 946; Paystack's 946 is
+ * **Money Master PSB**, an entirely different company, while its Coronation is
+ * 559. A row written from the names alone would have settled somebody's card
+ * payments into a stranger's institution — the exact failure this whole module
+ * is built to refuse.
+ *
+ * Names, not codes, because the live list stays the authority on the code: if
+ * Paystack renumbers, we follow it rather than carrying a stale number here.
+ */
+const ALIASES = new Map(
+  (
+    [
+      // Monnify's name              Paystack's name          Shared code
+      ["GTBank", "Guaranty Trust Bank"], //                    058
+      ["First bank", "First Bank of Nigeria"], //              011
+      ["Union bank", "Union Bank of Nigeria"], //              032
+      ["Diamond bank", "Access Bank (Diamond)"], //            063
+      ["Standard Chartered Bank Nigeria Ltd.", "Standard Chartered Bank"], // 068
+      ["Suntrust Bank Nigeria Limited", "Suntrust Bank"], //   100
+      ["Rubies Micro-finance Bank", "Rubies MFB"], //          125
+      ["Parkway Projects", "Parkway - ReadyCash"], //          311
+    ] as const
+  ).map(([from, to]) => [key(from), key(to)] as const),
+);
+
+/**
  * The Paystack code for a bank we know by name.
  *
  * By name rather than by code, because the two providers' codes are different
  * namespaces and there is no mapping between them. An exact normalised match
  * only: a bank picked by fuzzy resemblance is somebody's money sent to a
  * different institution, and returning null costs a support message instead.
+ *
+ * The alias table above is checked first, and it is exact too — a hand-checked
+ * pair of names, never a resemblance. A bank in neither still returns null.
  */
 export function matchByName(bankName: string, banks: PaystackBank[]): PaystackBank | null {
-  const want = key(bankName);
-  if (!want) return null;
+  const k = key(bankName);
+  if (!k) return null;
+  const want = ALIASES.get(k) ?? k;
   return banks.find((b) => key(b.name) === want) ?? null;
 }
 

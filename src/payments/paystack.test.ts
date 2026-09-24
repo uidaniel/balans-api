@@ -410,6 +410,47 @@ describe("Paystack's bank codes, which are not Monnify's", () => {
     assert.equal(matchByName("Sterling", banks), null);
   });
 
+  it("knows the banks the two providers call different things", () => {
+    /*
+     * The outage this exists because of. A payout account is stored under
+     * Monnify's name for the bank, and for several of the largest banks in
+     * the country that name is not Paystack's: we hold "GTBank", Paystack
+     * lists "Guaranty Trust Bank". Normalising case and punctuation cannot
+     * bridge that, so `gtbank` never equalled `guarantytrust` and every
+     * GTBank user was told, permanently, that card payment was unavailable.
+     *
+     * Seen live on 24 Sep 2026 — a $20 invoice whose client pressed Pay six
+     * times in fifteen seconds, each one logging "no Paystack code for
+     * GTBank".
+     */
+    assert.deepEqual(matchByName("GTBank", banks), { name: "Guaranty Trust Bank", code: "058" });
+    assert.deepEqual(matchByName("First bank", banks), {
+      name: "First Bank of Nigeria",
+      code: "011",
+    });
+  });
+
+  it("will not alias a bank whose two codes disagree", () => {
+    /*
+     * The table is verified by the codes agreeing, not by the names looking
+     * alike, and Coronation is the reason. Monnify lists "Coronation Bank" at
+     * 946; Paystack's 946 is Money Master PSB, a different company entirely,
+     * and its Coronation is 559. Written from the names, that row would have
+     * settled card payments into a stranger's institution.
+     *
+     * So it has no row, and an unaliased name still falls through to null.
+     */
+    const withCoronation = [...banks, { name: "Coronation Merchant Bank", code: "559" }];
+    assert.equal(matchByName("Coronation Bank", withCoronation), null);
+  });
+
+  it("still refuses a bank that is on neither list", () => {
+    // The alias table adds names; it must not soften the failure for one that
+    // is genuinely absent. Heritage was liquidated and Paystack does not carry
+    // it, so there is nothing right to return.
+    assert.equal(matchByName("Heritage bank", banks), null);
+  });
+
   it("gives an empty list rather than throwing when the lookup fails", async () => {
     const { fetchImpl } = answering({ status: false, message: "nope" }, 500);
     assert.deepEqual(await listBanks(fetchImpl), []);
