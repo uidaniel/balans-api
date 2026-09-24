@@ -88,6 +88,7 @@ describe("everything that offers the menu offers the tappable one", () => {
       notes: null,
     },
     confidence: 1,
+    money: { kind: "naira" },
     source: "command",
     missing: [],
   };

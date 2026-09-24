@@ -126,6 +126,8 @@ const messages: [string, () => string][] = [
 /** VOICE entries that take arguments, with something plausible to render. */
 const VOICE_ARGS: Record<string, unknown[]> = {
   gotNameAskBank: ["Ada Studio"],
+  // Two currencies in one message, which is the only VOICE entry taking two.
+  whichCurrency: ["dollars", "naira"],
   askCode: ["ada@adastudio.ng"],
   notBuiltYet: ["Referrals"],
   // The question asked when a price arrives with no word for which line it

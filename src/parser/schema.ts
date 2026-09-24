@@ -14,6 +14,7 @@
 
 import { z } from "zod";
 import { parseAmountToKobo } from "../../core/amount.ts";
+import type { CurrencyRead } from "../../core/currency.ts";
 import { formatISO, resolveDueDate, type Civil } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
 // Type only: `corrections.ts` reaches back into this file's neighbours, and a
@@ -242,6 +243,19 @@ export type Parsed = {
   };
   confidence: number;
   /**
+   * What currency the message was written in (International PRD section 5).
+   *
+   * Read from the raw text by `core/currency.ts`, never by the model, and
+   * carried on every parse rather than only on the ones that look foreign.
+   * The reason is the failure it prevents: a reader that only looks when it
+   * expects to look is a reader that turns "£500" into an invoice for
+   * ₦500 whenever something upstream forgets to ask.
+   *
+   * Defaults to naira, which every Balans message has been until now, so
+   * nothing that does not care about currency has to know this is here.
+   */
+  money: CurrencyRead;
+  /**
    * A change to the draft on screen, when the message was one.
    *
    * The machine treats this exactly as it treats the free reader's output, so
@@ -267,7 +281,12 @@ export type Missing = "client_name" | "amount" | "description" | "due_date";
  * than guessed at. An amount we cannot read is the one thing that must never
  * be invented.
  */
-export function normalise(raw: RawParse, today: Civil, source: Parsed["source"]): Parsed {
+export function normalise(
+  raw: RawParse,
+  today: Civil,
+  source: Parsed["source"],
+  money: CurrencyRead = { kind: "naira" },
+): Parsed {
   const lineItems: LineItem[] = [];
   let unreadableAmount = false;
 
@@ -330,6 +349,7 @@ export function normalise(raw: RawParse, today: Civil, source: Parsed["source"])
       notes: raw.options.notes,
     },
     confidence: raw.confidence,
+    money,
     /*
      * Only with the intent that means it, so a correction cannot arrive
      * attached to something else and quietly win. "now invoice Kemi 50k" is a

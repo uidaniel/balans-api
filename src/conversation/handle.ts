@@ -2654,6 +2654,8 @@ function commandAsParsed(c: { intent: Parsed["intent"]; documentNumber?: number 
       notes: null,
     },
     confidence: 1,
+    // A command names an action, not a price, so it is never in dollars.
+    money: { kind: "naira" },
     source: "command",
     missing: [],
   };

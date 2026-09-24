@@ -226,3 +226,57 @@ export function grossUp(invoiceKobo: number, rates = DEFAULT_PROCESSOR): number 
 
   throw new RangeError(`cannot gross up ${invoiceKobo} with these rates`);
 }
+
+/* -------------------------------------------------------------------------- */
+/* International cards (International PRD section 7)                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What Paystack takes on an international card, as a naira transaction.
+ *
+ * Every figure here is tagged [Assumed] in the PRD: widely reported, not
+ * confirmed in writing, and not yet seen on a real settlement. They are
+ * therefore written as configuration with these as defaults, and section 13
+ * will not let international invoicing go live until one real payment has
+ * been reconciled to the kobo against them.
+ *
+ * Two differences from the local schedule matter more than the headline rate.
+ * There is no cap, so the fee on a large invoice keeps growing — ₦2,000 stops
+ * the local one at about ₦130,000 and nothing stops this one. And the flat
+ * charge is never waived, because the waiver below ₦2,500 is a local-transfer
+ * courtesy that has nothing to do with a card from abroad.
+ */
+export const DEFAULT_INTL_PROCESSOR: ProcessorRates = {
+  percentBps: 390,
+  flatKobo: 100_00,
+  flatWaivedBelowKobo: 0,
+  capKobo: Number.MAX_SAFE_INTEGER,
+};
+
+/**
+ * The same rates with VAT folded in.
+ *
+ * VAT on the card fee is an open question with Paystack (section 16), so it
+ * defaults to zero and is a single number to change once they answer. Folding
+ * it into the rate rather than adding a third fee is what keeps it honest:
+ * VAT is charged *on the fee*, so a fee of 3.9% + ₦100 with 7.5% VAT is
+ * exactly a fee of 4.1925% + ₦107.50, and every gross-up, cap and rounding
+ * rule already written then applies to it without a special case.
+ *
+ * The flat charge is rounded up to the kobo, the same direction as every
+ * other processor figure in this file: assume they take the larger amount, so
+ * a gross-up computed from it never leaves the user short.
+ */
+export function withVat(rates: ProcessorRates, vatPercent: number): ProcessorRates {
+  if (vatPercent <= 0) return rates;
+  const multiplier = 1 + vatPercent / 100;
+  return {
+    ...rates,
+    percentBps: Math.ceil(rates.percentBps * multiplier),
+    flatKobo: Math.ceil(rates.flatKobo * multiplier),
+    capKobo:
+      rates.capKobo === Number.MAX_SAFE_INTEGER
+        ? rates.capKobo
+        : Math.ceil(rates.capKobo * multiplier),
+  };
+}

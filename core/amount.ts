@@ -4,8 +4,20 @@
 
 const MULT: Record<string, number> = { h: 100, k: 1_000, m: 1_000_000 };
 
-export function parseAmountToKobo(raw: string): number | null {
-  const s = raw.trim().toLowerCase().replace(/^(₦|ngn|n)\s*/, "").replace(/,/g, "").replace(/\s+/g, "");
+/**
+ * The numeric half of an amount, with no currency on it.
+ *
+ * Split out because the shorthand is not Nigerian — it is arithmetic. "1.2k"
+ * is twelve hundred of whatever it is denominated in, and a dollar has a
+ * hundred cents exactly as a naira has a hundred kobo, so the same digits
+ * produce the same integer for both. Only the mark in front of the number
+ * differs, and that is the caller's business (see `core/currency.ts`).
+ *
+ * Takes a bare magnitude: digits, an optional decimal, an optional h/k/m.
+ * Returns minor units, or null for anything it cannot read exactly.
+ */
+export function parseMagnitudeToMinor(raw: string): number | null {
+  const s = raw.trim().toLowerCase().replace(/,/g, "").replace(/\s+/g, "");
   const m = /^(\d+(?:\.\d+)?)([hkm])?$/.exec(s);
   if (!m) return null;
   // Both groups are guaranteed by the regex above; group 2 is optional.
@@ -17,11 +29,15 @@ export function parseAmountToKobo(raw: string): number | null {
   const scale = 10 ** frac.length;
   const units = BigInt(whole + frac); // value * scale
   // The regex only admits h, k or m, so the lookup always hits.
-  const nairaTimesScale = units * BigInt(suffix ? MULT[suffix]! : 1);
-  const koboTimesScale = nairaTimesScale * BigInt(100);
-  if (koboTimesScale % BigInt(scale) !== BigInt(0)) return null; // finer than a kobo
-  const kobo = Number(koboTimesScale / BigInt(scale));
-  return Number.isSafeInteger(kobo) ? kobo : null;
+  const majorTimesScale = units * BigInt(suffix ? MULT[suffix]! : 1);
+  const minorTimesScale = majorTimesScale * BigInt(100);
+  if (minorTimesScale % BigInt(scale) !== BigInt(0)) return null; // finer than a kobo
+  const minor = Number(minorTimesScale / BigInt(scale));
+  return Number.isSafeInteger(minor) ? minor : null;
+}
+
+export function parseAmountToKobo(raw: string): number | null {
+  return parseMagnitudeToMinor(raw.trim().toLowerCase().replace(/^(₦|ngn|n)\s*/, ""));
 }
 
 /* -------------------------------------------------------------------------- */

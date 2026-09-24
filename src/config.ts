@@ -80,6 +80,45 @@ const schema = z.object({
   /** Wallet the platform's own fee share settles into. */
   MONNIFY_CONTRACT_CODE: z.string().optional(),
 
+  /* -- Payments: Paystack, for invoices priced abroad ---------------------- */
+  /*
+   * A second processor, not a replacement. Naira invoices go to Monnify and
+   * always will; Paystack is here because it charges international cards, and
+   * for nothing else. See the International PRD, section 8.
+   *
+   * Absent is a supported state and means exactly one thing: no international
+   * invoicing. The feature flag below is the switch; these are the keys.
+   */
+  PAYSTACK_BASE_URL: z.string().url().default("https://api.paystack.co"),
+  PAYSTACK_SECRET_KEY: z.string().optional(),
+
+  /* -- International invoices ---------------------------------------------- */
+  /**
+   * The master switch (section 10). Off by default, and off everywhere until
+   * every item in section 13's go-live gate is true.
+   *
+   * With it off, a message written in dollars still has to be *read* as
+   * dollars — that is the whole point of the currency reader — and answered
+   * with "not available yet". The dangerous alternative is a flag that makes
+   * the product stop looking for foreign currency, which turns £500 back into
+   * an invoice for ₦500.
+   */
+  INTL_ENABLED: bool(false),
+  /**
+   * Where the naira rate comes from. "open-er-api" or "fixed".
+   *
+   * "fixed" reads the two numbers below and is how the sandbox runs without
+   * depending on somebody else's uptime — and how a rate gets pinned by hand
+   * the morning a feed goes wrong.
+   */
+  FX_PROVIDER: z.string().default("open-er-api"),
+  /** Section 6's default. A daily reference rate does not move within an hour. */
+  FX_CACHE_MINUTES: int(60),
+  /** Past this, a held rate is no longer evidence about today. Section 6. */
+  FX_STALE_MAX_HOURS: int(24),
+  FX_FIXED_USDNGN: z.coerce.number().positive().optional(),
+  FX_FIXED_GBPNGN: z.coerce.number().positive().optional(),
+
   /* -- Parser (section 14: model and confidence threshold) ----------------- */
   /** Absent is a supported state: commands and the pattern still work. */
   ANTHROPIC_API_KEY: z.string().optional(),
@@ -189,6 +228,39 @@ export const defaults = {
       feeMinKobo: 0,
       feeCapKobo: 0,
     },
+  },
+  /*
+   * International invoicing (International PRD sections 7 and 10).
+   *
+   * Every rate here is tagged [Assumed] in that PRD: widely reported, never
+   * confirmed in writing by Paystack, and never yet seen on a real
+   * settlement. They are defaults to build against and section 13 does not
+   * let the feature go live until one real payment has been reconciled to the
+   * kobo against them.
+   */
+  international: {
+    /** Paystack's international card fee. 390 = 3.9%. */
+    feePercentBps: 390,
+    feeFlatKobo: 100_00,
+    /** Zero until Paystack confirms VAT applies to the card fee. Then 7.5. */
+    feeVatPercent: 0,
+    /**
+     * Per-invoice and per-user-per-day ceilings, in the foreign currency's
+     * minor units: $1,000 and $2,000. A cap is not a judgement about the
+     * work — it is the blast radius of a chargeback on a payment method we
+     * have never yet taken, held small until we have.
+     */
+    invoiceCapMinor: 1_000_00,
+    dailyCapMinor: 2_000_00,
+    /**
+     * What a user is told about when the money arrives.
+     *
+     * One string because it is a promise about somebody else's schedule that
+     * nobody has confirmed. Monnify's "tonight" wording must never be used
+     * for these: it is computed from a payout run at 22:00 Lagos that has
+     * nothing to do with Paystack.
+     */
+    settlementText: "Usually in your bank within 1 to 2 business days.",
   },
   limits: {
     minInvoiceKobo: 1_000_00,

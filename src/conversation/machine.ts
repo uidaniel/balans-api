@@ -33,6 +33,7 @@ import { titleCaseName } from "../../core/names.ts";
 import { EXTRA_ITEMS, formScreenId, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION, draftButtons } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
+import { INFO } from "../../core/currency.ts";
 
 export type State =
   | "new"
@@ -501,6 +502,51 @@ export const VOICE = {
       "Balans is not a bank and never holds your money.",
     ),
   ),
+
+  /* -- Money that is not naira (International PRD sections 5 and 14) ------- */
+
+  /**
+   * A foreign price, while international invoicing is switched off.
+   *
+   * Acceptance criterion 9 asks for "a friendly 'not available yet' reply",
+   * and the important word is *reply*. The alternative is not silence — it is
+   * "£500" being read as ₦500 and an invoice for a month's work going out
+   * priced at the cost of a bottle of water. So this sentence is the whole
+   * feature until the rest of it exists, and it is why the currency reader
+   * runs whether the flag is on or off.
+   */
+  notInThatCurrency: (named: string): string =>
+    para(
+      `\u{1F30D} ${b(`I cannot invoice in ${named} yet.`)}`,
+      lines("Naira for now.", "Dollars and pounds are coming soon — I will tell you when."),
+    ),
+
+  /**
+   * A currency Balans will not take at all.
+   *
+   * Said by name, because "I did not understand that" would be a lie: it was
+   * understood exactly, and refused. Somebody who wrote €500 needs to know
+   * that the answer will still be no tomorrow.
+   */
+  currencyNotTaken: (named: string): string =>
+    para(
+      `\u{1F30D} ${b(`Balans does not do ${named}.`)}`,
+      "Naira only for now, with dollars and pounds on the way.",
+    ),
+
+  /**
+   * Two currencies in one message.
+   *
+   * Section 5: "If the message contains both naira and a foreign currency,
+   * ask which one." There is no safe way to pick — both readings are
+   * defensible and the gap between them is three orders of magnitude — so the
+   * only honest move is to ask.
+   */
+  whichCurrency: (first: string, second: string): string =>
+    para(
+      `\u{1F30D} ${b("Which one?")} You wrote ${first} and ${second}.`,
+      "Tell me which and I will draft it.",
+    ),
 
   /** They closed the form, or would rather type. Both are fine. */
   setupByHand: para(
@@ -1105,6 +1151,24 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
   if (state === "paused") {
     return { replies: [VOICE.paused], next: state, context, effects: [] };
   }
+
+  /*
+   * Money that is not naira, refused before anything reads it as naira.
+   *
+   * At the top rather than beside the draft, and that placement is the point.
+   * A foreign amount can arrive as a new invoice, as a correction to one on
+   * screen ("change it to $600"), or as the answer to "how much?" — three
+   * different code paths, each of which would otherwise hand "$600" to a
+   * reader that strips the mark and returns ₦600. One guard covering every
+   * way into the machine is the only version of this that cannot be got round
+   * by a route nobody thought of.
+   *
+   * It runs whether or not international invoicing is switched on. The flag
+   * decides whether we can *take* dollars; it must never decide whether we
+   * can *see* them.
+   */
+  const refusal = msg.parsed?.money ? foreignRefusal(msg.parsed.money) : null;
+  if (refusal) return { replies: [refusal], next: state, context, effects: [] };
 
   /*
    * Commands come before the pending question, so nobody gets stuck.
@@ -2956,6 +3020,52 @@ function retry(state: State, ctx: Context, message: string): Step {
  */
 function faqAnswer(kind: FaqKind): string {
   return kind === "safety" ? VOICE.moneySafe : VOICE.howItWorks;
+}
+
+/**
+ * What to say about money that is not naira, or null to carry on.
+ *
+ * The four answers, in the order they are reached:
+ *
+ *   - naira, which is every message this product has ever had, and the only
+ *     one that returns null and lets the machine do its job;
+ *   - a currency we can name and will never take, refused by name;
+ *   - two currencies at once, which is a question rather than an instruction;
+ *   - dollars or pounds, which is the feature — and, until the flag is on and
+ *     section 13's gate is cleared, a promise rather than a draft.
+ *
+ * The last branch is the one to watch when the rest of this is built. Turning
+ * `INTL_ENABLED` on must replace it with a draft, not with silence: a foreign
+ * amount that reaches the ordinary path is an amount whose currency mark gets
+ * stripped on the way to `parseAmountToKobo`.
+ */
+function foreignRefusal(money: Parsed["money"]): string | null {
+  switch (money.kind) {
+    case "naira":
+      return null;
+    case "unsupported":
+      return VOICE.currencyNotTaken(money.named);
+    case "mixed":
+      return VOICE.whichCurrency(money.currencies[0]!, money.currencies[1]!);
+    case "foreign":
+      /*
+       * Refused whether or not `INTL_ENABLED` is set, and that is deliberate
+       * until the draft path exists.
+       *
+       * A flag that opens a door onto an unbuilt room is worse than no flag.
+       * Returning null here today would let "$1,200" fall through to the
+       * ordinary reader, which strips the mark and produces an invoice for
+       * ₦1,200 — the exact failure this whole module is here to prevent, let
+       * in by the switch that was supposed to control it.
+       *
+       * What has to be true before this may consult the flag: a rate locked
+       * onto the draft (`src/fx/rate.ts`), the naira charge computed from it,
+       * Pro-only gating with the upgrade prompt for everyone else, and
+       * Paystack as the processor for the resulting invoice. Section 15's
+       * build order, days 3 to 6.
+       */
+      return VOICE.notInThatCurrency(INFO[money.currency].many);
+  }
 }
 
 function onboardingHelp(state: State): string {

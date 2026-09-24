@@ -14,6 +14,7 @@
 
 import { env } from "../config.ts";
 import { todayIn, type Civil } from "../../core/dates.ts";
+import { readCurrency } from "../../core/currency.ts";
 import { parseAmountToKobo } from "../../core/amount.ts";
 import { defaults } from "../config.ts";
 import { asCommand } from "./commands.ts";
@@ -53,6 +54,18 @@ export async function parseMessage(
   const since = () => Date.now() - started;
   const today = opts.today ?? todayIn(defaults.behaviour.timezone);
 
+  /*
+   * What currency this was written in, read once from the raw text.
+   *
+   * Before anything else, and stamped onto whatever comes back, because the
+   * three readers below have nothing to say about currency and one of them
+   * is a language model. A mark that only gets looked for on the paths that
+   * expect one is a mark that goes missing on the paths that do not — and
+   * the cost of it going missing is "£500" becoming an invoice for ₦500.
+   */
+  const money = readCurrency(text);
+  const priced = (parsed: Parsed): Parsed => (parsed.money === money ? parsed : { ...parsed, money });
+
   // F3: inputs over 1,000 characters are rejected with a short message. The
   // check is here rather than at the model because a 40,000-character message
   // should not reach the pattern matcher either.
@@ -65,23 +78,23 @@ export async function parseMessage(
   if (command) {
     const raw = empty(command.intent, 1);
     raw.document_number = command.documentNumber ?? null;
-    return { ok: true, parsed: normalise(raw, today, "command"), latencyMs: since() };
+    return { ok: true, parsed: normalise(raw, today, "command", money), latencyMs: since() };
   }
 
   /* 2. The form, filled in and sent back. ---------------------------------- */
   const filled = readTemplate(text, today);
-  if (filled) return { ok: true, parsed: filled, latencyMs: since() };
+  if (filled) return { ok: true, parsed: priced(filled), latencyMs: since() };
 
   /* 3. The sentence the product teaches. ----------------------------------- */
   const pattern = extractDocument(text, today);
   if (pattern && !pattern.missing.length) {
-    return { ok: true, parsed: pattern, latencyMs: since() };
+    return { ok: true, parsed: priced(pattern), latencyMs: since() };
   }
 
   /* 4. The model. ---------------------------------------------------------- */
   const model = await parseWithModel(text, today, opts.fetchImpl, opts.onScreen ?? null);
   if (model.ok) {
-    const parsed = recoverAmount(normalise(model.parse, today, "model"), text, today);
+    const parsed = recoverAmount(normalise(model.parse, today, "model", money), text, today);
 
     // F3: "If confidence is below the configured threshold, or a required
     // field is missing, ask for that one thing only." Below the threshold the
@@ -97,15 +110,15 @@ export async function parseMessage(
       isDocumentIntent(parsed.intent) &&
       !hasSomething
     ) {
-      return { ok: true, parsed: { ...parsed, intent: "unknown" }, latencyMs: since() };
+      return { ok: true, parsed: priced({ ...parsed, intent: "unknown" }), latencyMs: since() };
     }
 
-    return { ok: true, parsed, latencyMs: since() };
+    return { ok: true, parsed: priced(parsed), latencyMs: since() };
   }
 
   // A partial pattern match is better than nothing: it knows what it is
   // missing, and asking for that one thing is exactly what F3 wants.
-  if (pattern) return { ok: true, parsed: pattern, latencyMs: since() };
+  if (pattern) return { ok: true, parsed: priced(pattern), latencyMs: since() };
 
   // Nothing read it. No key configured and the model being down are different
   // problems for us and the same problem for the user, so they get one answer
@@ -179,5 +192,6 @@ function recoverAmount(parsed: Parsed, text: string, today: Civil): Parsed {
     },
     today,
     "model",
+    parsed.money,
   );
 }

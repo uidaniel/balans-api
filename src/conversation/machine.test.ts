@@ -538,6 +538,7 @@ function parse(over: Partial<Parsed>): Parsed {
       notes: null,
     },
     confidence: 0.95,
+    money: { kind: "naira" },
     source: "pattern",
     missing: [],
     ...over,

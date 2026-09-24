@@ -49,6 +49,7 @@ const helpParse: Parsed = {
     notes: null,
   },
   confidence: 1,
+  money: { kind: "naira" },
   source: "command",
   missing: [],
 };
