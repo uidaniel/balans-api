@@ -140,13 +140,61 @@ describe("the emails a payment sends", () => {
     // Mail clients block remote images by default, and the one message this
     // product exists to send must not arrive as a broken-image icon.
     assert.match(source, /cid: "paid-banner"/);
-    assert.match(source, /images: \[PAID_BANNER\]/);
+    assert.match(source, /cid: "receipt-banner"/);
     assert.ok(!/<img src="https?:/.test(source));
   });
 
-  it("has the picture on disk, at twice the width it is shown at", () => {
-    const png = readFileSync(new URL("../../assets/email/paid-banner.png", import.meta.url));
-    assert.equal(png.readUInt32BE(16), 1120);
-    assert.equal(png.readUInt32BE(20), 448);
+  it("has both pictures on disk, at twice the width they are shown at", () => {
+    for (const file of ["paid-banner.png", "receipt-banner.png"]) {
+      const png = readFileSync(new URL(`../../assets/email/${file}`, import.meta.url));
+      assert.equal(png.readUInt32BE(16), 1120, file);
+      assert.equal(png.readUInt32BE(20), 448, file);
+    }
+  });
+
+  it("never shows the client the freelancer's half of the message", () => {
+    /*
+     * Reported from a real inbox. Both emails carried the same banner, and
+     * it reads "Dem don balans you" — the product's one piece of Nigerian
+     * English, addressed to the person who has just been paid. It went to
+     * the person who had just paid.
+     *
+     * That is the wrong half of the voice pointed at the wrong reader, on
+     * the message a client is most likely to keep, forward to their accounts
+     * department, or open somewhere the idiom means nothing at all.
+     */
+    const client = source.slice(
+      source.indexOf("export async function emailPaidToClient"),
+      source.indexOf("export async function emailPaidToUser"),
+    );
+    const user = source.slice(source.indexOf("export async function emailPaidToUser"));
+
+    assert.ok(!client.includes("PAID_BANNER"), "the client is getting the freelancer's banner");
+    assert.ok(!/balans you/i.test(client), "the phrase reached the client's copy");
+    assert.match(client, /images: \[RECEIPT_BANNER\]/);
+
+    // And the freelancer keeps it: it is their moment, and only theirs.
+    assert.match(user, /images: \[PAID_BANNER\]/);
+    assert.match(user, /Dem don balans you/);
+    assert.ok(!user.includes("RECEIPT_BANNER"));
+  });
+
+  it("writes to the client formally, for somebody who may be abroad", () => {
+    /*
+     * This one is from a business to its client. It has to be understood by
+     * a stranger who has never heard of us, may not read English as a first
+     * language, and will file it — so plain formal English, and none of the
+     * product's own voice.
+     */
+    const client = source.slice(
+      source.indexOf("export async function emailPaidToClient"),
+      source.indexOf("export async function emailPaidToUser"),
+    );
+
+    assert.match(client, /Dear \$\{esc\(d\.client_name\)\},/);
+    assert.match(client, /has been received in full/);
+    assert.match(client, /Thank you for your business/);
+    // "Receipt" is the word somebody searches their inbox for in March.
+    assert.match(client, /subject: `Receipt — /);
   });
 });

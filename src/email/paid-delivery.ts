@@ -31,16 +31,35 @@ import { renderDocumentPdf, renderReceiptPdf } from "../documents/pdf.ts";
 const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/**
- * The picture at the top. Drawn in assets/email/paid-banner.html.
+/*
+ * Two pictures, because these are two different messages to two different
+ * people, and for a while they were not.
+ *
+ * Both emails carried the freelancer's banner: "Dem don balans you" — the
+ * product's one piece of Nigerian English, addressed to the person who has
+ * just been paid. It went to the person who had just paid. The wrong half of
+ * the voice, pointed at the wrong reader, on the one message a client is most
+ * likely to keep, forward to their accounts department, or open in another
+ * country where the idiom means nothing at all.
  *
  * Attached rather than linked, like every other banner here: mail clients
  * block remote images by default, and a payment confirmation that arrives as
  * a grey box with a broken-image icon is the wrong first impression of the
  * one message this product exists to send.
  *
- * The column is 600 wide with 32px either side; the file is twice this.
+ * The column is 600 wide with 32px either side; the files are twice this.
  */
+
+/** The client's. Plain English, no idiom, the same mark as the invoice. */
+const RECEIPT_BANNER: InlineImage = {
+  cid: "receipt-banner",
+  file: "receipt-banner.png",
+  alt: "Payment received. Your receipt and the paid invoice are attached.",
+  width: 536,
+  height: 214,
+};
+
+/** The freelancer's, and only ever theirs. */
 const PAID_BANNER: InlineImage = {
   cid: "paid-banner",
   file: "paid-banner.png",
@@ -118,18 +137,30 @@ export async function emailPaidToClient(
       receiptForDocument(documentId, log),
     ]);
 
+    /*
+     * Written for a stranger, possibly abroad, filing it.
+     *
+     * Plain formal English throughout, and none of the product's own voice:
+     * this one is from a business to its client and the only thing it has to
+     * do is confirm what happened, clearly enough to be understood by
+     * somebody who has never heard of us and may not read English as a first
+     * language. The warmth belongs on the other copy.
+     */
     const body = [
-      paragraph(`${esc(d.client_name)},`),
-      paragraph(`Your payment to ${esc(business)} has gone through. Thank you.`),
-      amount("Paid", formatNaira(d.total_kobo), when ? formatFriendly(when) : undefined),
+      paragraph(`Dear ${esc(d.client_name)},`),
+      paragraph(
+        `This confirms that your payment to ${esc(business)} has been received in full.`,
+      ),
+      amount("Amount paid", formatNaira(d.total_kobo), when ? formatFriendly(when) : undefined),
       link ? button("View the invoice", link) : "",
-      d.ref ? paragraph(`Reference ${esc(d.ref)}`, true) : "",
+      d.ref ? paragraph(`Reference: ${esc(d.ref)}`, true) : "",
       paragraph(
         receipt
-          ? "Your receipt and the paid invoice are attached, for your records."
-          : "The paid invoice is attached, for your records.",
+          ? "Your receipt and the paid invoice are attached for your records."
+          : "The paid invoice is attached for your records.",
         true,
       ),
+      paragraph(`Thank you for your business.`, true),
     ]
       .filter(Boolean)
       .join("\n");
@@ -146,24 +177,29 @@ export async function emailPaidToClient(
         // has never heard of is a receipt they query.
         fromName: `${business} via Balans`,
         replyTo: d.business_email ?? undefined,
-        subject: `Paid — ${label} from ${business}, ${formatNaira(d.total_kobo)}`,
+        // "Receipt", not "Paid". This is the word somebody searches their
+        // inbox for in March, and the word their accounts department asks
+        // them for.
+        subject: `Receipt — ${label} from ${business}, ${formatNaira(d.total_kobo)}`,
         html: layout({
           preheader: `${formatNaira(d.total_kobo)} received${when ? ` on ${formatFriendly(when)}` : ""}.`,
           eyebrow: business,
           heading: "Payment received",
-          banner: PAID_BANNER,
+          banner: RECEIPT_BANNER,
           body,
         }),
-        images: [PAID_BANNER],
+        images: [RECEIPT_BANNER],
         text: [
-          `${d.client_name},`,
+          `Dear ${d.client_name},`,
           "",
-          `Your payment of ${formatNaira(d.total_kobo)} to ${business} has gone through${
+          `This confirms that your payment of ${formatNaira(d.total_kobo)} to ${business} has been received in full${
             when ? ` on ${formatFriendly(when)}` : ""
-          }. Thank you.`,
+          }.`,
           "",
           link ? `View the invoice: ${link}` : "",
           d.ref ? `Reference: ${d.ref}` : "",
+          "",
+          "Thank you for your business.",
         ]
           .filter(Boolean)
           .join("\n"),
@@ -243,8 +279,9 @@ export async function emailPaidToUser(
           preheader: `${d.client_name} paid ${formatNaira(d.total_kobo)}.`,
           eyebrow: "Payment received",
           heading: "Dem don balans you",
-          // The same picture on both copies. The poster carries the phrase,
-          // so the heading does not have to shout it twice.
+          // Theirs alone. The poster carries the phrase, so the heading does
+          // not have to shout it twice — and the client's copy says none of
+          // it, because none of it is addressed to them.
           banner: PAID_BANNER,
           body,
         }),

@@ -1,0 +1,68 @@
+<!doctype html>
+<!--
+  The banner at the top of the CLIENT's payment email.
+
+  Separate from paid-banner.html on purpose, and the reason is worth writing
+  down: for a while both emails carried that one. It reads "Dem don balans
+  you" — Nigerian English, addressed to the person who has just been paid —
+  and it was going to the person who had just paid. The wrong half of the
+  product's voice, pointed at the wrong person, on the one message a client
+  is most likely to keep, forward to their accounts department, or read in
+  another country.
+
+  So this is the formal one. Plain English, no idiom, nothing addressed to a
+  reader who is not the payer, and the only mark on it is the same PAID stamp
+  the invoice itself now carries. A receipt is a record somebody files; the
+  celebration belongs on the freelancer's copy and nowhere else.
+
+  Authored at 1120x448, the same 2x as every other banner here, and with
+  square corners because layout() rounds the <img> and the renderer captures
+  on an opaque background.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face{font-family:"Geist";font-weight:700;src:url("../fonts/Geist-Bold.ttf")}
+@font-face{font-family:"Geist";font-weight:800;src:url("../fonts/Geist-ExtraBold.ttf")}
+@font-face{font-family:"Instrument Sans";font-weight:600;src:url("../fonts/InstrumentSans-SemiBold.ttf")}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1120px;height:448px}
+.banner{position:relative;width:1120px;height:448px;overflow:hidden;
+  background:#10231C;color:#F6F1E7;font-family:"Instrument Sans",sans-serif}
+/* The same light from behind, in the brand's own gold rather than the
+   green of the freelancer's copy: this is a document, not a result. */
+.glow{position:absolute;right:-220px;top:-260px;width:760px;height:760px;
+  background:radial-gradient(circle,rgba(245,184,46,.22) 0%,rgba(245,184,46,.10) 42%,rgba(245,184,46,0) 70%)}
+.copy{position:absolute;left:64px;top:76px;width:600px}
+.tag{display:inline-flex;align-items:center;gap:14px;height:52px;padding:0 24px 0 20px;
+  border-radius:999px;background:#183A2B;color:#6FDC9C;font-size:24px;font-weight:600}
+.tag svg{width:24px;height:24px}
+h1{margin-top:32px;font-family:"Geist",sans-serif;font-weight:800;font-size:80px;line-height:1;
+  letter-spacing:-.045em}
+.sub{margin-top:24px;font-size:26px;font-weight:600;color:rgba(246,241,231,.62)}
+/* The mark the paid invoice carries, so the email and the attachment agree. */
+.stamp{position:absolute;right:76px;top:50%;transform:translateY(-50%) rotate(-12deg);
+  padding:20px 44px;border:8px solid #6FDC9C;border-radius:20px;color:#6FDC9C;
+  font-family:"Geist",sans-serif;font-weight:800;font-size:80px;letter-spacing:.12em;
+  opacity:.92}
+</style>
+</head>
+<body>
+<div class="banner">
+  <div class="glow"></div>
+  <div class="copy">
+    <span class="tag">
+      <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M1.5 6.4 4.4 9.3 10.5 3" stroke="#6FDC9C" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Receipt
+    </span>
+    <h1>Payment<br>received.</h1>
+    <p class="sub">Your receipt and the paid invoice are attached.</p>
+  </div>
+  <div class="stamp">PAID</div>
+</div>
+</body>
+</html>
