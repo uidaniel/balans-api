@@ -1409,8 +1409,10 @@ async function runEffects(
               body: words,
               label: "View Summary",
               url: `${env.PUBLIC_BASE_URL}/s/${token}`,
+              // No footer. WhatsApp puts it under the last line of the body
+              // in the same grey as a timestamp, so "Everything you have
+              // invoiced" read as a caption on the figures above it.
               ...(card ? { headerImage: card } : {}),
-              footer: "Everything you have invoiced",
             });
 
             if (sent.ok) {
@@ -1449,8 +1451,10 @@ async function runEffects(
               body: words,
               label: "View Full Summary",
               url: `${env.PUBLIC_BASE_URL}/s/${token}`,
+              // No footer. WhatsApp puts it under the last line of the body
+              // in the same grey as a timestamp, so "Everything you have
+              // invoiced" read as a caption on the figures above it.
               ...(card ? { headerImage: card } : {}),
-              footer: "Everything you have invoiced",
             });
 
             if (sent.ok) {
