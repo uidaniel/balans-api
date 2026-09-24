@@ -111,7 +111,29 @@ export async function renderReceiptPdf(
   const data = await loadForRender(p.document_id);
   if (!data) return null;
 
-  const number = await nextReceiptNumber(data.userId);
+  /*
+   * A payment gets one receipt, and one receipt number, however many times
+   * this is called.
+   *
+   * It is called more than once. `notifyPaid` renders the attachment, and
+   * there are two paths to a confirmation — the webhook and the invoice
+   * page's poll — plus a re-send by hand when one of them was missed. Every
+   * extra call used to take the next number off the user's receipt sequence
+   * and write another row against the same payment, all of them pointing at
+   * one `pdf_key` that the newest render had overwritten. So the stored file
+   * disagreed with every row but the last, and the numbers on a freelancer's
+   * receipts had gaps they could not explain to anybody who asked.
+   *
+   * The `ON CONFLICT DO NOTHING` below reads as the guard against exactly
+   * that and is not one: there was no unique constraint for it to conflict
+   * with, so it has never done anything. 0022 adds the constraint; this
+   * lookup is what makes the common case never reach it.
+   */
+  const existing = await db().query<{ number: number }>(
+    `SELECT number FROM receipts WHERE payment_id = $1 ORDER BY number LIMIT 1`,
+    [paymentId],
+  );
+  const number = existing.rows[0]?.number ?? (await nextReceiptNumber(data.userId));
 
   const doc: DocumentData = {
     ...data.doc,
@@ -137,8 +159,10 @@ export async function renderReceiptPdf(
     await put(key, bytes, "application/pdf", data.userId);
 
     await db().query(
+      // Now with something to conflict on (0022). The lookup above means this
+      // is the race, not the ordinary case: two confirmations arriving at once.
       `INSERT INTO receipts (payment_id, number, pdf_key) VALUES ($1, $2, $3)
-       ON CONFLICT DO NOTHING`,
+       ON CONFLICT (payment_id) DO NOTHING`,
       [paymentId, number, key],
     );
 

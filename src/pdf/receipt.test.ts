@@ -152,4 +152,52 @@ describe("what a receipt is not", () => {
     assert.match(render, /renderReceiptHtml\(doc\)/);
     assert.ok(!/renderTemplate\(/.test(render.slice(0, render.indexOf("export "))));
   });
+
+  it("gives a payment one receipt number however often it is rendered", () => {
+    /*
+     * This is called more than once. `notifyPaid` renders the attachment, and
+     * there are two paths to a confirmation — the webhook and the invoice
+     * page's poll — plus a re-send by hand when both were missed. Each extra
+     * call used to take the next number off the user's receipt sequence and
+     * write another row against the same payment, all of them naming the one
+     * `pdf_key` the newest render had overwritten: a stored file disagreeing
+     * with every row but the last, and gaps in a freelancer's receipt numbers
+     * that they cannot explain to anybody who asks.
+     *
+     * Seen for real on 24 Sep 2026, on the recovered $150 card payment, which
+     * finished with receipts 1, 2 and 3.
+     */
+    const pdf = readFileSync(new URL("../documents/pdf.ts", import.meta.url), "utf8");
+    const render = pdf.slice(pdf.indexOf("export async function renderReceiptPdf"));
+    const body = render.slice(0, render.indexOf("\n}\n"));
+
+    assert.match(
+      body,
+      /SELECT number FROM receipts WHERE payment_id = \$1/,
+      "an existing receipt is looked up before a number is taken",
+    );
+    assert.match(
+      body,
+      /existing\.rows\[0\]\?\.number \?\? \(await nextReceiptNumber/,
+      "and reused, so the sequence only moves for a new payment",
+    );
+  });
+
+  it("names what it conflicts on, because the bare form never did anything", () => {
+    /*
+     * `ON CONFLICT DO NOTHING` with no target and no unique constraint is not
+     * a weaker guard than the named form — it is not a guard at all, and it
+     * reads exactly like one. 0022 adds the constraint; this makes sure the
+     * clause and the constraint stay written down together.
+     */
+    const pdf = readFileSync(new URL("../documents/pdf.ts", import.meta.url), "utf8");
+    assert.match(pdf, /INSERT INTO receipts[\s\S]*?ON CONFLICT \(payment_id\) DO NOTHING/);
+
+    const migration = readFileSync(
+      new URL("../db/migrations/0022_one_receipt_per_payment.sql", import.meta.url),
+      "utf8",
+    );
+    assert.match(migration, /UNIQUE \(payment_id\)/, "something for it to conflict with");
+    assert.match(migration, /DELETE FROM receipts/, "the duplicates go first, or it cannot be built");
+  });
 });
