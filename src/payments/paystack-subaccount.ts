@@ -27,7 +27,7 @@ import type { FastifyBaseLogger } from "fastify";
 
 import { db } from "../db/pool.ts";
 import { decrypt } from "../lib/crypto.ts";
-import { createSubAccount, listBanks, matchByName } from "./paystack.ts";
+import { cachedBanks, createSubAccount, matchByName } from "./paystack.ts";
 
 export type SubaccountResult =
   | { ok: true; code: string; created: boolean }
@@ -73,7 +73,9 @@ export async function paystackSubaccountFor(
     return { ok: true, code: bank.paystack_subaccount_code, created: false };
   }
 
-  const banks = await listBanks();
+  // The same list the Pay button was drawn from. Two different lists here
+  // would mean a button that appears and then refuses.
+  const banks = await cachedBanks();
   const match = matchByName(bank.bank_name, banks);
   if (!match) {
     /*
@@ -114,4 +116,50 @@ export async function paystackSubaccountFor(
 
   log.info({ userId, subaccount: made.account.subaccountCode }, "paystack subaccount created");
   return { ok: true, code: made.account.subaccountCode, created: true };
+}
+
+/**
+ * Whether a card could be taken for this user at all, without creating
+ * anything.
+ *
+ * The page needs this before it draws the Pay button. Card payment failing is
+ * not a transient event to report after the fact — it is a standing condition
+ * of the sender's payout account, and the client cannot do anything about it
+ * however many times they press.
+ *
+ * It was reported after the fact, and the result was a page arguing with
+ * itself: "Card payment is not available on this invoice yet" rendered
+ * directly above a live "Pay by card" button, because the invoice really was
+ * payable. Hiding the button on that error instead was worse in its own way —
+ * the error lives in the query string so a reload kept it, and the page stayed
+ * dead even once the cause was fixed.
+ *
+ * So the button follows the condition rather than the last attempt. Same rules
+ * as `paystackSubaccountFor` and deliberately so: a check that could disagree
+ * with the thing it is gating would eventually hide a button that works, or
+ * show one that cannot.
+ *
+ * Optimistic when Paystack cannot be reached: an empty bank list is our
+ * outage, not the freelancer's, and the honest answer then is to let them
+ * press Pay and get a retryable error.
+ */
+export async function cardPaymentAvailable(userId: string): Promise<boolean> {
+  const { rows } = await db().query<{ bank_name: string; paystack_subaccount_code: string | null }>(
+    `SELECT b.bank_name, b.paystack_subaccount_code
+       FROM bank_accounts b
+      WHERE b.user_id = $1
+        AND b.status = 'active'
+        AND (b.effective_at IS NULL OR b.effective_at <= now())
+      ORDER BY b.created_at DESC
+      LIMIT 1`,
+    [userId],
+  );
+
+  const bank = rows[0];
+  if (!bank) return false;
+  if (bank.paystack_subaccount_code) return true;
+
+  const banks = await cachedBanks();
+  if (banks.length === 0) return true;
+  return matchByName(bank.bank_name, banks) !== null;
 }

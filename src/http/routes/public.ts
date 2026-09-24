@@ -48,7 +48,10 @@ import {
   initTransaction as initPaystack,
   paystackConfigured,
 } from "../../payments/paystack.ts";
-import { paystackSubaccountFor } from "../../payments/paystack-subaccount.ts";
+import {
+  cardPaymentAvailable,
+  paystackSubaccountFor,
+} from "../../payments/paystack-subaccount.ts";
 import { verifierFor } from "../../payments/provider.ts";
 import { notifyPaid } from "../../payments/notify.ts";
 import { get as getFile, getCard } from "../../storage/files.ts";
@@ -116,33 +119,22 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
    * the payer looks at may live at a URL that only answers POST. See the Pay
    * button below: it redirects here, and these are how its failures travel.
    *
-   * `retryable` is not decoration: it decides whether the Pay button comes
-   * back with the message.
+   * Every one of these is transient, and that is deliberate: a standing
+   * reason a card cannot be taken is answered by `cardPaymentAvailable`
+   * before the button is drawn, not reported after somebody has pressed it.
    *
-   * A wobble at the provider is worth another tap. A payout account that
-   * cannot take cards is not — no number of taps will fix it, and leaving the
-   * button live under the words "not available" gives somebody trying to pay
-   * a bill two contradictory instructions and a loop to get stuck in. Seen
-   * live on 24 Sep 2026: six taps in fifteen seconds, every one refused for
-   * the same unfixable reason.
+   * `card_unavailable` survives for the narrow case the gate cannot catch —
+   * the bank resolved but Paystack refused to make the subaccount — and it
+   * stays worded without blame or plumbing. This page belongs to somebody who
+   * is trying to pay a bill.
    */
-  const PAY_ERRORS: Record<string, { text: string; retryable: boolean }> = {
-    busy: { text: "Too many attempts just now. Wait a moment and try again.", retryable: true },
-    unpayable: { text: "This invoice cannot be paid right now.", retryable: false },
-    provider: {
-      text: "We could not reach the payment provider. Please try again in a moment.",
-      retryable: true,
-    },
-    account: {
-      text: "We could not get the account details just now. Please try again in a moment.",
-      retryable: true,
-    },
-    // The freelancer's payout account is not set up for card payments, which
-    // is theirs to fix and not the client's. Said without blame and without
-    // detail: this page belongs to somebody who is trying to pay a bill.
+  const PAY_ERRORS: Record<string, { text: string }> = {
+    busy: { text: "Too many attempts just now. Wait a moment and try again." },
+    unpayable: { text: "This invoice cannot be paid right now." },
+    provider: { text: "We could not reach the payment provider. Please try again in a moment." },
+    account: { text: "We could not get the account details just now. Please try again in a moment." },
     card_unavailable: {
       text: "Card payment is not available on this invoice yet. Please contact the sender.",
-      retryable: false,
     },
   };
 
@@ -161,7 +153,15 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     // If details were already issued and are still good, show those rather
     // than a Pay button. Somebody returning from their banking app is the
     // common case, and they must find the same account they copied.
-    const live = payable(doc).ok ? await liveTransferFor(doc.id, payableNowKobo(doc)) : null;
+    const canPay = payable(doc).ok;
+    const live = canPay ? await liveTransferFor(doc.id, payableNowKobo(doc)) : null;
+
+    /*
+     * Asked before the button is drawn, and only where it can matter. A naira
+     * invoice is a bank transfer and has nothing to do with Paystack, so this
+     * stays off the path of almost every page view.
+     */
+    const cardReady = doc.foreign && canPay ? await cardPaymentAvailable(doc.userId) : true;
 
     return reply
       .type(HTML)
@@ -173,6 +173,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
         renderDocument(doc, todayIn(defaults.behaviour.timezone), {
           token: req.params.token,
           transfer: live ? panelFor(live) : null,
+          cardReady,
           // Only one we wrote. Anything else in the query string is somebody
           // playing, and gets no words of ours on a page about their money.
           error: req.query.e ? PAY_ERRORS[req.query.e] : undefined,

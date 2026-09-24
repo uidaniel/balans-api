@@ -199,7 +199,11 @@ describe("the page a payer is left looking at", () => {
   it("carries a failure in the query string, where a reload can survive it", () => {
     // The error messages moved to the GET so that the page showing one is a
     // page that can be refreshed.
-    assert.match(routes, /const PAY_ERRORS: Record<string, \{ text: string; retryable: boolean \}> = \{/);
+    assert.match(routes, /const PAY_ERRORS: Record<string, \{ text: string \}> = \{/);
+    // A standing reason a card cannot be taken is not one of these. It is
+    // answered before the button is drawn, because the error lives in the
+    // query string and a reload would otherwise keep a fixed page broken.
+    assert.match(routes, /const cardReady = doc\.foreign && canPay/);
     for (const key of ["busy", "unpayable", "provider", "account"]) {
       assert.match(routes, new RegExp(`return again\\("${key}"\\)`), `${key} is not reachable`);
     }

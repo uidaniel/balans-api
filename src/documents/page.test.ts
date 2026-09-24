@@ -357,44 +357,73 @@ describe("the messages that report on the books", () => {
   });
 });
 
-describe("a failure the payer cannot do anything about", () => {
+describe("a card that cannot be taken at all", () => {
   /*
    * The bug: "Card payment is not available on this invoice yet" rendered as
    * a banner directly above a live "Pay ₦28,527.28 by card" button. The
    * invoice really was payable, so `can.ok` held and the button came back
    * under its own error message — telling a stranger both that they cannot
-   * pay and to press here to pay.
+   * pay and to press here to pay. The one who met it pressed six times in
+   * fifteen seconds.
    *
-   * The one who met it pressed six times in fifteen seconds, and every
-   * attempt failed for the same reason it was always going to fail: their
-   * sender's payout bank had no Paystack code.
+   * Hiding the button on that error was the obvious fix and the wrong one.
+   * The error travels in the query string so that the page survives a reload,
+   * which meant a stale `?e=` left the page dead for ever — including after
+   * the cause had been fixed. So the button follows the condition instead,
+   * and the condition is known before anybody presses anything.
    */
-  const withError = (retryable: boolean) =>
-    renderDocument(doc({ foreign: { currency: "USD", amountMinor: 20_00, rate: 1426 } }), TODAY, {
-      token: "a".repeat(32),
-      error: { text: "Card payment is not available on this invoice yet.", retryable },
-    });
+  const foreign = () =>
+    doc({ foreign: { currency: "USD", amountMinor: 20_00, rate: 1426 } });
 
   // `.pay-btn` is also a rule in the stylesheet, so the class name alone
   // proves nothing about what is on the page. The markup is the question.
   const BUTTON = /<button class="pay-btn"/;
 
-  it("says so once, and takes the button away with it", () => {
-    const html = withError(false);
+  const render = (over: { cardReady?: boolean; error?: { text: string } }) =>
+    renderDocument(foreign(), TODAY, { token: "a".repeat(32), ...over });
+
+  it("says so once, instead of offering a button that cannot work", () => {
+    const html = render({ cardReady: false });
     assert.match(html, /Card payment is not available/);
-    assert.ok(!BUTTON.test(html), "the button that just failed is offered again");
+    assert.ok(!BUTTON.test(html), "the button that cannot work is offered anyway");
     assert.ok(!html.includes("</form>"), "and the form behind it");
   });
 
-  it("keeps the button when trying again could actually work", () => {
-    // A provider wobble is worth another tap, and removing the button there
-    // would strand somebody who could have paid a second later.
-    const html = withError(true);
-    assert.match(html, /Card payment is not available/);
-    assert.match(html, BUTTON, "a retryable failure must still offer the retry");
+  it("does not need anybody to have pressed anything first", () => {
+    // The whole point of moving this off the error: the payer never meets a
+    // button that was always going to refuse them.
+    assert.ok(!BUTTON.test(render({ cardReady: false })));
   });
 
-  it("offers the button when nothing went wrong at all", () => {
-    assert.match(render(doc()), BUTTON);
+  it("is not left dead by a stale error in the url", () => {
+    /*
+     * The regression this replaces. `?e=card_unavailable` stays in the
+     * address bar across a reload, so a page that keyed off it stayed broken
+     * after the sender fixed their bank. Once the card can be taken, the
+     * button is there — whatever the last attempt said.
+     */
+    const html = render({
+      cardReady: true,
+      error: { text: "Card payment is not available on this invoice yet." },
+    });
+    assert.match(html, BUTTON, "a stale error is still hiding the button");
+  });
+
+  it("keeps the button for a failure that another tap could fix", () => {
+    const html = render({
+      cardReady: true,
+      error: { text: "We could not reach the payment provider." },
+    });
+    assert.match(html, /could not reach the payment provider/);
+    assert.match(html, BUTTON);
+  });
+
+  it("leaves a naira invoice alone, since no card is involved", () => {
+    // `cardReady` is only ever consulted on a foreign invoice. A transfer has
+    // nothing to do with Paystack.
+    assert.match(
+      renderDocument(doc(), TODAY, { token: "a".repeat(32), cardReady: false }),
+      BUTTON,
+    );
   });
 });

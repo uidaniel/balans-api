@@ -205,6 +205,33 @@ export async function listBanks(fetchImpl: typeof fetch = fetch): Promise<Paysta
     .map((b) => ({ name: b.name, code: b.code }));
 }
 
+/**
+ * The same list, held for an hour.
+ *
+ * The public invoice page asks whether a card can be taken *before* drawing
+ * the Pay button, so this is now on the path of a page a stranger loads rather
+ * than only on the path of a payment. Nigeria's bank list changes a few times
+ * a year; fetching it per page view would be a call to Paystack every time
+ * somebody looks at an invoice.
+ *
+ * A failed fetch is not cached. `listBanks` answers `[]` rather than throwing,
+ * and an empty list would otherwise mean an hour of telling every client that
+ * card payment is unavailable because of one bad minute.
+ *
+ * Separate from `listBanks` rather than folded into it, because the tests for
+ * that one drive it with their own `fetch` and a shared cache would leak
+ * between them.
+ */
+const BANKS_TTL_MS = 60 * 60 * 1000;
+let banksCache: { at: number; banks: PaystackBank[] } | null = null;
+
+export async function cachedBanks(): Promise<PaystackBank[]> {
+  if (banksCache && Date.now() - banksCache.at < BANKS_TTL_MS) return banksCache.banks;
+  const banks = await listBanks();
+  if (banks.length > 0) banksCache = { at: Date.now(), banks };
+  return banks;
+}
+
 /** Normalised for comparison: case, punctuation and the word "bank" removed. */
 const key = (s: string): string =>
   s

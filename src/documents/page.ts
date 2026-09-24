@@ -327,12 +327,11 @@ export type TransferPanel = {
 /**
  * Something that went wrong on the last attempt to pay.
  *
- * `retryable` travels with the words because the page cannot infer it: the
- * two read the same to a client, and only the caller knows whether pressing
- * Pay again could ever work. A message that is not retryable takes the button
- * away rather than sitting above it.
+ * Always transient by the time it reaches here. A standing reason a card
+ * cannot be taken is `cardReady`, not an error: it has to be known before the
+ * button is drawn rather than reported after somebody has pressed it.
  */
-export type PayError = { text: string; retryable: boolean };
+export type PayError = { text: string };
 
 /**
  * A figure in the currency it was agreed in, falling back to naira.
@@ -367,7 +366,13 @@ function convertedLine(doc: PublicDocument): string {
 export function renderDocument(
   doc: PublicDocument,
   today: Civil,
-  opts: { token: string; error?: PayError; transfer?: TransferPanel | null } = { token: "" },
+  opts: {
+    token: string;
+    error?: PayError;
+    transfer?: TransferPanel | null;
+    /** Whether a card can actually be taken. Only consulted on a foreign invoice. */
+    cardReady?: boolean;
+  } = { token: "" },
 ): string {
   const label = LABEL[doc.type];
   const outstanding = outstandingKobo(doc);
@@ -539,7 +544,12 @@ function payBlock(
   doc: PublicDocument,
   can: ReturnType<typeof payable>,
   amount: number,
-  opts: { token: string; error?: PayError; transfer?: TransferPanel | null },
+  opts: {
+    token: string;
+    error?: PayError;
+    transfer?: TransferPanel | null;
+    cardReady?: boolean;
+  },
   partLabel: string | null,
 ): string {
   if (can.ok) {
@@ -548,17 +558,24 @@ function payBlock(
     if (opts.transfer) return transferBlock(doc, opts.transfer, opts.token);
 
     /*
-     * A failure that trying again cannot fix takes the button away with it.
+     * No button when a card cannot be taken at all.
      *
-     * The invoice is still payable in principle — `can.ok` — so the button
-     * would otherwise come back under its own error message, inviting exactly
-     * the tap that just failed. "Card payment is not available" above a live
-     * "Pay by card" button is two contradictory instructions given to a
-     * stranger about their own money, and the one who saw it pressed six
-     * times in fifteen seconds before giving up.
+     * The invoice is payable in principle — `can.ok` — so the button used to
+     * come back regardless, and on a foreign invoice whose sender has no
+     * usable Paystack account it came back under the words "Card payment is
+     * not available on this invoice yet". Two contradictory instructions
+     * given to a stranger about their own money; the one who met it pressed
+     * six times in fifteen seconds.
+     *
+     * Driven by the condition rather than by the last failure. Reading it off
+     * the error was the obvious fix and the wrong one: that error travels in
+     * the query string so a reload keeps it, which left the page dead even
+     * after the cause was fixed.
      */
-    if (opts.error && !opts.error.retryable) {
-      return `<div class="banner cancelled">${esc(opts.error.text)}</div>`;
+    if (doc.foreign && opts.cardReady === false) {
+      return `<div class="banner cancelled">Card payment is not available on this ${LABEL[
+        doc.type
+      ].toLowerCase()} yet. Please contact ${esc(doc.businessName)}.</div>`;
     }
 
     // A plain form post, so the button works with no JavaScript at all.
