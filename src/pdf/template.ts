@@ -24,6 +24,7 @@ import {
   dueLabel,
   field,
   headlineAmount,
+  fxNote,
   ink,
   isReceipt,
   items,
@@ -170,10 +171,20 @@ export function renderDocumentHtml(d: DocumentData, opts: RenderOptions = {}): s
           : field(`${kind(d)} number`, `#${d.number}`)
     }
     <div style="flex:none;text-align:right">
-      ${cap(`${h.label} (NGN)`)}
-      <p class="amt ${h.paid ? "off" : ""}">${money(h.amount)}</p>
+      ${cap(`${h.label} (${h.currency})`)}
+      <p class="amt ${h.paid ? "off" : ""}">${h.display}</p>
     </div>
-  </div>`;
+  </div>
+  ${
+    /*
+     * Under the band rather than in the amount cell beside it. That cell is
+     * one column of a flex row sized for a figure, and a sentence in it does
+     * not wrap politely — it widens the column until the other two collapse
+     * to one character per line and the amount itself is pushed off the
+     * sheet. Which is what happened.
+     */
+    fxNote(d)
+  }`;
 
   /* The dates, and on a receipt how it was paid — the two questions somebody
      puts an invoice in a folder to be able to answer later. */

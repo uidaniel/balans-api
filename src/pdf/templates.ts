@@ -35,6 +35,7 @@ import {
   field,
   headline,
   headlineAmount,
+  fxNote,
   ink,
   INK,
   isReceipt,
@@ -515,7 +516,8 @@ line-height:1;font-variant-numeric:tabular-nums}
 
   <div class="owed">
     ${cap(h.label)}
-    <p class="amt">${money(h.amount)}</p>
+    <p class="amt">${h.display}</p>
+    ${fxNote(d)}
     <p class="sub">Subtotal ${money(d.subtotalKobo)} · VAT (${d.vatPercent ?? 0}%) ${money(d.vatKobo)}</p>
   </div>
 
@@ -600,7 +602,8 @@ gap:1.2em;padding-top:1.2em}
   </div>
 
   <p class="lbl">${h.label}</p>
-  <p class="amt">${money(h.amount)}</p>
+  <p class="amt">${h.display}</p>
+  ${fxNote(d)}
   <div class="when">
     ${
       isReceipt(d) && d.receipt
@@ -708,7 +711,7 @@ border-top:.14em solid ${INK};padding-top:.8em}
     ${signature(d)}
     <div class="right">
       ${sums(d)}
-      ${due(d, { label: `${headlineAmount(d).label} (NGN)` })}
+      ${due(d, { label: `${headlineAmount(d).label} (${headlineAmount(d).currency})` })}
     </div>
   </div>
 
@@ -786,7 +789,7 @@ gap:1em;padding-top:1.2em}
     ${sums(d)}
     <div class="bar">
       <span class="k">${h.label}</span>
-      <span class="v">${money(h.amount)}</span>
+      <span class="v">${h.display}</span>
     </div>
 
     <div class="tail">

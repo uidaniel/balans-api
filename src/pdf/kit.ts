@@ -21,7 +21,7 @@
 
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { formatMoney } from "../../core/currency.ts";
+import { formatMoney, type Currency } from "../../core/currency.ts";
 import { esc } from "../documents/page.ts";
 import { FONT, fontFaces, type FontSet } from "./fonts.ts";
 import type { DocumentData } from "./template.ts";
@@ -183,12 +183,21 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .due .amt{margin-top:.15em;font-family:${FONT.display};font-size:1.9em;line-height:1;
 font-weight:800;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
 .due.paid .amt{color:${MOSS}}
-/* The conversion note, directly under the amount it converts. Narrow, so it
-   sets as two or three short lines rather than one long one running the width
-   of whichever layout it lands in. */
-.due .fx{margin-top:.5em;max-width:26em;font-size:.52em;line-height:1.5;
-font-weight:400;letter-spacing:0;color:${ink(0.55)}}
-.due .fx b{font-weight:600;color:${INK}}
+/*
+ * The conversion note, under the amount it converts.
+ *
+ * Not scoped inside .due, because half the layouts build their own header and
+ * would get an unstyled paragraph — which is not a small thing: unstyled, it
+ * inherits the headline's size and weight, blows out whatever flex row it
+ * lands in, and on the Classic sheet it pushed the amount off the page
+ * entirely. Its own rule, so it looks the same wherever it is placed.
+ *
+ * Deliberately not display-font and deliberately narrow: it is a sentence to
+ * be read once, not a figure to be checked.
+ */
+.fx{margin-top:.6em;max-width:34em;font-family:${FONT.sans};font-size:.55em;
+line-height:1.55;font-weight:400;letter-spacing:0;color:${ink(0.55)};text-align:left}
+.fx b{font-weight:600;color:${INK}}
 
 /* How to pay -------------------------------------------------------------- */
 .pay .url{font-size:.66em;font-weight:700;overflow-wrap:anywhere;
@@ -318,12 +327,56 @@ export const numberLabel = (d: DocumentData): string =>
 export const owedKobo = (d: DocumentData): number => d.totalKobo - d.amountPaidKobo;
 
 /** The headline amount, and what to call it. */
-export function headlineAmount(d: DocumentData): { label: string; amount: number; paid: boolean } {
-  if (isReceipt(d)) return { label: "Amount paid", amount: d.amountPaidKobo, paid: true };
+export type Headline = {
+  label: string;
+  /** Always kobo. What is charged, and what every other figure is in. */
+  amount: number;
+  paid: boolean;
+  /**
+   * The figure to print, in the currency it belongs in.
+   *
+   * Every layout renders this rather than formatting `amount` itself, because
+   * eight layouts each doing their own formatting is eight chances for one of
+   * them to print naira on a dollar invoice. The Classic layout did exactly
+   * that: it built its own header, so a $500 invoice came out headed
+   * "TOTAL DUE (NGN) ₦663,500" with the agreed price nowhere on the page.
+   */
+  display: string;
+  /** "NGN", "USD", "GBP" — whatever `display` is in. */
+  currency: Currency;
+};
+
+/**
+ * The one figure a layout sets large, and what to call it.
+ *
+ * On an invoice priced abroad the agreed price is the headline — $500.00, the
+ * number two people shook hands on — but *only while it is still the whole
+ * of what is owed*. The moment a part payment lands, what is left is a naira
+ * quantity: it was charged in naira, credited in naira, and there is no
+ * dollar figure for it that anybody agreed to. Converting the remainder back
+ * would print a price that moves with the rate and that nobody quoted.
+ *
+ * So the rule is narrow and it is the whole of the currency logic here: show
+ * the agreed price when the headline *is* the agreed total, and naira
+ * otherwise.
+ */
+export function headlineAmount(d: DocumentData): Headline {
+  const agreed = (label: string, amount: number, paid: boolean): Headline =>
+    d.foreign && amount === d.totalKobo
+      ? {
+          label,
+          amount,
+          paid,
+          display: formatMoney(d.foreign.amountMinor, d.foreign.currency),
+          currency: d.foreign.currency,
+        }
+      : { label, amount, paid, display: money(amount), currency: "NGN" };
+
+  if (isReceipt(d)) return agreed("Amount paid", d.amountPaidKobo, true);
   const owed = owedKobo(d);
-  if (d.totalKobo > 0 && owed <= 0) return { label: "Paid in full", amount: d.totalKobo, paid: true };
-  if (d.variant === "quote") return { label: "Quoted", amount: d.totalKobo, paid: false };
-  return { label: "Total due", amount: owed, paid: false };
+  if (d.totalKobo > 0 && owed <= 0) return agreed("Paid in full", d.totalKobo, true);
+  if (d.variant === "quote") return agreed("Quoted", d.totalKobo, false);
+  return agreed("Total due", owed, false);
 }
 
 /**
@@ -528,10 +581,9 @@ export function fxNote(d: DocumentData): string {
 export function due(d: DocumentData, opts: { size?: string; label?: string; className?: string } = {}): string {
   const h = headlineAmount(d);
   const size = opts.size ? `font-size:${opts.size}` : "";
-  const headline = d.foreign ? formatMoney(d.foreign.amountMinor, d.foreign.currency) : money(h.amount);
   return `<div class="due ${h.paid ? "paid" : ""} ${opts.className ?? ""}">
     ${cap(opts.label ?? h.label)}
-    <p class="amt" style="${size}">${headline}</p>
+    <p class="amt" style="${size}">${h.display}</p>
     ${fxNote(d)}
   </div>`;
 }

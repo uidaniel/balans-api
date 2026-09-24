@@ -12,6 +12,7 @@ import { whatsappRoutes } from "./routes/whatsapp.ts";
 import { publicRoutes } from "./routes/public.ts";
 import { proRoutes } from "./routes/pro.ts";
 import { monnifyRoutes } from "./routes/monnify.ts";
+import { paystackRoutes } from "./routes/paystack.ts";
 import { templateRoutes } from "./routes/templates.ts";
 
 declare module "fastify" {
@@ -120,6 +121,10 @@ export function buildServer(): FastifyInstance {
   // Also unprefixed: /designs/{token} is a link opened from a phone.
   app.register(templateRoutes);
   app.register(monnifyRoutes, { prefix: "/webhooks/monnify" });
+  // Naira goes to Monnify above; invoices priced abroad are cards, and cards
+  // are Paystack. Two processors, one confirmation path — see
+  // `payments/provider.ts`.
+  app.register(paystackRoutes, { prefix: "/webhooks/paystack" });
 
   return app;
 }
