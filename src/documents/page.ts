@@ -13,6 +13,7 @@
 
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
+import { formatMoney } from "../../core/currency.ts";
 import { outstandingKobo, payable, payableLabel, payableNowKobo, type PublicDocument } from "./public.ts";
 import { logoAvailable, logoSvg, markSvg, monnifyLogo } from "../brand/logo.ts";
 import { FONT, fontFacesForPage } from "../pdf/fonts.ts";
@@ -54,6 +55,19 @@ text-transform:uppercase}
 h1{font-family:var(--display);font-size:44px;font-weight:800;letter-spacing:-.045em;
 line-height:1.05;margin-top:8px;font-variant-numeric:tabular-nums}
 .from{margin-top:10px;font-size:15px;color:var(--ink-65)}
+/*
+ * The naira charge, directly under the price it converts (section 9).
+ *
+ * Small and quiet, but not hidden: this is the figure that leaves the
+ * payer's account, and finding it for the first time on a bank statement is
+ * how somebody decides they were overcharged by whoever billed them.
+ *
+ * (No word here that a stranger's eye would catch. This stylesheet is shared
+ * with the not-found page, which must give away nothing about whether a
+ * token was ever real, and a leaked noun in a comment is enough.)
+ */
+.fx{margin-top:8px;font-size:13px;line-height:1.5;color:var(--ink-65);max-width:38ch}
+.fx b{color:var(--ink);font-weight:600}
 .from b{color:var(--ink);font-weight:600}
 .pill{display:inline-flex;align-items:center;height:28px;margin-top:16px;padding:0 12px;
 border-radius:999px;font-size:12.5px;font-weight:600}
@@ -310,6 +324,36 @@ export type TransferPanel = {
   expiresInMs: number;
 };
 
+/**
+ * A figure in the currency it was agreed in, falling back to naira.
+ *
+ * Every line on an invoice priced abroad carries both: the kobo that will be
+ * charged and the cents that were quoted. The client reads the second,
+ * because the second is what they said yes to — a client who agreed to $200
+ * for the logo should not have to check whether ₦265,400 is the same thing.
+ */
+const money = (doc: PublicDocument, kobo: number, minor: number | null): string =>
+  doc.foreign && minor !== null ? formatMoney(minor, doc.foreign.currency) : formatNaira(kobo);
+
+/**
+ * The sentence under the headline on an invoice priced abroad (section 9).
+ *
+ * It has to say three things and no more. What will actually be charged,
+ * because that is the figure on their statement and it is in naira. That
+ * their own bank does the conversion, because ours is not the rate they will
+ * be charged at. And that the bank may add its own fee, because it very
+ * often does and a client who finds that out from the statement blames the
+ * person who sent the invoice.
+ *
+ * What it must never say is anything about the freelancer's side: what they
+ * receive, what Paystack takes, what Balans takes. The client agreed to a
+ * price, not to somebody else's margins.
+ */
+function convertedLine(doc: PublicDocument): string {
+  if (!doc.foreign) return "";
+  return `<p class="fx">Charged in Naira as <b>${formatNaira(doc.totalKobo)}</b>. Your bank converts this and may apply its own exchange rate or fees.</p>`;
+}
+
 export function renderDocument(
   doc: PublicDocument,
   today: Civil,
@@ -327,8 +371,8 @@ export function renderDocument(
   const rows = doc.lines
     .map(
       (l) => `<tr><td>${esc(l.description)}${
-        l.qty === 1 ? "" : `<span class="qty">${l.qty} &times; ${formatNaira(l.unitAmountKobo)}</span>`
-      }</td><td class="r">${formatNaira(l.amountKobo)}</td></tr>`,
+        l.qty === 1 ? "" : `<span class="qty">${l.qty} &times; ${money(doc, l.unitAmountKobo, l.originalAmountMinor == null ? null : Math.round(l.originalAmountMinor / l.qty))}</span>`
+      }</td><td class="r">${money(doc, l.amountKobo, l.originalAmountMinor ?? null)}</td></tr>`,
     )
     .join("");
 
@@ -353,7 +397,8 @@ export function renderDocument(
       logoAvailable() ? logoSvg("28px") : `<span class="dot"></span>balans`
     }</div>
     <div class="kind">${label} ${doc.number}</div>
-    <h1>${formatNaira(doc.totalKobo)}</h1>
+    <h1>${doc.foreign ? formatMoney(doc.foreign.amountMinor, doc.foreign.currency) : formatNaira(doc.totalKobo)}</h1>
+    ${convertedLine(doc)}
     <div class="from">From <b>${esc(doc.businessName)}</b> to ${esc(doc.clientName)}</div>
     ${statusPill(doc, today, overdue)}
   </div>
@@ -371,6 +416,13 @@ export function renderDocument(
         : ""
     }
     ${
+      /*
+       * What is owed stays in naira, always, even on an invoice priced
+       * abroad. The headline says what was agreed; this says what is left to
+       * pay, and what is left to pay is a naira figure — part-paid in naira,
+       * charged in naira. Converting it back would produce a dollar amount
+       * that nobody agreed to and that moves with the rate.
+       */
       doc.amountPaidKobo > 0
         ? `<div class="row"><span>Total</span><span>${formatNaira(doc.totalKobo)}</span></div>
            <div class="row paidoff"><span>Paid</span><span>&minus;${formatNaira(doc.amountPaidKobo)}</span></div>
@@ -487,10 +539,21 @@ function payBlock(
     ${opts.error ? `<p class="banner cancelled" style="margin:0 0 14px">${esc(opts.error)}</p>` : ""}
     <form method="post" action="/i/${esc(opts.token)}/pay">
       <button class="pay-btn" type="submit">Pay ${formatNaira(amount)}${
-        partLabel ? ` &middot; ${esc(partLabel)}` : ""
-      }</button>
+        /*
+         * In naira, on both kinds of invoice, and section 9 spells it out:
+         * "Pay ₦663,500 by card". The headline is the price two people
+         * agreed; this button is a figure about to leave a bank account, and
+         * putting "$500" on it would be a button that charges a different
+         * number than it says.
+         */
+        doc.foreign ? " by card" : ""
+      }${partLabel ? ` &middot; ${esc(partLabel)}` : ""}</button>
     </form>
-    <p class="secure">Pay by bank transfer to ${esc(doc.businessName)}. Takes about a minute.</p>
+    <p class="secure">${
+      doc.foreign
+        ? `Paid by card to ${esc(doc.businessName)}. Takes about a minute.`
+        : `Pay by bank transfer to ${esc(doc.businessName)}. Takes about a minute.`
+    }</p>
   </div>`;
   }
 

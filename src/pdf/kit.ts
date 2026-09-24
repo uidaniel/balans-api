@@ -21,6 +21,7 @@
 
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
+import { formatMoney } from "../../core/currency.ts";
 import { esc } from "../documents/page.ts";
 import { FONT, fontFaces, type FontSet } from "./fonts.ts";
 import type { DocumentData } from "./template.ts";
@@ -182,6 +183,12 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .due .amt{margin-top:.15em;font-family:${FONT.display};font-size:1.9em;line-height:1;
 font-weight:800;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
 .due.paid .amt{color:${MOSS}}
+/* The conversion note, directly under the amount it converts. Narrow, so it
+   sets as two or three short lines rather than one long one running the width
+   of whichever layout it lands in. */
+.due .fx{margin-top:.5em;max-width:26em;font-size:.52em;line-height:1.5;
+font-weight:400;letter-spacing:0;color:${ink(0.55)}}
+.due .fx b{font-weight:600;color:${INK}}
 
 /* How to pay -------------------------------------------------------------- */
 .pay .url{font-size:.66em;font-weight:700;overflow-wrap:anywhere;
@@ -490,13 +497,42 @@ export function sums(d: DocumentData, className = ""): string {
   </div>`;
 }
 
-/** The amount, set like a headline. */
+/**
+ * What an invoice priced abroad has to say about its own conversion
+ * (International PRD section 9).
+ *
+ * Three facts and no more. The naira figure, because that is what the card is
+ * charged and what appears on the statement. That the client's own bank does
+ * the conversion, because our rate is not the rate they pay. And that the
+ * bank may add a fee, because it often does, and a client who discovers that
+ * from a statement blames whoever sent the document.
+ *
+ * Nothing about the other side of it — not what the freelancer receives, not
+ * Paystack's cut, not ours. The client agreed to a price, not to somebody
+ * else's margins, and this sheet is theirs to keep.
+ */
+export function fxNote(d: DocumentData): string {
+  if (!d.foreign) return "";
+  return `<p class="fx">Charged in Naira as <b>${money(d.totalKobo)}</b>. Your bank converts this
+    and may apply its own exchange rate or fees.</p>`;
+}
+
+/**
+ * The amount, set like a headline.
+ *
+ * In the currency it was agreed in, which on nearly every document is naira.
+ * Where it is not, the conversion note goes directly underneath — the two
+ * belong together, and putting the note in the eight layouts separately is
+ * eight chances for one of them to be missing it.
+ */
 export function due(d: DocumentData, opts: { size?: string; label?: string; className?: string } = {}): string {
   const h = headlineAmount(d);
   const size = opts.size ? `font-size:${opts.size}` : "";
+  const headline = d.foreign ? formatMoney(d.foreign.amountMinor, d.foreign.currency) : money(h.amount);
   return `<div class="due ${h.paid ? "paid" : ""} ${opts.className ?? ""}">
     ${cap(opts.label ?? h.label)}
-    <p class="amt" style="${size}">${money(h.amount)}</p>
+    <p class="amt" style="${size}">${headline}</p>
+    ${fxNote(d)}
   </div>`;
 }
 

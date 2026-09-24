@@ -44,6 +44,8 @@ const doc = (over: Partial<PublicDocument> = {}): PublicDocument => ({
   plan: "free",
   // No parts by default: an ordinary invoice is one payment.
   parts: [],
+  // Priced in naira, like nearly every invoice this product sends.
+  foreign: null,
   ...over,
 });
 

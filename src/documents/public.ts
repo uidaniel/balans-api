@@ -12,6 +12,7 @@
 import { db } from "../db/pool.ts";
 import type { Civil } from "../../core/dates.ts";
 import { partsFor, nextPayable, type Part } from "./parts.ts";
+import type { Foreign } from "../../core/currency.ts";
 
 export type PublicStatus =
   | "draft"
@@ -34,7 +35,20 @@ export type PublicDocument = {
   /** Whose business is billing. The only thing about the user a client sees. */
   businessName: string;
   clientName: string;
-  lines: { description: string; qty: number; unitAmountKobo: number; amountKobo: number }[];
+  lines: {
+    description: string;
+    qty: number;
+    unitAmountKobo: number;
+    amountKobo: number;
+    /**
+     * What this line was quoted at abroad, in cents or pence.
+     *
+     * Optional rather than nullable, because on a naira invoice it is not a
+     * value that happens to be absent — there was never a second currency for
+     * it to be in.
+     */
+    originalAmountMinor?: number | null;
+  }[];
   subtotalKobo: number;
   vatKobo: number;
   totalKobo: number;
@@ -48,6 +62,21 @@ export type PublicDocument = {
   plan: "free" | "pro";
   /** F7: empty for an ordinary invoice, two or more for a deposit. */
   parts: Part[];
+  /**
+   * The price as agreed, when it was not agreed in naira.
+   *
+   * Every kobo figure above is still what is charged — the card is debited in
+   * naira and the client's own bank converts. This is the number the two
+   * people shook hands on, and it is the one that goes at the top of the
+   * page, because a client who agreed to $500 should not have to work out
+   * whether ₦663,500 is the same thing.
+   */
+  foreign: {
+    currency: Foreign;
+    amountMinor: number;
+    /** Only ever shown as "today's rate" context, never as a price. */
+    rate: number;
+  } | null;
 };
 
 const civil = (d: Date | null): Civil | null =>
@@ -75,12 +104,16 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     notes: string | null;
     business_name: string | null;
     plan: "free" | "pro";
+    currency: Foreign | "NGN";
+    original_amount_minor: number | null;
+    fx_rate: string | null;
     client_name: string;
     sub_account_code: string | null;
   }>(
     `SELECT d.id, d.user_id, d.type, d.number, d.status,
             d.subtotal_kobo, d.vat_kobo, d.total_kobo, d.amount_paid_kobo,
             d.pass_fees_to_client, d.due_date, d.valid_until, d.issue_date, d.notes,
+            d.currency, d.original_amount_minor, d.fx_rate,
             u.business_name, u.plan,
             c.name AS client_name,
             b.subaccount_code AS sub_account_code
@@ -106,8 +139,9 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     qty: string;
     unit_amount_kobo: number;
     amount_kobo: number;
+    original_amount_minor: number | null;
   }>(
-    `SELECT description, qty, unit_amount_kobo, amount_kobo
+    `SELECT description, qty, unit_amount_kobo, amount_kobo, original_amount_minor
        FROM line_items WHERE document_id = $1 ORDER BY position`,
     [r.id],
   );
@@ -125,6 +159,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
       qty: Number(i.qty),
       unitAmountKobo: i.unit_amount_kobo,
       amountKobo: i.amount_kobo,
+      originalAmountMinor: i.original_amount_minor,
     })),
     subtotalKobo: r.subtotal_kobo,
     vatKobo: r.vat_kobo,
@@ -137,6 +172,14 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     subAccountCode: r.sub_account_code,
     plan: r.plan,
     parts: await partsFor(r.id),
+    foreign:
+      r.currency === "NGN" || r.original_amount_minor === null || r.fx_rate === null
+        ? null
+        : {
+            currency: r.currency,
+            amountMinor: r.original_amount_minor,
+            rate: Number(r.fx_rate),
+          },
   };
 }
 

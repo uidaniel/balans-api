@@ -49,6 +49,8 @@ const doc = (over: Partial<PublicDocument> = {}): PublicDocument => ({
   subAccountCode: "MFY_SUB_123",
   plan: "free",
   parts: [],
+  // Priced in naira, like nearly every invoice this product sends.
+  foreign: null,
   ...over,
 });
 

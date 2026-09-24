@@ -15,6 +15,7 @@
  */
 
 import { formatISO, type Civil } from "../../core/dates.ts";
+import type { Foreign } from "../../core/currency.ts";
 import { esc } from "../documents/page.ts";
 import {
   biz,
@@ -72,6 +73,21 @@ export type DocumentData = {
   vatPercent: number | null;
   totalKobo: number;
   amountPaidKobo: number;
+  /**
+   * The price as agreed, when it was not agreed in naira (International PRD
+   * section 9).
+   *
+   * Every other figure on this document stays kobo, including the table and
+   * the totals, and that is deliberate. The table is what is *charged* — the
+   * card is debited in naira and the client's own bank converts — and a sheet
+   * whose lines are in dollars while its total is in naira is a sheet whose
+   * arithmetic an accountant cannot check.
+   *
+   * So this appears twice and only twice: as the headline, because it is the
+   * number two people agreed, and in the sentence under it that says what
+   * will actually be charged.
+   */
+  foreign?: { currency: Foreign; amountMinor: number } | null;
   issueDate: Civil | null;
   dueDate: Civil | null;
   notes: string | null;

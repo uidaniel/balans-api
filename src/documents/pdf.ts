@@ -14,6 +14,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
 import { env } from "../config.ts";
+import type { Foreign } from "../../core/currency.ts";
 import type { Civil } from "../../core/dates.ts";
 import { renderPdf, rendererAvailable } from "../pdf/chrome.ts";
 import { renderDocumentHtml, snapshotOf, type DocumentData, type Variant } from "../pdf/template.ts";
@@ -173,6 +174,8 @@ async function loadForRender(
     notes: string | null;
     public_token: string | null;
     current_version: number;
+    currency: Foreign | "NGN";
+    original_amount_minor: number | null;
     business_name: string | null;
     business_email: string | null;
     address: string | null;
@@ -186,6 +189,7 @@ async function loadForRender(
     `SELECT d.user_id, d.type, d.number, d.ref, d.subtotal_kobo, d.vat_kobo, d.total_kobo,
             d.amount_paid_kobo, d.issue_date, d.due_date, d.valid_until, d.notes,
             d.public_token, d.current_version,
+            d.currency, d.original_amount_minor,
             u.business_name, u.email AS business_email, u.address, u.tin, u.logo_url,
             u.plan, u.template_id,
             c.name AS client_name, c.email AS client_email
@@ -243,6 +247,12 @@ async function loadForRender(
       vatPercent: r.vat_kobo > 0 ? round1((r.vat_kobo / r.subtotal_kobo) * 100) : null,
       totalKobo: r.total_kobo,
       amountPaidKobo: r.amount_paid_kobo,
+      // The price two people agreed, on a document that was not agreed in
+      // naira. Everything above stays kobo: that is what is charged.
+      foreign:
+        r.currency === "NGN" || r.original_amount_minor === null
+          ? null
+          : { currency: r.currency, amountMinor: r.original_amount_minor },
       issueDate: civil(r.issue_date),
       dueDate: civil(r.due_date ?? r.valid_until),
       notes: r.notes,
