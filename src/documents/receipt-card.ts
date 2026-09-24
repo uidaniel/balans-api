@@ -32,6 +32,8 @@ import { fontFaces, FONT } from "../pdf/fonts.ts";
 import { renderPng } from "../pdf/chrome.ts";
 import { uploadDocument } from "../whatsapp/client.ts";
 import { formatNaira } from "../../core/totals.ts";
+import { formatMoney } from "../../core/currency.ts";
+import { defaults } from "../config.ts";
 import { SETTLEMENT_HOUR } from "../payments/settlement.ts";
 import { payout, planLines } from "./summary.ts";
 import type { Draft } from "./store.ts";
@@ -90,8 +92,18 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
    * the card said which. Our own fee needs no such note, because it is capped
    * across the invoice however many payments it arrives in.
    */
-  const monnifyLabel =
-    stages.length > 1 ? `Monnify fee (${stages.length} payments)` : "Monnify fee";
+  /*
+   * And which processor is charging it (International PRD section 9).
+   *
+   * `payout` already works this out — a foreign price is an international
+   * card at 3.9% + ₦100, not a transfer capped at ₦2,000 — so the figure on
+   * this card was right while the word beside it was wrong. Naming the wrong
+   * company next to a correct number is worse than saying nothing: it is the
+   * line somebody checks their bank statement against.
+   */
+  const processor = draft.foreign ? "Paystack" : "Monnify";
+  const processorLabel =
+    stages.length > 1 ? `${processor} fee (${stages.length} payments)` : `${processor} fee`;
 
   return `<!doctype html>
 <html><head><meta charset="utf-8"><style>
@@ -163,7 +175,26 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
 
     <div class="band">
       <div class="cap">${quote ? "Quote" : "Invoice"} amount</div>
-      <div class="amount">${formatNaira(draft.totalKobo)}</div>
+      <div class="amount">${
+        draft.foreign
+          ? esc(formatMoney(draft.foreign.amountMinor, draft.foreign.currency))
+          : formatNaira(draft.totalKobo)
+      }</div>
+      ${
+        /*
+         * The agreed price is the headline, and the naira charge sits under
+         * it — the same rule the PDF follows, for the same reason: $150 is
+         * what the two of them said yes to.
+         *
+         * It also has to match the words directly underneath, which say
+         * "Amount: $150.00". A picture captioned "Invoice amount
+         * ₦213,958.33" above a message saying $150.00 is two answers to one
+         * question, in the one message this product asks people to check.
+         */
+        draft.foreign
+          ? `<div class="when">${formatNaira(draft.totalKobo)} charged, at today’s rate</div>`
+          : ""
+      }
       ${
         draft.dueDate
           ? `<div class="when">${quote ? "Valid until" : "Due"} ${esc(formatFriendly(draft.dueDate, today))}</div>`
@@ -174,7 +205,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
 
     <div class="rows">
       ${grossedUp ? row("Client pays", formatNaira(money.clientPaysKobo)) : ""}
-      ${row(monnifyLabel, `−${formatNaira(money.processorFeeKobo)}`, { muted: true })}
+      ${row(processorLabel, `−${formatNaira(money.processorFeeKobo)}`, { muted: true })}
       ${
         money.balansFeeKobo > 0
           ? row(`Balans fee (${plan === "pro" ? "Pro" : "Free"})`, `−${formatNaira(money.balansFeeKobo)}`, {
@@ -185,8 +216,19 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
       <div class="total">${row("To your bank", formatNaira(money.receivesKobo), { strong: true })}</div>
     </div>
 
-    <p class="note">Settles at ${SETTLEMENT_HOUR > 12 ? SETTLEMENT_HOUR - 12 : SETTLEMENT_HOUR} PM the same day,
-      straight from Monnify. Every day, including weekends.</p>
+    <p class="note">${
+      draft.foreign
+        ? /*
+           * Section 9, in as many words: never say "tonight" about a card.
+           * Monnify's 10 PM run is a promise we can make because we know the
+           * hour of it. This is a card on somebody else’s schedule, so the
+           * sentence comes from configuration — the same one the words under
+           * the picture use, so the two cannot disagree.
+           */
+          `Paid by card. ${esc(defaults.international.settlementText)}`
+        : `Settles at ${SETTLEMENT_HOUR > 12 ? SETTLEMENT_HOUR - 12 : SETTLEMENT_HOUR} PM the same day,
+           straight from Monnify. Every day, including weekends.`
+    }</p>
   </div>
 </body></html>`;
 }

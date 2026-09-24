@@ -18,6 +18,8 @@ import { readFileSync } from "node:fs";
 import { receiptHtml, CARD } from "./receipt-card.ts";
 import { payout } from "./summary.ts";
 import { fontFaces } from "../pdf/fonts.ts";
+import { formatNaira } from "../../core/totals.ts";
+import { defaults } from "../config.ts";
 import type { Draft } from "./store.ts";
 
 const N = (naira: number) => naira * 100;
@@ -72,6 +74,64 @@ describe("what the receipt says", () => {
     assert.match(html, /Monnify fee/);
     assert.match(html, /Balans fee \(Free\)/);
     assert.match(html, /To your bank/);
+  });
+
+  describe("an invoice priced abroad", () => {
+    /*
+     * Found on a phone, on a real $150 invoice: the card said "Monnify fee"
+     * and promised settlement at 10 PM tonight, while the words directly
+     * underneath the same picture said 1 to 2 business days.
+     *
+     * The fee *figure* was right the whole time — `payout` knew it was an
+     * international card — so nothing here was arithmetic. The card simply
+     * did not know the invoice was foreign, and said three confident things
+     * about somebody's money on that basis.
+     */
+    const abroad = draft({
+      subtotalKobo: N(199_031),
+      vatKobo: 1_492_733,
+      totalKobo: 21_395_833,
+      foreign: { currency: "USD", amountMinor: 15_000, rate: 1_426.388866, source: "open.er-api.com", fetchedAt: "2026-09-24T06:00:00.000Z" },
+    });
+    const html = receiptHtml(abroad, "pro", today);
+
+    it("names the company that is actually charging the fee", () => {
+      // 3.9% + ₦100 is not a Monnify price, and this is the line somebody
+      // checks their bank statement against.
+      assert.match(html, /Paystack fee/);
+      assert.ok(!html.includes("Monnify fee"), "a correct number under the wrong name");
+    });
+
+    it("never promises a card will settle tonight", () => {
+      // Section 9, in as many words. Monnify's 10 PM run is a promise we can
+      // make because we know the hour of it; this is a card on somebody
+      // else's schedule.
+      assert.ok(!/10 PM|tonight|including weekends/i.test(html), "Monnify's promise on a card");
+      assert.ok(html.includes(defaults.international.settlementText), "the configured sentence");
+    });
+
+    it("leads with the price the two of them agreed", () => {
+      // And has to agree with the words under the picture, which say
+      // "Amount: $150.00". Two answers to one question is the failure here.
+      assert.match(html, /\$150\.00/);
+      assert.match(html, /₦213,958\.33 charged/);
+    });
+
+    it("still takes its figures from payout", () => {
+      const { processorFeeKobo, receivesKobo } = payout(abroad, "pro");
+      /*
+       * ₦8,444.38, which is what the phone showed — 3.9% of ₦213,958.33
+       * plus the flat ₦100, and the figure that was correct all along.
+       *
+       * The point of pinning it is the second line: Monnify caps at ₦2,000,
+       * so a card fee four times that cap under Monnify's name was not a
+       * rounding difference, it was a different company's price list.
+       */
+      assert.equal(processorFeeKobo, 844_438);
+      assert.ok(processorFeeKobo > 200_000, "nowhere near Monnify's cap");
+      assert.ok(html.includes(`−₦${(processorFeeKobo / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}`));
+      assert.ok(html.includes(formatNaira(receivesKobo)), "what lands in the bank");
+    });
   });
 
   it("names the plan the user is actually on, and its figure", () => {
