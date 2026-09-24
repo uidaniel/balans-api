@@ -176,9 +176,15 @@ export async function convertQuote(
       pass_fees_to_client: boolean;
       notes: string | null;
       client_name: string;
+      currency: string;
+      original_amount_minor: string | null;
+      fx_rate: string | null;
+      fx_source: string | null;
+      fx_fetched_at: Date | null;
     }>(
       `SELECT d.id, d.client_id, d.status, d.subtotal_kobo, d.vat_kobo, d.total_kobo,
-              d.pass_fees_to_client, d.notes, c.name AS client_name
+              d.pass_fees_to_client, d.notes, c.name AS client_name,
+              d.currency, d.original_amount_minor, d.fx_rate, d.fx_source, d.fx_fetched_at
          FROM documents d JOIN clients c ON c.id = d.client_id
         WHERE d.user_id = $1 AND d.type = 'quote' AND d.number = $2
         ORDER BY d.created_at DESC LIMIT 1`,
@@ -216,9 +222,11 @@ export async function convertQuote(
     const { rows: made } = await c.query<{ id: string }>(
       `INSERT INTO documents
          (user_id, client_id, type, number, status, subtotal_kobo, vat_kobo, total_kobo,
-          pass_fees_to_client, notes, parent_id, public_token, issue_date, due_date, sent_at)
+          pass_fees_to_client, notes, parent_id, public_token, issue_date, due_date, sent_at,
+          currency, original_amount_minor, fx_rate, fx_source, fx_fetched_at)
        VALUES ($1, $2, 'invoice', $3, 'sent', $4, $5, $6, $7, $8, $9, $10,
-               CURRENT_DATE, $11::date, now())
+               CURRENT_DATE, $11::date, now(),
+               $12, $13, $14, $15, $16)
        RETURNING id`,
       [
         userId,
@@ -232,13 +240,40 @@ export async function convertQuote(
         quote.id,
         token,
         dueDate ? `${dueDate.y}-${String(dueDate.m).padStart(2, "0")}-${String(dueDate.d).padStart(2, "0")}` : null,
+        /*
+         * The currency comes across with the money, and so does the rate it
+         * was struck at.
+         *
+         * Without these the invoice defaulted to naira, and it did so
+         * silently: `documents_foreign_locks_its_rate` only fires when the
+         * currency is *not* NGN, so dropping the currency is the one way to
+         * satisfy the constraint meant to catch exactly this. A client who
+         * agreed £500 was sent an invoice headed ₦963,066.70 with no mention
+         * of pounds, and `doc.foreign` being null meant the page offered a
+         * Nigerian bank transfer rather than a card — which is not a worse
+         * way for somebody abroad to pay, it is no way at all.
+         *
+         * The rate is the quote's, not today's. Acceptance criterion 6: the
+         * rate is locked when the document is made. Re-striking it here would
+         * charge a number the client never agreed to, days after they agreed
+         * it, which is the whole reason it is stored rather than looked up.
+         */
+        quote.currency,
+        quote.original_amount_minor,
+        quote.fx_rate,
+        quote.fx_source,
+        quote.fx_fetched_at,
       ],
     );
     const invoiceId = made[0]!.id;
 
     await c.query(
-      `INSERT INTO line_items (document_id, position, description, qty, unit_amount_kobo, amount_kobo)
-       SELECT $1, position, description, qty, unit_amount_kobo, amount_kobo
+      // The per-line foreign figures too, or a copied £500 invoice itemises
+      // in naira under a pound headline.
+      `INSERT INTO line_items (document_id, position, description, qty, unit_amount_kobo, amount_kobo,
+                               original_unit_amount_minor, original_amount_minor)
+       SELECT $1, position, description, qty, unit_amount_kobo, amount_kobo,
+              original_unit_amount_minor, original_amount_minor
          FROM line_items WHERE document_id = $2`,
       [invoiceId, quote.id],
     );
