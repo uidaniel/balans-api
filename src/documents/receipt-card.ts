@@ -34,7 +34,7 @@ import { uploadDocument } from "../whatsapp/client.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { formatMoney } from "../../core/currency.ts";
 import { defaults } from "../config.ts";
-import { SETTLEMENT_HOUR } from "../payments/settlement.ts";
+import { settlesLine } from "../payments/settlement.ts";
 import { payout, planLines } from "./summary.ts";
 import type { Draft } from "./store.ts";
 
@@ -163,6 +163,20 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
 
   .total { margin-top:26px; padding-top:24px; border-top:4px solid var(--ink); }
   .note { margin-top:20px; font-size:26px; line-height:1.5; color:rgb(16 35 28 / 0.5); }
+  /*
+   * The settlement line is the footer of the card, not a footnote on it.
+   *
+   * It used to be grey 26px under the total and repeated in the message text
+   * below the picture. When somebody is deciding whether to send an invoice,
+   * "when do I get the money" is the question the card exists to answer, so it
+   * is said once, here, at a size that survives being looked at on a phone in
+   * a chat thread.
+   */
+  .settles { margin-top:34px; padding:26px 30px; border-radius:20px;
+             background:rgb(245 184 46 / 0.16); color:var(--ink);
+             font-size:32px; font-weight:700; line-height:1.4; text-align:center; }
+  .settles span { display:block; margin-top:8px; font-size:25px; font-weight:500;
+                  color:rgb(16 35 28 / 0.62); }
 </style></head>
 <body>
   <div class="paper">
@@ -216,19 +230,25 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
       <div class="total">${row("To your bank", formatNaira(money.receivesKobo), { strong: true })}</div>
     </div>
 
-    <p class="note">${
+    <div class="settles">${
+      /*
+       * Section 9, in as many words: never say "tonight" about a card.
+       * Monnify's 10 PM run is a promise we can make because we know the hour
+       * of it and because it runs every day. A card is on Paystack's schedule,
+       * so the sentence comes from configuration — and `settlesLine` is the
+       * one place either is decided, so no two surfaces can disagree about
+       * when somebody is getting paid.
+       *
+       * Computed from the clock at render time, which is what makes "tonight"
+       * honest: an invoice drawn up at 11 PM says tomorrow, because 22:00 has
+       * already gone.
+       */
+      esc(settlesLine(new Date(), draft.foreign ? "paystack" : "monnify"))
+    }${
       draft.foreign
-        ? /*
-           * Section 9, in as many words: never say "tonight" about a card.
-           * Monnify's 10 PM run is a promise we can make because we know the
-           * hour of it. This is a card on somebody else’s schedule, so the
-           * sentence comes from configuration — the same one the words under
-           * the picture use, so the two cannot disagree.
-           */
-          `Paid by card. ${esc(defaults.international.settlementText)}`
-        : `Settles at ${SETTLEMENT_HOUR > 12 ? SETTLEMENT_HOUR - 12 : SETTLEMENT_HOUR} PM the same day,
-           straight from Monnify. Every day, including weekends.`
-    }</p>
+        ? `<span>Paid by card</span>`
+        : `<span>Straight from Monnify — every day, including weekends</span>`
+    }</div>
   </div>
 </body></html>`;
 }

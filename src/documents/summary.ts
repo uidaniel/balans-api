@@ -327,16 +327,15 @@ export function draftSummary(
     `PS: you receive ${b(formatNaira(payout(draft, plan).receivesKobo))} of this after fees.`;
 
   /*
-   * When the money arrives, but only on an invoice going through Paystack.
+  /*
+   * When the money arrives is said on the card, and only on the card.
    *
-   * Naira invoices say nothing here because they have their own "tonight" and
-   * "tomorrow night" cards, computed from Monnify's 22:00 payout run. That
-   * arithmetic has nothing to say about a card from abroad, and using it
-   * would be a promise about somebody else's schedule made out of the wrong
-   * schedule. One configurable sentence instead, to be changed the day
-   * Paystack confirms the real timing.
+   * It used to be here as well, so the picture and the words under it both
+   * answered the same question — the one question somebody actually has
+   * before pressing send. Saying it twice made neither of them the answer,
+   * and the card's version is the one that can be read at a glance and
+   * forwarded as an image.
    */
-  const settles = draft.foreign && `Settles: ${defaults.international.settlementText.toLowerCase()}`;
 
   // Then just the question. The three answers arrive as buttons under it, so
   // spelling them out here would print the instructions twice.
@@ -344,7 +343,6 @@ export function draftSummary(
     `🧾 ${b(`${LABEL[draft.type].toUpperCase()} DRAFT`)}`,
     ...sections.map((s) => lines(...s)).filter(Boolean),
     ps,
-    settles,
     b("Send it?"),
   );
 }
@@ -360,6 +358,29 @@ export const draftButtons = (): { id: string; title: string }[] => [
   { id: "yes", title: "Send it" },
   { id: "change something", title: "Change it" },
   { id: "no", title: "Discard" },
+];
+
+/**
+ * The three things somebody does with a quote once it is out.
+ *
+ * Same trick as `draftButtons`: every id is a sentence `commands.ts` already
+ * matches, so a tap and a typed reply take one path and there is no button
+ * handler to keep in step with the parser. `convert quote 1`, `resend quote
+ * 1` and `cancel quote 1` are all existing commands.
+ *
+ * This replaces "Reply *convert quote 1* when they accept" — an instruction
+ * that had to be read, remembered for days, and then typed correctly from
+ * memory at the one moment the money was on the table. Worse, it rode in the
+ * caption of a document built to be forwarded, so the client was told how to
+ * convert somebody else's quote.
+ *
+ * Titles are capped at 20 characters by Meta, so they are short by force
+ * rather than by choice.
+ */
+export const quoteButtons = (number: number): { id: string; title: string }[] => [
+  { id: `convert quote ${number}`, title: "Convert to invoice" },
+  { id: `resend quote ${number}`, title: "Send link again" },
+  { id: `cancel quote ${number}`, title: "Discard" },
 ];
 
 /**
@@ -467,10 +488,20 @@ export function sentMessage(
    * an action only the sender can take and would otherwise have no way to
    * learn. That instruction is worth one odd-looking line on a forward.
    */
-  const note =
-    draft.type === "quote"
-      ? `Reply ${b(`convert quote ${confirmed.number}`)} when they accept.`
-      : "";
+  /*
+   * Nothing to remember and nothing to type.
+   *
+   * This used to read "Reply *convert quote 1* when they accept" — an
+   * instruction the sender had to hold on to for days and then type correctly
+   * at the one moment money was on the table. And because the whole message is
+   * built to be forwarded untouched, it went to the client too, telling them
+   * how to convert a quote that was not theirs.
+   *
+   * `quoteButtons` carries the three actions instead, on a message of its own
+   * after the document. A document cannot hold buttons, so it costs a second
+   * send — free, because it is inside the service window the sender opened.
+   */
+  const note = "";
 
   /*
    * No number in the heading.
@@ -489,7 +520,27 @@ export function sentMessage(
   const forward = para(
     block(`✅ ${b(label.toUpperCase())}`, [
       row("Client", draft.clientName),
-      row("Amount", b(formatNaira(draft.totalKobo))),
+      /*
+       * The price the two of them agreed, not the naira it converts to.
+       *
+       * This message is built to be forwarded to the client untouched, and it
+       * was quoting a figure they had never seen: a £500 quote arrived reading
+       * "Amount: ₦963,066.70", with no mention of pounds anywhere on it. The
+       * draft card one message earlier had it right, which is how the
+       * disagreement was spotted.
+       *
+       * The fifth thing to get this wrong by reading `totalKobo` and assuming
+       * naira, after the PDF, the receipt card, the public page and
+       * `convertQuote`. Always `draft.foreign` first.
+       */
+      row(
+        "Amount",
+        b(
+          draft.foreign
+            ? formatMoney(draft.foreign.amountMinor, draft.foreign.currency)
+            : formatNaira(draft.totalKobo),
+        ),
+      ),
       draft.dueDate &&
         row(draft.type === "quote" ? "Valid until" : "Due", formatFriendly(draft.dueDate, today)),
       // The client is the one being asked for a deposit, so the client is the

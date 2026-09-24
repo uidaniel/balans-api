@@ -74,3 +74,27 @@ export function arrivalLine(at: Date, provider: "monnify" | "paystack" = "monnif
     ? "Arrives in your bank tonight."
     : "Arrives in your bank tomorrow night.";
 }
+
+/**
+ * The sentence on the breakdown card, before anybody has paid.
+ *
+ * `arrivalLine` speaks about money that has already moved; this speaks about
+ * money that has not, so it is a forecast rather than a report and it says the
+ * hour out loud. "Settles tonight" alone invites the reader to supply their own
+ * idea of tonight, and somebody refreshing their banking app at 11 PM having
+ * read it at noon is the version of this that loses trust.
+ *
+ * The boundary is the same one `settlesTonight` draws, and drawn there for the
+ * same reason: 22:00 belongs to tomorrow. A card is on Paystack's schedule and
+ * gets configuration's words, never a computed hour — section 9 forbids
+ * "tonight" for a card, and it would be a promise about somebody else's payout
+ * run that nobody has confirmed.
+ */
+export function settlesLine(at: Date, provider: "monnify" | "paystack" = "monnify"): string {
+  if (provider === "paystack") return defaults.international.settlementText;
+
+  const hour = SETTLEMENT_HOUR > 12 ? SETTLEMENT_HOUR - 12 : SETTLEMENT_HOUR;
+  return settlesTonight(at)
+    ? `Settles tonight by ${hour}pm`
+    : `Settles tomorrow by ${hour}pm`;
+}

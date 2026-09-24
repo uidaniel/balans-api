@@ -53,6 +53,7 @@ import { confirmDraft, createDraft, discardDraft, getOpenDraft } from "../docume
 import {
   draftButtons,
   draftSummary,
+  quoteButtons,
   sentMessage,
   convertedForward,
 } from "../documents/summary.ts";
@@ -1421,6 +1422,37 @@ async function runEffects(
            * the first invoice is a busy moment and the offer is easy to miss.
            * After that `/design` is the way in, and it is on the menu.
            */
+          /*
+           * What to do with a quote, as buttons rather than an instruction.
+           *
+           * A quote is sent expecting an answer that comes days later, and
+           * converting it is an action only the sender can take. That used to
+           * be a line of text telling them what to type — which they had to
+           * remember, and which rode in the caption of a document built to be
+           * forwarded, so the client read it too.
+           *
+           * Its own message because a WhatsApp document cannot carry buttons.
+           * That costs a second send and nothing else: the sender opened this
+           * window themselves, so it is inside the free service window.
+           *
+           * Quotes only. An invoice is already out doing its job, and there is
+           * nothing here it needs.
+           */
+          const offerQuoteActions = async (): Promise<void> => {
+            if (confirmed.type !== "quote" || !ctx.phone) return;
+
+            const sent = await sendButtons(ctx.phone, {
+              body: `Quote ${confirmed.number} is out. Tap when they answer.`,
+              buttons: quoteButtons(confirmed.number),
+            });
+
+            if (sent.ok) {
+              await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+              return;
+            }
+            log.warn({ userId, reason: sent.reason }, "could not send the quote buttons");
+          };
+
           const offerDesigns = async (): Promise<void> => {
             if (!ctx.phone || (await hasChosenTemplate(userId))) return;
             if ((await documentsEverSent(userId)) > DESIGN_OFFER_LIMIT) return;
@@ -1445,6 +1477,7 @@ async function runEffects(
               const sent = await sendDocument(ctx.phone, up.mediaId, pdf.filename, forward);
               if (sent.ok) {
                 await recordOutbound(userId, sent.waMessageId, "sent", { kind: "document" });
+                await offerQuoteActions();
                 await offerDesigns();
                 break;
               }
@@ -1457,6 +1490,7 @@ async function runEffects(
           // No renderer, no upload, or a failed send: the link still works, and
           // that is the part that gets them paid.
           extra.push(forward);
+          await offerQuoteActions();
           await offerDesigns();
           break;
         }

@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { sentMessage } from "./summary.ts";
+import { quoteButtons, sentMessage } from "./summary.ts";
 
 const TODAY = { y: 2026, m: 9, d: 22 };
 const CONFIRMED = { number: 3, publicToken: "5efe26a7cec055801c48a311" };
@@ -70,23 +70,70 @@ describe("the message a client is forwarded", () => {
     assert.match(out, /payment\.balans\.ng\/i\/5efe26a7cec055801c48a311/);
   });
 
-  it("keeps the convert instruction on a quote", () => {
+  it("tells the client nothing about converting the quote", () => {
     /*
-     * The one exception, and it is deliberate. A quote is sent expecting an
-     * answer, and converting it is an action only the sender can take and
-     * would otherwise have no way to learn. That instruction is worth one
-     * odd-looking line; an invoice needs no such thing, because the bot
-     * announces the payment by itself.
+     * This used to carry "Reply *convert quote 3* when they accept", on the
+     * grounds that converting is an action only the sender can take and would
+     * otherwise have no way to learn. Both halves of that were true and the
+     * conclusion was still wrong: the message is forwarded untouched, so the
+     * instruction went to the client — who was told how to convert a quote
+     * that is not theirs, by replying to somebody they are not talking to.
+     *
+     * The sender gets the three actions as buttons on a message of their own
+     * instead, which the client never sees. See `quoteButtons`.
      */
     const out = forwardOf({ type: "quote" });
-    assert.match(out, /convert quote 3/);
+    assert.ok(!out.includes("convert quote"), "the sender's instruction is on the client's copy");
+    assert.ok(!/Reply/.test(out), "and it is still telling them to reply to something");
     assert.match(out, /QUOTE/);
     assert.match(out, /Valid until/);
+  });
+
+  it("gives the sender the actions as buttons the client never sees", () => {
+    // Ids are sentences `commands.ts` already matches, so a tap and a typed
+    // reply take one path and there is no second handler to keep in step.
+    const ids = quoteButtons(3).map((x) => x.id);
+    assert.deepEqual(ids, ["convert quote 3", "resend quote 3", "cancel quote 3"]);
+
+    // Meta caps a reply button title at 20 characters and rejects the message
+    // outright if one is longer, which would lose the whole send.
+    for (const { title } of quoteButtons(3)) {
+      assert.ok(title.length <= 20, `"${title}" is ${title.length} characters`);
+    }
   });
 
   it("works without a due date", () => {
     const out = forwardOf({ dueDate: null });
     assert.match(out, /Sole Capsule/);
     assert.doesNotMatch(out, /Due:/);
+  });
+});
+
+describe("the price on the message that carries the PDF", () => {
+  it("leads with what the two of them agreed, not the naira it converts to", () => {
+    /*
+     * A £500 quote arrived reading "Amount: ₦963,066.70", with no mention of
+     * pounds anywhere on it — on the one message built to be forwarded to the
+     * client, quoting a figure they had never seen and never agreed to. The
+     * breakdown card one message earlier had it right, which is how the
+     * disagreement was spotted.
+     *
+     * The fifth surface to get this wrong by reading `totalKobo` and assuming
+     * naira, after the PDF, the receipt card, the public page and
+     * `convertQuote`.
+     */
+    const out = forwardOf({
+      type: "quote",
+      totalKobo: 96_306_670,
+      subtotalKobo: 89_587_600,
+      vatKobo: 6_719_070,
+      foreign: { currency: "GBP", amountMinor: 500_00, rate: 1926.1334 },
+    });
+    assert.match(out, /£500\.00/);
+    assert.ok(!out.includes("963,066.70"), "the client is quoted a figure they never agreed");
+  });
+
+  it("still says naira on a naira document", () => {
+    assert.match(forwardOf(), /₦150,000/);
   });
 });
