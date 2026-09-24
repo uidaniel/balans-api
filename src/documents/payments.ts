@@ -12,6 +12,7 @@
  */
 
 import { db } from "../db/pool.ts";
+import type { Provider } from "../payments/provider.ts";
 
 export type InitialisedPayment = {
   documentId: string;
@@ -236,11 +237,31 @@ export async function liveTransferFor(
  */
 export async function pendingPaymentsFor(
   documentId: string,
-): Promise<{ reference: string; providerReference: string }[]> {
-  const { rows } = await db().query<{ reference: string; provider_reference: string }>(
-    `SELECT reference, provider_reference
+): Promise<{ reference: string; providerReference: string; provider: Provider }[]> {
+  const { rows } = await db().query<{
+    reference: string;
+    provider_reference: string;
+    provider: string;
+  }>(
+    `SELECT reference, provider_reference, provider
        FROM payments WHERE document_id = $1 AND status = 'initialised'`,
     [documentId],
   );
-  return rows.map((r) => ({ reference: r.reference, providerReference: r.provider_reference }));
+  return rows.map((r) => ({
+    reference: r.reference,
+    providerReference: r.provider_reference,
+    /*
+     * Which processor to ask about it, and it is not optional.
+     *
+     * Confirming a payment means asking the provider that took it. Asked of
+     * the wrong one the reference simply does not exist, so a Paystack
+     * payment polled against Monnify comes back unverifiable for ever — the
+     * page waits, the freelancer is never told, and the money is sitting in
+     * their subaccount the whole time.
+     *
+     * Anything that is not 'paystack' is Monnify, including the older rows
+     * written before this column meant anything.
+     */
+    provider: r.provider === "paystack" ? "paystack" : "monnify",
+  }));
 }

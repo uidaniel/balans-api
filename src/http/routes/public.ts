@@ -49,6 +49,7 @@ import {
   paystackConfigured,
 } from "../../payments/paystack.ts";
 import { paystackSubaccountFor } from "../../payments/paystack-subaccount.ts";
+import { verifierFor } from "../../payments/provider.ts";
 import { notifyPaid } from "../../payments/notify.ts";
 import { get as getFile, getCard } from "../../storage/files.ts";
 import { fileName } from "../../storage/files.ts";
@@ -632,9 +633,12 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       const outcome = await confirmPayment(
         { paymentReference: p.reference, transactionReference: p.providerReference },
         req.log,
+        // Asked of whoever took it. The wrong provider does not know the
+        // reference, so it answers "not found" for ever.
+        verifierFor(p.provider),
       );
       if (outcome.kind === "confirmed") {
-        void notifyPaid(outcome, req.log);
+        void notifyPaid({ ...outcome, provider: p.provider }, req.log);
         return reply
           .header("cache-control", "no-store")
           .send({ paidKobo: outcome.amountPaidKobo, fullyPaid: outcome.fullyPaid });

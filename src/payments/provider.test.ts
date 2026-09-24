@@ -170,3 +170,44 @@ describe("Paystack's answer, in the shape the confirmation path reads", () => {
     assert.match(r.message, /not found/);
   });
 });
+
+describe("asking the right provider", () => {
+  /*
+   * The bug this caught, found because a real card payment succeeded and
+   * Balans never noticed.
+   *
+   * A webhook is one of two ways a payment gets confirmed. The other is the
+   * invoice page, which polls `/i/:token/status` and confirms anything still
+   * initialised — and it called `confirmPayment` without saying who took the
+   * money, so it defaulted to Monnify. Asked of the wrong provider the
+   * reference does not exist, so the answer is "not found" for ever: the page
+   * waits, the freelancer is never told, and the money is sitting in their
+   * subaccount the whole time.
+   *
+   * It only shows up when a webhook is missed, which is exactly when the
+   * safety net is the only thing left.
+   */
+  const routes = readFileSync(new URL("../http/routes/public.ts", import.meta.url), "utf8");
+  const payments = readFileSync(new URL("../documents/payments.ts", import.meta.url), "utf8");
+
+  it("carries the provider out of the database with the payment", () => {
+    // It cannot be worked out from the reference — ours look the same for
+    // both — so it has to be the column the payment was written with.
+    assert.match(payments, /SELECT reference, provider_reference, provider/);
+    assert.match(payments, /provider: r\.provider === "paystack" \? "paystack" : "monnify"/);
+  });
+
+  it("uses it when the page confirms a payment the webhook missed", () => {
+    const status = routes.slice(routes.indexOf('"/i/:token/status"'));
+    const handler = status.slice(0, status.indexOf("/* -- Coming back from checkout"));
+    assert.match(handler, /verifierFor\(p\.provider\)/, "the poll verifies against whoever took it");
+    assert.match(handler, /provider: p\.provider/, "and says so, so the wording is right");
+  });
+
+  it("treats anything that is not Paystack as Monnify", () => {
+    // Including every row written before the column meant anything. Naira is
+    // the overwhelming default and Monnify is the only thing that takes it.
+    assert.equal(providerFor("NGN"), "monnify");
+    assert.notEqual(verifierFor("monnify"), verifyWithPaystack);
+  });
+});
