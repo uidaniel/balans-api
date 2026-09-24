@@ -17,6 +17,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 const KEY = "sk_test_0000000000000000000000000000000000000000";
 process.env.PAYSTACK_SECRET_KEY = KEY;

@@ -914,8 +914,29 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
                */
               type: "Dropdown",
               name: "currency",
+              /*
+               * Required exactly when it is visible, never as a flat `true`.
+               *
+               * Left optional, WhatsApp writes "Optional" in the box itself,
+               * which is the wrong thing to say about the unit somebody's
+               * price is in — and it leaves the box legitimately blank, which
+               * is how a $500 draft reopened for a typo becomes a ₦500 one.
+               * A flat `true` is not the answer either: for a free account
+               * the box is hidden, and a hidden required field is a form
+               * nobody can submit.
+               *
+               * [Probe, 24 Sep 2026] `required` takes a data binding. The
+               * validator accepts one, and the negative control is what makes
+               * that mean something — junk is refused by name and the refusal
+               * states the rule: "Property 'required' should be of type
+               * 'boolean' or have dynamic data format of the form
+               * ${screen.data.your_value} or ${data.your_value}."
+               *
+               * Bound to the same flag as `visible`, so the two cannot drift
+               * into the broken combination.
+               */
               label: "Currency",
-              required: false,
+              required: "${data.can_bill_abroad}",
               visible: "${data.can_bill_abroad}",
               "data-source": [
                 { id: "NGN", title: "Naira (₦)" },

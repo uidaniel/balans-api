@@ -22,6 +22,10 @@
  *   - `init-value` on a Dropdown is refused outright, so the box cannot be
  *     pre-selected by the component. That is why an empty box has to mean
  *     "unchanged" rather than "naira" — see the last suite.
+ *   - `required` does take a data binding, which is what lets the box be
+ *     required for the people who can see it without being an unsatisfiable
+ *     requirement for everybody else. Meta refuses junk there by name and
+ *     states the rule in the refusal, so the acceptance is not silence.
  */
 
 import { describe, it } from "node:test";
@@ -97,7 +101,28 @@ describe("where the currency box is, and who sees it", () => {
     for (const s of work) {
       const box = boxesOn(s).find((c) => c.name === "currency")!;
       assert.equal(box.visible, "${data.can_bill_abroad}", `${s.id}`);
-      assert.equal(box.required, false, "a hidden required field cannot be satisfied");
+    }
+  });
+
+  it("is required exactly when it is shown, and by the same flag", () => {
+    /*
+     * The two broken ways to write this line.
+     *
+     * Optional, and WhatsApp prints "Optional" in the box — the wrong word
+     * for the unit a price is in, and a box that is allowed to stay blank is
+     * how a $500 draft reopened for a typo goes out as ₦500.
+     *
+     * Required as a flat `true`, and every free account gets a form it cannot
+     * submit: the box is hidden for them, so there is nothing to satisfy the
+     * requirement with.
+     *
+     * One flag for both settings is what rules out the third state, where a
+     * later edit moves one and not the other.
+     */
+    for (const s of work) {
+      const box = boxesOn(s).find((c) => c.name === "currency")!;
+      assert.equal(box.required, "${data.can_bill_abroad}", `${s.id}`);
+      assert.equal(box.required, box.visible, `${s.id} can drift out of step`);
     }
   });
 
