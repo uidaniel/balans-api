@@ -144,6 +144,22 @@ describe("the price on the page", () => {
     }
   });
 
+  it("names the processor that is actually going to take the card", () => {
+    /*
+     * The badge is the one place this page tells a stranger where the card
+     * details they are about to type are going, and it said Monnify on every
+     * document — including a dollar invoice whose only button opens
+     * Paystack's checkout. A claim the very next screen contradicts is worse
+     * than no claim: it is checkable, and it does not check out.
+     *
+     * Naira is collected by Monnify and anything else by Paystack, so this is
+     * `doc.foreign` and nothing else.
+     */
+    const out = html();
+    assert.match(out, /Payments processed by[\s\S]*?Paystack/);
+    assert.ok(!/alt="Monnify"|<b>Monnify<\/b>/.test(out), "the wrong company on a card page");
+  });
+
   it("leaves a naira invoice exactly as it was", () => {
     const naira = renderDocument(
       page({
@@ -161,6 +177,9 @@ describe("the price on the page", () => {
     assert.ok(!naira.includes("Charged in Naira"), "a naira invoice explained its own currency");
     assert.match(naira, /Pay ₦350,000/);
     assert.ok(!naira.includes("by card"), "naira is paid by transfer");
+    // Including its badge: Monnify is still who collects a transfer.
+    assert.match(naira, /Payments processed by[\s\S]*?Monnify/);
+    assert.ok(!naira.includes("Paystack"), "a naira transfer credited to the card processor");
   });
 });
 

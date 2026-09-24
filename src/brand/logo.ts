@@ -60,25 +60,39 @@ export function markSvg(size: string): string {
 /** Whether the files were found, so a caller can fall back rather than guess. */
 export const logoAvailable = (): boolean => logoSvg("1px") !== "";
 
-let monnify: string | undefined;
+/** The processors whose marks can appear on a payment page. */
+export type Processor = "monnify" | "paystack";
+
+const processorMarks = new Map<Processor, string>();
 
 /**
- * Monnify's own mark, inlined as a data URI.
+ * A processor's own mark, inlined as a data URI.
  *
- * Their file is a PNG rather than SVG, so it is base64 rather than markup —
- * about 16KB, which is worth paying once on a page whose entire job is to be
- * trusted with money. Inlined for the same reason as everything else here: a
- * badge that arrives as a second request is a badge that sometimes does not,
- * and a payment page missing its processor's mark looks worse than one that
- * never claimed it.
+ * Their files are PNGs rather than SVG, so this is base64 rather than markup
+ * — about 16KB, which is worth paying once on a page whose entire job is to
+ * be trusted with money. Inlined for the same reason as everything else here:
+ * a badge that arrives as a second request is a badge that sometimes does
+ * not, and a payment page missing its processor's mark looks worse than one
+ * that never claimed it.
+ *
+ * Which mark is not a detail. Naira is collected by Monnify and anything else
+ * by Paystack (International PRD section 8), and this badge is the one place
+ * the page tells a stranger who is about to take their card details where
+ * those details are going. Naming the wrong company there is worse than
+ * naming none: it is checkable, and it will not check out.
+ *
+ * An empty string when the file is missing, so the caller can fall back to
+ * the name in text rather than render a broken image.
  */
-export function monnifyLogo(): string {
-  if (monnify === undefined) {
+export function processorLogo(processor: Processor): string {
+  let mark = processorMarks.get(processor);
+  if (mark === undefined) {
     try {
-      monnify = readFileSync(join(assets, "monnify.png")).toString("base64");
+      mark = readFileSync(join(assets, `${processor}.png`)).toString("base64");
     } catch {
-      monnify = "";
+      mark = "";
     }
+    processorMarks.set(processor, mark);
   }
-  return monnify ? `data:image/png;base64,${monnify}` : "";
+  return mark ? `data:image/png;base64,${mark}` : "";
 }

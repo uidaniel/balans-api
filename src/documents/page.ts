@@ -15,7 +15,7 @@ import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { formatMoney } from "../../core/currency.ts";
 import { outstandingKobo, payable, payableLabel, payableNowKobo, type PublicDocument } from "./public.ts";
-import { logoAvailable, logoSvg, markSvg, monnifyLogo } from "../brand/logo.ts";
+import { logoAvailable, logoSvg, markSvg, processorLogo, type Processor } from "../brand/logo.ts";
 import { FONT, fontFacesForPage } from "../pdf/fonts.ts";
 
 /** HTML-escapes text. Also escapes quotes, for anything inside an attribute. */
@@ -394,7 +394,10 @@ export function renderDocument(
     <div class="brand">${
       // The real logo where we have it; the wordmark in text if the asset is
       // missing, because a payment page must render either way.
-      logoAvailable() ? logoSvg("28px") : `<span class="dot"></span>balans`
+      // Larger than it was. This is the only thing on the page that says who
+      // is asking, above an amount and a card button, and at 28px it read as
+      // a footnote on the surface that has to carry the most trust.
+      logoAvailable() ? logoSvg("40px") : `<span class="dot"></span>balans`
     }</div>
     <div class="kind">${label} ${doc.number}</div>
     <h1>${doc.foreign ? formatMoney(doc.foreign.amountMinor, doc.foreign.currency) : formatNaira(doc.totalKobo)}</h1>
@@ -677,7 +680,18 @@ function transferBlock(doc: PublicDocument, t: TransferPanel, token: string): st
  * — this is the page where somebody decides whether to part with the money.
  */
 function trustBlock(doc: PublicDocument): string {
-  const mark = monnifyLogo();
+  /*
+   * Whoever is actually going to take the money.
+   *
+   * Naira is collected by Monnify and anything else by Paystack (section 8),
+   * and this badge is the one place the page tells a stranger where the card
+   * details they are about to type are going. It said Monnify on every
+   * document, including a dollar invoice whose only payment button opens
+   * Paystack's checkout — a claim the very next screen contradicts.
+   */
+  const processor: Processor = doc.foreign ? "paystack" : "monnify";
+  const processorName = doc.foreign ? "Paystack" : "Monnify";
+  const mark = processorLogo(processor);
 
   /*
    * A quote is not a payment, so it must not be described as one.
@@ -714,7 +728,11 @@ function trustBlock(doc: PublicDocument): string {
               stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       ${quote ? "Payments handled by" : "Payments processed by"}
-      ${mark ? `<img src="${mark}" alt="Monnify" width="74" height="12">` : `<b>Monnify</b>`}
+      ${
+        mark
+          ? `<img src="${mark}" alt="${processorName}" width="74" height="12">`
+          : `<b>${processorName}</b>`
+      }
     </span>
     <p class="tsmall">
       Balans is not a bank and does not hold your money.${
