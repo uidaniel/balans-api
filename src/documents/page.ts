@@ -267,12 +267,17 @@ const TRANSFER_JS = `
   // Backs off as it goes, so a page left open all afternoon is not a
   // request every three seconds all afternoon.
   var token = box.getAttribute('data-token');
+  // What this page was drawn with. The reload happens when the server's
+  // figure stops matching it, which is once per payment — asking "has
+  // anything been paid" instead reloaded for ever on a part-paid invoice,
+  // because the answer was yes before the page was even drawn.
+  var drawnWith = box.getAttribute('data-paid') || '0';
   var wait = 3000;
   function poll() {
     fetch('/i/' + token + '/status', { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
-        if (d && d.paid) { location.reload(); return; }
+        if (d && String(d.paidKobo) !== drawnWith) { location.reload(); return; }
         wait = Math.min(wait * 1.25, 20000);
         setTimeout(poll, wait);
       })
@@ -564,7 +569,8 @@ function transferBlock(doc: PublicDocument, t: TransferPanel, token: string): st
   const row = (k: string, v: string, cls = "") =>
     `<div class="trow${cls ? ` ${cls}` : ""}"><span class="tk">${k}</span><span class="tv">${v}</span></div>`;
 
-  return `<div class="pay transfer" data-token="${esc(token)}" data-expires="${t.expiresInMs}">
+  return `<div class="pay transfer" data-token="${esc(token)}" data-expires="${t.expiresInMs}"
+  data-paid="${doc.amountPaidKobo}">
   <div class="tcard">
     <p class="teyebrow">Pay by bank transfer</p>
 

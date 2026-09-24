@@ -120,6 +120,58 @@ describe("copying the amount", () => {
   });
 });
 
+describe("waiting for the transfer", () => {
+  const routes = readFileSync(new URL("../http/routes/public.ts", import.meta.url), "utf8");
+
+  it("reloads when the figure changes, not when anything has ever been paid", () => {
+    /*
+     * The refresh loop. The poll asked "has this been paid?" and a part-paid
+     * invoice answers yes for ever — including on the page that had just been
+     * drawn from that same fact. So it reloaded, asked again, was told the
+     * same thing, and reloaded again, for as long as the invoice was open.
+     *
+     * Whether anything has moved is not a property of the document. It is a
+     * comparison against what this page was drawn with, and only the page
+     * knows that.
+     */
+    const html = panel(54_670_06);
+    assert.match(html, /data-paid="0"/, "the page must carry what it was drawn with");
+    assert.match(html, /var drawnWith = box\.getAttribute\('data-paid'\)/);
+    assert.match(html, /String\(d\.paidKobo\) !== drawnWith/);
+    assert.ok(!/d\.paid\b(?!Kobo)/.test(html), "the flag that caused the loop is back");
+  });
+
+  it("is drawn with what has been paid, so a part-paid invoice sits still", () => {
+    // The case that looped: a deposit settled, the balance still to come.
+    const html = renderDocument(doc({ amountPaidKobo: 53_750_00, status: "part_paid" }), TODAY, {
+      token: "a".repeat(32),
+      transfer: {
+        bankName: "Sterling bank",
+        accountNumber: "2105486793",
+        accountName: "Balans-Inv",
+        amountKobo: 163_250_00,
+        ussd: null,
+        expiresInMs: 39 * 60 * 1000,
+      },
+    });
+    assert.match(html, /data-paid="5375000"/);
+  });
+
+  it("keeps asking the processor about payments it has not seen land", () => {
+    /*
+     * The other half of the same flag: once a deposit had succeeded, the poll
+     * stopped walking the pending payments, so a balance whose webhook was
+     * late could never be confirmed from the page at all.
+     */
+    const status = routes.slice(routes.indexOf('"/i/:token/status"'));
+    const handler = status.slice(0, status.indexOf("/* -- Coming back from checkout"));
+
+    assert.match(handler, /for \(const p of await pendingPaymentsFor\(doc\.id\)\)/);
+    assert.ok(!/if \(!progress\.paid\)/.test(handler), "the confirm loop is gated again");
+    assert.match(handler, /paidKobo: outcome\.amountPaidKobo/);
+  });
+});
+
 describe("the page a payer is left looking at", () => {
   const routes = readFileSync(new URL("../http/routes/public.ts", import.meta.url), "utf8");
 

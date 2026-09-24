@@ -206,24 +206,31 @@ export async function liveTransferFor(
     : null;
 }
 
-/** What the page's poll asks: has this document been settled yet? */
-export async function paymentProgress(
+/**
+ * Payments started but not yet known to have landed.
+ *
+ * The page's poll walks these and asks the processor about each, which is how
+ * a payment still shows up when the webhook is late.
+ *
+ * This replaced a version that also reported whether the document had *ever*
+ * had a successful payment, which the poll took as "something has happened,
+ * reload". On a part-paid invoice that is true for ever: the page reloaded,
+ * asked again, was told the same thing, and reloaded again — a refresh loop
+ * for as long as anybody left the invoice open. The same flag made the poll
+ * skip this list entirely once a deposit had landed, so the balance could
+ * never be confirmed from the page at all.
+ *
+ * What changed is where the question is asked. Whether anything has moved is
+ * not a property of the document; it is a comparison against what the page
+ * was drawn with, and only the page knows that.
+ */
+export async function pendingPaymentsFor(
   documentId: string,
-): Promise<{ paid: boolean; pending: { reference: string; providerReference: string }[] }> {
-  const { rows } = await db().query<{
-    status: string;
-    reference: string;
-    provider_reference: string;
-  }>(
-    `SELECT status, reference, provider_reference
-       FROM payments WHERE document_id = $1`,
+): Promise<{ reference: string; providerReference: string }[]> {
+  const { rows } = await db().query<{ reference: string; provider_reference: string }>(
+    `SELECT reference, provider_reference
+       FROM payments WHERE document_id = $1 AND status = 'initialised'`,
     [documentId],
   );
-
-  return {
-    paid: rows.some((r) => r.status === "success"),
-    pending: rows
-      .filter((r) => r.status === "initialised")
-      .map((r) => ({ reference: r.reference, providerReference: r.provider_reference })),
-  };
+  return rows.map((r) => ({ reference: r.reference, providerReference: r.provider_reference }));
 }

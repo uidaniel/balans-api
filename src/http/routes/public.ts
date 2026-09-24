@@ -22,7 +22,7 @@ import { findByToken, markViewed, outstandingKobo, payable, payableNowKobo } fro
 import { renderDocument, renderNotFound, type TransferPanel } from "../../documents/page.ts";
 import {
   liveTransferFor,
-  paymentProgress,
+  pendingPaymentsFor,
   recordInitialisedPayment,
   recordTransferAccount,
   type LiveTransfer,
@@ -478,22 +478,31 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     const doc = await findByToken(req.params.token);
     if (!doc) return reply.status(404).send({ error: "not_found" });
 
-    const progress = await paymentProgress(doc.id);
-
-    if (!progress.paid) {
-      for (const p of progress.pending) {
-        const outcome = await confirmPayment(
-          { paymentReference: p.reference, transactionReference: p.providerReference },
-          req.log,
-        );
-        if (outcome.kind === "confirmed") {
-          void notifyPaid(outcome, req.log);
-          return reply.header("cache-control", "no-store").send({ paid: true });
-        }
+    /*
+     * What the page compares against what it was drawn with.
+     *
+     * A figure rather than a flag. "Has anything been paid" is true for ever
+     * on a part-paid invoice, and the page reloaded every time it heard it —
+     * a refresh loop that ran for as long as somebody left the invoice open.
+     * How much has been paid changes exactly once per payment, which is
+     * exactly when the page should redraw.
+     */
+    for (const p of await pendingPaymentsFor(doc.id)) {
+      const outcome = await confirmPayment(
+        { paymentReference: p.reference, transactionReference: p.providerReference },
+        req.log,
+      );
+      if (outcome.kind === "confirmed") {
+        void notifyPaid(outcome, req.log);
+        return reply
+          .header("cache-control", "no-store")
+          .send({ paidKobo: outcome.amountPaidKobo, fullyPaid: outcome.fullyPaid });
       }
     }
 
-    return reply.header("cache-control", "no-store").send({ paid: progress.paid });
+    return reply
+      .header("cache-control", "no-store")
+      .send({ paidKobo: doc.amountPaidKobo, fullyPaid: outstandingKobo(doc) <= 0 });
   });
 
   /* -- Coming back from checkout ------------------------------------------- */
