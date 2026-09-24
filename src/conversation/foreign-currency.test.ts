@@ -26,6 +26,8 @@ import { readCurrency } from "../../core/currency.ts";
 import { step, type Context, type State } from "./machine.ts";
 import { normalise, type Parsed } from "../parser/schema.ts";
 import { extractDocument } from "../parser/extract.ts";
+import { readFileSync } from "node:fs";
+import { env } from "../config.ts";
 
 const NOW: Civil = { y: 2026, m: 9, d: 23 };
 
@@ -173,26 +175,30 @@ describe("naira, which must be untouched by all of this", () => {
 });
 
 describe("the feature flag", () => {
-  it("does not yet open the door, whatever it is set to", () => {
+  it("is off here, and off is what refuses", () => {
     /*
-     * `INTL_ENABLED` is the switch for the rest of this feature, and the
-     * branch it will control refuses regardless for now. Deliberately: a flag
-     * that opens a door onto an unbuilt room is worse than no flag. Letting
-     * "$1,200" through today would not produce a dollar invoice, it would
-     * produce a ₦1,200 one.
+     * This whole file runs with `INTL_ENABLED` unset, which is its state
+     * everywhere until section 13's go-live gate is cleared — so every
+     * refusal above is the refusal a real user would get today.
      *
-     * When the draft path lands, this test is what has to change — and it
-     * changes by asserting that a dollar draft appears, not by deletion.
+     * It is worth saying out loud because `config.ts` parses the environment
+     * once at import: a test that set the variable half way down would change
+     * nothing, and would pass while proving nothing. The flag-on behaviour is
+     * in `dollar-draft.test.ts`, which sets it before loading the machine.
      */
-    const before = process.env.INTL_ENABLED;
-    process.env.INTL_ENABLED = "true";
-    try {
-      const out = say("invoice Acme $1,200 for the website");
-      assert.deepEqual(out.effects, [], "a flag let an unpriced foreign invoice through");
-      assert.doesNotMatch(String(out.replies[0]), /1,200/);
-    } finally {
-      if (before === undefined) delete process.env.INTL_ENABLED;
-      else process.env.INTL_ENABLED = before;
-    }
+    assert.equal(env.INTL_ENABLED, false);
+    assert.deepEqual(say("invoice Acme $1,200 for the website").effects, []);
+  });
+
+  it("is not the only thing in the way: a rate has to come with it", () => {
+    /*
+     * Both, because either alone prices somebody's work wrongly. With the
+     * flag but no rate there is nothing to convert at, and "$1,200" falling
+     * through to the naira reader is a confident, confirmable invoice for
+     * ₦1,200.
+     */
+    const machine = readFileSync(new URL("./machine.ts", import.meta.url), "utf8");
+    const branch = machine.slice(machine.indexOf("function foreignRefusal"));
+    assert.match(branch, /env\.INTL_ENABLED && quote && quote\.currency === money\.currency/);
   });
 });

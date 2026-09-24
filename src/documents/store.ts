@@ -13,14 +13,18 @@ import { db, tx } from "../db/pool.ts";
 import { createParts, partsFor, stagesFor, type Part } from "./parts.ts";
 import { formatISO, type Civil } from "../../core/dates.ts";
 import { totalsFor, type Line } from "../../core/totals.ts";
+import type { Foreign } from "../../core/currency.ts";
 
 export type DocumentType = "invoice" | "quote" | "payment_request" | "sample";
+
+/** A line of work. `originalUnitAmountMinor` is set only on a foreign price. */
+export type DraftLine = Line & { originalUnitAmountMinor?: number };
 
 export type DraftInput = {
   type: DocumentType;
   clientName: string;
   clientEmail: string | null;
-  lines: Line[];
+  lines: DraftLine[];
   /**
    * The date on the document: when an invoice falls due, or when a quote
    * expires. One field here, two columns in the table — `documents.due_date`
@@ -43,6 +47,29 @@ export type DraftInput = {
   stageDueDates?: (Civil | null)[] | null;
   passFeesToClient: boolean;
   notes: string | null;
+  /**
+   * The foreign price and the rate it was converted at, or absent on the
+   * naira invoices that are nearly all of them (International PRD section 11).
+   *
+   * Every money column on this document is kobo either way. This says what
+   * the two people actually agreed and what that was worth on the day, which
+   * is the only thing the naira figure cannot say for itself — and which the
+   * client's copy shows, because $500 is what they said yes to.
+   *
+   * Migration 0021 will not let half of it be stored: a foreign document
+   * without its rate is one nobody can explain afterwards.
+   */
+  foreign?: ForeignPrice | null;
+};
+
+export type ForeignPrice = {
+  currency: Foreign;
+  /** What was agreed, in cents or pence. */
+  amountMinor: number;
+  rate: number;
+  source: string;
+  /** ISO, because a draft is JSON until somebody answers "Send it?". */
+  fetchedAt: string;
 };
 
 export type Draft = DraftInput & {
@@ -159,8 +186,10 @@ export async function createDraft(
     const { rows } = await c.query<{ id: string }>(
       `INSERT INTO documents
          (user_id, client_id, type, status, subtotal_kobo, vat_kobo, total_kobo,
-          pass_fees_to_client, due_date, valid_until, notes)
-       VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, $9, $10)
+          pass_fees_to_client, due_date, valid_until, notes,
+          currency, original_amount_minor, fx_rate, fx_source, fx_fetched_at)
+       VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, $9, $10,
+               $11, $12, $13, $14, $15)
        RETURNING id`,
       [
         userId,
@@ -173,15 +202,41 @@ export async function createDraft(
         input.type === "quote" || !input.dueDate ? null : formatISO(input.dueDate),
         input.type === "quote" && input.dueDate ? formatISO(input.dueDate) : null,
         input.notes,
+        /*
+         * All five together or none of them. 0021 has a constraint saying so,
+         * because a foreign document missing its rate is one nobody can
+         * explain to the client who was charged or the freelancer who was
+         * paid — and a naira one carrying a rate would mean the presence of
+         * one had stopped meaning anything.
+         */
+        input.foreign?.currency ?? "NGN",
+        input.foreign?.amountMinor ?? null,
+        input.foreign?.rate ?? null,
+        input.foreign?.source ?? null,
+        input.foreign?.fetchedAt ?? null,
       ],
     );
     const id = rows[0]!.id;
 
     for (const [i, line] of input.lines.entries()) {
+      const minor = line.originalUnitAmountMinor;
       await c.query(
-        `INSERT INTO line_items (document_id, position, description, qty, unit_amount_kobo, amount_kobo)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [id, i, line.description, line.qty, line.unitAmountKobo, totals.lineTotalsKobo[i]!],
+        `INSERT INTO line_items
+           (document_id, position, description, qty, unit_amount_kobo, amount_kobo,
+            original_unit_amount_minor, original_amount_minor)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          id,
+          i,
+          line.description,
+          line.qty,
+          line.unitAmountKobo,
+          totals.lineTotalsKobo[i]!,
+          minor ?? null,
+          // The client's copy shows "$200" against the logo, so the line has
+          // to carry what was quoted as well as what is charged.
+          minor === undefined ? null : Math.round(minor * line.qty),
+        ],
       );
     }
 
@@ -228,9 +283,15 @@ export async function getOpenDraft(userId: string): Promise<Draft | null> {
     public_token: string | null;
     client_name: string;
     client_email: string | null;
+    currency: Foreign | "NGN";
+    original_amount_minor: number | null;
+    fx_rate: string | null;
+    fx_source: string | null;
+    fx_fetched_at: Date | null;
   }>(
     `SELECT d.id, d.client_id, d.type, d.subtotal_kobo, d.vat_kobo, d.total_kobo,
             d.pass_fees_to_client, d.due_date, d.valid_until, d.notes, d.number, d.public_token,
+            d.currency, d.original_amount_minor, d.fx_rate, d.fx_source, d.fx_fetched_at,
             c.name AS client_name, c.email AS client_email
        FROM documents d
        JOIN clients c ON c.id = d.client_id
@@ -247,8 +308,9 @@ export async function getOpenDraft(userId: string): Promise<Draft | null> {
     description: string;
     qty: string;
     unit_amount_kobo: number;
+    original_unit_amount_minor: number | null;
   }>(
-    `SELECT description, qty, unit_amount_kobo FROM line_items
+    `SELECT description, qty, unit_amount_kobo, original_unit_amount_minor FROM line_items
       WHERE document_id = $1 ORDER BY position`,
     [row.id],
   );
@@ -267,6 +329,9 @@ export async function getOpenDraft(userId: string): Promise<Draft | null> {
       description: i.description,
       qty: Number(i.qty),
       unitAmountKobo: i.unit_amount_kobo,
+      ...(i.original_unit_amount_minor === null
+        ? {}
+        : { originalUnitAmountMinor: i.original_unit_amount_minor }),
     })),
     dueDate: civilOrNull(row.due_date ?? row.valid_until),
     // Recovered from the stored money rather than kept as a second copy: two
@@ -280,6 +345,22 @@ export async function getOpenDraft(userId: string): Promise<Draft | null> {
     totalKobo: row.total_kobo,
     number: row.number,
     publicToken: row.public_token,
+    /*
+     * The rate is read back, not recomputed. Somebody who leaves a draft open
+     * overnight and answers "Send it?" in the morning is sending the invoice
+     * they were shown, at the rate they were shown, and a second lookup here
+     * would quietly send a different one.
+     */
+    foreign:
+      row.currency === "NGN" || row.fx_rate === null
+        ? null
+        : {
+            currency: row.currency,
+            amountMinor: row.original_amount_minor ?? 0,
+            rate: Number(row.fx_rate),
+            source: row.fx_source ?? "",
+            fetchedAt: (row.fx_fetched_at ?? new Date()).toISOString(),
+          },
   };
 }
 

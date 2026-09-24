@@ -17,6 +17,7 @@ import type { SummaryData } from "./summary-page.ts";
 import { GRACE_DAYS } from "../billing/subscription.ts";
 import { formatISO, type Civil } from "../../core/dates.ts";
 import type { Period } from "../../core/period.ts";
+import type { Foreign } from "../../core/currency.ts";
 
 /**
  * Statuses where money is still owed.
@@ -312,6 +313,40 @@ export async function documentsThisMonth(userId: string, today: Civil): Promise<
     [userId, from],
   );
   return Number(rows[0]?.n ?? 0);
+}
+
+/**
+ * What somebody has already invoiced abroad today, in one currency
+ * (International PRD section 10).
+ *
+ * A daily ceiling on international invoicing is not a judgement about the
+ * work. It is the blast radius of a chargeback on a payment method Balans has
+ * never yet taken: a card payment can be reversed weeks later, the money
+ * comes out of the freelancer's settled funds, and until we have seen how
+ * Paystack actually handles a disputed subaccount transaction the honest
+ * position is to keep the number somebody could lose in a day small.
+ *
+ * Per currency and in its own minor units, because $2,000 and £2,000 are
+ * different sums and adding them would be the same mistake this whole module
+ * exists to prevent. Drafts are left out — nothing has been sent — and so are
+ * cancelled documents.
+ */
+export async function foreignInvoicedToday(
+  userId: string,
+  currency: Foreign,
+  today: Civil,
+): Promise<number> {
+  const { rows } = await db().query<{ total: number | null }>(
+    `SELECT COALESCE(SUM(original_amount_minor), 0)::bigint AS total
+       FROM documents
+      WHERE user_id = $1
+        AND currency = $2
+        AND type <> 'sample'
+        AND status <> 'draft' AND status <> 'cancelled'
+        AND issue_date = $3::date`,
+    [userId, currency, formatISO(today)],
+  );
+  return Number(rows[0]?.total ?? 0);
 }
 
 /**

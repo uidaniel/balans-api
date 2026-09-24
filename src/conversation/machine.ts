@@ -33,7 +33,9 @@ import { titleCaseName } from "../../core/names.ts";
 import { EXTRA_ITEMS, formScreenId, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION, draftButtons } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
-import { INFO } from "../../core/currency.ts";
+import { INFO, type Foreign } from "../../core/currency.ts";
+import { nairaKoboFor } from "../../core/exchange.ts";
+import type { Quote } from "../fx/rate.ts";
 
 export type State =
   | "new"
@@ -136,9 +138,41 @@ export type PendingDoc = {
   type: "invoice" | "quote" | "payment_request";
   clientName?: string;
   clientEmail?: string | null;
-  lines: { description: string; qty: number; unitAmountKobo: number }[];
+  /**
+   * The work, priced in kobo — always, including on an invoice agreed in
+   * dollars. `originalUnitAmountMinor` is what was agreed, kept beside it for
+   * the client's copy, which shows "$200" against the logo because $200 is
+   * what they said yes to.
+   */
+  lines: {
+    description: string;
+    qty: number;
+    unitAmountKobo: number;
+    originalUnitAmountMinor?: number;
+  }[];
   /** Set when an amount arrived with no description to attach it to. */
   totalKobo?: number;
+  /**
+   * The foreign price and the rate it was converted at (International PRD
+   * section 6), or absent on the naira invoices that are nearly all of them.
+   *
+   * Present from the moment the draft is made, because the rate is locked at
+   * creation and never moves again: the client is charged naira, and an
+   * invoice whose naira figure changed between being sent and being paid is
+   * not an invoice. The only thing that re-quotes is an edit to the amount,
+   * which is a different invoice.
+   *
+   * `fetchedAt` is an ISO string rather than a Date because a draft is JSON
+   * in the conversation row until somebody answers "Send it?".
+   */
+  foreign?: {
+    currency: Foreign;
+    /** What was agreed, in cents or pence. The figure on the invoice. */
+    amountMinor: number;
+    rate: number;
+    source: string;
+    fetchedAt: string;
+  };
   dueDate?: Civil | null;
   vatPercent?: number | null;
   depositPercent?: number | null;
@@ -330,6 +364,16 @@ export type Inbound = {
   tapped?: boolean;
   /** Today in Lagos, for the default due date. */
   today?: Civil;
+  /**
+   * A naira rate, fetched by the caller when the message was priced abroad.
+   *
+   * Fetching is I/O and this function is not, so the rate is looked up at the
+   * edge exactly as the parse is, and the decision happens here. Absent means
+   * either that the message was in naira, or that no rate could be had — and
+   * the second is not this function's problem to explain, because the caller
+   * already knows the difference and has words for it.
+   */
+  quote?: Quote;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -546,6 +590,52 @@ export const VOICE = {
     para(
       `\u{1F30D} ${b("Which one?")} You wrote ${first} and ${second}.`,
       "Tell me which and I will draft it.",
+    ),
+
+  /**
+   * A dollar invoice from somebody on the free plan.
+   *
+   * Section 4's words, near enough: "Invoicing in dollars and pounds is a Pro
+   * feature. Reply upgrade to unlock it." And no invoice is created — not a
+   * draft they cannot send, not a naira one at today's rate. Drafting
+   * something and then refusing to send it is worse than refusing now,
+   * because by then they have read it and agreed with it.
+   */
+  foreignIsPro: para(
+    `\u{1F30D} ${b("Invoicing in dollars and pounds is a Pro feature.")}`,
+    lines("Reply *upgrade* to unlock it.", "Naira invoices work on any plan."),
+  ),
+
+  /**
+   * The rate could not be had, and so the invoice cannot be priced.
+   *
+   * Section 6 forbids guessing one. There is no fallback rate and no
+   * last-known-good stretched past a day, because an invoice priced at a
+   * number nobody can vouch for is worse than no invoice: it goes out, the
+   * client pays it, and what arrives is whatever it turns out to be.
+   */
+  noRateToday: (named: string): string =>
+    para(
+      `\u{1F30D} ${b(`I cannot get today's ${named} rate just now.`)}`,
+      lines("Try again in a few minutes.", "Naira invoices are working normally."),
+    ),
+
+  /**
+   * Over one of the international ceilings (section 10).
+   *
+   * Said as what it is — a limit on this, while this is new — rather than
+   * dressed up as a problem with their invoice. Somebody billing $3,000 has
+   * not done anything wrong, and the naira route is open to them today.
+   */
+  foreignTooBig: (priced: string, cap: string, daily: boolean): string =>
+    para(
+      `\u{1F30D} ${b(`${daily ? "That would go over today's limit" : "That is over the limit"} for invoices abroad.`)}`,
+      lines(
+        daily
+          ? `${cap} a day for now, and this one is ${priced}.`
+          : `${cap} per invoice for now, and this one is ${priced}.`,
+        "International invoicing is new here, so the ceiling is low while we watch it. Naira invoices have no such limit.",
+      ),
     ),
 
   /** They closed the form, or would rather type. Both are fine. */
@@ -1167,7 +1257,7 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
    * decides whether we can *take* dollars; it must never decide whether we
    * can *see* them.
    */
-  const refusal = msg.parsed?.money ? foreignRefusal(msg.parsed.money) : null;
+  const refusal = msg.parsed?.money ? foreignRefusal(msg.parsed.money, msg.quote) : null;
   if (refusal) return { replies: [refusal], next: state, context, effects: [] };
 
   /*
@@ -1827,7 +1917,7 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
     case "create_invoice":
     case "create_quote":
     case "payment_request":
-      return startDocument(p, ctx, now);
+      return startDocument(p, ctx, now, msg.quote);
 
     case "help":
       return {
@@ -1949,7 +2039,7 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
 const DRAFT_BUTTONS = new Set(draftButtons().map((b) => b.id));
 
 /** Turns a parse into a document under construction, then asks or drafts. */
-function startDocument(p: Parsed, ctx: Context, now: Civil): Step {
+function startDocument(p: Parsed, ctx: Context, now: Civil, quote?: Quote): Step {
   const doc: PendingDoc = {
     type:
       p.intent === "create_quote"
@@ -1959,6 +2049,13 @@ function startDocument(p: Parsed, ctx: Context, now: Civil): Step {
           : "invoice",
     clientName: p.clientName ?? undefined,
     clientEmail: p.clientEmail,
+    /*
+     * Straight off the parse, which means kobo on a naira message and cents
+     * or pence on one written abroad. `repriced` below is the seam where the
+     * second becomes the first; above it a parse is in whatever currency it
+     * was written in, and below it everything is naira, as every total, part,
+     * fee, reminder and summary in this product has always been.
+     */
     lines: p.lineItems,
     totalKobo: p.lineItems.length ? undefined : (p.totalKobo ?? undefined),
     dueDate: p.dueDate,
@@ -1972,7 +2069,8 @@ function startDocument(p: Parsed, ctx: Context, now: Civil): Step {
   // They named a date we could not read. That is worth one question, because
   // they did say something and quietly defaulting would ignore them.
   const unreadableDate = Boolean(p.dueDatePhrase) && !p.dueDate;
-  return buildOrAsk(doc, ctx, now, unreadableDate);
+  const priced = p.money.kind === "foreign" && quote ? repriced(doc, quote) : doc;
+  return buildOrAsk(priced, ctx, now, unreadableDate);
 }
 
 /**
@@ -2412,7 +2510,7 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
       };
     }
 
-    return buildOrAsk(applyCorrection(doc, msg.correction), ctx, now);
+    return buildOrAsk(applyCorrection(doc, msg.correction, msg.quote), ctx, now);
   }
 
   /*
@@ -2487,7 +2585,85 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
   );
 }
 
-function applyCorrection(doc: PendingDoc, c: Correction): PendingDoc {
+/**
+ * A correction applied to a draft, in the currency that draft is in.
+ *
+ * On a naira invoice this is the whole of it. On one priced abroad it is the
+ * middle of a sandwich: the draft is turned back into dollars, the correction
+ * is applied there, and the result is converted again — because a correction
+ * arrives in the invoice's own currency and must be applied to figures in
+ * that currency.
+ *
+ * The case that makes it necessary is the quiet one. "make it 600" against a
+ * dollar draft carries no mark at all, so nothing downstream could tell it
+ * from six hundred naira; applied to the kobo figures it would turn a $500
+ * invoice into one for ₦600. The mark is not what says this is dollars — the
+ * invoice is.
+ */
+function applyCorrection(doc: PendingDoc, c: Correction, quote?: Quote): PendingDoc {
+  if (!doc.foreign) return applyIn(doc, c);
+
+  /*
+   * Back into cents or pence: the price as agreed, which is what the user is
+   * looking at and what their correction is about.
+   */
+  const agreed: PendingDoc = {
+    ...doc,
+    lines: doc.lines.map((l) => ({
+      ...l,
+      unitAmountKobo: l.originalUnitAmountMinor ?? l.unitAmountKobo,
+    })),
+    totalKobo: doc.totalKobo === undefined ? undefined : doc.foreign.amountMinor,
+  };
+
+  /*
+   * And converted again, at today's rate if one came with the message.
+   *
+   * Section 6: "If the user edits the amount, re-quote with the current
+   * rate." An edit is a different invoice, and pricing a different invoice at
+   * a rate fetched for the one before it is the one case where the locked
+   * rate is the wrong answer. Without a fresh quote the draft keeps the rate
+   * it had, which is right for a correction that did not touch the money.
+   */
+  return repriced(applyIn(agreed, c), quote ?? doc.foreign);
+}
+
+/**
+ * A draft whose figures are in a foreign currency, converted into naira.
+ *
+ * `at` is either a fresh quote or the one already on the draft; both carry a
+ * rate and a source, and which it is has already been decided above.
+ */
+function repriced(
+  doc: PendingDoc,
+  at: { currency: Foreign; rate: number; source: string; fetchedAt: string | Date },
+): PendingDoc {
+  const lines = doc.lines.map((l) => ({
+    description: l.description,
+    qty: l.qty,
+    originalUnitAmountMinor: l.unitAmountKobo,
+    unitAmountKobo: nairaKoboFor(l.unitAmountKobo, at.rate),
+  }));
+
+  const amountMinor = lines.length
+    ? doc.lines.reduce((t, l) => t + l.unitAmountKobo * l.qty, 0)
+    : (doc.totalKobo ?? 0);
+
+  return {
+    ...doc,
+    lines,
+    totalKobo: lines.length ? undefined : nairaKoboFor(amountMinor, at.rate),
+    foreign: {
+      currency: at.currency,
+      amountMinor,
+      rate: at.rate,
+      source: at.source,
+      fetchedAt: typeof at.fetchedAt === "string" ? at.fetchedAt : at.fetchedAt.toISOString(),
+    },
+  };
+}
+
+function applyIn(doc: PendingDoc, c: Correction): PendingDoc {
   const next: PendingDoc = { ...doc };
 
   if (c.clientName) next.clientName = c.clientName;
@@ -3039,7 +3215,7 @@ function faqAnswer(kind: FaqKind): string {
  * amount that reaches the ordinary path is an amount whose currency mark gets
  * stripped on the way to `parseAmountToKobo`.
  */
-function foreignRefusal(money: Parsed["money"]): string | null {
+function foreignRefusal(money: Parsed["money"], quote: Quote | undefined): string | null {
   switch (money.kind) {
     case "naira":
       return null;
@@ -3049,22 +3225,21 @@ function foreignRefusal(money: Parsed["money"]): string | null {
       return VOICE.whichCurrency(money.currencies[0]!, money.currencies[1]!);
     case "foreign":
       /*
-       * Refused whether or not `INTL_ENABLED` is set, and that is deliberate
-       * until the draft path exists.
+       * Let through only when the feature is on *and* a rate came with the
+       * message. Both, because either alone is a way to price somebody's
+       * work wrongly: with no rate there is nothing to convert at, and with
+       * no flag the rest of the path — Pro gating, Paystack, the client's
+       * page — is not there to receive it.
        *
-       * A flag that opens a door onto an unbuilt room is worse than no flag.
-       * Returning null here today would let "$1,200" fall through to the
-       * ordinary reader, which strips the mark and produces an invoice for
-       * ₦1,200 — the exact failure this whole module is here to prevent, let
-       * in by the switch that was supposed to control it.
-       *
-       * What has to be true before this may consult the flag: a rate locked
-       * onto the draft (`src/fx/rate.ts`), the naira charge computed from it,
-       * Pro-only gating with the upgrade prompt for everyone else, and
-       * Paystack as the processor for the resulting invoice. Section 15's
-       * build order, days 3 to 6.
+       * The caller fetches the rate and has its own words for not having
+       * one ("try again shortly"), so reaching here with the flag on and no
+       * quote means something upstream skipped that. Refusing is the safe
+       * end of that mistake: "$1,200" falling through to the naira reader
+       * produces a confident, confirmable invoice for ₦1,200.
        */
-      return VOICE.notInThatCurrency(INFO[money.currency].many);
+      return env.INTL_ENABLED && quote && quote.currency === money.currency
+        ? null
+        : VOICE.notInThatCurrency(INFO[money.currency].many);
   }
 }
 

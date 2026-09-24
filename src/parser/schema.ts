@@ -14,7 +14,7 @@
 
 import { z } from "zod";
 import { parseAmountToKobo } from "../../core/amount.ts";
-import type { CurrencyRead } from "../../core/currency.ts";
+import { parseAmountToMinor, type CurrencyRead } from "../../core/currency.ts";
 import { formatISO, resolveDueDate, type Civil } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
 // Type only: `corrections.ts` reaches back into this file's neighbours, and a
@@ -221,6 +221,19 @@ export type RawParse = z.infer<typeof rawParse>;
 /* What the rest of the system uses                                           */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * A line of work, and what it costs.
+ *
+ * `unitAmountKobo` is kobo on a naira parse and *minor units of the invoice's
+ * currency* on a foreign one — cents on a dollar invoice, pence on a pound
+ * one. The name is kept because every other reader of a parse is a naira
+ * reader, and `money` on the parse is what says which it is.
+ *
+ * That is one hop, and it ends at the machine: `startDocument` converts at
+ * the locked rate and everything downstream of it is naira kobo again, as it
+ * has always been. Nothing but the machine should look at these two fields
+ * without also looking at `money`.
+ */
 export type LineItem = { description: string; qty: number; unitAmountKobo: number };
 
 export type Parsed = {
@@ -228,7 +241,12 @@ export type Parsed = {
   clientName: string | null;
   clientEmail: string | null;
   lineItems: LineItem[];
-  /** Kobo. The sum of the line items, or the stated total when there are none. */
+  /**
+   * The sum of the line items, or the stated total when there are none.
+   *
+   * In the currency `money` names: kobo on a naira parse, cents or pence on
+   * a foreign one. See `LineItem`.
+   */
   totalKobo: number | null;
   dueDate: Civil | null;
   /** The phrase the date came from, so a confirmation can echo their words. */
@@ -286,12 +304,33 @@ export function normalise(
   today: Civil,
   source: Parsed["source"],
   money: CurrencyRead = { kind: "naira" },
+  /**
+   * The currency of the draft on screen, when a draft is on screen.
+   *
+   * Separate from `money` because a message can be both things at once. On
+   * "Send it?" for a dollar invoice, "make it 600" is a correction in dollars
+   * while "now invoice Kemi 50k" is a new invoice in naira — and the currency
+   * of the one says nothing about the currency of the other.
+   */
+  correctionMoney: CurrencyRead = money,
 ): Parsed {
   const lineItems: LineItem[] = [];
   let unreadableAmount = false;
 
+  /*
+   * Amounts are read in the currency the message is in, decided once by
+   * `readCurrency` over the whole message rather than per amount.
+   *
+   * Which is the only way a second line written as a bare "300" on a dollar
+   * invoice comes out as three hundred dollars. Reading each amount on its
+   * own would make that one three hundred naira, and the invoice would add
+   * two currencies together into a figure that means nothing at all.
+   */
+  const toMinor = (s: string): number | null =>
+    money.kind === "foreign" ? parseAmountToMinor(s, money.currency) : parseAmountToKobo(s);
+
   for (const item of raw.line_items) {
-    const kobo = item.unit_amount === null ? null : parseAmountToKobo(item.unit_amount);
+    const kobo = item.unit_amount === null ? null : toMinor(item.unit_amount);
     if (kobo === null || kobo <= 0) {
       // Kept at zero rather than dropped: zero is not an invented amount, the
       // description is real, and `missing` below makes sure nothing is drafted
@@ -303,7 +342,7 @@ export function normalise(
     lineItems.push({ description: item.description, qty: item.qty, unitAmountKobo: kobo });
   }
 
-  const stated = raw.total_amount === null ? null : parseAmountToKobo(raw.total_amount);
+  const stated = raw.total_amount === null ? null : toMinor(raw.total_amount);
   if (raw.total_amount !== null && (stated === null || stated <= 0)) unreadableAmount = true;
 
   const summed = lineItems.reduce((t, l) => t + l.unitAmountKobo * l.qty, 0);
@@ -356,7 +395,8 @@ export function normalise(
      * new document even if the model also filled this in, and "no" is still a
      * rejection.
      */
-    correction: raw.intent === "correct_draft" ? asCorrection(raw.correction, today) : null,
+    correction:
+      raw.intent === "correct_draft" ? asCorrection(raw.correction, today, correctionMoney) : null,
     source,
     missing,
   };
@@ -371,12 +411,21 @@ export function normalise(
  * message down the "I did not catch that" road — the right end for a change
  * nobody could read, and the wrong end only if we had invented something.
  */
-function asCorrection(raw: RawCorrection | null, today: Civil): Correction | null {
+function asCorrection(
+  raw: RawCorrection | null,
+  today: Civil,
+  money: CurrencyRead,
+): Correction | null {
   if (!raw) return null;
 
   const out: Correction = {};
 
-  const kobo = raw.amount === null ? null : parseAmountToKobo(raw.amount);
+  // In the currency of the invoice being corrected, which is what `money` is
+  // here — not the currency of the words, which for "make it 600" is nothing.
+  const toMinor = (v: string): number | null =>
+    money.kind === "foreign" ? parseAmountToMinor(v, money.currency) : parseAmountToKobo(v);
+
+  const kobo = raw.amount === null ? null : toMinor(raw.amount);
   if (kobo !== null && kobo > 0) out.totalKobo = kobo;
 
   const due = raw.due_date === null ? null : resolveDueDate(raw.due_date, today);
@@ -412,7 +461,7 @@ function asCorrection(raw: RawCorrection | null, today: Civil): Correction | nul
    */
   const priced = raw.add_lines.map((l) => ({
     description: l.description,
-    unitAmountKobo: l.unit_amount === null ? null : parseAmountToKobo(l.unit_amount),
+    unitAmountKobo: l.unit_amount === null ? null : toMinor(l.unit_amount),
   }));
   const added = priced.filter(
     (l): l is { description: string; unitAmountKobo: number } => (l.unitAmountKobo ?? 0) > 0,
@@ -439,7 +488,7 @@ function asCorrection(raw: RawCorrection | null, today: Civil): Correction | nul
   if (raw.rename_line) out.renameLine = raw.rename_line;
 
   if (raw.set_line_amount) {
-    const kobo = parseAmountToKobo(raw.set_line_amount.amount);
+    const kobo = toMinor(raw.set_line_amount.amount);
     // A line the model could not price is not a correction. Dropping the
     // amount and keeping the name would rewrite a line to nothing.
     if (kobo !== null && kobo > 0) {

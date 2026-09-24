@@ -10,9 +10,11 @@
  */
 
 import { formatFriendly, type Civil, compare } from "../../core/dates.ts";
-import { settle } from "../../core/fees.ts";
+import { DEFAULT_INTL_PROCESSOR, settle, withVat } from "../../core/fees.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { defaults } from "../config.ts";
+import { formatMoney, INFO } from "../../core/currency.ts";
+import { impliedRate } from "../../core/exchange.ts";
 import { b, block, lines, para, row } from "../whatsapp/format.ts";
 import { shapeFor, stagesFor, type Stage, dueDateWithStages } from "./parts.ts";
 import type { Draft } from "./store.ts";
@@ -121,11 +123,26 @@ export function payout(
     depositPercent: number | null;
     instalments: number | null;
     passFeesToClient: boolean;
+    /** Set on an invoice priced abroad, which is charged by card, not transfer. */
+    foreign?: { currency: string } | null;
   },
   plan: "free" | "pro",
 ): Payout {
   const p = defaults.plans[plan];
   const rates = { percentBps: p.feePercentBps, minKobo: p.feeMinKobo, capKobo: p.feeCapKobo };
+
+  /*
+   * Which processor, and it is not a detail.
+   *
+   * A naira invoice is a bank transfer through Monnify at 1.5% capped at
+   * ₦2,000. An invoice priced abroad is an international card through
+   * Paystack at 3.9% with no cap at all. On a ₦663,500 invoice that is ₦2,000
+   * against ₦25,976 — and the number this produces is the one the freelancer
+   * reads under "you receive" before agreeing to send it.
+   */
+  const processor = draft.foreign
+    ? withVat(DEFAULT_INTL_PROCESSOR, defaults.international.feeVatPercent)
+    : undefined;
 
   const shape = shapeFor(draft, draft.totalKobo);
   const payments = shape?.length ? shape.map((s) => s.amountKobo) : [draft.totalKobo];
@@ -157,6 +174,7 @@ export function payout(
     const part = settle(amountKobo, rates, {
       passToClient: draft.passFeesToClient,
       paidBeforeKobo,
+      processor,
     });
     paidBeforeKobo += amountKobo;
     clientPaysKobo += part.clientPaysKobo;
@@ -213,7 +231,14 @@ export function draftSummary(
       "Items:",
       ...draft.lines.map((line) => {
         const each = line.qty === 1 ? "" : ` x${line.qty}`;
-        return `  · ${line.description}${each} — ${formatNaira(line.unitAmountKobo * line.qty)}`;
+        // Priced in the currency it was agreed in. A dollar invoice that
+        // itemises in naira is asking the freelancer to check arithmetic they
+        // never did.
+        const money =
+          draft.foreign && line.originalUnitAmountMinor !== undefined
+            ? formatMoney(line.originalUnitAmountMinor * line.qty, draft.foreign.currency)
+            : formatNaira(line.unitAmountKobo * line.qty);
+        return `  · ${line.description}${each} — ${money}`;
       }),
     ]);
   }
@@ -230,8 +255,33 @@ export function draftSummary(
           row(`VAT ${draft.vatPercent}%`, formatNaira(draft.vatKobo)),
         ]
       : []),
-    row("Amount", b(formatNaira(draft.totalKobo))),
+    row(
+      "Amount",
+      b(
+        draft.foreign
+          ? formatMoney(draft.foreign.amountMinor, draft.foreign.currency)
+          : formatNaira(draft.totalKobo),
+      ),
+    ),
   ]);
+
+  /*
+   * What the client is actually charged, and at what rate (section 9).
+   *
+   * Nobody is ever charged in dollars. The card is debited in naira, the
+   * client's own bank converts, and this is the figure that leaves their
+   * account — so it belongs directly under the price, before the due date,
+   * not in a footnote. The rate is derived from the two numbers rather than
+   * printed from the quote, so the sentence and the figure beside it cannot
+   * disagree after rounding.
+   */
+  if (draft.foreign) {
+    const rate = impliedRate(draft.totalKobo, draft.foreign.amountMinor);
+    sections.push([
+      row("Charged in naira", b(formatNaira(draft.totalKobo))),
+      row("Today's rate", `${formatNaira(Math.round(rate * 100))}/${INFO[draft.foreign.currency].symbol}`),
+    ]);
+  }
 
   /*
    * The date the last money is expected, which is not always the date on the
@@ -276,12 +326,25 @@ export function draftSummary(
     draft.type !== "sample" &&
     `PS: you receive ${b(formatNaira(payout(draft, plan).receivesKobo))} of this after fees.`;
 
+  /*
+   * When the money arrives, but only on an invoice going through Paystack.
+   *
+   * Naira invoices say nothing here because they have their own "tonight" and
+   * "tomorrow night" cards, computed from Monnify's 22:00 payout run. That
+   * arithmetic has nothing to say about a card from abroad, and using it
+   * would be a promise about somebody else's schedule made out of the wrong
+   * schedule. One configurable sentence instead, to be changed the day
+   * Paystack confirms the real timing.
+   */
+  const settles = draft.foreign && `Settles: ${defaults.international.settlementText.toLowerCase()}`;
+
   // Then just the question. The three answers arrive as buttons under it, so
   // spelling them out here would print the instructions twice.
   return para(
     `🧾 ${b(`${LABEL[draft.type].toUpperCase()} DRAFT`)}`,
     ...sections.map((s) => lines(...s)).filter(Boolean),
     ps,
+    settles,
     b("Send it?"),
   );
 }

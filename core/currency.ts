@@ -327,6 +327,48 @@ function withoutDates(text: string): string {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Reading one amount, in a currency already decided                          */
+/* -------------------------------------------------------------------------- */
+
+/** The marks to take off the front, per currency. */
+const LEADING: Record<Currency, RegExp> = {
+  NGN: /^(?:₦|ngn|n)\s*/,
+  USD: /^(?:us\s?\$|usd|\$)\s*/,
+  GBP: /^(?:gbp|£)\s*/,
+};
+
+/** And off the back: "500 dollars", "20k quid". */
+const FOLLOWING: Record<Currency, RegExp> = {
+  NGN: /\s*(?:naira|ngn)$/,
+  USD: /\s*(?:dollars?|usd)$/,
+  GBP: /\s*(?:pounds?|quid|gbp)$/,
+};
+
+/**
+ * "$500" → 50000 cents. "£1.2k" → 120000 pence. "350k" → 35000000 kobo.
+ *
+ * The currency is decided before this is called, by `readCurrency` reading
+ * the whole message, and is passed in rather than sniffed again. That matters
+ * for a case this would otherwise get wrong: on a dollar invoice, a second
+ * line written as a bare "300" is three hundred dollars, because the invoice
+ * is in dollars. A function that re-read each amount on its own would make it
+ * three hundred naira, and the resulting invoice would have two lines in two
+ * currencies added together into a number that means nothing.
+ *
+ * Refuses a mark belonging to another currency outright. "£500" handed to
+ * this with USD is not an amount to interpret, it is a disagreement — and
+ * `readCurrency` would have called that message mixed and asked.
+ */
+export function parseAmountToMinor(raw: string, currency: Currency): number | null {
+  const s = raw.trim().toLowerCase();
+  const bare = s.replace(LEADING[currency], "").replace(FOLLOWING[currency], "");
+  // Any mark left on it after its own has been taken off belongs to somebody
+  // else's money.
+  if (/[₦$£]|\b(?:ngn|usd|gbp|naira|dollars?|pounds?|quid)\b/.test(bare)) return null;
+  return parseMagnitudeToMinor(bare);
+}
+
+/* -------------------------------------------------------------------------- */
 /* Saying it back                                                             */
 /* -------------------------------------------------------------------------- */
 

@@ -153,7 +153,9 @@ describe("how the two readers are wired together", () => {
   const handle = readFileSync(new URL("../conversation/handle.ts", import.meta.url), "utf8");
 
   it("tries the free reader before spending a model call", () => {
-    const free = handle.indexOf("readCorrection(text, today)");
+    // The reader is given the currency of the draft on screen as well, since
+    // "make it 600" against a dollar invoice means six hundred dollars.
+    const free = handle.indexOf("readCorrection(text, today, correctionMoney)");
     const model = handle.indexOf("await parseMessage(");
     assert.ok(free > -1 && model > free, "the model is asked first");
     assert.match(handle, /needsParse = NEEDS_PARSE\.has\(state\) && !typedCorrection/);
@@ -169,7 +171,9 @@ describe("how the two readers are wired together", () => {
 
   it("gives the model the draft, so a reply has a subject", () => {
     assert.match(handle, /draftOnScreen\(saved\.context\.doc\)/);
-    assert.match(handle, /parseMessage\(text, \{ today, onScreen \}\)/);
+    // And the draft's currency, so a correction the model reads is in the
+    // invoice's money rather than in the message's.
+    assert.match(handle, /parseMessage\(text, \{ today, onScreen, correctionMoney \}\)/);
   });
 });
 

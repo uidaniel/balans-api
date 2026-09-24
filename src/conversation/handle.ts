@@ -42,6 +42,8 @@ import { forLog, type Parsed } from "../parser/schema.ts";
 import { b, i, lines, para, row } from "../whatsapp/format.ts";
 import { parseMessage } from "../parser/parse.ts";
 import { readCorrection } from "../parser/corrections.ts";
+import { formatMoney, INFO, type CurrencyRead, type Foreign } from "../../core/currency.ts";
+import { current as currentRate, type Quote } from "../fx/rate.ts";
 import { asCommand } from "../parser/commands.ts";
 import { resolveDueDate, todayIn, type Civil } from "../../core/dates.ts";
 import { defaults, env } from "../config.ts";
@@ -64,6 +66,7 @@ import {
   documentsEverSent,
   documentsThisMonth,
   findDocument,
+  foreignInvoicedToday,
   planOf,
   summarise,
 } from "../documents/queries.ts";
@@ -457,8 +460,22 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
    * The command check comes first of all, so "yes" and "no" are never mistaken
    * for a correction.
    */
+  /*
+   * A correction is in the invoice's currency, not the message's.
+   *
+   * "make it 600" against a dollar draft means six hundred dollars, and there
+   * is nothing in those three words that could say so. The draft is what
+   * says it.
+   */
+  const draftCurrency = saved.context.doc?.foreign?.currency;
+  const correctionMoney: CurrencyRead = draftCurrency
+    ? { kind: "foreign", currency: draftCurrency, amountMinor: null }
+    : { kind: "naira" };
+
   const typedCorrection =
-    state === "awaiting_confirm" && !asCommand(text) ? readCorrection(text, today) : null;
+    state === "awaiting_confirm" && !asCommand(text)
+      ? readCorrection(text, today, correctionMoney)
+      : null;
 
   // Nothing left to work out: the correction is the whole message.
   const needsParse = NEEDS_PARSE.has(state) && !typedCorrection;
@@ -474,7 +491,9 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
    */
   const onScreen =
     state === "awaiting_confirm" && saved.context.doc ? draftOnScreen(saved.context.doc) : null;
-  const reading = needsParse ? await parseMessage(text, { today, onScreen }) : null;
+  const reading = needsParse
+    ? await parseMessage(text, { today, onScreen, correctionMoney })
+    : null;
 
   /*
    * Read for free if possible, by the model if not.
@@ -542,6 +561,47 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     return;
   }
 
+  const parsed = reading?.ok
+    ? reading.parsed
+    : escaping
+      ? commandAsParsed(escaping)
+      : undefined;
+
+  /*
+   * A price written in dollars or pounds needs three things the machine
+   * cannot get for itself: the plan, a rate, and the network to fetch it.
+   *
+   * So they are got here, and the machine is handed a rate or nothing. Two of
+   * the outcomes end the turn on their own words — the free plan, and no rate
+   * to be had — because neither should produce a draft. The third hands over
+   * a quote and the conversation carries on as any other invoice.
+   */
+  /*
+   * Section 6: "If the user edits the amount, re-quote with the current
+   * rate." An edit makes a different invoice, and pricing a different invoice
+   * at a rate fetched for the one before it is the one case where the locked
+   * rate is the wrong answer.
+   *
+   * Only for a correction that touches the money. Everything else — a new due
+   * date, a client's email, a reworded line — keeps the rate the draft was
+   * agreed at, which is the whole point of locking it.
+   */
+  const repricing =
+    draftCurrency &&
+    correction &&
+    (correction.totalKobo !== undefined ||
+      correction.setLineAmount !== undefined ||
+      Boolean(correction.addLines?.length) ||
+      correction.removeLine !== undefined)
+      ? draftCurrency
+      : undefined;
+
+  const abroad = await priceAbroad(user.id, parsed, log, repricing);
+  if (abroad.stop) {
+    await reply(user.id, msg.from, [abroad.words], log);
+    return;
+  }
+
   const result = step(
     state,
     saved.context,
@@ -549,11 +609,8 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
       text,
       profileName: msg.profileName,
       today,
-      parsed: reading?.ok
-        ? reading.parsed
-        : escaping
-          ? commandAsParsed(escaping)
-          : undefined,
+      parsed,
+      quote: abroad.quote,
       parseFailed: reading && !reading.ok ? reading.reason : undefined,
       correction,
       // A tap is unambiguous in a way typing is not, and the machine cannot
@@ -1223,6 +1280,26 @@ async function runEffects(
             break;
           }
 
+          /*
+           * The international ceilings (section 10), in the same place and
+           * for the same reason as the amount check above: this is the last
+           * moment at which refusing costs the user nothing.
+           *
+           * In the foreign currency's own minor units, never converted. A cap
+           * of $1,000 that moved with the naira would be a different cap every
+           * morning, and the one number a user could rely on about this
+           * feature would be the one that kept changing.
+           */
+          const capped = doc.foreign
+            ? await overForeignCap(userId, doc.foreign, ctx.today)
+            : null;
+          if (capped) {
+            extra.push(capped);
+            log.info({ userId, currency: doc.foreign?.currency }, "foreign invoice over cap");
+            holdAt = "idle";
+            break;
+          }
+
           const draft = await createDraft(userId, {
             type: doc.type,
             clientName: doc.clientName ?? "",
@@ -1235,6 +1312,10 @@ async function runEffects(
             instalments: doc.instalments ?? null,
             passFeesToClient: doc.passFeesToClient ?? false,
             notes: doc.notes ?? null,
+            // The price as agreed and the rate it was converted at, when the
+            // invoice was not written in naira. Locked here and never fetched
+            // again for this document.
+            foreign: doc.foreign ?? null,
           }, ctx.today);
           draftId = draft.id;
 
@@ -2626,6 +2707,81 @@ async function handleLogo(
 function addDaysTo(c: { y: number; m: number; d: number }, days: number) {
   const at = new Date(Date.UTC(c.y, c.m - 1, c.d) + days * 86_400_000);
   return { y: at.getUTCFullYear(), m: at.getUTCMonth() + 1, d: at.getUTCDate() };
+}
+
+/**
+ * Whether this foreign invoice is over either ceiling, and the words if so.
+ *
+ * Two limits, checked in the order that explains best: the invoice's own size
+ * first, because that is the one the user can see and act on, then the day's
+ * running total, which needs a query and is the one they may not have in
+ * mind.
+ */
+async function overForeignCap(
+  userId: string,
+  foreign: { currency: Foreign; amountMinor: number },
+  today: Civil,
+): Promise<string | null> {
+  const { invoiceCapMinor, dailyCapMinor } = defaults.international;
+  const priced = formatMoney(foreign.amountMinor, foreign.currency);
+
+  if (foreign.amountMinor > invoiceCapMinor) {
+    return VOICE.foreignTooBig(priced, formatMoney(invoiceCapMinor, foreign.currency), false);
+  }
+
+  const already = await foreignInvoicedToday(userId, foreign.currency, today);
+  if (already + foreign.amountMinor > dailyCapMinor) {
+    return VOICE.foreignTooBig(priced, formatMoney(dailyCapMinor, foreign.currency), true);
+  }
+  return null;
+}
+
+/**
+ * What it takes to price an invoice that is not in naira.
+ *
+ * Three gates, in the order that costs the user least. The flag first, which
+ * is free and decides whether any of this is on at all. Then the plan, which
+ * is one query and is the PRD's rule: dollars and pounds are Pro, and a free
+ * user gets the upgrade prompt rather than a draft they cannot send. Then the
+ * rate, which is the network call and is only worth making for somebody who
+ * could actually use the answer.
+ *
+ * With the flag off this returns no quote and does not stop, which leaves the
+ * machine to refuse in its own words. That is deliberate: the refusal belongs
+ * with the other refusals, next to the unsupported currencies and the
+ * two-currencies-at-once question, rather than being written twice.
+ */
+async function priceAbroad(
+  userId: string,
+  parsed: Parsed | undefined,
+  log: FastifyBaseLogger,
+  /** Set when a correction is changing the money on a draft already abroad. */
+  repricing?: Foreign,
+): Promise<{ stop: true; words: string } | { stop: false; quote?: Quote }> {
+  const money = parsed?.money;
+  const currency =
+    repricing ?? (money?.kind === "foreign" ? money.currency : undefined);
+  if (!currency || !env.INTL_ENABLED) return { stop: false };
+
+  const plan = await planOf(userId);
+  if (plan !== "pro") {
+    log.info({ userId, currency }, "foreign invoice refused: free plan");
+    return { stop: true, words: VOICE.foreignIsPro };
+  }
+
+  const quote = await currentRate(currency, { log });
+  if (!quote) {
+    // Section 6: never guess a rate. The alternative to this sentence is an
+    // invoice priced at a number nobody can vouch for.
+    log.error({ userId, currency }, "foreign invoice refused: no rate");
+    return { stop: true, words: VOICE.noRateToday(INFO[currency].one) };
+  }
+
+  log.info(
+    { userId, currency, rate: quote.rate, source: quote.source },
+    "pricing an invoice abroad",
+  );
+  return { stop: false, quote };
 }
 
 /**

@@ -19,6 +19,7 @@
 
 import type { Civil } from "../../core/dates.ts";
 import { normalise, type Intent, type Parsed, type RawParse } from "./schema.ts";
+import type { CurrencyRead } from "../../core/currency.ts";
 import { MAX_INSTALMENTS, MIN_INSTALMENTS } from "../documents/parts.ts";
 
 /**
@@ -54,7 +55,14 @@ const AMOUNT =
   // is MTN being billed twenty thousand, and "Invoice Steven 5k" is Steven,
   // not "Steve" being billed "N5k". The lookbehind is what stops a currency
   // mark eating the end of a name — and names ending in n are common here.
-  /(?:₦|(?<![a-z])n(?=\s?[\d])|(?<![a-z])ngn\s?)?\s?(\d[\d,]*(?:\.\d+)?)\s?([hkm])?\b/gi;
+  //
+  // $ and £ are here so that "$500" is picked out as money at all. Three
+  // digits with nothing on them is not an amount — that rule is what keeps
+  // the "2" in "2 logos" out — and without the mark being recognised, a
+  // dollar invoice for $500 has no amount in it as far as this reader is
+  // concerned. It does not decide the currency; `core/currency.ts` does that
+  // by reading the whole message. It only decides that this is a price.
+  /(?:₦|\$|£|(?<![a-z])n(?=\s?[\d])|(?<![a-z])ngn\s?)?\s?(\d[\d,]*(?:\.\d+)?)\s?([hkm])?\b/gi;
 
 /** Where the date starts. Everything after it belongs to the date, not the work. */
 const DUE = /[,;]?\s*\b(?:due|deadline|payable|by|before|not later than|within)\b\s*:?\s*/i;
@@ -107,7 +115,21 @@ export function countOf(raw: string | undefined): number | null {
 /** Nigeria's rate. Named rather than inlined so there is one place to change it. */
 export const VAT_PERCENT = 7.5;
 
-export function extractDocument(text: string, today: Civil): Parsed | null {
+export function extractDocument(
+  text: string,
+  today: Civil,
+  /**
+   * What the message is priced in, read from the whole of it by
+   * `core/currency.ts`. Defaults to naira, which is what this reader has
+   * always assumed and what the great majority of messages are.
+   *
+   * Passed down rather than worked out here because it is a property of the
+   * message, not of the amount: a dollar invoice with a second line written
+   * as a bare "300" means three hundred dollars, and only something that has
+   * seen the whole sentence knows that.
+   */
+  money: CurrencyRead = { kind: "naira" },
+): Parsed | null {
   const norm = text.replace(/\s+/g, " ").trim();
   // Indices are taken from the lowercased copy and used to slice the original,
   // so the client's name keeps its capitals. That only holds while the two are
@@ -224,7 +246,7 @@ export function extractDocument(text: string, today: Civil): Parsed | null {
     confidence: description ? 0.95 : 0.8,
   };
 
-  return normalise(raw, today, "pattern");
+  return normalise(raw, today, "pattern", money);
 }
 
 /**
@@ -259,7 +281,7 @@ function pickAmount(s: string): Found | null {
 
   for (let m = AMOUNT.exec(s); m; m = AMOUNT.exec(s)) {
     const [whole, digits, suffix] = m;
-    const marked = /^[₦n]|ngn/i.test(whole.trim());
+    const marked = /^[₦n$£]|ngn/i.test(whole.trim());
     const plain = (digits ?? "").replace(/,/g, "").replace(/\..*$/, "");
 
     let rank = 0;

@@ -12,6 +12,7 @@
  */
 
 import { parseAmountToKobo } from "../../core/amount.ts";
+import { parseAmountToMinor, type CurrencyRead } from "../../core/currency.ts";
 import { resolveDueDate, type Civil } from "../../core/dates.ts";
 import { COUNTED, SPREAD, countOf } from "./extract.ts";
 
@@ -143,7 +144,7 @@ const AMOUNT_LABELLED =
  * "n" of "design" was read as the currency: "add logo design 50k" came back
  * as an item called "logo desig".
  */
-const MONEY = String.raw`(?:₦|\bngn|\bn)?\s?\d[\d,]*(?:\.\d+)?\s?[hkm]?`;
+const MONEY = String.raw`(?:₦|\$|£|\bngn|\bn)?\s?\d[\d,]*(?:\.\d+)?\s?[hkm]?`;
 
 /**
  * "change <something> to <money>", anchored, with the something captured.
@@ -339,9 +340,37 @@ const VAT_DEFAULT = 7.5;
  * Several things can change at once — "make it 400k, due next Friday" is one
  * message — so every rule is tried and the result is whatever they matched.
  */
-export function readCorrection(text: string, today: Civil): Correction | null {
+export function readCorrection(
+  text: string,
+  today: Civil,
+  /**
+   * The currency of the draft being corrected, which is not always the
+   * currency of the message.
+   *
+   * "make it 600" against a dollar invoice means six hundred dollars, and it
+   * carries no mark at all — so nothing in the words could tell it from six
+   * hundred naira. The invoice is what says which, not the sentence, which is
+   * why this is passed in rather than read out of the text.
+   */
+  money: CurrencyRead = { kind: "naira" },
+): Correction | null {
   const s = text.replace(/\s+/g, " ").trim().replace(/[.!]+$/, "");
   if (!s || s.length > 200) return null;
+
+  const foreign = money.kind === "foreign" ? money.currency : null;
+  const toMinor = (raw: string): number | null =>
+    foreign ? parseAmountToMinor(raw, foreign) : parseAmountToKobo(raw);
+
+  /*
+   * The smallest number that is a price rather than a quantity.
+   *
+   * ₦1,000 is the smallest invoice the limits allow, and below it a bare
+   * number in a correction is far more likely a count or a typo. Ten dollars
+   * is that rule at the same scale: nobody bills $7, and "make it 3" is not a
+   * price. The invoice minimum still applies afterwards, on the converted
+   * figure, so this is only about not reading a quantity as money.
+   */
+  const floor = foreign ? 10_00 : 1_000_00;
 
   const out: Correction = {};
   let rest = s;
@@ -507,7 +536,7 @@ export function readCorrection(text: string, today: Civil): Correction | null {
 
     for (const part of parts) {
       const m = ONE_LINE.exec(part.trim());
-      const kobo = m ? parseAmountToKobo(m[2]!) : null;
+      const kobo = m ? toMinor(m[2]!) : null;
       const description = m ? clean(m[1]!) : "";
       // Every part or none. Half of "add SEO 100k and make it urgent" is an
       // item nobody asked for, priced at whatever the sentence ended with.
@@ -557,8 +586,8 @@ export function readCorrection(text: string, today: Civil): Correction | null {
   const named = LINE_AMOUNT.exec(rest);
   if (named) {
     const what = clean(named[1]!);
-    const kobo = parseAmountToKobo(named[2]!);
-    if (kobo !== null && kobo >= 1_000_00 && what) {
+    const kobo = toMinor(named[2]!);
+    if (kobo !== null && kobo >= floor && what) {
       if (WHOLE_DOCUMENT.has(what.toLowerCase())) {
         out.totalKobo = kobo;
         out.totalMeansWhole = true;
@@ -574,10 +603,10 @@ export function readCorrection(text: string, today: Civil): Correction | null {
   const bare = labelled ? null : AMOUNT_ONLY.exec(rest);
   const amountText = labelled?.[1] ?? bare?.[1];
   if (amountText) {
-    const kobo = parseAmountToKobo(amountText);
-    // A bare number under ₦1,000 is far more likely a quantity or a typo than
-    // a total; the limits reject it anyway, so asking is better than guessing.
-    if (kobo !== null && kobo >= 1_000_00) {
+    const kobo = toMinor(amountText);
+    // A bare number under the floor is far more likely a quantity or a typo
+    // than a total; the limits reject it anyway, so asking beats guessing.
+    if (kobo !== null && kobo >= floor) {
       out.totalKobo = kobo;
       rest = "";
     }

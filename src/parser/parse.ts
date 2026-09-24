@@ -14,7 +14,7 @@
 
 import { env } from "../config.ts";
 import { todayIn, type Civil } from "../../core/dates.ts";
-import { readCurrency } from "../../core/currency.ts";
+import { readCurrency, type CurrencyRead } from "../../core/currency.ts";
 import { parseAmountToKobo } from "../../core/amount.ts";
 import { defaults } from "../config.ts";
 import { asCommand } from "./commands.ts";
@@ -48,7 +48,20 @@ export async function parseMessage(
    * reaches the model, and only so that a reply to "Send it?" can be read as
    * the answer to a question rather than as a sentence out of nowhere.
    */
-  opts: { today?: Civil; fetchImpl?: typeof fetch; onScreen?: string | null } = {},
+  opts: {
+    today?: Civil;
+    fetchImpl?: typeof fetch;
+    onScreen?: string | null;
+    /**
+     * The currency of the draft on screen, when there is one.
+     *
+     * A correction is in the invoice's currency, not the message's: "make it
+     * 600" against a dollar draft carries no mark at all and means six
+     * hundred dollars. A new invoice in the same message is still read in
+     * whatever currency it was written in.
+     */
+    correctionMoney?: CurrencyRead;
+  } = {},
 ): Promise<ParseOutcome> {
   const started = Date.now();
   const since = () => Date.now() - started;
@@ -64,6 +77,7 @@ export async function parseMessage(
    * the cost of it going missing is "£500" becoming an invoice for ₦500.
    */
   const money = readCurrency(text);
+  const correctionMoney = opts.correctionMoney ?? money;
   const priced = (parsed: Parsed): Parsed => (parsed.money === money ? parsed : { ...parsed, money });
 
   // F3: inputs over 1,000 characters are rejected with a short message. The
@@ -86,7 +100,7 @@ export async function parseMessage(
   if (filled) return { ok: true, parsed: priced(filled), latencyMs: since() };
 
   /* 3. The sentence the product teaches. ----------------------------------- */
-  const pattern = extractDocument(text, today);
+  const pattern = extractDocument(text, today, money);
   if (pattern && !pattern.missing.length) {
     return { ok: true, parsed: priced(pattern), latencyMs: since() };
   }
@@ -94,7 +108,11 @@ export async function parseMessage(
   /* 4. The model. ---------------------------------------------------------- */
   const model = await parseWithModel(text, today, opts.fetchImpl, opts.onScreen ?? null);
   if (model.ok) {
-    const parsed = recoverAmount(normalise(model.parse, today, "model", money), text, today);
+    const parsed = recoverAmount(
+      normalise(model.parse, today, "model", money, correctionMoney),
+      text,
+      today,
+    );
 
     // F3: "If confidence is below the configured threshold, or a required
     // field is missing, ask for that one thing only." Below the threshold the
