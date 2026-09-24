@@ -141,6 +141,28 @@ export async function recordTransferAccount(
  * app after they read this. An account with forty seconds left is worse than
  * no account at all.
  */
+/**
+ * The live account for a stage of this document, if one is still good.
+ *
+ * `amountKobo` is what the stage is worth — what the plan says and what the
+ * page calls the balance — not what the client is charged for it. The two are
+ * the same until fees are passed on, and then the client is charged the stage
+ * grossed up by the processor's cut.
+ *
+ * This matched on the charged figure while both callers passed the stage, so
+ * on every invoice that passes fees on it found nothing, twice over:
+ *
+ *   - the Pay button's "there is already an account for this" check failed,
+ *     and minted a second one. Monnify matches a transfer on the account and
+ *     the amount, so two live accounts for the same balance is a way to lose
+ *     somebody's money — which is exactly what the check above it exists to
+ *     prevent, and it had not worked on a fee-passing invoice.
+ *   - and the page could not find the account it had just created, so
+ *     pressing Pay reloaded the invoice with no panel on it at all.
+ *
+ * The second one hid the first: while the Pay button rendered the panel
+ * itself, nobody noticed that nothing could look it up afterwards.
+ */
 export async function liveTransferFor(
   documentId: string,
   amountKobo: number,
@@ -163,7 +185,7 @@ export async function liveTransferFor(
         AND status = 'initialised'
         AND transfer_account_number IS NOT NULL
         AND transfer_expires_at > now() + interval '1 minute'
-        AND client_total_kobo = $2
+        AND COALESCE(invoice_amount_kobo, client_total_kobo) = $2
       ORDER BY transfer_expires_at DESC
       LIMIT 1`,
     [documentId, amountKobo],
