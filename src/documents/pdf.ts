@@ -17,6 +17,7 @@ import { env } from "../config.ts";
 import type { Civil } from "../../core/dates.ts";
 import { renderPdf, rendererAvailable } from "../pdf/chrome.ts";
 import { renderDocumentHtml, snapshotOf, type DocumentData, type Variant } from "../pdf/template.ts";
+import { renderReceiptHtml } from "../pdf/receipt.ts";
 import { renderTemplate, TEMPLATES } from "../pdf/templates.ts";
 import { documentKey, fileName, put, receiptKey } from "../storage/files.ts";
 import { logoDataUri } from "../brand/user-logo.ts";
@@ -114,17 +115,23 @@ export async function renderReceiptPdf(
   const doc: DocumentData = {
     ...data.doc,
     variant: "receipt",
-    amountPaidKobo: p.client_total_kobo,
+    // `amountPaidKobo` is left as the document's own running total, so the
+    // slip can say what is still owed without this payment's fees distorting
+    // it. What this one transfer was goes below, on the receipt itself.
     receipt: {
       number,
       paidOn: civil(p.paid_at) ?? data.doc.issueDate ?? { y: 1970, m: 1, d: 1 },
       method: p.channel,
       reference: p.reference,
+      amountKobo: p.client_total_kobo,
     },
   };
 
   try {
-    const bytes = await renderPdf(renderDocumentHtml(doc));
+    // Its own layout, not one of the eight: a receipt is proof of a payment
+    // rather than a document going out under somebody's brand, so there is
+    // nothing about it to choose. See src/pdf/receipt.ts.
+    const bytes = await renderPdf(renderReceiptHtml(doc));
     const key = receiptKey(paymentId);
     await put(key, bytes, "application/pdf", data.userId);
 

@@ -380,6 +380,38 @@ const PRIVACY_URL = site + "/privacy";
  */
 const HELP = /^(help|menu|what can you do|abeg help)[.!?]*$/i;
 const CANCEL = /^(cancel|stop|start over|restart)[.!?]*$/i;
+/**
+ * The part of a line's name that tells it apart from the others.
+ *
+ * For the example in `whichItem`, which has to be an instruction that would
+ * actually work. Three lines called "Sole Capsule Website UI", "Sole Capsule
+ * Website Development" and "Sole Capsule SEO" share their first two words,
+ * so "change the Sole Capsule to 400k" names all three — it is exactly the
+ * ambiguity being complained about, handed back as the fix for it.
+ *
+ * So the words every line begins with are dropped first, and what is left is
+ * what distinguishes this one. Two words of it, because a full description
+ * makes an example nobody reads to the end.
+ */
+function tellApart(all: { description: string }[], pick = 0): string {
+  const words = (s: string) => s.trim().split(/\s+/).filter(Boolean);
+  const mine = words(all[pick]?.description ?? "");
+  if (!mine.length) return "item";
+
+  const others = all.filter((_, i) => i !== pick).map((l) => words(l.description));
+
+  let shared = 0;
+  while (
+    shared < mine.length - 1 &&
+    others.length > 0 &&
+    others.every((o) => (o[shared] ?? "").toLowerCase() === mine[shared]!.toLowerCase())
+  ) {
+    shared += 1;
+  }
+
+  return mine.slice(shared, shared + 2).join(" ");
+}
+
 const GREETING =
   /^(hi|hello|hey|good (morning|afternoon|evening)|hola|howfa|how far)( there| sir| ma| boss| o)?[.!?]*$/i;
 
@@ -631,6 +663,27 @@ export const VOICE = {
     `\u{1F389} ${b("You are set up.")}`,
     "Now, the one you asked for.",
   ),
+
+  /**
+   * A price, on a draft with several lines, with no word for which one.
+   *
+   * The list is the whole of the answer: somebody who has just been asked
+   * "which item?" needs to see the items. Their own words are offered back
+   * with the first one's name in them, because the shape of the instruction
+   * is the thing being taught, and a made-up example teaches it worse.
+   */
+  whichItem: (doc: PendingDoc, kobo: number): string =>
+    para(
+      `\u{1F914} ${b(`Which one should be ${formatNaira(kobo)}?`)}`,
+      lines(
+        `There are ${doc.lines.length} on this ${doc.type === "quote" ? "quote" : "invoice"}:`,
+        ...doc.lines.map((l) => `• ${l.description}`),
+      ),
+      lines(
+        `Name it — like ${i(`change the ${tellApart(doc.lines)} to ${formatNaira(kobo)}`)}.`,
+        `Or ${i(`change the total to ${formatNaira(kobo)}`)} to replace them all with one line.`,
+      ),
+    ),
 
   /** Refusing a command that has nothing to work with yet. */
   setupBeforeCommands: `\u{1F512} ${b("That one works once you are set up.")}`,
@@ -2271,6 +2324,30 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
 
   /* A correction: change it and show it again (F6 step 3). ----------------- */
   if (msg.correction) {
+    /*
+     * A total, said vaguely, on a draft with more than one line.
+     *
+     * Applying it collapses every line into one — which is the right answer
+     * on a one-line draft and a silent deletion on any other. "Make it 400k"
+     * against three items does not say whether it means all three together
+     * or the one they were looking at, and the cost of guessing wrong is two
+     * lines of somebody's work.
+     *
+     * So it asks, and asks with the list in front of them. Only for a total
+     * nobody named: "change the total to 400k" says which figure it means
+     * and still does exactly what it says.
+     */
+    const vague = msg.correction.totalKobo;
+    if (vague !== undefined && !msg.correction.totalMeansWhole && doc.lines.length > 1) {
+      return {
+        replies: [VOICE.whichItem(doc, vague)],
+        buttons: draftButtons(),
+        next: "awaiting_confirm",
+        context: ctx,
+        effects: [],
+      };
+    }
+
     return buildOrAsk(applyCorrection(doc, msg.correction), ctx, now);
   }
 
@@ -2446,6 +2523,32 @@ function applyCorrection(doc: PendingDoc, c: Correction): PendingDoc {
 
     if (at >= 0 && at < next.lines.length) {
       next.lines = next.lines.filter((_, i) => i !== at);
+      next.totalKobo = undefined;
+    }
+  }
+
+  /*
+   * A new price for one line, leaving the others exactly as they were.
+   *
+   * The correction this was missing. "change the ui amount to 400k" on a
+   * three-item draft was read as a change to the invoice total, and a total
+   * collapses a multi-line draft into a single line — so an invoice for
+   * ₦1,250,000 across three items came back as one item at ₦400,000, with
+   * two lines and ₦900,000 of work gone and nothing on screen to say so.
+   *
+   * A name that matches nothing leaves the draft alone, like the rename
+   * above: changing whichever line happened to come first is how somebody
+   * ends up sending a price they never typed.
+   */
+  if (c.setLineAmount) {
+    const needle = c.setLineAmount.match.toLowerCase();
+    const at = next.lines.findIndex((l) => l.description.toLowerCase().includes(needle));
+    if (at >= 0) {
+      next.lines = next.lines.map((l, i) =>
+        // Quantity goes to one: they named what the line should come to, not
+        // what one of several units of it should cost.
+        i === at ? { ...l, qty: 1, unitAmountKobo: c.setLineAmount!.amountKobo } : l,
+      );
       next.totalKobo = undefined;
     }
   }

@@ -52,6 +52,27 @@ export type Correction = {
    * it, because only the machine holds the draft.
    */
   renameLine?: { match: string; to: string };
+  /**
+   * A new price for one line, leaving every other line alone.
+   *
+   * The correction this reader did not have, and its absence cost real
+   * money. "change the ui amount to 400k", sent to a three-item draft, was
+   * read by the labelled-amount rule — which is not anchored, so it matched
+   * "amount to 400k" in the middle of the sentence, threw away the words
+   * "change the ui", and set the whole invoice total. Applying a total to a
+   * multi-line draft collapses it to one line, so an invoice for ₦1,250,000
+   * across three items came back as one item for ₦400,000. Two lines and
+   * ₦900,000 of work, gone, with nothing on screen to say so.
+   */
+  setLineAmount?: { match: string; amountKobo: number };
+  /**
+   * Whether a total was named as the document's own, rather than guessed at.
+   *
+   * "change the total to 400k" says which figure it means. "make it 400k"
+   * does not, and on a draft with several lines the honest answer to that is
+   * a question rather than a rewrite.
+   */
+  totalMeansWhole?: boolean;
   dueDate?: Civil;
   /** The phrase, so the summary can echo how they said it. */
   duePhrase?: string;
@@ -114,6 +135,7 @@ const AMOUNT_ONLY = new RegExp(
 const AMOUNT_LABELLED =
   /(?:amount|total|price|it|cost)\s+(?:should be|is|to)\s+(?:₦|n|ngn)?\s?(\d[\d,]*(?:\.\d+)?\s?[hkm]?)\b/i;
 
+
 /**
  * Money as people write it: "100k", "₦250,000", "1.5m", "N20000".
  *
@@ -122,6 +144,39 @@ const AMOUNT_LABELLED =
  * as an item called "logo desig".
  */
 const MONEY = String.raw`(?:₦|\bngn|\bn)?\s?\d[\d,]*(?:\.\d+)?\s?[hkm]?`;
+
+/**
+ * "change <something> to <money>", anchored, with the something captured.
+ *
+ * Anchored on purpose. The rule above is not, which is how "change the ui
+ * amount to 400k" was read as a change to the invoice total: it matched
+ * three words in the middle and the rest of the sentence was dropped on the
+ * floor. Anchoring means the whole message has to be this shape or no part
+ * of it is.
+ *
+ * The word for the price is optional because people leave it out — "change
+ * the seo to 200k" — and including it is what makes "the ui amount" resolve
+ * to the line called ui rather than to a line called "ui amount".
+ */
+const LINE_AMOUNT = new RegExp(
+  String.raw`^${FILLER}(?:change|make|set|update|correct|fix|adjust|put)\s+(?:the\s+)?(.+?)(?:'s)?` +
+    String.raw`(?:\s+(?:amount|price|fee|cost|rate|charge|figure))?\s*(?:to|=|:)\s*(${MONEY})\s*$`,
+  "i",
+);
+
+/**
+ * The words that mean the document rather than something on it.
+ *
+ * "change the total to 400k" is an instruction about the invoice. "change
+ * the ui to 400k" is an instruction about a line. Nothing else distinguishes
+ * them, and getting it wrong in one direction rewrites a line and in the
+ * other deletes several.
+ */
+const WHOLE_DOCUMENT = new Set([
+  "it", "this", "that", "amount", "total", "the total", "price", "cost",
+  "invoice", "quote", "bill", "document", "everything", "whole thing",
+  "total amount", "invoice amount", "grand total",
+]);
 
 /**
  * "add SEO 100k", "also add hosting for 20000", "add another item: cards 5k".
@@ -484,8 +539,38 @@ export function readCorrection(text: string, today: Civil): Correction | null {
     }
   }
 
+  /*
+   * A price for one named line, before any rule that reads a total.
+   *
+   * "change the ui amount to 400k" on a three-item draft used to fall to the
+   * labelled-amount rule below, which is not anchored: it matched "amount to
+   * 400k" in the middle of the sentence, discarded "change the ui", and set
+   * the whole invoice total — which collapses a multi-line draft into a
+   * single line. ₦1,250,000 across three items came back as one item at
+   * ₦400,000, with nothing on screen to say two lines had gone.
+   *
+   * What is named decides which correction this is. A word for the document
+   * itself means the total; anything else is a line, and this reader does
+   * not need to know which line — only the machine holding the draft can
+   * match it, and it leaves the draft alone when nothing matches.
+   */
+  const named = LINE_AMOUNT.exec(rest);
+  if (named) {
+    const what = clean(named[1]!);
+    const kobo = parseAmountToKobo(named[2]!);
+    if (kobo !== null && kobo >= 1_000_00 && what) {
+      if (WHOLE_DOCUMENT.has(what.toLowerCase())) {
+        out.totalKobo = kobo;
+        out.totalMeansWhole = true;
+      } else {
+        out.setLineAmount = { match: what, amountKobo: kobo };
+      }
+      rest = "";
+    }
+  }
+
   /* Then the amount, which is the change that matters most. ---------------- */
-  const labelled = AMOUNT_LABELLED.exec(rest);
+  const labelled = out.totalKobo === undefined && !out.setLineAmount ? AMOUNT_LABELLED.exec(rest) : null;
   const bare = labelled ? null : AMOUNT_ONLY.exec(rest);
   const amountText = labelled?.[1] ?? bare?.[1];
   if (amountText) {

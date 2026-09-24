@@ -146,6 +146,24 @@ export const rawCorrection = z.object({
     .nullish()
     .transform((v) => v ?? null),
   /**
+   * A new price for one line, named, leaving the others alone.
+   *
+   * Distinct from `amount`, which is the document's total and replaces every
+   * line with one. On a draft with several lines that difference is two
+   * lines of somebody's work: "change the ui amount to 400k" read as a total
+   * turned a ₦1,250,000 invoice for three items into one item at ₦400,000.
+   *
+   * The amount comes back as written, like every other amount here, and is
+   * converted by our own code.
+   */
+  set_line_amount: z
+    .object({
+      match: z.string().trim().min(1).max(200),
+      amount: z.string().trim().min(1).max(40),
+    })
+    .nullish()
+    .transform((v) => v ?? null),
+  /**
    * A date for one part of the payment plan, rather than for the document.
    *
    * "deposit" and "balance" rather than a number, because which number they
@@ -399,6 +417,15 @@ function asCorrection(raw: RawCorrection | null, today: Civil): Correction | nul
   }
 
   if (raw.rename_line) out.renameLine = raw.rename_line;
+
+  if (raw.set_line_amount) {
+    const kobo = parseAmountToKobo(raw.set_line_amount.amount);
+    // A line the model could not price is not a correction. Dropping the
+    // amount and keeping the name would rewrite a line to nothing.
+    if (kobo !== null && kobo > 0) {
+      out.setLineAmount = { match: raw.set_line_amount.match, amountKobo: kobo };
+    }
+  }
 
   if (raw.remove_line) {
     const position = /^(?:item|line|number|no\.?)?\s*(\d{1,2})(?:st|nd|rd|th)?$/i.exec(raw.remove_line);

@@ -120,6 +120,21 @@ const TOOL = {
               required: ["description"],
             },
           },
+          set_line_amount: {
+            type: ["object", "null"],
+            description:
+              "A new price for ONE line that is already on the draft, leaving every other " +
+              'line alone: "change the ui amount to 400k" is ' +
+              '{match: "ui", amount: "400k"}. ' +
+              "Use this and NOT amount whenever the message names what is being repriced. " +
+              "amount is the whole document and replaces every line with one, so using it " +
+              "here deletes the lines they did not mention, and their money with them.",
+            properties: {
+              match: { type: "string", description: "Words from the line, as they wrote them." },
+              amount: { type: "string", description: 'As written: "400k".' },
+            },
+            required: ["match", "amount"],
+          },
           rename_line: {
             type: ["object", "null"],
             description:
@@ -214,6 +229,11 @@ When a <draft> block appears, a draft is on the user's screen and they have just
   alone. "due next Friday", with no part named, is the invoice's date.
 - An address goes in client_email, never in client_name: "send it to daniel@studio.ng" is an
   email, not a person called Daniel. "no email" is ["email"] in clear.
+- "change the <line> to <money>" is set_line_amount, never amount. amount is the document's
+  own total and replaces every line with a single one, so on a draft with more than one line
+  it deletes the ones they did not mention: "change the ui amount to 400k" against three
+  items must not turn a ₦1,250,000 invoice into one item at ₦400,000. Only use amount when
+  they named the document itself — "the total", "the invoice", "make it 400k".
 - "change X to Y", where X is a line already on the draft, is rename_line. It keeps the price.
   Never say this with remove_line and add_lines together: the replacement usually carries no
   price, and the line is then deleted along with its money.

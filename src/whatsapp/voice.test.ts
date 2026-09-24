@@ -128,6 +128,20 @@ const VOICE_ARGS: Record<string, unknown[]> = {
   gotNameAskBank: ["Ada Studio"],
   askCode: ["ada@adastudio.ng"],
   notBuiltYet: ["Referrals"],
+  // The question asked when a price arrives with no word for which line it
+  // belongs to. Three lines sharing their first two words, because that is
+  // the case its example has to survive.
+  whichItem: [
+    {
+      type: "invoice",
+      lines: [
+        { description: "Sole Capsule Website UI", qty: 1, unitAmountKobo: 350_000_00 },
+        { description: "Sole Capsule Website Development", qty: 1, unitAmountKobo: 750_000_00 },
+        { description: "Sole Capsule SEO", qty: 1, unitAmountKobo: 150_000_00 },
+      ],
+    },
+    400_000_00,
+  ],
 };
 
 const renderVoice = (key: string, value: unknown): string =>

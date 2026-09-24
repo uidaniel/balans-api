@@ -83,6 +83,18 @@ export type DocumentData = {
     paidOn: Civil;
     method: string | null;
     reference: string;
+    /**
+     * What this one payment was, which is not what the document has been
+     * credited with.
+     *
+     * The receipt is proof of a transfer, so the figure on its face is what
+     * the client actually sent — grossed up by the processor's cut whenever
+     * fees are passed on. `amountPaidKobo` stays the document's own running
+     * total, so the "still owed" line on the same slip is the invoice's
+     * arithmetic and not this payment's. Mixing the two produced a receipt
+     * that disagreed with the invoice it was issued against.
+     */
+    amountKobo: number;
   };
   /** The two lines section 12 requires on everything a client sees. */
   legalLines: [string, string];

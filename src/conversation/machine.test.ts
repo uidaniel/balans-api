@@ -284,10 +284,33 @@ describe("how the messages read", () => {
    * rule below like anything else. A greeting is not among them: it is
    * answered with the menu, not a sentence.
    */
+  /*
+   * One sample covers most of them, because most take a single string. The
+   * ones that take a draft get a draft: three lines sharing their first two
+   * words, which is the case the "which one?" question exists for.
+   */
+  const ARGS: Record<string, unknown[]> = {
+    whichItem: [
+      {
+        type: "invoice",
+        lines: [
+          { description: "Sole Capsule Website UI", qty: 1, unitAmountKobo: 350_000_00 },
+          { description: "Sole Capsule Website Development", qty: 1, unitAmountKobo: 750_000_00 },
+          { description: "Sole Capsule SEO", qty: 1, unitAmountKobo: 150_000_00 },
+        ],
+      },
+      400_000_00,
+    ],
+  };
+
   const rendered: unknown[] = [
     ...Object.entries(VOICE)
       .filter(([name]) => name !== "social")
-      .map(([, v]) => (typeof v === "function" ? (v as (s: string) => unknown)("kemi@studio.ng") : v)),
+      .map(([name, v]) =>
+        typeof v === "function"
+          ? (v as (...a: unknown[]) => unknown)(...(ARGS[name] ?? ["kemi@studio.ng"]))
+          : v,
+      ),
     ...(["thanks", "praise", "farewell"] as const).map((k) => VOICE.social(k)),
   ];
 
@@ -1503,5 +1526,106 @@ describe("asking for a different document mid-flow", () => {
     });
     assert.equal(out.next, "awaiting_field:client_name");
     assert.notEqual(out.context.doc?.clientName, "/whatever");
+  });
+});
+
+/**
+ * Changing the price of one item on a draft with several.
+ *
+ * From a real draft: three items for Edidiong Uwak coming to ₦1,250,000, and
+ * the message "change the ui amount to 400k". What came back was a single
+ * item, "Sole Capsule Website UI", for ₦400,000 — two lines and ₦900,000 of
+ * work deleted, with nothing on the screen to say it had happened.
+ *
+ * A total replaces every line with one. That is the right answer on a
+ * one-line draft and a silent deletion on any other, so what happens now
+ * depends on whether the message said which figure it meant.
+ */
+describe("repricing one item of several", () => {
+  const TODAY: Civil = { y: 2026, m: 9, d: 24 };
+
+  const threeItems = () => ({
+    type: "invoice" as const,
+    clientName: "Edidiong Uwak",
+    lines: [
+      { description: "Sole Capsule Website UI", qty: 1, unitAmountKobo: 350_000_00 },
+      { description: "Sole Capsule Website Development", qty: 1, unitAmountKobo: 750_000_00 },
+      { description: "Sole Capsule SEO", qty: 1, unitAmountKobo: 150_000_00 },
+    ],
+    dueDate: { y: 2026, m: 10, d: 8 },
+  });
+
+  const say = (text: string, doc = threeItems()) =>
+    step(
+      "awaiting_confirm",
+      // A draft only counts once it has a row: `atConfirm` answers "there is
+      // no draft waiting" without one.
+      { doc, draftId: "d1" },
+      { text, today: TODAY, correction: readCorrection(text, TODAY) ?? undefined },
+      V,
+    );
+
+  const priced = (out: ReturnType<typeof say>) =>
+    (out.context.doc?.lines ?? []).map((l) => [l.description, l.unitAmountKobo] as const);
+
+  it("changes the one named and leaves the others alone", () => {
+    const out = say("change the ui amount to 400k");
+    assert.deepEqual(priced(out), [
+      ["Sole Capsule Website UI", 400_000_00],
+      ["Sole Capsule Website Development", 750_000_00],
+      ["Sole Capsule SEO", 150_000_00],
+    ]);
+  });
+
+  it("asks which one when the message does not say", () => {
+    /*
+     * "Make it 400k" against three items does not say whether it means all
+     * of them or the one they were looking at, and the cost of guessing
+     * wrong is two lines of somebody's work. So it asks, with the list in
+     * front of them, and changes nothing until it is told.
+     */
+    const out = say("make it 400k");
+    assert.deepEqual(priced(out), [
+      ["Sole Capsule Website UI", 350_000_00],
+      ["Sole Capsule Website Development", 750_000_00],
+      ["Sole Capsule SEO", 150_000_00],
+    ], "the draft was rewritten anyway");
+    assert.match(out.replies.join(" "), /Which one/i);
+    assert.match(out.replies.join(" "), /Sole Capsule SEO/, "it lists what there is to choose from");
+    assert.equal(out.next, "awaiting_confirm");
+  });
+
+  it("gives an example that would actually work", () => {
+    // All three lines begin "Sole Capsule", so an example built from the
+    // first two words names all three — the very ambiguity being complained
+    // about, handed back as the fix for it.
+    const said = say("make it 400k").replies.join(" ");
+    assert.match(said, /change the Website UI to/);
+  });
+
+  it("still replaces everything when that is what was asked for", () => {
+    const out = say("change the total to 400k");
+    assert.deepEqual(priced(out), [["Sole Capsule Website UI", 400_000_00]]);
+  });
+
+  it("leaves a one-line draft working exactly as it did", () => {
+    // The common case, and the one "make it 400k" was written for.
+    const one = {
+      type: "invoice" as const,
+      clientName: "Tunde",
+      lines: [{ description: "Logo design", qty: 1, unitAmountKobo: 20_000_00 }],
+      dueDate: { y: 2026, m: 10, d: 8 },
+    };
+    assert.deepEqual(priced(say("make it 400k", one)), [["Logo design", 400_000_00]]);
+  });
+
+  it("changes nothing when the name matches no line", () => {
+    // Repricing whichever line happened to come first is how somebody sends
+    // a figure they never typed.
+    assert.deepEqual(priced(say("change the photography to 400k")), [
+      ["Sole Capsule Website UI", 350_000_00],
+      ["Sole Capsule Website Development", 750_000_00],
+      ["Sole Capsule SEO", 150_000_00],
+    ]);
   });
 });

@@ -399,3 +399,68 @@ describe("rewording a line that is already there", () => {
     assert.equal(c.addLines, undefined);
   });
 });
+
+/**
+ * Repricing one line of several.
+ *
+ * Reported from a real draft: three items for Edidiong Uwak coming to
+ * ₦1,250,000, and the message "change the ui amount to 400k". What came back
+ * was a single item, "Sole Capsule Website UI", for ₦400,000. Two lines and
+ * ₦900,000 of work were gone, and nothing on the screen said so.
+ *
+ * Two rules did it between them. The labelled-amount rule is not anchored, so
+ * it matched "amount to 400k" in the middle of the sentence and threw away
+ * the words in front of it; and a total, applied to a draft with several
+ * lines, replaces all of them with one.
+ */
+describe("a price for one line", () => {
+  const read = (s: string) => readCorrection(s, { y: 2026, m: 9, d: 24 });
+
+  it("names the line rather than setting the invoice total", () => {
+    assert.deepEqual(read("change the ui amount to 400k"), {
+      setLineAmount: { match: "ui", amountKobo: 400_000_00 },
+    });
+  });
+
+  it("works without the word amount, which is how people write it", () => {
+    assert.deepEqual(read("change the seo to 200k"), {
+      setLineAmount: { match: "seo", amountKobo: 200_000_00 },
+    });
+  });
+
+  it("never reads a price as a new name for the line", () => {
+    /*
+     * The other half of the same bug. "change the seo to 200k" used to fall
+     * through to the rename rule, which would have renamed that line to the
+     * literal text "200k" — a line called 200k, still priced at whatever it
+     * was.
+     */
+    const out = read("change the seo to 200k");
+    assert.equal(out?.renameLine, undefined);
+  });
+
+  it("still reads a real rename", () => {
+    assert.deepEqual(read("change the seo to search engine work"), {
+      renameLine: { match: "seo", to: "search engine work" },
+    });
+  });
+
+  it("knows the words that mean the document itself", () => {
+    // These say which figure they mean, so they still do what they say.
+    for (const s of ["change the total to 400k", "change the amount to 400k", "change the invoice to 400k"]) {
+      assert.deepEqual(read(s), { totalKobo: 400_000_00, totalMeansWhole: true }, s);
+    }
+  });
+
+  it("leaves a vague total vague, for the machine to ask about", () => {
+    // "Make it 400k" does not say whether it means one line or all of them.
+    // The reader says what it read; the machine, which can see how many lines
+    // there are, decides whether that is safe to apply.
+    assert.deepEqual(read("make it 400k"), { totalKobo: 400_000_00 });
+  });
+
+  it("is not fooled by a message that only looks like one", () => {
+    assert.equal(read("change the client to Daniel")?.setLineAmount, undefined);
+    assert.equal(read("change the due date to friday")?.setLineAmount, undefined);
+  });
+});

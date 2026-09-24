@@ -847,8 +847,12 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
             {
               type: "TextInput",
               name: "description",
+              // No helper text. "Item" over a box on a form called New
+              // invoice does not need explaining, and the line sat between
+              // the first item and its amount — a sentence of instruction
+              // wedged into the middle of the thing being filled in. The
+              // second item has never had one and reads better for it.
               label: "Item",
-              "helper-text": "What you are billing for. This is the line they read.",
               required: true,
               "input-type": "text",
               "max-chars": 100,
