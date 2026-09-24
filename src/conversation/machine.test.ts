@@ -634,6 +634,19 @@ describe("a tapped button", () => {
       vat: true,
       pass_fees: true,
       /*
+       * Naira, and no currency box. Both are the safe default, and both are
+       * sent by this function rather than left out — the screen declares
+       * them, and a screen handed one key fewer than it declares dies exactly
+       * as one handed an extra does.
+       *
+       * `can_bill_abroad` is turned on later, by the caller, for a Pro user
+       * with international invoicing switched on. This function cannot know:
+       * it is pure and the plan is in the database.
+       */
+      currency: "",
+      can_bill_abroad: false,
+      amount_help: "Naira, before VAT. Digits only.",
+      /*
        * And nothing else. The form is one screen per number of items now, so
        * a one-line draft opens on the screen that has one set of boxes — and
        * a screen is handed exactly the keys it declares. An extra one is as

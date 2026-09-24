@@ -484,6 +484,17 @@ const SETUP_NUDGE = "Tap below to set up. It takes about a minute.";
  * own line is a real cost for something that reads better joined to the
  * question after it. PRD section 15 puts the whole of setup at six messages.
  */
+/**
+ * The line under the Amount box on the invoice form.
+ *
+ * Two of them, because "Naira, before VAT" is right for almost everybody and
+ * flatly wrong above a box somebody has just set to dollars. Which one is
+ * sent is decided by the same thing that decides whether the currency box is
+ * shown at all.
+ */
+export const NAIRA_HELP = "Naira, before VAT. Digits only.";
+export const ABROAD_HELP = "Before VAT, in the currency above. Digits only.";
+
 export const VOICE = {
   /** The invitation that carries the setup form. */
   /*
@@ -2247,6 +2258,19 @@ function formValues(doc: PendingDoc): {
     notes: doc.notes ?? "",
     vat: doc.vatPercent != null,
     pass_fees: doc.passFeesToClient === true,
+    /*
+     * What the draft is priced in, and whether the box that says so is even
+     * shown (International PRD section 5).
+     *
+     * Hidden by default and naira by default, because this function is pure
+     * and cannot ask what plan somebody is on. The caller knows, and turns it
+     * on where it applies — see `openedAbroad` in handle.ts. Defaulting the
+     * other way would put a currency box in front of every freelancer sending
+     * an ordinary naira invoice.
+     */
+    currency: doc.foreign?.currency ?? "",
+    can_bill_abroad: false,
+    amount_help: NAIRA_HELP,
   };
 
   /*
@@ -2634,7 +2658,7 @@ function applyCorrection(doc: PendingDoc, c: Correction, quote?: Quote): Pending
  * `at` is either a fresh quote or the one already on the draft; both carry a
  * rate and a source, and which it is has already been decided above.
  */
-function repriced(
+export function repriced(
   doc: PendingDoc,
   at: { currency: Foreign; rate: number; source: string; fetchedAt: string | Date },
 ): PendingDoc {

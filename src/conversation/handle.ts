@@ -26,6 +26,8 @@ import { displayNumber } from "../whatsapp/number.ts";
 import { markEmailVerified, setEmail, recordConsent, saveBankAccount, activateBankAccount, getPendingBank } from "./store.ts";
 import type { Inbound } from "../whatsapp/inbound.ts";
 import {
+  ABROAD_HELP,
+  repriced,
   step,
   draftOnScreen,
   VOICE,
@@ -1113,9 +1115,11 @@ async function runEffects(
             // The invoice form carries its starting values on the effect;
             // business details are read here because only this side has a
             // database.
-            data:
+            data: await openedAbroad(
+              userId,
               effect.data ??
-              (effect.key === "business_details" ? await detailsFor(userId) : undefined),
+                (effect.key === "business_details" ? await detailsFor(userId) : undefined),
+            ),
             // A draft flow opens for anyone with developer access to the app,
             // which is how this is tested before verification comes through.
             draft: env.WA_FLOWS_DRAFT === "true",
@@ -2631,12 +2635,55 @@ async function handleInvoiceForm(
     notes: notes || null,
   };
 
-  const outcome = await runEffects([{ type: "save_draft", doc }], userId, businessName, log, {
+  /*
+   * The form's own currency, and the gates that go with it.
+   *
+   * This path does not go through the machine, so none of the guards written
+   * for a typed sentence run here — not the currency reader, not the Pro
+   * check, not the rate. Without this a Pro user could pick "US Dollar" on
+   * the form and get a naira invoice for the same digits, silently, which is
+   * the exact failure the whole of section 5 exists to prevent, arriving
+   * through the one door nobody was watching.
+   *
+   * The amounts in `items.lines` are already in the form's currency — the
+   * form collects digits and `linesFromForm` reads them as minor units — so
+   * `repriced` is the same seam it is for a sentence: above it a figure is in
+   * whatever was chosen, below it everything is kobo.
+   */
+  /*
+   * An empty currency box means "unchanged", not "naira".
+   *
+   * Meta refuses `init-value` on a Dropdown outright, so the only way to
+   * pre-select one is the Form's `init-values` — which validates, but which
+   * nothing has yet proved *pre-selects* on a real phone. If it does not,
+   * somebody reopening a $500 draft to fix a typo gets an empty box, taps
+   * Next, and the form says naira: a $500 invoice becomes a ₦500 one, from an
+   * edit that never touched the money.
+   *
+   * So the draft on screen wins when the box comes back empty. Choosing naira
+   * deliberately sends "NGN", which is a different value from nothing at all,
+   * and that is still honoured. The rule costs a Pro user one explicit tap to
+   * move an invoice back to naira; the other way round costs them the invoice.
+   */
+  const open = await getOpenDraft(userId);
+  const chosen = (fields.currency ?? "").trim() || (open?.foreign?.currency ?? "");
+
+  const abroad = await formCurrency(userId, chosen, log);
+  if (abroad.stop) {
+    await reply(userId, phone, [abroad.words], log);
+    return;
+  }
+  const priced = abroad.quote ? repriced(doc, abroad.quote) : doc;
+
+  const outcome = await runEffects([{ type: "save_draft", doc: priced }], userId, businessName, log, {
     today,
     phone,
   });
 
-  const context: Record<string, unknown> = { doc };
+  // The priced draft, not the one the form sent: a correction typed at the
+  // summary is applied to whatever is in here, and the unpriced copy would
+  // put the dollar figures back.
+  const context: Record<string, unknown> = { doc: priced };
   if (outcome.draftId) context.draftId = outcome.draftId;
 
   // An effect that held — the monthly limit — never wrote a draft, and there
@@ -2707,6 +2754,78 @@ async function handleLogo(
 function addDaysTo(c: { y: number; m: number; d: number }, days: number) {
   const at = new Date(Date.UTC(c.y, c.m - 1, c.d) + days * 86_400_000);
   return { y: at.getUTCFullYear(), m: at.getUTCMonth() + 1, d: at.getUTCDate() };
+}
+
+/**
+ * What the currency box on the form means, and whether it is allowed.
+ *
+ * The same three gates a typed sentence passes, in the same order, because
+ * this path reaches `save_draft` without going near the machine. Empty is
+ * naira and is nearly every submission — including every one from an account
+ * that never saw the box.
+ *
+ * A currency the form should not have been able to send is refused rather
+ * than quietly read as naira. It can only arrive from somebody replaying an
+ * old payload, and treating it as naira would be turning $2,000 into ₦2,000
+ * for them.
+ */
+async function formCurrency(
+  userId: string,
+  chosen: string | undefined,
+  log: FastifyBaseLogger,
+): Promise<{ stop: true; words: string } | { stop: false; quote?: Quote }> {
+  const code = (chosen ?? "").trim().toUpperCase();
+  if (!code || code === "NGN") return { stop: false };
+
+  if (code !== "USD" && code !== "GBP") {
+    log.warn({ userId, code }, "invoice form sent a currency that is not on it");
+    return { stop: true, words: VOICE.currencyNotTaken(code) };
+  }
+
+  if (!env.INTL_ENABLED) {
+    log.warn({ userId, code }, "invoice form sent a currency while the feature is off");
+    return { stop: true, words: VOICE.notInThatCurrency(INFO[code].many) };
+  }
+
+  const plan = await planOf(userId);
+  if (plan !== "pro") return { stop: true, words: VOICE.foreignIsPro };
+
+  const quote = await currentRate(code, { log });
+  if (!quote) {
+    log.error({ userId, code }, "form invoice refused: no rate");
+    return { stop: true, words: VOICE.noRateToday(INFO[code].one) };
+  }
+  return { stop: false, quote };
+}
+
+/**
+ * Turns the currency box on, for the people who can use it.
+ *
+ * The invoice form is one published definition and cannot be built per user,
+ * so the box is always in the JSON and `visible` decides whether anybody sees
+ * it. That decision needs the plan, which needs the database, which is why it
+ * happens here rather than in the machine.
+ *
+ * Off is the safe default and it is what the machine sends. A free account,
+ * or a build with international invoicing switched off, sees a form that is
+ * exactly the form it saw yesterday — and nothing in it that exists only to
+ * be ignored.
+ */
+type FlowData = Record<string, string | number | boolean>;
+
+async function openedAbroad(
+  userId: string,
+  data: FlowData | undefined,
+): Promise<FlowData | undefined> {
+  // Only the document forms carry these three. Onboarding and the rest do not
+  // declare them, and a Flow handed one key too many dies at the first tap.
+  if (!data || !("can_bill_abroad" in data)) return data;
+  if (!env.INTL_ENABLED) return data;
+
+  const plan = await planOf(userId);
+  if (plan !== "pro") return data;
+
+  return { ...data, can_bill_abroad: true, amount_help: ABROAD_HELP };
 }
 
 /**

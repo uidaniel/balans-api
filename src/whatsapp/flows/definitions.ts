@@ -492,6 +492,38 @@ const carriedData = (amount: "string" | "number"): Record<string, unknown> => ({
   notes: { type: "string", __example__: "" },
   vat: { type: "boolean", __example__: false },
   pass_fees: { type: "boolean", __example__: false },
+  /*
+   * What the invoice is priced in (International PRD section 5).
+   *
+   * Empty means naira, which is nearly every invoice and every free account.
+   * It cannot be pre-selected: [Probe, 24 Sep 2026] Meta rejects `init-value`
+   * on a Dropdown outright — "Property 'init-value' is not allowed in
+   * 'Dropdown' component" — so an empty string is the only default there is,
+   * and the handler has to read it as naira.
+   */
+  currency: { type: "string", __example__: "" },
+  /*
+   * Whether to show the currency box at all.
+   *
+   * [Probe, 24 Sep 2026] `visible` bound to data is accepted at version 7.1,
+   * and the acceptance means something: Meta names a property it does not
+   * know and refuses it — "Property 'visible_nonsense_xyz' is not allowed in
+   * 'Dropdown' component" — so a property it accepts silently is one it
+   * recognises. The same trap Monnify sets, checked the same way.
+   *
+   * Off for everyone but Pro. Dollars and pounds are a Pro feature, and a box
+   * that exists only to be ignored is a cost paid by every freelancer sending
+   * an ordinary naira invoice.
+   */
+  can_bill_abroad: { type: "boolean", __example__: false },
+  /*
+   * The line under the Amount box, which cannot be fixed text any more.
+   *
+   * "Naira, before VAT" is right for almost everybody and flatly wrong above
+   * a box somebody has just set to dollars. [Probe] `helper-text` does take a
+   * data binding, so it says the true thing in both cases.
+   */
+  amount_help: { type: "string", __example__: "Naira, before VAT. Digits only." },
 });
 
 /** Those same fields in a payload, from wherever this screen holds them. */
@@ -503,12 +535,18 @@ const carriedPayload = (from: "form" | "data"): Record<string, string> => ({
   description: `\${${from}.description}`,
   amount: `\${${from}.amount}`,
   due_date: `\${${from}.due_date}`,
+  // Chosen on the form screens, so it is read wherever the others are.
+  currency: `\${${from}.currency}`,
   // These four are only ever set on TERMS, at the end, so every screen before
   // it is simply carrying them.
   plan: "${data.plan}",
   notes: "${data.notes}",
   vat: "${data.vat}",
   pass_fees: "${data.pass_fees}",
+  // Never typed by anybody: both are decided before the form opens, by who is
+  // opening it, and every screen is only carrying them.
+  can_bill_abroad: "${data.can_bill_abroad}",
+  amount_help: "${data.amount_help}",
 });
 
 /** Some number of extra items, declared. Always strings: a form returns strings. */
@@ -816,6 +854,7 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
             description: "${data.description}",
             amount: "${data.amount}",
             due_date: "${data.due_date}",
+            currency: "${data.currency}",
             ...Object.fromEntries(
               extras.flatMap((w) => {
                 const f = itemFields(w);
@@ -858,10 +897,39 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
               "max-chars": 100,
             },
             {
+              /*
+               * What the invoice is priced in, and only for somebody who can
+               * use it (International PRD section 5).
+               *
+               * Hidden for everyone else rather than absent, because the form
+               * is one published definition — it cannot be built per user —
+               * and `visible` bound to data is how one form serves both. A
+               * free account never sees it; a Pro account gets the one way
+               * there is to bill abroad from the form rather than by typing a
+               * sentence.
+               *
+               * Directly above Amount, because the two are one decision. Put
+               * anywhere else it reads as a setting rather than as part of
+               * the price.
+               */
+              type: "Dropdown",
+              name: "currency",
+              label: "Currency",
+              required: false,
+              visible: "${data.can_bill_abroad}",
+              "data-source": [
+                { id: "NGN", title: "Naira (₦)" },
+                { id: "USD", title: "US Dollar ($)" },
+                { id: "GBP", title: "Pound (£)" },
+              ],
+            },
+            {
               type: "TextInput",
               name: "amount",
               label: "Amount",
-              "helper-text": "Naira, before VAT. Digits only.",
+              // Not fixed text any more: "Naira, before VAT" is wrong above a
+              // box somebody has just set to dollars. See `carriedData`.
+              "helper-text": "${data.amount_help}",
               required: true,
               "input-type": entry ? "number" : "text",
               "max-chars": 12,
@@ -947,6 +1015,18 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           notes: { type: "string", __example__: "" },
           vat: { type: "boolean", __example__: false },
           pass_fees: { type: "boolean", __example__: false },
+          /*
+           * A string for the same reason `amount` is one: it arrives out of a
+           * Dropdown on WORK as `${form.currency}`, and what a form returns is
+           * a string. Empty when nobody chose — either the box was hidden,
+           * which it is for everyone but Pro, or it was shown and left alone.
+           * Both mean naira.
+           */
+          currency: { type: "string", __example__: "" },
+          // Never shown on this screen and never edited here; TERMS only has
+          // to declare them because it is the screen that hands everything on.
+          can_bill_abroad: { type: "boolean", __example__: false },
+          amount_help: { type: "string", __example__: "Naira, before VAT. Digits only." },
           // Strings, like everywhere. TERMS initialises none of them, so it
           // carries no starting numbers either. See itemData.
           ...itemData(EXTRA_ITEMS.length),
@@ -1005,6 +1085,9 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       amount: "${data.amount}",
                       ...itemPayload(EXTRA_ITEMS.length, "data"),
                       due_date: "${data.due_date}",
+                      // Chosen three screens back, and the only thing on the
+                      // submission that says this is not a naira invoice.
+                      currency: "${data.currency}",
                       plan: "${form.plan}",
                       vat: "${form.vat}",
                       pass_fees: "${form.pass_fees}",
