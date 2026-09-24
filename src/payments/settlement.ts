@@ -15,13 +15,18 @@
  * transactions settle at 10:00 PM on the same day, including weekends and
  * public holidays."
  *
- * The same reply drew a line this file gets to ignore: card transactions
- * settle at 10:00 PM the *next* day and not at all on weekends or public
- * holidays. Nothing here is paid by card. A client pays an invoice by
- * transfer into an account issued for that one payment — `initBankTransfer`,
- * not the hosted checkout — so every payment `arrivalLine` speaks for is an
- * account transaction. If a card route is ever added, this file is wrong for
- * it and needs to know which kind of payment it is describing.
+ * The same reply drew a line about cards: they settle at 10:00 PM the *next*
+ * day and not at all on weekends or public holidays. That line used to be
+ * safe to ignore, because every payment this file spoke for was a transfer
+ * into an account issued for it.
+ *
+ * It is not safe any more. An invoice priced in dollars or pounds is paid by
+ * card through Paystack (International PRD section 8), on somebody else's
+ * settlement schedule entirely — so this file now has to be told which kind
+ * of payment it is describing. Section 9 is blunt about it: "Never use
+ * 'tonight' for Paystack payments." Getting that wrong is not a wording
+ * mistake, it is telling somebody their money arrives tonight when it does
+ * not.
  */
 
 import { defaults } from "../config.ts";
@@ -52,7 +57,19 @@ export const settlesTonight = (at: Date): boolean => lagosHour(at) < SETTLEMENT_
  * Said in the second person and in the present tense, because it is a promise
  * about the reader's own money and this is the message they will screenshot.
  */
-export function arrivalLine(at: Date): string {
+export function arrivalLine(at: Date, provider: "monnify" | "paystack" = "monnify"): string {
+  /*
+   * A card is on Paystack's schedule, which nobody has confirmed in writing
+   * yet — so the sentence comes from configuration and can be changed the day
+   * they do, without a deploy and without hunting for it.
+   *
+   * It deliberately does not compute anything from the clock. "Tonight" is a
+   * claim we can make about Monnify because we know the hour of their payout
+   * run; about this we know only what they publish, and inventing precision
+   * would be inventing it about the reader's own money.
+   */
+  if (provider === "paystack") return defaults.international.settlementText;
+
   return settlesTonight(at)
     ? "Arrives in your bank tonight."
     : "Arrives in your bank tomorrow night.";

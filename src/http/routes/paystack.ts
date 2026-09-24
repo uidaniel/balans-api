@@ -201,7 +201,9 @@ export async function paystackRoutes(app: FastifyInstance): Promise<void> {
       case "confirmed":
         // Not awaited: the money is recorded, and a WhatsApp outage must not
         // make Paystack retry a payment that is already applied.
-        void notifyPaid(outcome, req.log);
+        // With the provider on it, so the message does not promise Monnify's
+        // "tonight" about a card on somebody else's settlement schedule.
+        void notifyPaid({ ...outcome, provider: "paystack" }, req.log);
         void recordCard(reference, req.log);
         return reply.send({ ok: true });
 

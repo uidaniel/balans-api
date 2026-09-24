@@ -15,6 +15,7 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
+import { refreshAll } from "../fx/rate.ts";
 import { defaults, env } from "../config.ts";
 import { formatFriendly, formatISO, todayIn, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
@@ -367,6 +368,19 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
 
     // F15. Returns early on every day but the 1st.
     await sendMonthlySummaries(today, log);
+
+    /*
+     * The naira rate, kept warm (International PRD section 6).
+     *
+     * So the first person to invoice abroad in the morning is not the one
+     * waiting on somebody else's API, and — the real reason — so a provider
+     * outage shows up in the logs an hour before it shows up as a freelancer
+     * being told they cannot send an invoice.
+     *
+     * Last, and only when the feature is on. It talks to the network and a
+     * rate nobody can use must not stand in front of the reminders.
+     */
+    if (env.INTL_ENABLED) await refreshAll(log);
   } catch (err) {
     // A failed run must not stop the next one.
     log.error({ err }, "daily jobs failed");

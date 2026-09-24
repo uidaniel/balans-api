@@ -60,6 +60,14 @@ export type PaidNotice = {
   amountPaidKobo: number;
   fullyPaid: boolean;
   method: string | null;
+  /**
+   * Which processor took it, because they settle on different schedules.
+   *
+   * Defaults to Monnify, which is every naira payment and so nearly all of
+   * them. A card payment described with Monnify's wording is a promise that
+   * the money is in somebody's bank tonight when it is not.
+   */
+  provider?: "monnify" | "paystack";
 };
 
 /** "CARD" and "ACCOUNT_TRANSFER" are not words anybody says out loud. */
@@ -85,7 +93,7 @@ export function paidMessage(n: PaidNotice, at: Date = new Date()): string {
         row(label, n.documentNumber === null ? "—" : `#${n.documentNumber}`),
         how && row("Method", how.charAt(0).toUpperCase() + how.slice(1)),
       ]),
-      arrivalLine(at),
+      arrivalLine(at, n.provider),
     );
   }
 
@@ -98,7 +106,7 @@ export function paidMessage(n: PaidNotice, at: Date = new Date()): string {
       row(label, n.documentNumber === null ? "—" : `#${n.documentNumber}`),
       how && row("Method", how.charAt(0).toUpperCase() + how.slice(1)),
     ]),
-    arrivalLine(at),
+    arrivalLine(at, n.provider),
   );
 }
 
@@ -134,9 +142,21 @@ export async function notifyPaid(n: PaidNotice, log: FastifyBaseLogger): Promise
    * the picture and the words underneath it cannot disagree.
    */
   const at = new Date();
-  const card = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/brand/${
-    settlesTonight(at) ? "paid-tonight.png" : "paid-tomorrow.png"
-  }`;
+  /*
+   * No card on a Paystack payment, deliberately.
+   *
+   * Both posters say "tonight" or "tomorrow night" in as many words, and
+   * those are claims about Monnify's 22:00 run. Sending one with a card
+   * payment would put a promise in the picture that the sentence underneath
+   * it contradicts — and of the two, the picture is what gets screenshotted.
+   * A poster of its own can come later; a wrong one cannot go now.
+   */
+  const card =
+    n.provider === "paystack"
+      ? undefined
+      : `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/brand/${
+          settlesTonight(at) ? "paid-tonight.png" : "paid-tomorrow.png"
+        }`;
 
   const outcome = await send(
     {
