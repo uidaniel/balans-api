@@ -13,7 +13,7 @@
  */
 
 import { normalisePhone, type ReplyButton } from "../whatsapp/client.ts";
-import { b, field, i, lines, para } from "../whatsapp/format.ts";
+import { b, BULLET, field, i, lines, para } from "../whatsapp/format.ts";
 import type { Civil } from "../../core/dates.ts";
 import { isDocumentIntent, type Parsed } from "../parser/schema.ts";
 import type { Correction } from "../parser/corrections.ts";
@@ -286,6 +286,9 @@ export type Effect =
   | { type: "show_designs" }
   /** F21: take the user's logo off their documents. */
   | { type: "remove_logo" }
+  /** The link to the signature page. */
+  | { type: "show_signature" }
+  | { type: "remove_signature" }
   | { type: "show_upgrade" }
   | { type: "show_referral" }
   /** A picture they have confirmed is their logo. */
@@ -824,7 +827,7 @@ export const VOICE = {
       `\u{1F914} ${b(`Which one should be ${formatNaira(kobo)}?`)}`,
       lines(
         `There are ${doc.lines.length} on this ${doc.type === "quote" ? "quote" : "invoice"}:`,
-        ...doc.lines.map((l) => `• ${l.description}`),
+        ...doc.lines.map((l) => `${BULLET}${l.description}`),
       ),
       lines(
         `Name it — like ${i(`change the ${tellApart(doc.lines)} to ${formatNaira(kobo)}`)}.`,
@@ -1961,6 +1964,11 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
     case "remove_logo":
       return { replies: [], next: "idle", context: ctx, effects: [{ type: "remove_logo" }] };
 
+    case "signature":
+      return { replies: [], next: "idle", context: ctx, effects: [{ type: "show_signature" }] };
+    case "remove_signature":
+      return { replies: [], next: "idle", context: ctx, effects: [{ type: "remove_signature" }] };
+
     case "status":
     case "stop_reminders":
     case "cancel_document":
@@ -1968,6 +1976,8 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
     case "convert_quote":
     case "edit_document":
     case "record_payment":
+    case "confirm_payment":
+    case "decline_payment":
       return {
         replies: [],
         next: "idle",
@@ -2205,8 +2215,8 @@ function withDefaults(doc: PendingDoc, now: Civil): PendingDoc {
  * A draft, as the invoice form's starting values.
  *
  * Names match the Flow's `data` keys exactly; anything misspelled here is a
- * field that silently opens blank. The amount is naira and a number, because
- * that is what the WORK screen declares and what its input expects.
+ * field that silently opens blank. Numbers on WORK and strings elsewhere,
+ * because that is what each screen declares and what its inputs expect.
  *
  * The date goes across as words rather than a calendar value: the field takes
  * words, and the same reader handles "8 October 2026" as handles "Friday".
@@ -2215,8 +2225,23 @@ function formValues(doc: PendingDoc): {
   screen: string;
   data: Record<string, string | number | boolean>;
 } {
-  const naira = (l: { unitAmountKobo: number; qty: number }): number =>
-    Math.round((l.unitAmountKobo * l.qty) / 100);
+  /*
+   * One unit's price, in the currency the form will read it in.
+   *
+   * The price of one, not the line: the quantity has its own box now, and a
+   * line reopened as its total with the quantity dropped is "4 stills at
+   * ₦20,000" coming back as one still at ₦80,000.
+   *
+   * And the agreed price on a foreign draft, not the naira it converted to.
+   * The currency box reopens on dollars, so the figure under it has to be
+   * dollars: sent the kobo figure, a $500 draft reopened at "663500" and
+   * tapping Next priced it at $663,500 — the conversion done twice, which is
+   * the failure dollar-draft.test.ts exists for, through the form.
+   */
+  const unit = (l: { unitAmountKobo: number; originalUnitAmountMinor?: number }): number =>
+    (doc.foreign ? (l.originalUnitAmountMinor ?? l.unitAmountKobo) : l.unitAmountKobo) / 100;
+  /** Empty for one, which is what the box says when nobody has touched it. */
+  const qtyText = (l: { qty: number } | undefined): string => (l && l.qty !== 1 ? String(l.qty) : "");
 
   const first = doc.lines[0];
 
@@ -2251,8 +2276,16 @@ function formValues(doc: PendingDoc): {
      * a form ever returns and Flow JSON has no cast.
      */
     amount: ((a) => (onEntry ? a : String(a)))(
-      first ? naira(first) : Math.round((doc.totalKobo ?? 0) / 100),
+      first
+        ? unit(first)
+        : Math.round((doc.foreign ? doc.foreign.amountMinor : (doc.totalKobo ?? 0)) / 100),
     ),
+    /*
+     * WORK's box is a number input and has to be handed a number, so a
+     * one-line draft reopens showing "1". Every other screen takes a string
+     * and shows one only when it is not one.
+     */
+    qty: onEntry ? (first?.qty ?? 1) : qtyText(first),
     due_date: doc.dueDate ? formatLongDate(doc.dueDate) : "",
     plan: planIdFor({ depositPercent: doc.depositPercent, instalments: doc.instalments }),
     notes: doc.notes ?? "",
@@ -2285,7 +2318,8 @@ function formValues(doc: PendingDoc): {
     const line = doc.lines[index + 1];
     const f = itemFields(w);
     values[f.description] = line?.description ?? "";
-    values[f.amount] = line ? String(naira(line)) : "";
+    values[f.qty] = qtyText(line);
+    values[f.amount] = line ? String(unit(line)) : "";
   });
 
   return { screen: onEntry ? "WORK" : formScreenId(items), data: values };

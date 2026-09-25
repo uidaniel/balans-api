@@ -40,10 +40,13 @@ const doc = (over: Partial<DocumentData> = {}): DocumentData => ({
   ...over,
 });
 
-describe("the PAID stamp", () => {
-  it("goes on an invoice that is settled in full", () => {
+describe("a paid invoice", () => {
+  it("is known to be paid, and carries no stamp", () => {
+    // The stamp is gone: its `.paid` rule also reached the "Paid in full"
+    // headline three layouts mark `class="due paid"`, and rotated it off the
+    // page. The headline says it, once (templates.test.ts).
     assert.equal(isPaid(doc()), true);
-    assert.match(sheet(doc(), {}, { css: "", body: "" }), /class="paid">PAID</);
+    assert.doesNotMatch(sheet(doc(), {}, { css: "", body: "" }), />PAID</);
   });
 
   it("stays off a deposit", () => {
@@ -70,17 +73,6 @@ describe("the PAID stamp", () => {
     assert.equal(isPaid(doc({ totalKobo: 0, amountPaidKobo: 0 })), false);
   });
 
-  it("sits behind the figures rather than over them", () => {
-    /*
-     * An invoice is a record somebody's accountant reads. A stamp that
-     * obscures an amount turns a paid invoice into a query, which is the
-     * opposite of what it is for.
-     */
-    const css = sheet(doc(), {}, { css: "", body: "" });
-    assert.match(css, /\.paid\{[^}]*position:absolute/);
-    assert.match(css, /\.paid\{[^}]*opacity:\.17/);
-    assert.match(css, /\.paid\{[^}]*pointer-events:none/);
-  });
 });
 
 describe("the emails a payment sends", () => {

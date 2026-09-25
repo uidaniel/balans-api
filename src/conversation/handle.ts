@@ -55,6 +55,7 @@ import {
   draftSummary,
   quoteButtons,
   sentMessage,
+  bankDetailsSentNote,
   convertedForward,
 } from "../documents/summary.ts";
 import { partsFor } from "../documents/parts.ts";
@@ -88,7 +89,7 @@ import {
   summaryMessage,
 } from "../documents/reports.ts";
 import { defaultPeriod, readPeriod } from "../../core/period.ts";
-import { renderDocumentPdf } from "../documents/pdf.ts";
+import { renderDocumentPdf, renderReceiptPdf } from "../documents/pdf.ts";
 import { emailDocumentToClient } from "../email/client-delivery.ts";
 import { cancelDocument, convertQuote, findForResend, stopReminders } from "../documents/actions.ts";
 import {
@@ -279,6 +280,11 @@ import {
   upsertUser,
   type Conversation,
 } from "./store.ts";
+import { documentLink } from "../documents/links.ts";
+import { clearSignature, issueSignatureToken } from "../brand/signature.ts";
+import { signatureUrl } from "../http/routes/signature.ts";
+import { bankDetailsOf } from "../documents/bank-details.ts";
+import { findPayableByNumber, recordOfflinePayment } from "../payments/offline.ts";
 
 export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promise<void> {
   const user = await upsertUser(msg.from);
@@ -1453,6 +1459,20 @@ async function runEffects(
             log.warn({ userId, reason: sent.reason }, "could not send the quote buttons");
           };
 
+          /*
+           * On a naira invoice there is nothing to confirm the payment by, so
+           * the sender is told, once per invoice and in their own words, how it
+           * becomes paid. Its own message: the one above is for forwarding.
+           */
+          const explainBankDetails = async (): Promise<void> => {
+            if (!confirmed.bank || !ctx.phone) return;
+            const sent = await sendText(
+              ctx.phone,
+              bankDetailsSentNote(confirmed.number, draft.clientName, confirmed.type === "payment_request"),
+            );
+            if (sent.ok) await recordOutbound(userId, sent.waMessageId, "sent", { kind: "text" });
+          };
+
           const offerDesigns = async (): Promise<void> => {
             if (!ctx.phone || (await hasChosenTemplate(userId))) return;
             if ((await documentsEverSent(userId)) > DESIGN_OFFER_LIMIT) return;
@@ -1478,6 +1498,7 @@ async function runEffects(
               if (sent.ok) {
                 await recordOutbound(userId, sent.waMessageId, "sent", { kind: "document" });
                 await offerQuoteActions();
+                await explainBankDetails();
                 await offerDesigns();
                 break;
               }
@@ -1490,6 +1511,9 @@ async function runEffects(
           // No renderer, no upload, or a failed send: the link still works, and
           // that is the part that gets them paid.
           extra.push(forward);
+          if (confirmed.bank) {
+            extra.push(bankDetailsSentNote(confirmed.number, draft.clientName, confirmed.type === "payment_request"));
+          }
           await offerQuoteActions();
           await offerDesigns();
           break;
@@ -1584,6 +1608,36 @@ async function runEffects(
           }
 
           extra.push(words);
+          break;
+        }
+
+        case "show_signature": {
+          // A button, like the design picker: the page is the whole point.
+          const url = signatureUrl(await issueSignatureToken(userId));
+          const body = lines(
+            `✍️ ${b("Your signature")}`,
+            "Draw it with your finger, or type your name and pick a style. It goes above your business name on your invoices and quotes.",
+          );
+          if (ctx.phone) {
+            const sent = await sendCta(ctx.phone, { body, label: "Add signature", url, footer: "The link works for a day" });
+            if (sent.ok) {
+              await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+              break;
+            }
+            log.error({ userId, reason: sent.reason }, "could not send the signature link");
+          }
+          extra.push(`${body}\n\n${url}`);
+          break;
+        }
+
+        case "remove_signature": {
+          await clearSignature(userId);
+          extra.push(
+            lines(
+              `🧽 ${b("Signature removed.")}`,
+              `Your documents go out without the signature line now. Reply ${b("signature")} any time to add one.`,
+            ),
+          );
           break;
         }
 
@@ -2107,6 +2161,85 @@ async function runEffects(
             break;
           }
 
+          /*
+           * A payment the sender is telling us about (addendum section 5).
+           * Asked back first, with the client and the amount, because this is
+           * the one command that changes money on their word alone.
+           */
+          if (effect.intent === "record_payment") {
+            if (!number) {
+              extra.push(lines(`🤔 ${b("Which invoice?")}`, `Reply like ${b("Zenith paid invoice 16")}.`));
+              break;
+            }
+            const inv = await findPayableByNumber(userId, number);
+            if (!inv) { extra.push(notFoundMessage({ number })); break; }
+            if (inv.status === "cancelled") {
+              extra.push(`Invoice ${number} was cancelled, so there is nothing to mark paid.`);
+              break;
+            }
+            if (inv.owedKobo <= 0 || inv.status === "paid") {
+              extra.push(`✅ Invoice ${number} for ${inv.clientName} is already paid in full.`);
+              break;
+            }
+            const ask = `Mark ${b(`Invoice ${number}`)} (${inv.clientName}, ${formatNaira(inv.owedKobo)}) as paid by direct transfer?`;
+            if (ctx.phone) {
+              const sent = await sendButtons(ctx.phone, {
+                body: ask,
+                buttons: [
+                  { id: `yes mark invoice ${number} paid`, title: "Yes, mark paid" },
+                  { id: `leave invoice ${number} unpaid`, title: "No" },
+                ],
+              });
+              if (sent.ok) {
+                await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+                break;
+              }
+            }
+            extra.push(lines(ask, `Reply ${b(`yes mark invoice ${number} paid`)} to confirm.`));
+            break;
+          }
+
+          if (effect.intent === "decline_payment") {
+            extra.push(`Okay — invoice ${number ?? ""} stays unpaid.`.replace("invoice  ", "invoice "));
+            break;
+          }
+
+          if (effect.intent === "confirm_payment") {
+            if (!number) { extra.push(notFoundMessage({})); break; }
+            const inv = await findPayableByNumber(userId, number);
+            if (!inv) { extra.push(notFoundMessage({ number })); break; }
+            const done = await recordOfflinePayment(userId, inv.id);
+            if (!done.ok) {
+              extra.push(
+                done.why === "already_paid"
+                  ? `✅ Invoice ${number} is already paid in full.`
+                  : `Invoice ${number} cannot be marked paid.`,
+              );
+              break;
+            }
+            log.info({ userId, documentId: inv.id, paidKobo: done.paidKobo }, "offline payment recorded");
+
+            // The receipt, to forward to the client: "Payment received outside
+            // Balans" is on it, so they know whose word it rests on.
+            const words = lines(
+              `✅ ${b(`Invoice ${number} marked paid`)} — ${formatNaira(done.paidKobo)} from ${done.clientName}.`,
+              "Here is the receipt to send them.",
+            );
+            const receipt = await renderReceiptPdf(done.paymentId, log);
+            if (receipt && ctx.phone) {
+              const up = await uploadDocument(receipt.bytes, receipt.filename);
+              if (up.ok) {
+                const sent = await sendDocument(ctx.phone, up.mediaId, receipt.filename, words);
+                if (sent.ok) {
+                  await recordOutbound(userId, sent.waMessageId, "sent", { kind: "document" });
+                  break;
+                }
+              }
+            }
+            extra.push(words);
+            break;
+          }
+
           if (effect.intent === "cancel_document") {
             if (!number) { extra.push(notFoundMessage({})); break; }
             const done = await cancelDocument(userId, number);
@@ -2120,8 +2253,9 @@ async function runEffects(
             if (!found.ok) { extra.push(notFoundMessage({ number })); break; }
 
             const d = found.value;
-            const link = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/${d.publicToken}`;
-            const caption = resendMessage(d, link);
+            // A sent document always has a token; the type only allows for drafts.
+            const link = documentLink(d.type, d.publicToken ?? "");
+            const caption = resendMessage(d, link, await bankDetailsOf(d.id));
 
             // F6: "returns the current PDF and link." The stored one, not a new
             // render — the client must get the document they already have.
@@ -2187,6 +2321,7 @@ async function runEffects(
               await partsFor(inv.id),
               link,
               ctx.today,
+              done.value.bank,
             );
 
             const pdf = await renderDocumentPdf(inv.id, log);
@@ -2613,12 +2748,19 @@ async function handleInvoiceForm(
               `🤔 ${b(`Item ${items.position} is only half filled in.`)}`,
               items.hasDescription
                 ? "It has the work but no amount. Add one, or untick it if you did not mean to bill for it."
-                : "It has an amount but nothing saying what it is for.",
+                : // An amount, a quantity, or both, and no words: the missing
+                  // part is the same either way.
+                  "It has nothing saying what it is for.",
             )
-          : para(
-              `🤔 ${b("That form came back missing something.")}`,
-              "A client, what the work is, and an amount. Try again, or just tell me in a sentence.",
-            ),
+          : items.reason === "qty"
+            ? para(
+                `🤔 ${b(`Item ${items.position} has a quantity I cannot use.`)}`,
+                "A number above zero, like 4 or 2.5. Leave it empty to bill the amount once.",
+              )
+            : para(
+                `🤔 ${b("That form came back missing something.")}`,
+                "A client, what the work is, and an amount. Try again, or just tell me in a sentence.",
+              ),
       ],
       log,
     );

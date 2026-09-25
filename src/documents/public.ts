@@ -13,6 +13,8 @@ import { db } from "../db/pool.ts";
 import type { Civil } from "../../core/dates.ts";
 import { partsFor, nextPayable, type Part } from "./parts.ts";
 import type { Foreign } from "../../core/currency.ts";
+import { decrypt } from "../lib/crypto.ts";
+import type { BankDetails } from "./bank-details.ts";
 
 export type PublicStatus =
   | "draft"
@@ -77,6 +79,8 @@ export type PublicDocument = {
     /** Only ever shown as "today's rate" context, never as a price. */
     rate: number;
   } | null;
+  /** The sender's own account, on a naira invoice sent with bank details. */
+  bank?: BankDetails | null;
 };
 
 const civil = (d: Date | null): Civil | null =>
@@ -109,11 +113,18 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     fx_rate: string | null;
     client_name: string;
     sub_account_code: string | null;
+    delivery_type: "payment_link" | "bank_details";
+    bank_details_bank_name: string | null;
+    bank_details_account_name: string | null;
+    bank_details_account_last4: string | null;
+    bank_details_account_number_encrypted: Buffer | null;
   }>(
     `SELECT d.id, d.user_id, d.type, d.number, d.status,
             d.subtotal_kobo, d.vat_kobo, d.total_kobo, d.amount_paid_kobo,
             d.pass_fees_to_client, d.due_date, d.valid_until, d.issue_date, d.notes,
             d.currency, d.original_amount_minor, d.fx_rate,
+            d.delivery_type, d.bank_details_bank_name, d.bank_details_account_name,
+            d.bank_details_account_last4, d.bank_details_account_number_encrypted,
             u.business_name, u.plan,
             c.name AS client_name,
             b.subaccount_code AS sub_account_code
@@ -171,6 +182,17 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     notes: r.notes,
     subAccountCode: r.sub_account_code,
     plan: r.plan,
+    // The account stamped on it when it was sent — never the live one, so a
+    // bank change cannot redirect money a client is about to send.
+    bank:
+      r.delivery_type === "bank_details" && r.bank_details_account_number_encrypted
+        ? {
+            bankName: r.bank_details_bank_name ?? "",
+            accountName: r.bank_details_account_name ?? "",
+            accountNumber: decrypt(r.bank_details_account_number_encrypted),
+            last4: r.bank_details_account_last4 ?? "",
+          }
+        : null,
     parts: await partsFor(r.id),
     foreign:
       r.currency === "NGN" || r.original_amount_minor === null || r.fx_rate === null
@@ -252,6 +274,9 @@ export function payable(d: PublicDocument): { ok: true } | { ok: false; why: str
   if (d.status === "paid" || outstandingKobo(d) === 0) return { ok: false, why: "paid" };
   // Every part settled but the document not yet marked paid: nothing to take.
   if (d.parts.length && payableNowKobo(d) === 0) return { ok: false, why: "paid" };
+  // A naira invoice is paid by transfer to the sender's own account, which
+  // the page shows instead of a Pay button (see bank-details.ts).
+  if (d.bank) return { ok: false, why: "bank_details" };
   // Without a subaccount the money has nowhere to settle but our own wallet,
   // which is the one thing Balans must never do.
   if (!d.subAccountCode) return { ok: false, why: "no_account" };

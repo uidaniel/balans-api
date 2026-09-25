@@ -129,7 +129,8 @@ describe("the price on the message that carries the PDF", () => {
       vatKobo: 6_719_070,
       foreign: { currency: "GBP", amountMinor: 500_00, rate: 1926.1334 },
     });
-    assert.match(out, /£500\.00/);
+    // £500 before VAT, which is what the naira total includes: £537.50.
+    assert.match(out, /£537\.50/);
     assert.ok(!out.includes("963,066.70"), "the client is quoted a figure they never agreed");
   });
 

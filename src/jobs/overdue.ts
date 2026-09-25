@@ -25,6 +25,8 @@ import { sendMonthlySummaries } from "./monthly-summary.ts";
 import { sweepStaleDrafts } from "../documents/store.ts";
 import { retireSupersededAccounts } from "../settings/bank-change.ts";
 import { expireLapsedSubscriptions, renewalsDue } from "../billing/subscription.ts";
+import { payBy } from "../documents/summary.ts";
+import { bankDetailsOf, type BankDetails } from "../documents/bank-details.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Quiet hours (F13)                                                          */
@@ -215,6 +217,7 @@ export async function sendDueReminders(
           due,
           today,
           link,
+          bank: await bankDetailsOf(r.document_id),
         }),
         fallback: {
           template: "invoice_overdue_prompt",
@@ -258,6 +261,8 @@ export function promptMessage(x: {
   due: Civil;
   today: Civil;
   link: string | null;
+  /** The account a naira invoice was sent with; replaces the link. */
+  bank?: BankDetails | null;
 }): string {
   const which = x.number === null ? "INVOICE" : `INVOICE #${x.number}`;
   const when = formatFriendly(x.due, x.today);
@@ -281,7 +286,7 @@ export function promptMessage(x: {
 
   const forward = para(
     `Hi ${x.clientName} — a quick note that the invoice${from} for ${formatNaira(x.owedKobo)} was due ${when}.`,
-    x.link ? `Pay here: ${x.link}` : "",
+    x.bank ? payBy(x.link, x.bank) : x.link ? `Pay here: ${x.link}` : "",
     "Thank you.",
   );
 

@@ -66,8 +66,8 @@ const STOCK = "#FDFBF6";
  * background with it, which is what makes the teeth read as the page showing
  * through rather than as something printed on top.
  */
-const TOOTH_MM = 3.4;
-const TEETH = 24;
+const TOOTH_MM = 4;
+const TEETH = 40;
 
 /** The slip, with a row of teeth bitten out of its foot. */
 function tornEdge(): string {
@@ -87,12 +87,17 @@ const CSS = `
  * Sized in millimetres rather than ems so that a long reference or a fifth
  * line of work cannot push the torn edge off the bottom of the page: the em
  * this sheet is set at is chosen for invoice tables, and this is not one.
+ *
+ * The full width of the page, less a margin. It was a 92mm till slip in the
+ * middle of an A4 sheet, which is the right shape on a desk and the wrong one
+ * on a phone: opened in WhatsApp the page is scaled to the screen, and a slip
+ * a third of its width came out as small print in a lot of empty cream.
  */
-.sheet{background:${CREAM};align-items:center;justify-content:center;padding:10mm 0;font-size:3.5mm}
+.sheet{background:${CREAM};align-items:center;justify-content:center;padding:14mm 16mm;font-size:5.4mm}
 .slip{
-  position:relative;width:92mm;max-height:277mm;overflow:hidden;background:${STOCK};
+  position:relative;width:100%;max-height:269mm;overflow:hidden;background:${STOCK};
   clip-path:${tornEdge()};
-  padding:8mm 7mm ${(TOOTH_MM + 3).toFixed(1)}mm;text-align:center;
+  padding:12mm 14mm ${(TOOTH_MM + 5).toFixed(1)}mm;text-align:center;
 }
 
 .slip .top{display:flex;align-items:center;justify-content:center;gap:.5em}
@@ -192,6 +197,11 @@ export function renderReceiptHtml(d: DocumentData, opts: RenderOptions = {}): st
   <p class="stamp">${TICK}Paid</p>
   <p class="big">${money(paid)}</p>
   ${r ? `<p class="on">${when(r.paidOn)}</p>` : ""}
+  ${
+    // Nothing watched this money arrive; the sender said it did. The client
+    // is owed knowing which kind of receipt they are holding.
+    r && r.method === "OFFLINE" ? `<p class="on">Payment received outside Balans, confirmed by ${esc(d.businessName)}</p>` : ""
+  }
 
   <div class="cut"></div>
 

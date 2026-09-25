@@ -32,7 +32,8 @@ import { fontFaces, FONT } from "../pdf/fonts.ts";
 import { renderPng } from "../pdf/chrome.ts";
 import { uploadDocument } from "../whatsapp/client.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { formatMoney } from "../../core/currency.ts";
+import { formatMoney, INFO } from "../../core/currency.ts";
+import { agreedTotalMinor } from "../../core/exchange.ts";
 import { defaults } from "../config.ts";
 import { settlesLine } from "../payments/settlement.ts";
 import { payout, planLines } from "./summary.ts";
@@ -52,11 +53,24 @@ export const CARD = 1400;
 const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/** A row with a dotted leader, as on a printed bill. */
-const row = (label: string, value: string, opts: { muted?: boolean; strong?: boolean } = {}): string =>
+/**
+ * A row with a dotted leader, as on a printed bill.
+ *
+ * `cost` sets the figure in red: money leaving the amount on its way to the
+ * bank. Only the figure, so the label stays as quiet as the rest of the list
+ * and the eye goes straight to what is being taken.
+ */
+const row = (
+  label: string,
+  value: string,
+  opts: { muted?: boolean; strong?: boolean; cost?: boolean } = {},
+): string =>
   `<div class="row${opts.muted ? " muted" : ""}${opts.strong ? " strong" : ""}">
-     <span class="l">${esc(label)}</span><span class="lead"></span><span class="v">${esc(value)}</span>
+     <span class="l">${esc(label)}</span><span class="lead"></span><span class="v${opts.cost ? " cost" : ""}">${esc(value)}</span>
    </div>`;
+
+/** Two arrows passing, for "this converts to that". Drawn, not a font glyph. */
+const SWAP = `<svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="#10231c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg>`;
 
 export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): string {
   const money = payout(draft, plan);
@@ -74,7 +88,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
    * the stored parts agree with, so the picture cannot drift from either. The
    * "Payment plan:" heading it puts first is dropped — the card has its own.
    */
-  const stages = planLines(draft, today).slice(1).map((s) => s.replace(/^\s*·\s*/, ""));
+  const stages = planLines(draft, today).slice(1).map((s) => s.replace(/^\s*[-·]\s*/, ""));
 
   /*
    * Only when the client is paying the processor's cut, because only then is
@@ -105,6 +119,33 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
   const processorLabel =
     stages.length > 1 ? `${processor} fee (${stages.length} payments)` : `${processor} fee`;
 
+  /*
+   * A naira invoice is paid by transfer straight to the sender's own account
+   * (see bank-details.ts). No processor touches it and there is no fee to
+   * itemise, so the card says the one thing that is true: all of it lands.
+   */
+  const feeRows = draft.foreign
+    ? `
+    <div class="rows">
+      ${grossedUp ? row("Client pays", formatNaira(money.clientPaysKobo)) : ""}
+      ${row(processorLabel, `−${formatNaira(money.processorFeeKobo)}`, { muted: true, cost: true })}
+      ${
+        money.balansFeeKobo > 0
+          ? row(`Balans fee (${plan === "pro" ? "Pro" : "Free"})`, `−${formatNaira(money.balansFeeKobo)}`, {
+              muted: true,
+              cost: true,
+            })
+          : row("Balans fee (Pro)", "₦0", { muted: true })
+      }
+      <div class="total">${row("To your bank", formatNaira(money.receivesKobo), { strong: true })}</div>
+    </div>
+
+`
+    : `<div class="rows">
+      ${row("Fees", "₦0", { muted: true })}
+      <div class="total">${row("To your bank", formatNaira(draft.totalKobo), { strong: true })}</div>
+    </div>`;
+
   return `<!doctype html>
 <html><head><meta charset="utf-8"><style>
   /* The faces travel with the render. A PNG is drawn from HTML with no
@@ -113,7 +154,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
      which, in this image, is DejaVu. */
   ${fontFaces(["display"])}
   :root {
-    --ink:#10231c; --cream:#f6f1e7; --sand:#e9e1d0; --sand-2:#ddd3bf; --moss:#3f8f5f;
+    --ink:#10231c; --cream:#f6f1e7; --sand:#e9e1d0; --sand-2:#ddd3bf; --moss:#2e8a55; --red:#d14343;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body { width:${CARD}px; height:${CARD}px; overflow:hidden; }
@@ -149,6 +190,14 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
           border-bottom:2px dashed rgb(16 35 28 / 0.25); }
   .cap { font-size:28px; color:rgb(16 35 28 / 0.55); }
   .amount { margin-top:4px; font-size:76px; font-weight:800; letter-spacing:-0.03em; }
+  .pair { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:28px; }
+  .pair .amount { font-size:62px; white-space:nowrap; }
+  .pair .r { text-align:right; }
+  .amount.naira { color:var(--moss); }
+  .swap { width:96px; height:96px; border-radius:50%; background:#f5b82e;
+          display:grid; place-items:center; }
+  .rate { margin:22px auto 6px; display:table; padding:10px 22px; border-radius:999px;
+          background:rgb(16 35 28 / 0.06); font-size:32px; font-weight:700; letter-spacing:-0.01em; }
   .when { margin-top:10px; font-size:29px; color:rgb(16 35 28 / 0.6); }
 
   .stages { margin-top:20px; font-size:28px; color:rgb(16 35 28 / 0.6); }
@@ -159,6 +208,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
   .row .lead { flex:1; min-width:24px; border-bottom:3px dotted currentColor;
                opacity:0.3; transform:translateY(-0.3em); }
   .row.muted { color:rgb(16 35 28 / 0.55); }
+  .row .v.cost { color:var(--red); font-weight:600; }
   .row.strong { margin-top:0; font-size:40px; font-weight:800; }
 
   .total { margin-top:26px; padding-top:24px; border-top:4px solid var(--ink); }
@@ -184,31 +234,34 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
       logoAvailable() ? logoSvg("64px") : `<span class="word">bala<i>n</i>s</span>`
     }</div>
 
-    <h1>${quote ? "Quote" : "Invoice"} Payment Breakdown</h1>
+    <h1>${quote ? "Quote" : "Invoice"} breakdown</h1>
     <p class="sub">For ${esc(draft.clientName)} · ${esc(line)}</p>
 
     <div class="band">
-      <div class="cap">${quote ? "Quote" : "Invoice"} amount</div>
-      <div class="amount">${
-        draft.foreign
-          ? esc(formatMoney(draft.foreign.amountMinor, draft.foreign.currency))
-          : formatNaira(draft.totalKobo)
-      }</div>
       ${
         /*
-         * The agreed price is the headline, and the naira charge sits under
-         * it — the same rule the PDF follows, for the same reason: $150 is
-         * what the two of them said yes to.
+         * Abroad: the agreed price and the naira it is charged as, side by
+         * side, with the rate under them. They are one amount said twice, and
+         * setting them apart with a sentence between ("₦927,892.70 charged,
+         * at today's rate") made two facts out of it. The rate is the one the
+         * draft was locked at, as stored.
          *
-         * It also has to match the words directly underneath, which say
-         * "Amount: $150.00". A picture captioned "Invoice amount
-         * ₦213,958.33" above a message saying $150.00 is two answers to one
-         * question, in the one message this product asks people to check.
+         * The agreed side includes VAT, because the naira side does: the
+         * card used to set "$650.00" beside ₦927,892.70, which is $698.75.
          */
         draft.foreign
-          ? `<div class="when">${formatNaira(draft.totalKobo)} charged, at today’s rate</div>`
-          : ""
+          ? `<div class="pair">
+               <div class="side"><div class="cap">${quote ? "Quote" : "Invoice"} amount</div>
+                 <div class="amount">${esc(formatMoney(agreedTotalMinor(draft.foreign.amountMinor, draft.subtotalKobo, draft.vatKobo), draft.foreign.currency))}</div></div>
+               <div class="swap">${SWAP}</div>
+               <div class="side r"><div class="cap">Naira amount</div>
+                 <div class="amount naira">${formatNaira(draft.totalKobo)}</div></div>
+             </div>
+             <div class="rate">${INFO[draft.foreign.currency].symbol}1 → ${formatNaira(Math.round(draft.foreign.rate * 100))}</div>`
+          : `<div class="cap">${quote ? "Quote" : "Invoice"} amount</div>
+             <div class="amount">${formatNaira(draft.totalKobo)}</div>`
       }
+      ${draft.vatKobo > 0 ? `<div class="when">Includes ${esc(String(draft.vatPercent))}% VAT</div>` : ""}
       ${
         draft.dueDate
           ? `<div class="when">${quote ? "Valid until" : "Due"} ${esc(formatFriendly(draft.dueDate, today))}</div>`
@@ -217,18 +270,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
       ${stages.length ? `<div class="stages">${stages.map((s) => `<div>${esc(s)}</div>`).join("")}</div>` : ""}
     </div>
 
-    <div class="rows">
-      ${grossedUp ? row("Client pays", formatNaira(money.clientPaysKobo)) : ""}
-      ${row(processorLabel, `−${formatNaira(money.processorFeeKobo)}`, { muted: true })}
-      ${
-        money.balansFeeKobo > 0
-          ? row(`Balans fee (${plan === "pro" ? "Pro" : "Free"})`, `−${formatNaira(money.balansFeeKobo)}`, {
-              muted: true,
-            })
-          : row("Balans fee (Pro)", "₦0", { muted: true })
-      }
-      <div class="total">${row("To your bank", formatNaira(money.receivesKobo), { strong: true })}</div>
-    </div>
+    ${feeRows}
 
     <div class="settles">${
       /*
@@ -243,11 +285,13 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
        * honest: an invoice drawn up at 11 PM says tomorrow, because 22:00 has
        * already gone.
        */
-      esc(settlesLine(new Date(), draft.foreign ? "paystack" : "monnify"))
+      draft.foreign
+        ? esc(settlesLine(new Date(), "paystack"))
+        : "Your client pays straight into your bank account"
     }${
       draft.foreign
         ? `<span>Paid by card</span>`
-        : `<span>Straight from Monnify — every day, including weekends</span>`
+        : `<span>By transfer. Tell me once it lands and I will send the receipt.</span>`
     }</div>
   </div>
 </body></html>`;

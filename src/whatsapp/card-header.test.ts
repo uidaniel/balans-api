@@ -130,7 +130,7 @@ describe("the two commands that draw one", () => {
   const source = readFileSync(new URL("../conversation/handle.ts", import.meta.url), "utf8");
   const owed = source.slice(source.indexOf('case "show_debtors"'), source.indexOf('case "show_summary"'));
   const after = source.slice(source.indexOf('case "show_summary"'));
-  const summary = after.slice(0, after.indexOf('case "remove_logo"'));
+  const summary = after.slice(0, after.indexOf('case "show_signature"'));
 
   it("sends one message, not a picture and then a button", () => {
     /*

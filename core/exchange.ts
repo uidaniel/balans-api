@@ -76,3 +76,22 @@ export function nairaKoboFor(amountMinor: number, rate: Rate): number {
  */
 export const impliedRate = (chargeKobo: number, amountMinor: number): number =>
   amountMinor <= 0 ? 0 : chargeKobo / amountMinor;
+
+/**
+ * The agreed price with its VAT, in the price's own currency.
+ *
+ * `amountMinor` is the price before VAT — what the lines add up to. VAT is
+ * then added in naira, so on a $650 quote with VAT the client is charged
+ * ₦927,892.70, which is $698.75 at the locked rate and not $650. Every
+ * surface that set the naira total beside the bare $650 was saying two
+ * different amounts were the same one, and the rate "derived" from them came
+ * out ₦100 high: 927,892.70 ÷ 650 is 1,427.53, the rate plus VAT.
+ *
+ * Scaled by the naira VAT actually charged rather than by a percentage, so
+ * the dollar VAT is the same fraction of the price the naira VAT is of its
+ * subtotal, and the two totals agree at the rate to within a cent.
+ */
+export function agreedTotalMinor(amountMinor: number, subtotalKobo: number, vatKobo: number): number {
+  if (vatKobo <= 0 || subtotalKobo <= 0) return amountMinor;
+  return amountMinor + Math.round((amountMinor * vatKobo) / subtotalKobo);
+}

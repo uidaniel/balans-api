@@ -631,6 +631,37 @@ describe("line items on the document forms", () => {
         }
       });
 
+      it("gives every item a quantity, above its amount, all the way to the submit", () => {
+        /*
+         * The sentence always read "4 stills at 20k" and every template
+         * always printed a quantity; only the form could not say one. Each
+         * item's box sits directly above its Amount, because a quantity is
+         * what turns Amount into the price of one.
+         */
+        const order = (id: string) => inputs(id).map((n) => n.name as string);
+        const above = (id: string, qty: string, amount: string) => {
+          const names = order(id);
+          const q = names.indexOf(qty);
+          assert.ok(q >= 0, `${id} has no ${qty}`);
+          assert.ok(q < names.indexOf(amount), `${id}: ${qty} should come before ${amount}`);
+          assert.equal(named(id, qty)!.required, false, "optional: empty means one");
+        };
+        for (const id of forms()) above(id, "qty", "amount");
+        for (let items = 2; items <= 5; items++) {
+          for (const w of WORDS.slice(0, items - 1)) above(FORM(items), `item_${w}_qty`, `item_${w}_amount`);
+        }
+        for (const w of WORDS) above(ITEM(w), `item_${w}_qty`, `item_${w}_amount`);
+        // The number pad where the data is a number, as for Amount.
+        assert.equal(named("WORK", "qty")!["input-type"], "number");
+        assert.equal(named(FORM(1), "qty")!["input-type"], "text");
+
+        const submit = payloadOf(footer("TERMS"));
+        assert.equal(submit.qty, "${data.qty}");
+        for (const w of WORDS) assert.equal(submit[`item_${w}_qty`], `\${data.item_${w}_qty}`);
+        // Saving an item hands its quantity to the form it returns to.
+        for (const w of WORDS) assert.equal(payloadOf(footer(ITEM(w)))[`item_${w}_qty`], `\${form.item_${w}_qty}`);
+      });
+
       it("keeps every screen inside the two-link budget", () => {
         /*
          * Probed against Meta on 23 September 2026: at most two EmbeddedLinks

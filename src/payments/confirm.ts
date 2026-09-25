@@ -184,6 +184,21 @@ export async function confirmPayment(
   // Rule 3, checked before any work: a retry costs one query and stops here.
   if (payment.status === "success") return { kind: "already_confirmed", reference };
 
+  /*
+   * A naira invoice sent with the sender's bank details is paid to them
+   * directly and only becomes paid on their word (addendum section 5 and
+   * acceptance criterion 6). No processor event may settle one: if a payment
+   * row ever points at such a document, it is held for a person to look at.
+   */
+  const { rows: kind } = await db().query<{ delivery_type: string }>(
+    `SELECT delivery_type FROM documents WHERE id = $1`,
+    [payment.document_id],
+  );
+  if (kind[0]?.delivery_type === "bank_details") {
+    log.error({ reference, documentId: payment.document_id }, "processor event for a bank-details invoice");
+    return { kind: "needs_review", reference, why: "bank-details invoice cannot be paid by a processor" };
+  }
+
   /* Rule 1: ask Monnify. ---------------------------------------------------- */
   const verified = await verify(input.transactionReference);
   if (!verified.ok) {

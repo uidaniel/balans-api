@@ -22,6 +22,9 @@ import { renderReceiptHtml } from "../pdf/receipt.ts";
 import { renderTemplate, TEMPLATES } from "../pdf/templates.ts";
 import { documentKey, fileName, put, receiptKey } from "../storage/files.ts";
 import { logoDataUri } from "../brand/user-logo.ts";
+import { documentLink } from "./links.ts";
+import { signatureDataUri } from "../brand/signature.ts";
+import { bankDetailsOf } from "./bank-details.ts";
 
 /** Section 12: both lines appear on everything a client sees. */
 export function legalLines(): [string, string] {
@@ -205,6 +208,7 @@ async function loadForRender(
     address: string | null;
     tin: string | null;
     logo_url: string | null;
+    signature_url: string | null;
     plan: "free" | "pro";
     template_id: string | null;
     client_name: string;
@@ -215,7 +219,7 @@ async function loadForRender(
             d.public_token, d.current_version,
             d.currency, d.original_amount_minor,
             u.business_name, u.email AS business_email, u.address, u.tin, u.logo_url,
-            u.plan, u.template_id,
+            u.signature_url, u.plan, u.template_id,
             c.name AS client_name, c.email AS client_email
        FROM documents d
        JOIN users u   ON u.id = d.user_id
@@ -258,6 +262,8 @@ async function loadForRender(
       // F21: Pro only, and read from storage rather than linked, because a
       // render must never fetch anything.
       logoDataUri: await logoDataUri(r.user_id, r.plan, r.logo_url),
+      signatureDataUri: await signatureDataUri(r.signature_url),
+      bankDetails: await bankDetailsOf(documentId),
       clientName: r.client_name,
       clientEmail: r.client_email,
       lines: items.map((i) => ({
@@ -281,7 +287,7 @@ async function loadForRender(
       dueDate: civil(r.due_date ?? r.valid_until),
       notes: r.notes,
       publicUrl: r.public_token
-        ? `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/${r.public_token}`
+        ? documentLink(r.type, r.public_token)
         : null,
       legalLines: legalLines(),
       // F9: the Free plan carries the line. Pro does not.

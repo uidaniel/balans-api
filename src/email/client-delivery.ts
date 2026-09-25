@@ -23,6 +23,8 @@ import { formatNaira } from "../../core/totals.ts";
 import { sendEmail } from "./send.ts";
 import { amount, layout, paragraph, button } from "./layout.ts";
 import { renderDocumentPdf } from "../documents/pdf.ts";
+import { documentLink } from "../documents/links.ts";
+import { googleCalendarUrl } from "../documents/calendar.ts";
 
 export type DeliveryResult =
   | { ok: true }
@@ -47,6 +49,23 @@ export function closingLine(type: string, label: string, link: string | null): s
   return type === "payment_request"
     ? `You can always see it at ${where}.`
     : `The ${label.toLowerCase()} is attached, and you can always see it at ${where}.`;
+}
+
+/**
+ * "Add to calendar", under the Pay button (invoices only).
+ *
+ * The due date in the client's own calendar, with the link in it and a
+ * reminder the day before: the nudge to pay that does not have to come from
+ * the freelancer. Google gets a link that opens the event filled in; Apple
+ * and Outlook get the same event as a file from the invoice's address.
+ */
+export function calendarLine(e: Parameters<typeof googleCalendarUrl>[0], icsUrl: string): string {
+  const a = (href: string, words: string) =>
+    `<a href="${esc(href)}" class="bl-ink" style="color:#10231C;font-weight:600;text-decoration:underline">${words}</a>`;
+  return paragraph(
+    `Add the due date to your calendar: ${a(googleCalendarUrl(e), "Google Calendar")} · ${a(icsUrl, "Apple or Outlook")}`,
+    true,
+  );
 }
 
 /**
@@ -94,7 +113,7 @@ export async function emailDocumentToClient(
   const label = d.type === "quote" ? "Quote" : "Invoice";
   const business = d.business_name ?? "A Balans user";
   const link = d.public_token
-    ? `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/${d.public_token}`
+    ? documentLink(d.type, d.public_token)
     : null;
 
   const date = d.due_date ?? d.valid_until;
@@ -117,6 +136,19 @@ export async function emailDocumentToClient(
     d.notes ? paragraph(esc(d.notes), true) : "",
     link && d.type !== "quote" ? button(`Pay ${formatNaira(d.total_kobo)}`, link) : "",
     link && d.type === "quote" ? button("View quote", link) : "",
+    link && d.public_token && d.type === "invoice" && when
+      ? calendarLine(
+          {
+            uid: documentId,
+            business,
+            amount: formatNaira(d.total_kobo),
+            number: d.number,
+            due: when,
+            link,
+          },
+          `${link}/calendar.ics`,
+        )
+      : "",
     paragraph(closingLine(d.type, label, link), true),
   ]
     .filter(Boolean)
@@ -154,6 +186,16 @@ export async function emailDocumentToClient(
         }.`,
         "",
         link ? (d.type === "quote" ? `View it here: ${link}` : `Pay here: ${link}`) : "",
+        link && d.type === "invoice" && when
+          ? `Add the due date to your calendar: ${googleCalendarUrl({
+              uid: documentId,
+              business,
+              amount: formatNaira(d.total_kobo),
+              number: d.number,
+              due: when,
+              link,
+            })} (Google), or ${link}/calendar.ics (Apple or Outlook)`
+          : "",
         "",
         d.notes ?? "",
       ]

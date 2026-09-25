@@ -47,31 +47,30 @@ const draft = (over: Partial<Draft>): Draft =>
     ...over,
   }) as Draft;
 
-describe("what the receipt says", () => {
-  it("shows the figure the words show, to the naira", () => {
-    /*
-     * The failure worth fearing from a second rendering of the same facts:
-     * two surfaces disagreeing about money. Both read `payout`, so this is a
-     * check that the card did not start doing its own arithmetic.
-     */
-    const d = draft({});
-    const html = receiptHtml(d, "free", today);
-    const { receivesKobo, processorFeeKobo, balansFeeKobo } = payout(d, "free");
+/*
+ * Priced abroad: the one kind of invoice that still goes through a processor
+ * (a card, through Paystack), so the one whose fees the card itemises. A
+ * naira invoice is paid straight to the sender's account and has none.
+ */
+const ABROAD: Partial<Draft> = {
+  foreign: { currency: "USD", amountMinor: 1_507, rate: 1_327.2, source: "open.er-api.com", fetchedAt: "2026-09-24T06:00:00.000Z" },
+};
 
-    // ₦20,000 on Free: ₦400 to Monnify (1.5% + the flat ₦100) and ₦200 to
-    // us. On Pro the same invoice lands ₦19,600, which is the figure Pro is
-    // bought for and the next test checks.
-    assert.ok(html.includes("₦19,400"), "what lands in the bank");
-    assert.equal(receivesKobo, N(19_400));
-    assert.ok(html.includes(`−₦${(processorFeeKobo / 100).toLocaleString("en-US")}`), "Monnify's cut");
-    assert.ok(html.includes(`−₦${(balansFeeKobo / 100).toLocaleString("en-US")}`), "ours");
+describe("what the receipt says", () => {
+  it("pays a naira invoice straight to the bank, with nothing taken", () => {
+    // No processor touches it (bank-details.ts): no Monnify fee, no Balans
+    // fee, and no "settles tonight" about a transfer we never see.
+    const html = receiptHtml(draft({}), "free", today);
+    assert.match(html, /To your bank/);
+    assert.ok(html.includes("₦20,000"), "all of it lands");
+    assert.ok(!/Monnify|Balans fee|tonight/.test(html), "a payment path this invoice does not take");
   });
 
   it("itemises the two fees instead of adding them up", () => {
     // The whole reason for the card. One number called "fees" would hide the
     // only line Pro changes.
-    const html = receiptHtml(draft({}), "free", today);
-    assert.match(html, /Monnify fee/);
+    const html = receiptHtml(draft(ABROAD), "free", today);
+    assert.match(html, /Paystack fee/);
     assert.match(html, /Balans fee \(Free\)/);
     assert.match(html, /To your bank/);
   });
@@ -91,7 +90,10 @@ describe("what the receipt says", () => {
       subtotalKobo: N(199_031),
       vatKobo: 1_492_733,
       totalKobo: 21_395_833,
-      foreign: { currency: "USD", amountMinor: 15_000, rate: 1_426.388866, source: "open.er-api.com", fetchedAt: "2026-09-24T06:00:00.000Z" },
+      // The rate the $150 was converted at: ₦199,031 ÷ 150. It was written
+      // here as 1,426.39 once, which is the total with VAT divided by the
+      // price without it — the same mistake the card itself was making.
+      foreign: { currency: "USD", amountMinor: 15_000, rate: 1_326.873333, source: "open.er-api.com", fetchedAt: "2026-09-24T06:00:00.000Z" },
     });
     const html = receiptHtml(abroad, "pro", today);
 
@@ -110,11 +112,17 @@ describe("what the receipt says", () => {
       assert.ok(html.includes(defaults.international.settlementText), "the configured sentence");
     });
 
-    it("leads with the price the two of them agreed", () => {
-      // And has to agree with the words under the picture, which say
-      // "Amount: $150.00". Two answers to one question is the failure here.
-      assert.match(html, /\$150\.00/);
-      assert.match(html, /₦213,958\.33 charged/);
+    it("sets the agreed total beside the naira it is charged as", () => {
+      // $150 plus 7.5% VAT is $161.25, which is the ₦213,958.33 beside it.
+      // The card used to set the bare $150 there: two different amounts
+      // presented as the same one.
+      assert.match(html, /\$161\.25/);
+      assert.match(html, /₦213,958\.33/);
+      assert.ok(!html.includes("$150.00"), "the price before VAT, beside a total with it");
+    });
+
+    it("says the rate the invoice was locked at, not one worked back from VAT", () => {
+      assert.match(html, /\$1 → ₦1,326\.87/);
     });
 
     it("still takes its figures from payout", () => {
@@ -135,19 +143,18 @@ describe("what the receipt says", () => {
   });
 
   it("names the plan the user is actually on, and its figure", () => {
-    // The same invoice, and the ₦200 Pro does not take.
-    const pro = receiptHtml(draft({}), "pro", today);
+    // The same invoice, and the fee Pro does not take.
+    const pro = receiptHtml(draft(ABROAD), "pro", today);
     assert.match(pro, /Balans fee \(Pro\)/);
     assert.match(pro, /₦0/);
-    assert.ok(pro.includes("₦19,600"), "Pro keeps what Free pays us");
-    assert.equal(payout(draft({}), "pro").receivesKobo, N(19_600));
+    assert.ok(payout(draft(ABROAD), "pro").receivesKobo > payout(draft(ABROAD), "free").receivesKobo);
   });
 
   it("does not print the invoice total twice", () => {
     // "Client pays" only earns its line when fees are passed on and it is a
     // different figure from the invoice.
-    assert.ok(!receiptHtml(draft({}), "free", today).includes("Client pays"));
-    assert.match(receiptHtml(draft({ passFeesToClient: true }), "free", today), /Client pays/);
+    assert.ok(!receiptHtml(draft(ABROAD), "free", today).includes("Client pays"));
+    assert.match(receiptHtml(draft({ ...ABROAD, passFeesToClient: true }), "free", today), /Client pays/);
   });
 
   it("carries the payment plan with its dates", () => {
@@ -167,9 +174,9 @@ describe("what the receipt says", () => {
     // The heading names the job the picture does. The client did not stop
     // mattering, so the name moves to the line under it rather than off.
     const html = receiptHtml(draft({}), "free", today);
-    assert.match(html, /<h1>Invoice Payment Breakdown<[/]h1>/);
+    assert.match(html, /<h1>Invoice breakdown<[/]h1>/);
     assert.match(html, /For Daniel/);
-    assert.match(receiptHtml(draft({ type: "quote" }), "free", today), /<h1>Quote Payment Breakdown</);
+    assert.match(receiptHtml(draft({ type: "quote" }), "free", today), /<h1>Quote breakdown</);
   });
 
   it("carries the logo above the heading", () => {

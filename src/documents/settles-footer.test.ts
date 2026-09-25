@@ -57,7 +57,9 @@ describe("where it is said", () => {
 
   it("is the footer of the card, not a footnote on it", () => {
     assert.match(card, /class="settles"/);
-    assert.match(card, /settlesLine\(new Date\(\), draft\.foreign \? "paystack" : "monnify"\)/);
+    // Only a card settles on a processor's clock now; a naira invoice is a
+    // transfer straight to the sender's account (bank-details.ts).
+    assert.match(card, /settlesLine\(new Date\(\), "paystack"\)/);
   });
 
   it("is set to be read at a glance", () => {

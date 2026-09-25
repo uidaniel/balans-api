@@ -16,6 +16,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
 import { defaults, env } from "../../config.ts";
 import { todayIn } from "../../../core/dates.ts";
+import { formatNaira } from "../../../core/totals.ts";
 import {
   balansFee,
   settle,
@@ -33,6 +34,8 @@ import {
   type PublicDocument,
 } from "../../documents/public.ts";
 import { renderDocument, renderNotFound, type TransferPanel } from "../../documents/page.ts";
+import { documentLink } from "../../documents/links.ts";
+import { icsFor } from "../../documents/calendar.ts";
 import {
   liveCardCheckoutFor,
   liveTransferFor,
@@ -278,7 +281,38 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
    * Rendered on demand the first time. An invoice sent before the renderer
    * existed, or one whose render failed, still has a working link.
    */
-  app.get<{ Params: { token: string } }>("/i/:token/pdf", async (req, reply) => {
+  /*
+   * A quote, as its client opens it: balans.ng/q/…, forwarded here by the
+   * site (see `documentLink`). The same page as /i/, which already knows a
+   * quote has nothing to pay, under the address a quote is sent with.
+   *
+   * Anything that is not a quote goes to its payment page instead of being
+   * shown here, so a /q/ link can never become a second way to pay.
+   */
+  app.get<{ Params: { token: string } }>("/q/:token", async (req, reply) => {
+    const doc = await findByToken(req.params.token);
+    if (!doc) return reply.status(404).type(HTML).send(renderNotFound());
+    if (doc.type !== "quote") return reply.redirect(documentLink(doc.type, req.params.token), 302);
+
+    void markViewed(doc.id).catch((e: unknown) =>
+      req.log.error({ err: e, documentId: doc.id }, "could not mark viewed"),
+    );
+
+    return reply
+      .type(HTML)
+      .header("cache-control", "no-store, private")
+      .header("referrer-policy", "no-referrer")
+      .header("x-content-type-options", "nosniff")
+      .send(renderDocument(doc, todayIn(defaults.behaviour.timezone), { token: req.params.token, base: "/q" }));
+  });
+
+  app.get<{ Params: { token: string } }>("/q/:token/pdf", (req, reply) => documentPdf(req, reply));
+  app.get<{ Params: { token: string } }>("/i/:token/pdf", (req, reply) => documentPdf(req, reply));
+
+  async function documentPdf(
+    req: FastifyRequest<{ Params: { token: string } }>,
+    reply: FastifyReply,
+  ): Promise<FastifyReply> {
     const doc = await findByToken(req.params.token);
     if (!doc) return reply.status(404).type(HTML).send(renderNotFound());
 
@@ -313,6 +347,32 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       .header("cache-control", "no-store, private")
       .header("x-content-type-options", "nosniff")
       .send(file.bytes);
+  }
+
+  /*
+   * The due date as a calendar file, for Apple Calendar and Outlook (the
+   * invoice email links to it; Google gets a link of its own). Invoices only,
+   * and only while something is owed and there is a date to put it on.
+   */
+  app.get<{ Params: { token: string } }>("/i/:token/calendar.ics", async (req, reply) => {
+    const doc = await findByToken(req.params.token);
+    const owed = doc ? outstandingKobo(doc) : 0;
+    if (!doc || doc.type !== "invoice" || !doc.dueDate || owed <= 0) {
+      return reply.status(404).type(HTML).send(renderNotFound());
+    }
+    const ics = icsFor({
+      uid: doc.id,
+      business: doc.businessName,
+      amount: formatNaira(owed),
+      number: doc.number,
+      due: doc.dueDate,
+      link: documentLink(doc.type, req.params.token),
+    });
+    return reply
+      .type("text/calendar; charset=utf-8")
+      .header("content-disposition", `attachment; filename="invoice-due.ics"`)
+      .header("cache-control", "no-store, private")
+      .send(ics);
   });
 
   /** The receipt, once there is one (F11). */

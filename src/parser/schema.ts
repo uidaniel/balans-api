@@ -33,6 +33,9 @@ export const INTENTS = [
   "cancel_document",
   "resend_document",
   "record_payment",
+  /** The answers to "Mark invoice 16 as paid?". */
+  "confirm_payment",
+  "decline_payment",
   "settings",
   "upgrade",
   "referral",
@@ -41,6 +44,9 @@ export const INTENTS = [
   /** Choosing an invoice design. Advertised on the site, not built. */
   "templates",
   "remove_logo",
+  /** The signature page (a link), and taking the signature off. */
+  "signature",
+  "remove_signature",
   "help",
   "confirm",
   "reject",

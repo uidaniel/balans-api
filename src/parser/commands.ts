@@ -61,6 +61,7 @@ const SLASH: Record<string, Intent> = {
   menu: "help",
   cancel: "reject",
   stop: "stop_reminders",
+  signature: "signature",
 };
 
 /** "/" on its own, or "/menu": the list of everything. */
@@ -84,6 +85,10 @@ const EXACT: [RegExp, Intent][] = [
   [/^(templates?|invoice templates?|change (my )?(invoice |email )?templates?|design|invoice design)$/, "templates"],
   // F21: offered in the words that confirm a logo was saved, so it has to work.
   [/^(remove|delete|clear) (my )?logo$/, "remove_logo"],
+  // The signature page, and taking it off again. "/signature" because the
+  // slash is how people type a command they were told about.
+  [/^\/?(signature|my signature|sign|add (a |my )?signature|change (my )?signature|update (my )?signature)$/, "signature"],
+  [/^\/?(remove|delete|clear) (my )?signature$/, "remove_signature"],
   [/^(upgrade|go pro|pro|subscribe|premium|upgrade me)$/, "upgrade"],
   [/^(referral|refer|refer a friend|invite|invite a friend|my referral|referral code)$/, "referral"],
   [/^(stop reminders?|no more reminders?|stop reminding me|turn off reminders?|stop chasing)$/, "stop_reminders"],
@@ -208,6 +213,19 @@ const NUMBERED: [RegExp, Intent][] = [
   [/^convert (?:quote|qt) #?(\d{1,6})$/, "convert_quote"],
   [/^(?:invoice|quote|inv|doc|document) #?(\d{1,6}) status\??$/, "status"],
   [/^stop reminders? (?:for |on )?(?:invoice|inv|doc|document) #?(\d{1,6})$/, "stop_reminders"],
+  /*
+   * A payment the sender is telling us about (addendum section 5): "Zenith
+   * paid invoice 16", "paid invoice 16", "mark invoice 16 paid", "invoice 16
+   * is paid". The client's name is optional and not relied on — the number
+   * identifies the invoice, and the confirmation names the client back.
+   */
+  [/^(?:[a-z0-9&'. -]{1,40} )?(?:has |have )?paid (?:for |me for )?(?:invoice|inv|request|doc|document) #?(\d{1,6})$/, "record_payment"],
+  [/^mark(?:ed)? (?:invoice|inv|request|doc|document) #?(\d{1,6}) (?:as )?paid$/, "record_payment"],
+  [/^(?:invoice|inv|request) #?(\d{1,6}) (?:is |has been |was |don )?paid$/, "record_payment"],
+  // The two buttons under "Mark invoice 16 as paid?". Ids are commands, so a
+  // tap and a typed reply take the same path.
+  [/^yes,? mark (?:invoice|inv|request) #?(\d{1,6}) paid$/, "confirm_payment"],
+  [/^leave (?:invoice|inv|request) #?(\d{1,6}) unpaid$/, "decline_payment"],
 ];
 
 /**

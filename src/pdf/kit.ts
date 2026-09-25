@@ -22,9 +22,11 @@
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { formatMoney, type Currency } from "../../core/currency.ts";
+import { agreedTotalMinor } from "../../core/exchange.ts";
 import { esc } from "../documents/page.ts";
 import { FONT, fontFaces, type FontSet } from "./fonts.ts";
 import type { DocumentData } from "./template.ts";
+import { untrackedNote } from "../documents/bank-details.ts";
 
 /** The display stack, for the layouts that set a number or a word large. */
 export const DISPLAY = FONT.display;
@@ -210,7 +212,10 @@ text-underline-offset:.22em}
 
 /* Where a signature goes -------------------------------------------------- */
 .sig{width:8.4em}
-.sig .space{height:2.3em}
+.sig .space{height:2.3em;display:flex;align-items:flex-end}
+/* The ink, not a picture of paper: the page trims it to the stroke. Sat on
+   the line, the way a pen leaves it. */
+.sig .space img{display:block;max-height:100%;max-width:100%;object-fit:contain;margin-bottom:-.15em}
 .sig .who{border-top:1px solid ${ink(0.5)};padding-top:.4em;font-size:.56em}
 .sig .who b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .sig .who span{display:block;opacity:.5}
@@ -224,23 +229,6 @@ font-size:.46em;line-height:1.6;color:${ink(0.42)}}
 .mark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-28deg);
 font-family:${FONT.display};font-size:5.2em;font-weight:800;letter-spacing:.06em;
 color:${ink(0.07)};white-space:nowrap}
-/*
- * PAID, across the invoice that was paid.
- *
- * The same placement as SAMPLE and deliberately not the same weight. SAMPLE
- * warns you that a document is not real, so it is faint enough to read
- * through. This one is the answer to the only question anybody opens an old
- * invoice to ask, so it is a stamp rather than a watermark: moss green,
- * outlined, and readable from across a desk.
- *
- * Behind the content and not over it. An invoice is a record somebody's
- * accountant reads, and a stamp that obscures a figure turns a paid invoice
- * into a query.
- */
-.paid{position:absolute;top:46%;left:50%;transform:translate(-50%,-50%) rotate(-16deg);
-padding:.14em .42em;border:.07em solid ${MOSS_INK};border-radius:.14em;
-font-family:${FONT.display};font-size:4.4em;font-weight:800;letter-spacing:.1em;
-color:${MOSS_INK};opacity:.17;white-space:nowrap;pointer-events:none}
 `;
 
 /* -------------------------------------------------------------------------- */
@@ -277,7 +265,6 @@ export function sheet(d: DocumentData, opts: RenderOptions, parts: SheetParts): 
 <style>${fontFaces(fonts, opts.fonts ?? "embed")}${BASE}${css}</style></head>
 <body><div class="sheet" style="font-size:${sheetFontSize(d, rowEm)}">
 ${d.variant === "sample" ? `<div class="mark">SAMPLE</div>` : ""}
-${isPaid(d) ? `<div class="paid">PAID</div>` : ""}
 ${body}
 ${d.ref ? `<div class="ref">${esc(d.ref)}</div>` : ""}
 </div></body></html>`;
@@ -367,7 +354,8 @@ export function headlineAmount(d: DocumentData): Headline {
           label,
           amount,
           paid,
-          display: formatMoney(d.foreign.amountMinor, d.foreign.currency),
+          // With its VAT: the naira total this sits beside includes it.
+          display: formatMoney(agreedTotalMinor(d.foreign.amountMinor, d.subtotalKobo, d.vatKobo), d.foreign.currency),
           currency: d.foreign.currency,
         }
       : { label, amount, paid, display: money(amount), currency: "NGN" };
@@ -403,6 +391,8 @@ const METHOD_WORDS: Record<string, string> = {
   USSD: "USSD",
   PHONE_NUMBER: "Phone number",
   CASH: "Cash",
+  // Told to us by the sender: a transfer straight to their account.
+  OFFLINE: "Direct transfer",
 };
 
 export const methodWords = (method: string | null): string =>
@@ -529,7 +519,15 @@ export function totals(d: DocumentData, opts: { accent?: "ink" | "marigold" } = 
   return `<div class="totals">
     ${line("Subtotal", d.subtotalKobo)}
     ${line(`VAT (${d.vatPercent ?? 0}%)`, d.vatKobo)}
-    ${line(isReceipt(d) ? "Paid" : "Total", isReceipt(d) ? d.amountPaidKobo : d.totalKobo, `sum${part ? "" : gold}`)}
+    ${
+      // "Paid in full" on an invoice that is: Wordmark has no headline block,
+      // so this line is the only place it can say so now the stamp is gone.
+      line(
+        isReceipt(d) ? "Paid" : isPaid(d) ? "Paid in full" : "Total",
+        isReceipt(d) ? d.amountPaidKobo : d.totalKobo,
+        `sum${part ? "" : gold}`,
+      )
+    }
     ${part ? `<p class="off"><span>Paid</span><span class="tnum">&minus;${money(d.amountPaidKobo)}</span></p>` : ""}
     ${part ? line("Balance", owed, `sum${gold}`) : ""}
   </div>`;
@@ -596,13 +594,41 @@ export function due(d: DocumentData, opts: { size?: string; label?: string; clas
  * says the money arrived. It is on none of these layouts on purpose.
  */
 export function payInfo(d: DocumentData, opts: { label?: boolean; className?: string } = {}): string {
-  if (!d.publicUrl || isReceipt(d) || owedKobo(d) <= 0) return "";
+  if (isReceipt(d) || owedKobo(d) <= 0) return "";
+  if (!d.publicUrl) return "";
   const label = opts.label !== false;
+  const quote = d.variant === "quote";
   return `<div class="pay ${opts.className ?? ""}">
-    ${label ? `<p class="cap lbl">Pay online</p>` : ""}
+    ${label ? `<p class="cap lbl">${quote ? "View online" : "Pay online"}</p>` : ""}
     <p class="url">${esc(shortUrl(d.publicUrl))}</p>
-    <p class="how">Card, bank transfer or USSD<br>Protected by Monnify</p>
+    ${
+      // A quote is not paid: it is read, and accepted by converting it. A
+      // naira invoice's link opens the sender's own account for a transfer;
+      // only one priced abroad goes to a card checkout.
+      quote
+        ? `<p class="how">The quote, online</p>`
+        : d.bankDetails
+          ? `<p class="how">Bank transfer to ${esc(d.bankDetails.accountName)}<br>Account details at the link</p>`
+          : `<p class="how">Card, bank transfer or USSD<br>Protected by Monnify</p>`
+    }
   </div>`;
+}
+
+/** The words before the link: paying an invoice, reading a quote. */
+export const onlineAt = (d: DocumentData): string =>
+  d.variant === "quote" ? "View the quote at" : "Pay online at";
+
+/** The section a layout files the link under. */
+export const onlineSection = (d: DocumentData): string => (d.variant === "quote" ? "View" : "Pay");
+
+/**
+ * The one line a layout prints about how to pay, or "" when there is nothing
+ * left to pay. The account on a naira invoice, the link on one abroad, the
+ * link to read a quote by.
+ */
+export function payWhere(d: DocumentData): string {
+  if (isReceipt(d) || owedKobo(d) <= 0) return "";
+  return d.publicUrl ? `${onlineAt(d)} <b>${esc(shortUrl(d.publicUrl))}</b>` : "";
 }
 
 /** The link as people read it out: no scheme, no trailing slash. */
@@ -623,8 +649,9 @@ export function notesBlock(d: DocumentData, className = ""): string {
  * signed if anybody needs it signed.
  */
 export function signature(d: DocumentData, className = ""): string {
+  if (!d.signatureDataUri) return "";
   return `<div class="sig ${className}">
-    <div class="space"></div>
+    <div class="space"><img src="${d.signatureDataUri}" alt=""></div>
     <div class="who"><b>${esc(d.businessName)}</b><span>Authorised signature</span></div>
   </div>`;
 }
@@ -635,4 +662,10 @@ export const madeWith = (d: DocumentData): string =>
 
 /** Section 12's two lines, on everything a client sees. */
 export const legal = (d: DocumentData, className = ""): string =>
-  `<div class="legal ${className}">${esc(d.legalLines[0])}<br>${esc(d.legalLines[1])}</div>`;
+  `<div class="legal ${className}">${
+    // A naira invoice says, for the client's sake too, that paying it is not
+    // tracked: they should not wait for a receipt that only the sender can send.
+    d.bankDetails && d.variant !== "quote" && !isReceipt(d)
+      ? `${esc(untrackedNote(d.businessName))}<br>`
+      : ""
+  }${esc(d.legalLines[0])}<br>${esc(d.legalLines[1])}</div>`;

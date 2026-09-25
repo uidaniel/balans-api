@@ -17,6 +17,7 @@
 import { randomBytes } from "node:crypto";
 import { db, tx } from "../db/pool.ts";
 import type { Civil } from "../../core/dates.ts";
+import { attachBankDetails, deliveryFor, type BankDetails } from "./bank-details.ts";
 
 export type ActionResult<T> = { ok: true; value: T } | { ok: false; why: string };
 
@@ -147,7 +148,14 @@ export async function findForResend(
 /* Convert a quote (F5)                                                       */
 /* -------------------------------------------------------------------------- */
 
-export type Converted = { invoiceNumber: number; quoteNumber: number; clientName: string; totalKobo: number };
+export type Converted = {
+  invoiceNumber: number;
+  quoteNumber: number;
+  clientName: string;
+  totalKobo: number;
+  /** The account a naira invoice was stamped with, or null for a link. */
+  bank: BankDetails | null;
+};
 
 /**
  * "Convert quote 12 creates an invoice draft prefilled from the quote and
@@ -298,6 +306,14 @@ export async function convertQuote(
 
     await c.query(`UPDATE documents SET status = 'converted' WHERE id = $1`, [quote.id]);
 
+    // The invoice a naira quote becomes is paid to the sender's account, like
+    // any other naira invoice (see bank-details.ts). A quote abroad keeps its
+    // card link.
+    const bank =
+      deliveryFor("invoice", quote.currency) === "bank_details"
+        ? await attachBankDetails(c, invoiceId, userId)
+        : null;
+
     return {
       ok: true as const,
       value: {
@@ -305,6 +321,7 @@ export async function convertQuote(
         quoteNumber,
         clientName: quote.client_name,
         totalKobo: quote.total_kobo,
+        bank,
       },
     };
   });

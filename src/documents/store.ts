@@ -14,6 +14,7 @@ import { createParts, partsFor, stagesFor, type Part } from "./parts.ts";
 import { formatISO, type Civil } from "../../core/dates.ts";
 import { totalsFor, type Line } from "../../core/totals.ts";
 import type { Foreign } from "../../core/currency.ts";
+import { attachBankDetails, deliveryFor, type BankDetails } from "./bank-details.ts";
 
 export type DocumentType = "invoice" | "quote" | "payment_request" | "sample";
 
@@ -372,7 +373,14 @@ export async function discardDraft(userId: string): Promise<void> {
 /* Confirmation                                                               */
 /* -------------------------------------------------------------------------- */
 
-export type Confirmed = { id: string; number: number; publicToken: string; type: DocumentType };
+export type Confirmed = {
+  id: string;
+  number: number;
+  publicToken: string;
+  type: DocumentType;
+  /** The account a naira invoice was sent with, or null if it has a link. */
+  bank: BankDetails | null;
+};
 
 /**
  * Turns the open draft into a sent document.
@@ -389,8 +397,8 @@ export async function confirmDraft(userId: string, draftId: string): Promise<Con
   return tx(async (c) => {
     await c.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [userId]);
 
-    const { rows } = await c.query<{ id: string; type: DocumentType }>(
-      `SELECT id, type FROM documents
+    const { rows } = await c.query<{ id: string; type: DocumentType; currency: string }>(
+      `SELECT id, type, currency FROM documents
         WHERE id = $1 AND user_id = $2 AND status = 'draft'
         FOR UPDATE`,
       [draftId, userId],
@@ -452,7 +460,14 @@ export async function confirmDraft(userId: string, draftId: string): Promise<Con
       [draft.id, number, publicToken, ref],
     );
 
-    return { id: draft.id, number, ref, publicToken, type: draft.type };
+    // A naira invoice goes out with the sender's own account on it, taken
+    // now and kept (see bank-details.ts). Abroad, and quotes, keep a link.
+    const bank =
+      deliveryFor(draft.type, draft.currency) === "bank_details"
+        ? await attachBankDetails(c, draft.id, userId)
+        : null;
+
+    return { id: draft.id, number, ref, publicToken, type: draft.type, bank };
   });
 }
 

@@ -178,9 +178,9 @@ describe("the shape of a draft on screen", () => {
       "INVOICE DRAFT",
       "Client: Edidiong Uwak",
       "Items:",
-      // The subtotal, the VAT and the amount are one paragraph, because
-      // they are one addition — checked in a glance, not three facts.
-      "Subtotal: ₦650,000",
+      // The price, the VAT and the total are one paragraph, because they
+      // are one addition — checked in a glance, not three facts.
+      "Price: ₦650,000",
       "Due: Tue, 29 Sep",
       "Payment plan:",
       "Email to: uwakblessing1@gmail.com",
@@ -195,13 +195,37 @@ describe("the shape of a draft on screen", () => {
      * deposit and the balance reads as two arrangements.
      */
     const text = shown();
-    assert.match(text, /Items:\n {2}· Software Development[^\n]*\n {2}· Mobile App Design/);
-    assert.match(text, /Payment plan:\n {2}· 50% deposit[^\n]*\n {2}· Balance/);
+    // "- " is WhatsApp's own list syntax: it draws a bullet with a hanging
+    // indent, where a "·" was only ever a character.
+    assert.match(text, /Items:\n- Software Development[^\n]*\n- Mobile App Design/);
+    assert.match(text, /Payment plan:\n- 50% deposit[^\n]*\n- Balance/);
   });
 
   it("keeps the arithmetic on consecutive lines", () => {
-    const money = /Subtotal: [^\n]*\nVAT 7\.5%: [^\n]*\nAmount: /;
+    // "Price", not "Subtotal": a subtotal of what was the question it raised.
+    const money = /Price: ₦650,000\nVAT \(7\.5%\): ₦48,750\nTotal: \*₦698,750\*/;
     assert.match(shown(), money);
+  });
+
+  it("adds up in one currency on a dollar draft, at the rate it was locked at", () => {
+    /*
+     * From a real quote: $650 plus VAT read "Subtotal ₦863,156 · VAT
+     * ₦64,736.70 · Amount $650.00" and "Today's rate ₦1,427.53/$". Two
+     * currencies in one sum, a total missing its VAT, and a rate worked back
+     * from those two — ₦100 above the ₦1,327.93 it was converted at.
+     */
+    const text = shown({
+      type: "quote",
+      lines: [{ description: "Spark Website", qty: 1, unitAmountKobo: 863_156_00, originalUnitAmountMinor: 650_00 }],
+      subtotalKobo: 863_156_00,
+      vatKobo: 64_736_70,
+      totalKobo: 927_892_70,
+      depositPercent: null,
+      foreign: { currency: "USD", amountMinor: 650_00, rate: 1327.9323, source: "open.er-api.com", fetchedAt: "2026-09-25T09:00:00Z" },
+    });
+    assert.match(text, /Price: \$650\.00\nVAT \(7\.5%\): \$48\.75\nTotal: \*\$698\.75\*/);
+    assert.match(text, /Client pays: \*₦927,892\.70\*\nRate: \$1 = ₦1,327\.93/);
+    assert.doesNotMatch(text, /1,427/);
   });
 
   it("leaves out the groups the draft has nothing for", () => {

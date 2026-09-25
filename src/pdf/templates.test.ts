@@ -233,3 +233,22 @@ test("the design picker", async (t) => {
     assert.match(page("free"), /already sent do not change/);
   });
 });
+
+test("a paid invoice says so once, in its own place", async (t) => {
+  /*
+   * There used to be a PAID stamp across the sheet, styled by a bare `.paid`
+   * rule — and three layouts mark their headline `class="due paid"`, so that
+   * rule reached them too. Their "Paid in full ₦750,000" was set at 4.4em,
+   * rotated and faded, running off the page behind a second PAID. The
+   * headline was always the right thing to show; the stamp is gone.
+   */
+  const paid = { ...DOC, amountPaidKobo: DOC.totalKobo };
+  for (const spec of ready) {
+    await t.test(spec.id, () => {
+      const html = renderTemplate(spec.id, paid)!;
+      assert.doesNotMatch(html, /\.paid\{/, "a rule that reaches every element marked paid");
+      assert.doesNotMatch(html, />PAID</, "the stamp");
+      assert.match(html, /Paid in full/i);
+    });
+  }
+});

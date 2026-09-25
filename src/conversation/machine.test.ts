@@ -628,6 +628,9 @@ describe("a tapped button", () => {
       client_email: "pay@zenith.ng",
       description: "duplex render",
       amount: 350_000,
+      // A number, because WORK's Quantity box is a number input like its
+      // Amount, and a number box cannot be handed an empty string.
+      qty: 1,
       due_date: "8 October 2026",
       plan: "deposit_50",
       notes: "half now",
@@ -709,6 +712,61 @@ describe("a tapped button", () => {
     // A string here too. Only the entry screen takes a number, because only
     // its Amount is a number input.
     assert.equal(data.amount, "50000");
+  });
+
+  it("reopens a line as its quantity and the price of one, not as its total", () => {
+    // Opened as the total with the quantity dropped, "4 stills at ₦20,000"
+    // came back as one still at ₦80,000, and tapping Next saved it that way.
+    const out = doc(
+      "awaiting_confirm",
+      {
+        draftId: DRAFTED.draftId,
+        doc: {
+          type: "invoice",
+          clientName: "Zenith Homes",
+          lines: [
+            { description: "exterior render", qty: 1, unitAmountKobo: 250_000_00 },
+            { description: "interior stills", qty: 4, unitAmountKobo: 20_000_00 },
+          ],
+        },
+      },
+      "change something",
+      { parsed: parse({ intent: "unknown" }), correction: null },
+    );
+    const data = out.effects.find((e) => e.type === "send_flow")?.data as Record<string, unknown>;
+    assert.equal(data.amount, "250000");
+    assert.equal(data.qty, "", "one is an empty box off the entry screen");
+    assert.equal(data.item_two_qty, "4");
+    assert.equal(data.item_two_amount, "20000");
+  });
+
+  it("reopens a dollar draft in dollars", () => {
+    // The currency box reopens on USD, so the figure under it must be the
+    // agreed $500 and not the ₦663,500 it converted to — sent that, tapping
+    // Next priced the invoice at $663,500.
+    const out = doc(
+      "awaiting_confirm",
+      {
+        draftId: DRAFTED.draftId,
+        doc: {
+          type: "invoice",
+          clientName: "Acme Ltd",
+          lines: [{ description: "brand film", qty: 1, unitAmountKobo: 663_500_00, originalUnitAmountMinor: 500_00 }],
+          foreign: {
+            currency: "USD",
+            amountMinor: 500_00,
+            rate: 1327,
+            source: "open.er-api.com",
+            fetchedAt: "2026-09-23T09:00:00.000Z",
+          },
+        },
+      },
+      "change something",
+      { parsed: parse({ intent: "unknown" }), correction: null },
+    );
+    const data = out.effects.find((e) => e.type === "send_flow")?.data as Record<string, unknown>;
+    assert.equal(data.currency, "USD");
+    assert.equal(data.amount, 500);
   });
 
   it("opens every form screen on exactly the fields it declares", () => {

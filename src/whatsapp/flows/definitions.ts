@@ -459,10 +459,28 @@ export const EXTRA_ITEMS = ["two", "three", "four", "five"] as const;
 const TOTALS = ["ONE", "TWO", "THREE", "FOUR", "FIVE"] as const;
 
 /** Field names for one item, in the order they appear on the screen. */
-export const itemFields = (w: string): { description: string; amount: string } => ({
+export const itemFields = (w: string): { description: string; qty: string; amount: string } => ({
   description: `item_${w}_description`,
+  qty: `item_${w}_qty`,
   amount: `item_${w}_amount`,
 });
+
+/**
+ * The Quantity box, the same on every item.
+ *
+ * Optional, and empty means one, which is nearly every line anybody bills.
+ * The sentence always read quantities ("4 interior stills at 20k") and the
+ * PDF, the page and the summary always printed them; only the form could not
+ * say one, so an invoice built there billed "4 stills" as a single line at
+ * the total.
+ *
+ * Above Amount, because it changes what Amount means: with a quantity, Amount
+ * is the price of one. The helper says so here rather than under Amount,
+ * whose line is already taken by the currency (see `amount_help`).
+ */
+const QTY_LABEL = "Quantity";
+const QTY_HELP = "Optional. If you fill this in, Amount is the price for one.";
+const QTY_CHARS = 8;
 
 /** The screen that collects one item. Letters and underscores only. */
 export const itemScreenId = (w: string): string => `ITEM_${w.toUpperCase()}`;
@@ -478,13 +496,23 @@ export const formScreenId = (items: number): string => `WORK_${TOTALS[items - 1]
 /** The extra items a screen showing `items` items has: 0 to 4 of them. */
 const extrasOf = (items: number): readonly string[] => EXTRA_ITEMS.slice(0, items - 1);
 
-/** What a document is, minus the items. */
-const carriedData = (amount: "string" | "number"): Record<string, unknown> => ({
+/**
+ * What a document is, minus the items after the first.
+ *
+ * `numbers` is how the first item's two number boxes are declared: numbers on
+ * WORK, which initialises them as number inputs, and strings everywhere else,
+ * which is all a form ever returns. See `formScreen`.
+ */
+const carriedData = (numbers: "string" | "number"): Record<string, unknown> => ({
   client_name: { type: "string", __example__: "Daniel Uwak" },
   client_email: { type: "string", __example__: "" },
   description: { type: "string", __example__: "Website design" },
+  qty:
+    numbers === "number"
+      ? { type: "number", __example__: 1 }
+      : { type: "string", __example__: "" },
   amount:
-    amount === "number"
+    numbers === "number"
       ? { type: "number", __example__: 250000 }
       : { type: "string", __example__: "250000" },
   due_date: { type: "string", __example__: "" },
@@ -528,11 +556,12 @@ const carriedData = (amount: "string" | "number"): Record<string, unknown> => ({
 
 /** Those same fields in a payload, from wherever this screen holds them. */
 const carriedPayload = (from: "form" | "data"): Record<string, string> => ({
-  // The five somebody types are read from the form wherever there is one, so
+  // The six somebody types are read from the form wherever there is one, so
   // an edit made on the way past is an edit that counts.
   client_name: `\${${from}.client_name}`,
   client_email: `\${${from}.client_email}`,
   description: `\${${from}.description}`,
+  qty: `\${${from}.qty}`,
   amount: `\${${from}.amount}`,
   due_date: `\${${from}.due_date}`,
   // Chosen on the form screens, so it is read wherever the others are.
@@ -555,6 +584,7 @@ function itemData(count: number): Record<string, unknown> {
   for (const w of EXTRA_ITEMS.slice(0, count)) {
     const f = itemFields(w);
     out[f.description] = { type: "string", __example__: "" };
+    out[f.qty] = { type: "string", __example__: "" };
     out[f.amount] = { type: "string", __example__: "" };
   }
   return out;
@@ -574,6 +604,7 @@ function itemPayload(count: number, from: "form" | "data"): Record<string, strin
   for (const w of EXTRA_ITEMS.slice(0, count)) {
     const f = itemFields(w);
     out[f.description] = `\${${from}.${f.description}}`;
+    out[f.qty] = `\${${from}.${f.qty}}`;
     out[f.amount] = `\${${from}.${f.amount}}`;
   }
   return out;
@@ -585,6 +616,7 @@ function emptyItems(count: number): Record<string, string> {
   for (const w of EXTRA_ITEMS.slice(count)) {
     const f = itemFields(w);
     out[f.description] = "";
+    out[f.qty] = "";
     out[f.amount] = "";
   }
   return out;
@@ -638,11 +670,11 @@ type DocumentFlow = {
  *
  * Reached only by tapping "Add another item", so an invoice with one line
  * never shows it — which is most invoices. The back arrow is the remove: the
- * screen is popped and its two fields go with it, and the screen somebody
+ * screen is popped and its fields go with it, and the screen somebody
  * taps Next on is the number of items the invoice has.
  *
  * Everything the document has collected so far rides along in `data` and is
- * handed on untouched. Only this screen's own two fields are read from the
+ * handed on untouched. Only this screen's own three fields are read from the
  * form.
  */
 /**
@@ -686,6 +718,15 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
             },
             {
               type: "TextInput",
+              name: f.qty,
+              label: QTY_LABEL,
+              "helper-text": QTY_HELP,
+              required: false,
+              "input-type": "number",
+              "max-chars": QTY_CHARS,
+            },
+            {
+              type: "TextInput",
               name: f.amount,
               label: "Amount",
               "helper-text": "Naira, before VAT. Digits only.",
@@ -719,6 +760,7 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
                 payload: {
                   ...held,
                   [f.description]: `\${form.${f.description}}`,
+                  [f.qty]: `\${form.${f.qty}}`,
                   [f.amount]: `\${form.${f.amount}}`,
                 },
               },
@@ -763,6 +805,14 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
       },
       {
         type: "TextInput",
+        name: f.qty,
+        label: QTY_LABEL,
+        required: false,
+        "input-type": "text",
+        "max-chars": QTY_CHARS,
+      },
+      {
+        type: "TextInput",
         name: f.amount,
         label: "Amount",
         "helper-text": "Naira, before VAT. Digits only.",
@@ -787,7 +837,7 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
    * So the form gets Add and one Remove. Remove takes the last item and sits
    * directly under that item's Amount, which is where somebody looking at a
    * line they did not want will look for it. Any other item is cleared by
-   * emptying its two boxes \u2014 what the helper text says, and what the reader
+   * emptying its boxes \u2014 what the helper text says, and what the reader
    * that builds the document acts on.
    */
   const links = [
@@ -852,6 +902,7 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
             client_name: "${data.client_name}",
             client_email: "${data.client_email}",
             description: "${data.description}",
+            qty: "${data.qty}",
             amount: "${data.amount}",
             due_date: "${data.due_date}",
             currency: "${data.currency}",
@@ -860,6 +911,7 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
                 const f = itemFields(w);
                 return [
                   [f.description, `\${data.${f.description}}`],
+                  [f.qty, `\${data.${f.qty}}`],
                   [f.amount, `\${data.${f.amount}}`],
                 ];
               }),
@@ -895,6 +947,16 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
               required: true,
               "input-type": "text",
               "max-chars": 100,
+            },
+            {
+              type: "TextInput",
+              name: "qty",
+              label: QTY_LABEL,
+              "helper-text": QTY_HELP,
+              required: false,
+              // The number pad on WORK, for the same reason as Amount below.
+              "input-type": entry ? "number" : "text",
+              "max-chars": QTY_CHARS,
             },
             {
               /*
@@ -1013,6 +1075,8 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           client_name: { type: "string", __example__: "Daniel Uwak" },
           client_email: { type: "string", __example__: "" },
           description: { type: "string", __example__: "Website design" },
+          // A string for the reason `amount` below is one.
+          qty: { type: "string", __example__: "" },
           // A string, and not a mistake.
           //
           // WORK declares this a number, because it initialises a
@@ -1103,6 +1167,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       client_name: "${data.client_name}",
                       client_email: "${data.client_email}",
                       description: "${data.description}",
+                      qty: "${data.qty}",
                       amount: "${data.amount}",
                       ...itemPayload(EXTRA_ITEMS.length, "data"),
                       due_date: "${data.due_date}",

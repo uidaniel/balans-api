@@ -149,8 +149,8 @@ describe("what the user reads before they send it", () => {
 
     assert.deepEqual(lines, [
       "Payment plan:",
-      "  · 50% deposit — ₦25,000 (due now)",
-      "  · Balance — ₦25,000 (due Fri, 25 Sep)",
+      "- 50% deposit — ₦25,000 (due now)",
+      "- Balance — ₦25,000 (due Fri, 25 Sep)",
     ]);
   });
 
@@ -180,8 +180,8 @@ describe("what the user reads before they send it", () => {
 
     assert.deepEqual(lines, [
       "Payment plan:",
-      "  · 50% deposit — ₦25,000 (due now)",
-      "  · Balance — ₦25,000",
+      "- 50% deposit — ₦25,000 (due now)",
+      "- Balance — ₦25,000",
     ]);
   });
 });

@@ -204,3 +204,50 @@ describe("amounts", () => {
     assert.equal(out.lines[0]!.unitAmountKobo, 150_050);
   });
 });
+
+describe("quantities", () => {
+  it("bills the amount once when the box is empty, which is most lines", () => {
+    for (const qty of [undefined, "", "0", "  "]) {
+      const out = linesFromForm(form(qty === undefined ? {} : { qty }));
+      assert.ok(out.ok, `qty ${JSON.stringify(qty)}`);
+      assert.equal(out.lines[0]!.qty, 1);
+    }
+  });
+
+  it("reads the amount as the price of one when there is a quantity", () => {
+    // "4 interior stills at 20k", as the sentence has always read it.
+    const out = linesFromForm(form({ description: "Interior stills", qty: "4", amount: "20000" }));
+    assert.ok(out.ok);
+    assert.deepEqual(out.lines, [{ description: "Interior stills", qty: 4, unitAmountKobo: 20_000_00 }]);
+    assert.equal(totalOfLines(out.lines), 80_000_00);
+  });
+
+  it("reads a quantity on every item, not just the first", () => {
+    const out = linesFromForm(
+      form({ item_two_description: "Revision round", item_two_qty: "2", item_two_amount: "15000" }),
+    );
+    assert.ok(out.ok);
+    assert.deepEqual(out.lines[1], { description: "Revision round", qty: 2, unitAmountKobo: 15_000_00 });
+    assert.equal(totalOfLines(out.lines), 50_000_00 + 30_000_00);
+  });
+
+  it("takes halves, for hours and metres", () => {
+    const out = linesFromForm(form({ qty: "2.5", amount: "10000" }));
+    assert.ok(out.ok);
+    assert.equal(out.lines[0]!.qty, 2.5);
+    assert.equal(totalOfLines(out.lines), 25_000_00);
+  });
+
+  it("stops on a quantity it cannot bill, and says which item", () => {
+    // Read as one, "2 or 3" is an invoice short by however much the rest cost.
+    for (const qty of ["two", "2 or 3", "-1", "1.2345", "10001"]) {
+      const out = linesFromForm(form({ item_two_description: "Cards", item_two_qty: qty, item_two_amount: "5000" }));
+      assert.deepEqual(out, { ok: false, reason: "qty", position: 2 }, `qty ${qty}`);
+    }
+  });
+
+  it("treats a quantity with nothing else as half an item, not as nothing", () => {
+    const out = linesFromForm(form({ item_three_qty: "4" }));
+    assert.deepEqual(out, { ok: false, reason: "half", position: 3, hasDescription: false });
+  });
+});

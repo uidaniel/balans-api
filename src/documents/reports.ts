@@ -12,8 +12,10 @@
 
 import { formatFriendly, formatDayMonth, firstOfNextMonth, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { b, block, i, lines, para, row } from "../whatsapp/format.ts";
+import { b, block, BULLET, i, lines, para, row } from "../whatsapp/format.ts";
 import { bucketOf, type Bucket, type Debtors, type DocumentStatus, type Summary } from "./queries.ts";
+import { payBy } from "./summary.ts";
+import type { BankDetails } from "./bank-details.ts";
 
 const BUCKET_TITLE: Record<Bucket, string> = {
   late_30_plus: "Over 30 days late",
@@ -45,7 +47,7 @@ export function debtorsMessage(d: Debtors, today: Civil): string {
         ...rows.map((r) => {
           const when = r.dueDate ? formatFriendly(r.dueDate, today) : "no date";
           const num = r.number === null ? "" : ` #${r.number}`;
-          return `· ${r.clientName}${num} — ${formatNaira(r.outstandingKobo)} (${when})`;
+          return `${BULLET}${r.clientName}${num} — ${formatNaira(r.outstandingKobo)} (${when})`;
         }),
       ),
     );
@@ -159,7 +161,7 @@ export function summaryMessage(s: Summary): string {
   const top = s.topClients.length
     ? lines(
         s.topClients.length === 1 ? "Best client:" : "Best clients:",
-        ...s.topClients.map((c) => `· ${c.name} — ${formatNaira(c.paidKobo)}`),
+        ...s.topClients.map((c) => `${BULLET}${c.name} — ${formatNaira(c.paidKobo)}`),
       )
     : "";
 
@@ -256,6 +258,7 @@ export function cannotCancelMessage(number: number, why: string): string {
 export function resendMessage(
   d: { number: number | null; type: string; clientName: string; totalKobo: number; amountPaidKobo: number },
   link: string,
+  bank: BankDetails | null = null,
 ): string {
   const label = d.type === "quote" ? "Quote" : "Invoice";
   const owed = d.totalKobo - d.amountPaidKobo;
@@ -264,7 +267,8 @@ export function resendMessage(
     lines(
       owed > 0 ? `${b(formatNaira(owed))} still owed.` : b("Paid in full."),
       "Send this to them:",
-      link,
+      // The link either way; on a naira invoice it opens the account to pay into.
+      bank ? payBy(link, bank) : link,
     ),
   );
 }

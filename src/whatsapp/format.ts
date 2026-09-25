@@ -62,7 +62,17 @@ export const field = (label: string, value: string) => `${label}: ${b(value)}`;
  * ones, where the character simply shows. A middle dot reads correctly either
  * way, so it is used instead.
  */
-export const bullets = (...items: string[]) => items.map((x) => `· ${x}`).join("\n");
+/**
+ * A list WhatsApp draws as one.
+ *
+ * "- " at the start of a line is WhatsApp's own list syntax: the app sets it
+ * as a bullet with a hanging indent, so a long line wraps under its text
+ * rather than under the dot. A "·" was only ever a character, and wrapped
+ * back to the margin like any other.
+ */
+export const BULLET = "- ";
+
+export const bullets = (...items: string[]) => items.map((x) => `${BULLET}${x}`).join("\n");
 
 /* -------------------------------------------------------------------------- */
 /* Structure                                                                  */

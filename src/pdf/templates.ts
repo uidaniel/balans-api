@@ -50,6 +50,9 @@ import {
   numberLabel,
   owedKobo,
   party,
+  onlineAt,
+  onlineSection,
+  payWhere,
   payInfo,
   notesBlock,
   rows,
@@ -213,8 +216,8 @@ border-top:1px solid ${ink(0.12)};padding-top:.9em;font-size:.58em;color:${ink(0
 
   <div class="tail">
     <span>${
-      d.publicUrl && !isReceipt(d) && owedKobo(d) > 0
-        ? `Pay online at <b>${esc(shortUrl(d.publicUrl))}</b>`
+      payWhere(d)
+        ? payWhere(d)
         : d.businessEmail
           ? esc(d.businessEmail)
           : ""
@@ -453,6 +456,7 @@ line-height:1;font-variant-numeric:tabular-nums}
 .owed .sub{margin-top:.45em;font-size:.5em;color:${ink(0.45)}}
 .terms{margin-top:1em;font-size:.54em;line-height:1.55;color:${ink(0.55)};white-space:pre-wrap}
 .sig{margin:auto auto 0;text-align:center}
+.sig .space{justify-content:center}
 .sig .who{border-top-color:${ink(0.35)}}
 .where{margin-top:.8em;font-size:.48em;color:${ink(0.45)}}
 .where b{font-weight:600;color:${INK}}
@@ -523,11 +527,15 @@ line-height:1;font-variant-numeric:tabular-nums}
 
   ${d.notes ? `<p class="terms">${esc(d.notes)}</p>` : ""}
 
-  ${signature(d, "auto")}
+  ${
+    // The signature is what pushes the foot to the bottom of the page here;
+    // without one, an empty spacer does the same job.
+    signature(d, "auto") || `<div style="margin-top:auto"></div>`
+  }
 
   ${
-    d.publicUrl && !isReceipt(d) && owedKobo(d) > 0
-      ? `<p class="where">Pay online at <b>${esc(shortUrl(d.publicUrl))}</b> · card, transfer or USSD</p>`
+    payWhere(d)
+      ? `<p class="where">${payWhere(d)}${d.variant === "quote" ? "" : d.bankDetails ? " · bank transfer" : " · card, transfer or USSD"}</p>`
       : ""
   }
   ${legal(d)}
@@ -704,7 +712,7 @@ border-top:.14em solid ${INK};padding-top:.8em}
     line(esc(d.clientName), "b") + (d.clientEmail ? line(esc(d.clientEmail), "q") : ""),
   )}
   ${section(3, "Work", rows(d, { rate: false }))}
-  ${payInfo(d) ? section(4, "Pay", payInfo(d, { label: false })) : ""}
+  ${payInfo(d) ? section(4, onlineSection(d), payInfo(d, { label: false })) : ""}
   ${d.notes ? section(5, "Terms", `<p class="note">${esc(d.notes)}</p>`) : ""}
 
   <div class="foot">

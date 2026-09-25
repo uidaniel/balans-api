@@ -43,6 +43,8 @@ import {
   totals,
   when,
   type RenderOptions,
+  onlineAt,
+  payWhere,
 } from "./kit.ts";
 
 export type Variant = "invoice" | "quote" | "receipt" | "sample";
@@ -66,6 +68,17 @@ export type DocumentData = {
   businessTin: string | null;
   /** Data URI, or null. Pro only (F21). */
   logoDataUri: string | null;
+  /**
+   * The sender's signature, as a data URI. Without one there is no signature
+   * line at all: a ruled space for a pen, on a document nobody prints, only
+   * ever said that something was missing.
+   */
+  signatureDataUri?: string | null;
+  /**
+   * The sender's own account, on a naira invoice (see bank-details.ts). Set,
+   * it takes the place of the payment link everywhere a layout prints one.
+   */
+  bankDetails?: { bankName: string; accountName: string; accountNumber: string } | null;
   clientName: string;
   clientEmail: string | null;
   lines: { description: string; qty: number; unitAmountKobo: number; amountKobo: number }[];
@@ -224,8 +237,8 @@ export function renderDocumentHtml(d: DocumentData, opts: RenderOptions = {}): s
     <div class="min0">
       <p class="thanks">${receipt ? "Thank you for the payment." : "Thanks for the business."}</p>
       ${
-        d.publicUrl && !isReceipt(d) && owedKobo(d) > 0
-          ? `<p class="where">Pay online at <b>${esc(shortUrl(d.publicUrl))}</b></p>`
+        payWhere(d)
+          ? `<p class="where">${payWhere(d)}</p>`
           : d.publicUrl
             ? `<p class="where">See it any time at <b>${esc(shortUrl(d.publicUrl))}</b></p>`
             : ""

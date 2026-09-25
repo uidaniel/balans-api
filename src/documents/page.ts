@@ -14,6 +14,7 @@
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { formatMoney } from "../../core/currency.ts";
+import { agreedTotalMinor } from "../../core/exchange.ts";
 import { outstandingKobo, payable, payableLabel, payableNowKobo, type PublicDocument } from "./public.ts";
 import { logoAvailable, logoSvg, markSvg, processorLogo, type Processor } from "../brand/logo.ts";
 import { FONT, fontFacesForPage } from "../pdf/fonts.ts";
@@ -228,6 +229,38 @@ border-radius:50%;background:var(--marigold);margin-right:8px;animation:pulse 1.
  * asks the processor and never decides anything: a payment becomes paid on a
  * verified webhook, and this is just how the page finds out.
  */
+/*
+ * The copy buttons on their own, for the bank-details panel: it has the same
+ * account and amount to copy as the transfer panel, and none of its countdown
+ * or polling, because nothing will confirm a direct transfer.
+ */
+const COPY_JS = `
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('button.copy');
+  if (!b) return;
+  var text = b.getAttribute('data-copy') || '';
+  var done = function () {
+    if (b.classList.contains('icopy')) {
+      b.classList.add('done');
+      setTimeout(function () { b.classList.remove('done'); }, 1600);
+      return;
+    }
+    var was = b.textContent;
+    b.textContent = 'Copied';
+    b.classList.add('done');
+    setTimeout(function () { b.textContent = was; b.classList.remove('done'); }, 1600);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function () {});
+  } else {
+    var t = document.createElement('textarea');
+    t.value = text; document.body.appendChild(t); t.select();
+    try { document.execCommand('copy'); done(); } catch (err) {}
+    document.body.removeChild(t);
+  }
+});
+`;
+
 const TRANSFER_JS = `
 (function () {
   var box = document.querySelector('.transfer');
@@ -372,6 +405,13 @@ export function renderDocument(
     transfer?: TransferPanel | null;
     /** Whether a card can actually be taken. Only consulted on a foreign invoice. */
     cardReady?: boolean;
+    /**
+     * Where this page was opened from, for its own links. A quote is opened
+     * at balans.ng/q/…, which the site passes through to this API; its PDF
+     * link has to stay under /q/ or it would point at a path the site does
+     * not forward.
+     */
+    base?: "/i" | "/q";
   } = { token: "" },
 ): string {
   const label = LABEL[doc.type];
@@ -415,7 +455,7 @@ export function renderDocument(
       logoAvailable() ? logoSvg("40px") : `<span class="dot"></span>balans`
     }</div>
     <div class="kind">${label} ${doc.number}</div>
-    <h1>${doc.foreign ? formatMoney(doc.foreign.amountMinor, doc.foreign.currency) : formatNaira(doc.totalKobo)}</h1>
+    <h1>${doc.foreign ? formatMoney(agreedTotalMinor(doc.foreign.amountMinor, doc.subtotalKobo, doc.vatKobo), doc.foreign.currency) : formatNaira(doc.totalKobo)}</h1>
     ${convertedLine(doc)}
     <div class="from">From <b>${esc(doc.businessName)}</b> to ${esc(doc.clientName)}</div>
     ${statusPill(doc, today, overdue)}
@@ -459,7 +499,7 @@ export function renderDocument(
       // nothing itemised to render, and offering one implies there is.
       doc.type === "payment_request"
         ? ""
-        : `<a href="/i/${esc(opts.token)}/pdf">Download ${label.toLowerCase()} (PDF)</a>`
+        : `<a href="${opts.base ?? "/i"}/${esc(opts.token)}/pdf">Download ${label.toLowerCase()} (PDF)</a>`
     }
     ${
       doc.amountPaidKobo > 0
@@ -469,7 +509,7 @@ export function renderDocument(
   </div>
 </div>
 <p class="foot">${markSvg("16px")}<span>Invoiced with <a href="https://balans.ng">Balans</a></span></p>
-${opts.transfer ? `<script>${TRANSFER_JS}</script>` : ""}
+${opts.transfer ? `<script>${TRANSFER_JS}</script>` : doc.bank && can.ok === false ? `<script>${COPY_JS}</script>` : ""}
 </body></html>`;
 }
 
@@ -602,6 +642,8 @@ function payBlock(
   }
 
   switch (can.why) {
+    case "bank_details":
+      return bankBlock(doc, amount, partLabel);
     case "paid":
       return `<div class="banner paid">Paid in full. Nothing more to do.</div>`;
     case "cancelled":
@@ -709,6 +751,45 @@ function transferBlock(doc: PublicDocument, t: TransferPanel, token: string): st
 
 
 /**
+ * The sender's own account, on a naira invoice (see bank-details.ts).
+ *
+ * The same panel as the transfer one, because it asks the same thing of the
+ * client: an account, a name, an exact amount. What is different is said
+ * plainly underneath. This is the business's own account, so the name the
+ * client's bank shows them is one they recognise — and nothing here watches
+ * for the money, so the client should not expect a receipt from Balans until
+ * the sender confirms it.
+ */
+function bankBlock(doc: PublicDocument, amountKobo: number, partLabel: string | null): string {
+  const k = doc.bank!;
+  const amount = formatNaira(amountKobo);
+  const typed = amountKobo % 100 === 0 ? String(amountKobo / 100) : (amountKobo / 100).toFixed(2);
+  const copyIcon = (what: string, value: string) =>
+    `<button class="icopy copy" type="button" data-copy="${esc(value)}" aria-label="Copy the ${what}">` +
+    `<svg class="i-no" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/>` +
+    `<path d="M5 15V5.5A2.5 2.5 0 0 1 7.5 3H15"/></svg>` +
+    `<svg class="i-yes" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5 9.5 17.5 19.5 6.5"/></svg></button>`;
+  const row = (key: string, v: string) =>
+    `<div class="trow"><span class="tk">${key}</span><span class="tv">${v}</span></div>`;
+
+  return `<div class="pay bankpay">
+  <div class="tcard">
+    <p class="teyebrow">Pay by bank transfer${partLabel ? ` &middot; ${esc(partLabel)}` : ""}</p>
+    <div class="tbox">
+      ${row("Bank", esc(k.bankName))}
+      ${row("Account number", `<span class="acct">${esc(k.accountNumber)}</span>`)}
+      ${row("Account name", esc(k.accountName))}
+      ${row("Amount", `<span class="tamt">${amount}</span>${copyIcon("amount", typed)}`)}
+    </div>
+    <button class="tcopy copy" type="button" data-copy="${esc(k.accountNumber)}">Copy account number</button>
+  </div>
+  <p class="tfine">Send <strong>${amount}</strong> to ${esc(doc.businessName)}&rsquo;s own account.
+    Payments made directly to this account are not tracked automatically &mdash; ask
+    ${esc(doc.businessName)} to confirm once you have paid.</p>
+</div>`;
+}
+
+/**
  * Who is handling the money, and who is not.
  *
  * The page asks a stranger to transfer real money to an account name they do
@@ -752,6 +833,18 @@ function trustBlock(doc: PublicDocument): string {
    * invitation, because the disclosure is true of every document and the
    * invitation is true of one.
    */
+  /*
+   * A naira invoice paid to the sender's own account has no processor to
+   * name: the money goes from the client's bank to theirs, and saying
+   * "processed by Monnify" beside an account number would be untrue.
+   */
+  if (doc.bank && doc.type !== "quote") {
+    return `<div class="trust">
+    <p class="tsmall">Balans is not a bank and does not hold your money. This invoice is paid straight
+      to the bank account of <b>${esc(doc.businessName)}</b>.</p>
+  </div>`;
+  }
+
   const quote = doc.type === "quote";
   const open =
     quote &&

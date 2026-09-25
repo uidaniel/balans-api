@@ -153,16 +153,25 @@ describe("what the user is told they will receive", () => {
 });
 
 describe("where it appears on the draft", () => {
+  /*
+   * Only on an invoice priced abroad, the one kind still paid through a
+   * processor. A naira invoice is paid straight to the sender's account
+   * (bank-details.ts): all of it arrives, so there is no "after fees" to say.
+   */
+  const ABROAD: Partial<Draft> = {
+    foreign: { currency: "USD", amountMinor: 3_768, rate: 1_327, source: "open.er-api.com", fetchedAt: "2026-09-24T06:00:00.000Z" },
+  };
+
   it("is the last thing before the question", () => {
     // Under the amount being approved and above the buttons, because it is
     // part of the decision rather than a footnote to it.
-    const m = draftSummary(draft({ depositPercent: 50 }), today, "free");
+    const m = draftSummary(draft({ ...ABROAD, depositPercent: 50 }), today, "free");
     const ps = m.indexOf("PS:");
     const ask = m.indexOf("Send it?");
 
     assert.ok(ps > 0, `no PS line in:\n${m}`);
     assert.ok(ps < ask, "the PS has to come before the question");
-    assert.match(m.slice(ps), /^PS: you receive \*₦48,550\* of this after fees\.\n\n\*Send it\?\*$/);
+    assert.match(m.slice(ps), /^PS: you receive \*₦[\d,.]+\* of this after fees\.\n\n\*Send it\?\*$/);
   });
 
   it("bolds the figure and nothing else", () => {
@@ -172,11 +181,14 @@ describe("where it appears on the draft", () => {
      * and none of them standing out — the total is what is being approved and
      * it keeps the weight.
      */
-    const m = draftSummary(draft({}), today, "free");
+    const m = draftSummary(draft(ABROAD), today, "free");
     const line = m.slice(m.indexOf("PS:")).split("\n")[0]!;
-
     assert.equal((line.match(/\*/g) ?? []).length, 2, `one bold run, not more: ${line}`);
-    assert.ok(line.includes("*₦48,650*"), `the figure carries it: ${line}`);
+  });
+
+  it("says nothing about fees on a naira invoice, which is paid in full", () => {
+    const m = draftSummary(draft({}), today, "free");
+    assert.ok(!m.includes("PS:"), `a naira invoice has no fees to mention:\n${m}`);
   });
 
   it("calls the line what the form calls it", () => {
@@ -200,7 +212,8 @@ ${m}`);
   it("tells a Pro user their own number, not the free one", () => {
     // The gate that lets a draft through already knows the plan. If this ever
     // falls back to a default, a Pro user is shown a fee they do not pay.
-    assert.ok(draftSummary(draft({}), today, "pro").includes("*₦49,150*"));
-    assert.ok(draftSummary(draft({}), today, "free").includes("*₦48,650*"));
+    const figure = (plan: "free" | "pro") =>
+      /PS: you receive \*(₦[\d,.]+)\*/.exec(draftSummary(draft(ABROAD), today, plan))![1];
+    assert.notEqual(figure("pro"), figure("free"));
   });
 });

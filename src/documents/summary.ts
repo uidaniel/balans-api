@@ -14,10 +14,39 @@ import { DEFAULT_INTL_PROCESSOR, settle, withVat } from "../../core/fees.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { defaults } from "../config.ts";
 import { formatMoney, INFO } from "../../core/currency.ts";
-import { impliedRate } from "../../core/exchange.ts";
-import { b, block, lines, para, row } from "../whatsapp/format.ts";
+import { agreedTotalMinor } from "../../core/exchange.ts";
+import { b, block, BULLET, lines, para, row } from "../whatsapp/format.ts";
 import { shapeFor, stagesFor, type Stage, dueDateWithStages } from "./parts.ts";
 import type { Draft } from "./store.ts";
+import { documentLink } from "./links.ts";
+import type { BankDetails } from "./bank-details.ts";
+
+/**
+ * How the client pays, in a message they will read.
+ *
+ * The link, on every invoice. On a naira invoice it opens the page with the
+ * sender's own account on it (see bank-details.ts), so the words say what
+ * they will find there; abroad it opens the card checkout.
+ */
+export function payBy(link: string | null, bank: BankDetails | null): string {
+  if (!link) return "";
+  return lines(bank ? "Click the link for the account to pay into:" : "Click the link to pay:", link);
+}
+
+/**
+ * What the sender is told after a naira invoice goes out (addendum 3.5).
+ *
+ * Nothing will confirm this payment on its own, so the one thing worth
+ * saying is how it becomes paid — in the words that do it, with this
+ * client's name and this invoice's number already in them.
+ */
+export function bankDetailsSentNote(number: number, clientName: string, request = false): string {
+  const label = request ? "Request" : "Invoice";
+  return lines(
+    `🏦 ${b(`${label} ${number} is ready.`)} Its link shows your bank details for the transfer.`,
+    `I'll mark it paid the moment you tell me: ${b(`${clientName} paid ${label.toLowerCase()} ${number}`)}`,
+  );
+}
 
 /** F6: description defaults to "Services" if absent, and the draft says so. */
 export const DEFAULT_DESCRIPTION = "Services";
@@ -82,7 +111,7 @@ export function planLines(
 
   return [
     "Payment plan:",
-    ...stages.map((s, i) => `  · ${s.label} — ${formatNaira(s.amountKobo)}${when(s, i)}`),
+    ...stages.map((s, i) => `${BULLET}${s.label} — ${formatNaira(s.amountKobo)}${when(s, i)}`),
   ];
 }
 
@@ -238,48 +267,57 @@ export function draftSummary(
           draft.foreign && line.originalUnitAmountMinor !== undefined
             ? formatMoney(line.originalUnitAmountMinor * line.qty, draft.foreign.currency)
             : formatNaira(line.unitAmountKobo * line.qty);
-        return `  · ${line.description}${each} — ${money}`;
+        return `${BULLET}${line.description}${each} — ${money}`;
       }),
     ]);
   }
 
-  // Subtotal only when VAT makes it differ from the total: showing the same
-  // number twice is noise on the one line somebody is checking.
-  // One group, because it is one sum: the subtotal and the VAT are the
-  // arithmetic that produces the amount, and reading them apart makes three
-  // facts out of a single addition somebody is checking in one glance.
-  sections.push([
-    ...(draft.vatKobo > 0
+  /*
+   * The money, as one sum in one currency.
+   *
+   * "Price" rather than "Subtotal": the word people read this in is what the
+   * work costs, and "subtotal" asked them to work out what it was a subtotal
+   * of. VAT and the total follow only when there is VAT; without it the price
+   * is the total and saying it twice is noise.
+   *
+   * All three in the currency it was agreed in. A dollar quote used to read
+   * "Subtotal ₦863,156 · VAT ₦64,736.70 · Amount $650.00" — two currencies in
+   * one addition, and a total that was the price before VAT. The dollar total
+   * includes VAT now, so it is the same money as the naira under it.
+   */
+  const agreed = draft.foreign
+    ? agreedTotalMinor(draft.foreign.amountMinor, draft.subtotalKobo, draft.vatKobo)
+    : draft.totalKobo;
+  const say = (n: number): string =>
+    draft.foreign ? formatMoney(n, draft.foreign.currency) : formatNaira(n);
+  const price = draft.foreign ? draft.foreign.amountMinor : draft.subtotalKobo;
+
+  sections.push(
+    draft.vatKobo > 0
       ? [
-          row("Subtotal", formatNaira(draft.subtotalKobo)),
-          row(`VAT ${draft.vatPercent}%`, formatNaira(draft.vatKobo)),
+          row("Price", say(price)),
+          row(`VAT (${draft.vatPercent}%)`, say(agreed - price)),
+          row("Total", b(say(agreed))),
         ]
-      : []),
-    row(
-      "Amount",
-      b(
-        draft.foreign
-          ? formatMoney(draft.foreign.amountMinor, draft.foreign.currency)
-          : formatNaira(draft.totalKobo),
-      ),
-    ),
-  ]);
+      : [row("Amount", b(say(agreed)))],
+  );
 
   /*
    * What the client is actually charged, and at what rate (section 9).
    *
-   * Nobody is ever charged in dollars. The card is debited in naira, the
-   * client's own bank converts, and this is the figure that leaves their
-   * account — so it belongs directly under the price, before the due date,
-   * not in a footnote. The rate is derived from the two numbers rather than
-   * printed from the quote, so the sentence and the figure beside it cannot
-   * disagree after rounding.
+   * Nobody is ever charged in dollars. The card is debited in naira and the
+   * client's own bank converts, so this is the figure that leaves their
+   * account.
+   *
+   * The rate is the one the draft was locked at, printed as it was stored.
+   * It used to be derived by dividing the naira total by the dollar price,
+   * which was right until VAT: the naira total has VAT in it and the dollar
+   * price did not, so a ₦1,327.93 rate was shown as ₦1,427.53.
    */
   if (draft.foreign) {
-    const rate = impliedRate(draft.totalKobo, draft.foreign.amountMinor);
     sections.push([
-      row("Charged in naira", b(formatNaira(draft.totalKobo))),
-      row("Today's rate", `${formatNaira(Math.round(rate * 100))}/${INFO[draft.foreign.currency].symbol}`),
+      row("Client pays", b(formatNaira(draft.totalKobo))),
+      row("Rate", `${INFO[draft.foreign.currency].symbol}1 = ${formatNaira(Math.round(draft.foreign.rate * 100))}`),
     ]);
   }
 
@@ -321,9 +359,12 @@ export function draftSummary(
    * Not on a sample, which is a demonstration invoice with nobody's money in
    * it — a fee line there is a number about a client who does not exist.
    */
+  // A naira invoice is paid straight to the sender's account (bank-details.ts):
+  // no processor, no fee, and nothing to say about receiving less.
   const ps =
     fees &&
     draft.type !== "sample" &&
+    Boolean(draft.foreign) &&
     `PS: you receive ${b(formatNaira(payout(draft, plan).receivesKobo))} of this after fees.`;
 
   /*
@@ -436,12 +477,13 @@ export function convertedForward(
   parts: { label: string; amountKobo: number }[],
   link: string,
   today: Civil,
+  bank: BankDetails | null = null,
 ): string {
   const plan = parts.length
     ? [
         "Payment plan:",
         ...parts.map(
-          (p, i) => `  \u00b7 ${p.label} \u2014 ${formatNaira(p.amountKobo)}${i === 0 ? " (due now)" : ""}`,
+          (p, i) => `${BULLET}${p.label} \u2014 ${formatNaira(p.amountKobo)}${i === 0 ? " (due now)" : ""}`,
         ),
       ]
     : [];
@@ -453,7 +495,7 @@ export function convertedForward(
       d.dueDate && row("Due", formatFriendly(d.dueDate, today)),
       ...plan,
     ]),
-    lines("Click the link to pay:", link),
+    payBy(link, bank),
   );
 }
 
@@ -470,12 +512,16 @@ export function convertedForward(
  */
 export function sentMessage(
   draft: Draft,
-  confirmed: { number: number; publicToken: string },
+  confirmed: { number: number; publicToken: string; bank?: BankDetails | null },
   baseUrl: string,
   today: Civil,
 ): { forward: string; note: string } {
   const label = SENT_LABEL[draft.type];
-  const link = `${baseUrl.replace(/\/$/, "")}/i/${confirmed.publicToken}`;
+  // A quote is read on balans.ng/q/, an invoice paid on the payment page.
+  const link =
+    draft.type === "quote"
+      ? documentLink("quote", confirmed.publicToken)
+      : `${baseUrl.replace(/\/$/, "")}/i/${confirmed.publicToken}`;
 
   /*
    * A quote keeps its note; an invoice does not.
@@ -537,7 +583,10 @@ export function sentMessage(
         "Amount",
         b(
           draft.foreign
-            ? formatMoney(draft.foreign.amountMinor, draft.foreign.currency)
+            ? formatMoney(
+                agreedTotalMinor(draft.foreign.amountMinor, draft.subtotalKobo, draft.vatKobo),
+                draft.foreign.currency,
+              )
             : formatNaira(draft.totalKobo),
         ),
       ),
@@ -549,7 +598,7 @@ export function sentMessage(
       // error in the sender's favour.
       ...planLines(draft, today),
     ]),
-    lines(draft.type === "quote" ? "Click the link to view it:" : "Click the link to pay:", link),
+    draft.type === "quote" ? lines("Click the link to view it:", link) : payBy(link, confirmed.bank ?? null),
     note,
   );
 
