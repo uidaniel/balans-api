@@ -265,7 +265,7 @@ describe("starting setup again", () => {
 
       assert.ok(flow, "it should offer the form, not just a question");
       assert.equal(flow.key, "onboarding");
-      assert.match(flow.image ?? "", /welcome\.png$/, "the card a new number gets");
+      assert.match(flow.image ?? "", /welcome\.png(\?v=\w+)?$/, "the card a new number gets");
       assert.equal(flow.cta, "Set up Balans");
     });
   }

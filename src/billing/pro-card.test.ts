@@ -44,7 +44,7 @@ describe("the two Pro cards", () => {
     const route = read("../http/routes/brand.ts");
     for (const url of [LIMIT_CARD, UPGRADE_CARD]) {
       assert.match(url, /^https?:\/\//, "Meta fetches these by URL");
-      assert.match(route, new RegExp(`"${url.split("/").pop()}":`));
+      assert.match(route, new RegExp(`"${url.split("/").pop()!.split("?")[0]}":`));
     }
   });
 
@@ -253,7 +253,7 @@ describe("the card that arrives once the money is in", () => {
 
   it("is served by the brand route", () => {
     const route = read("../http/routes/brand.ts");
-    assert.match(route, new RegExp(`"${PRO_CARD.split("/").pop()}":`));
+    assert.match(route, new RegExp(`"${PRO_CARD.split("/").pop()!.split("?")[0]}":`));
   });
 });
 

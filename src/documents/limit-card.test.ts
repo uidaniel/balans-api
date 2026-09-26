@@ -115,7 +115,7 @@ describe("the limit message", () => {
 
   it("points the card at a file the brand route will actually serve", () => {
     // A URL Meta cannot fetch is a message that fails to send at all.
-    const name = LIMIT_CARD.split("/").pop()!;
+    const name = LIMIT_CARD.split("/").pop()!.split("?")[0]!;
     assert.match(LIMIT_CARD, /^https?:\/\//, "Meta fetches this by URL");
     assert.match(read("../http/routes/brand.ts"), new RegExp(`"${name}":`), "and it is on the map");
   });

@@ -12,6 +12,8 @@
  * question repeated at them.
  */
 
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { normalisePhone, type ReplyButton } from "../whatsapp/client.ts";
 import { b, BULLET, field, i, lines, para } from "../whatsapp/format.ts";
 import type { Civil } from "../../core/dates.ts";
@@ -406,7 +408,25 @@ const site = env.SITE_URL.replace(/[/]$/, "");
  * after anybody last looked at this.
  */
 const brand = (file: string): string =>
-  `${env.PUBLIC_BASE_URL.replace(/[/]$/, "")}/brand/${file}`;
+  `${env.PUBLIC_BASE_URL.replace(/[/]$/, "")}/brand/${file}?v=${fingerprint(file)}`;
+
+/**
+ * A short hash of a card's bytes, for its address.
+ *
+ * The cards are served "immutable" for a year, and Cloudflare and Meta both
+ * take that at its word: when the Free limit went to three on 26 September
+ * 2026, the redrawn card deployed and "Five done" kept arriving, because the
+ * address had not changed. A new picture now has a new address. A file that
+ * cannot be read gets no fingerprint rather than stopping the bot.
+ */
+function fingerprint(file: string): string {
+  try {
+    const bytes = readFileSync(new URL(`../../assets/brand/${file}`, import.meta.url));
+    return createHash("sha256").update(bytes).digest("hex").slice(0, 10);
+  } catch {
+    return "0";
+  }
+}
 
 const WELCOME_CARD = brand("welcome.png");
 export const SETUP_DONE_CARD = brand("setup-done.png");

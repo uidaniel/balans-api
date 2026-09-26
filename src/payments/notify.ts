@@ -36,7 +36,7 @@ function proCardUrl(at: Date): string {
     year: "numeric",
     month: "2-digit",
   }).format(at);
-  return `${PRO_CARD}?m=${parts}`;
+  return `${PRO_CARD}&m=${parts}`;
 }
 import { b, block, lines, para, row } from "../whatsapp/format.ts";
 import { arrivalLine } from "./settlement.ts";
