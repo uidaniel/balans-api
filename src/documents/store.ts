@@ -25,6 +25,8 @@ export type DraftInput = {
   type: DocumentType;
   clientName: string;
   clientEmail: string | null;
+  /** WhatsApp digits. Set, it is where the document goes when it is sent. */
+  clientPhone?: string | null;
   lines: DraftLine[];
   /**
    * The date on the document: when an invoice falls due, or when a quote
@@ -101,6 +103,7 @@ export async function findOrCreateClient(
   name: string,
   email: string | null,
   client?: PoolClient,
+  phone: string | null = null,
 ): Promise<string> {
   const q = client ?? db();
   const { rows } = await q.query<{ id: string }>(
@@ -112,20 +115,38 @@ export async function findOrCreateClient(
   );
 
   if (rows[0]) {
-    // An email we did not have before is worth keeping; one we did is not
-    // worth overwriting from a passing mention.
+    /*
+     * The email given for this document is the one it goes to.
+     *
+     * It used to be kept only when the client had none, "not worth
+     * overwriting from a passing mention". On 26 September 2026 that sent
+     * Invoice 8 to an old address: the new one was typed into the form's
+     * Email box, dropped without a word, and the draft showed the old one.
+     * Nobody types an address for an invoice they want sent elsewhere.
+     *
+     * A new address starts with a clean record; the old one's bounces are
+     * not this one's.
+     */
     if (email) {
       await q.query(
-        `UPDATE clients SET email = $2 WHERE id = $1 AND (email IS NULL OR email = '')`,
+        `UPDATE clients
+            SET email = $2,
+                email_status = CASE WHEN lower(email) = lower($2) THEN email_status ELSE 'unknown' END
+          WHERE id = $1`,
         [rows[0].id, email],
       );
+    }
+    // A number is only ever typed into a box asking for it, so the latest
+    // one is the right one — unlike an email picked out of a sentence.
+    if (phone) {
+      await q.query(`UPDATE clients SET phone = $2 WHERE id = $1`, [rows[0].id, phone]);
     }
     return rows[0].id;
   }
 
   const created = await q.query<{ id: string }>(
-    `INSERT INTO clients (user_id, name, email) VALUES ($1, btrim($2), $3) RETURNING id`,
-    [userId, name, email],
+    `INSERT INTO clients (user_id, name, email, phone) VALUES ($1, btrim($2), $3, $4) RETURNING id`,
+    [userId, name, email, phone],
   );
   return created.rows[0]!.id;
 }
@@ -182,7 +203,13 @@ export async function createDraft(
   return tx(async (c) => {
     await c.query(`DELETE FROM documents WHERE user_id = $1 AND status = 'draft'`, [userId]);
 
-    const clientId = await findOrCreateClient(userId, input.clientName, input.clientEmail, c);
+    const clientId = await findOrCreateClient(
+      userId,
+      input.clientName,
+      input.clientEmail,
+      c,
+      input.clientPhone ?? null,
+    );
 
     const { rows } = await c.query<{ id: string }>(
       `INSERT INTO documents
@@ -284,6 +311,7 @@ export async function getOpenDraft(userId: string): Promise<Draft | null> {
     public_token: string | null;
     client_name: string;
     client_email: string | null;
+    client_phone: string | null;
     currency: Foreign | "NGN";
     original_amount_minor: number | null;
     fx_rate: string | null;
@@ -293,7 +321,7 @@ export async function getOpenDraft(userId: string): Promise<Draft | null> {
     `SELECT d.id, d.client_id, d.type, d.subtotal_kobo, d.vat_kobo, d.total_kobo,
             d.pass_fees_to_client, d.due_date, d.valid_until, d.notes, d.number, d.public_token,
             d.currency, d.original_amount_minor, d.fx_rate, d.fx_source, d.fx_fetched_at,
-            c.name AS client_name, c.email AS client_email
+            c.name AS client_name, c.email AS client_email, c.phone AS client_phone
        FROM documents d
        JOIN clients c ON c.id = d.client_id
       WHERE d.user_id = $1 AND d.status = 'draft'
@@ -324,6 +352,7 @@ export async function getOpenDraft(userId: string): Promise<Draft | null> {
     type: row.type,
     clientName: row.client_name,
     clientEmail: row.client_email,
+    clientPhone: row.client_phone,
     // NUMERIC comes back as a string, for the same precision reason BIGINT
     // does. Quantities are small and bounded, so a Number is safe here.
     lines: items.map((i) => ({

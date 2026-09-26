@@ -16,6 +16,7 @@
  */
 
 import { db } from "../db/pool.ts";
+import { env } from "../config.ts";
 
 /** Meta's window, with a margin. */
 const WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -69,7 +70,9 @@ export type TemplateName =
   | "invoice_overdue_prompt"
   | "monthly_summary_ready"
   | "pro_renewal"
-  | "security_alert";
+  | "security_alert"
+  | "client_invoice"
+  | "client_quote";
 
 export type TemplateSpec = {
   name: TemplateName;
@@ -79,6 +82,13 @@ export type TemplateSpec = {
   /** What each placeholder means, in order, for the submission and for us. */
   params: string[];
   example: string[];
+  /** A fixed line under the body. */
+  footer?: string;
+  /**
+   * One button that opens a link, the last part of which is filled per send.
+   * `url` ends in `{{1}}`; `example` is a whole URL Meta can open to review.
+   */
+  button?: { text: string; url: string; example: string };
 };
 
 export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
@@ -122,6 +132,43 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
     body: "Your Balans Pro renews on {{1}} at {{2}}. Reply here to change or cancel it.",
     params: ["date", "amount"],
     example: ["1 October", "₦4,000"],
+  },
+
+  /*
+   * A document, to the client it is for, from the Balans number.
+   *
+   * The first message anybody on the client's side gets from us, so it says
+   * who it is from before anything else, and it is a utility message about
+   * their invoice — no pitch in it, or Meta files it as marketing. The
+   * footer is the only mention of Balans, and it is enough: the reply box
+   * under it opens a chat with the product.
+   */
+  client_invoice: {
+    name: "client_invoice",
+    category: "UTILITY",
+    body: "Hello {{1}}, {{2}} has sent you {{3}} for {{4}}. Tap below to see it and how to pay.",
+    params: ["client", "business", "what it is, e.g. Invoice 8", "amount"],
+    example: ["Tunde", "Kemi Studio", "Invoice 8", "₦200,000"],
+    footer: "Sent with Balans",
+    button: {
+      text: "View and pay",
+      url: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/{{1}}`,
+      example: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/1256e3fd1f1fb85572609f61607c3fa6`,
+    },
+  },
+
+  client_quote: {
+    name: "client_quote",
+    category: "UTILITY",
+    body: "Hello {{1}}, {{2}} has sent you a quote for {{3}} ({{4}}). Tap below to see it.",
+    params: ["client", "business", "amount", "Quote 3"],
+    example: ["Tunde", "Kemi Studio", "₦450,000", "Quote 3"],
+    footer: "Sent with Balans",
+    button: {
+      text: "View quote",
+      url: `${env.SITE_URL.replace(/\/$/, "")}/q/{{1}}`,
+      example: `${env.SITE_URL.replace(/\/$/, "")}/q/1256e3fd1f1fb85572609f61607c3fa6`,
+    },
   },
 
   security_alert: {

@@ -506,6 +506,7 @@ const extrasOf = (items: number): readonly string[] => EXTRA_ITEMS.slice(0, item
 const carriedData = (numbers: "string" | "number"): Record<string, unknown> => ({
   client_name: { type: "string", __example__: "Daniel Uwak" },
   client_email: { type: "string", __example__: "" },
+  client_phone: { type: "string", __example__: "" },
   description: { type: "string", __example__: "Website design" },
   qty:
     numbers === "number"
@@ -519,7 +520,12 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
   plan: { type: "string", __example__: "one" },
   notes: { type: "string", __example__: "" },
   vat: { type: "boolean", __example__: false },
-  pass_fees: { type: "boolean", __example__: false },
+  /*
+   * Today, as the date picker's floor, so nobody can make an invoice due
+   * last week by scrolling one notch too far. Set by whoever opens the form;
+   * the Flow has no clock of its own.
+   */
+  today: { type: "string", __example__: "2026-09-26" },
   /*
    * What the invoice is priced in (International PRD section 5).
    *
@@ -554,26 +560,33 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
   amount_help: { type: "string", __example__: "Naira, before VAT. Digits only." },
 });
 
-/** Those same fields in a payload, from wherever this screen holds them. */
-const carriedPayload = (from: "form" | "data"): Record<string, string> => ({
-  // The six somebody types are read from the form wherever there is one, so
-  // an edit made on the way past is an edit that counts.
-  client_name: `\${${from}.client_name}`,
-  client_email: `\${${from}.client_email}`,
+/**
+ * Those same fields in a payload, from wherever this screen holds them.
+ *
+ * Two sources, because there are two pages: who it is for is typed on WHO
+ * and only carried after it, and what it is for is typed on the item pages
+ * and only carried before and after them. A field is read from the form on
+ * the screen that shows it, so an edit made on the way past is an edit that
+ * counts.
+ */
+const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<string, string> => ({
+  client_name: `\${${who}.client_name}`,
+  client_email: `\${${who}.client_email}`,
+  client_phone: `\${${who}.client_phone}`,
   description: `\${${from}.description}`,
   qty: `\${${from}.qty}`,
   amount: `\${${from}.amount}`,
   due_date: `\${${from}.due_date}`,
   // Chosen on the form screens, so it is read wherever the others are.
   currency: `\${${from}.currency}`,
-  // These four are only ever set on TERMS, at the end, so every screen before
-  // it is simply carrying them.
+  // These three are only ever set on TERMS, at the end, so every screen
+  // before it is simply carrying them.
   plan: "${data.plan}",
   notes: "${data.notes}",
   vat: "${data.vat}",
-  pass_fees: "${data.pass_fees}",
-  // Never typed by anybody: both are decided before the form opens, by who is
-  // opening it, and every screen is only carrying them.
+  // Never typed by anybody: decided before the form opens, by who is opening
+  // it and when, and every screen is only carrying them.
+  today: "${data.today}",
   can_bill_abroad: "${data.can_bill_abroad}",
   amount_help: "${data.amount_help}",
 });
@@ -633,9 +646,9 @@ function emptyItems(count: number): Record<string, string> {
  * Amounts are digits, not "250k". The number pad is already open on that field
  * and there is nothing to abbreviate; the sentence keeps the shorthand.
  *
- * Dates stay words — "Friday", "end of the month" — because a date picker
- * cannot say "the third week of October" and somebody will mean exactly that.
- * The same reader that handles the sentence handles this.
+ * The date is a picker since 26 September 2026 (see the DatePicker on the
+ * form screens); the sentence still takes words like "the third week of
+ * October" for anyone who means exactly that.
  *
  * Currency is deliberately absent. Payment confirmation rejects anything that
  * is not NGN, so a dropdown offering USD would carry an invoice all the way to
@@ -692,7 +705,7 @@ type DocumentFlow = {
 function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
   const word = EXTRA_ITEMS[index]!;
   const f = itemFields(word);
-  const held = { ...carriedPayload("data"), ...itemPayload(index, "data") };
+  const held = { ...carriedPayload("data", "data"), ...itemPayload(index, "data") };
 
   return {
     id: itemScreenId(word),
@@ -773,6 +786,81 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
 }
 
 /**
+ * The first page: who it is for.
+ *
+ * Name, email and WhatsApp number, and nothing else. Split from the items
+ * because they are two different questions, and a page that asks both reads
+ * as one long form to get through rather than two short ones.
+ *
+ * The number is the reason this page exists. An invoice with one goes to the
+ * client on WhatsApp from Balans when it is sent (see client-whatsapp.ts), so
+ * the client is not waiting on the freelancer to forward it.
+ *
+ * Everything else rides through in `data`, typed as WORK declares it, so a
+ * draft reopened here still has its items when Next lands on the next page.
+ */
+function whoScreen(o: DocumentFlow): Record<string, unknown> {
+  return {
+    id: "WHO",
+    title: o.title,
+    terminal: false,
+    data: carriedData("number"),
+    layout: {
+      type: "SingleColumnLayout",
+      children: [
+        { type: "TextSubheading", text: "Who is it for?" },
+        {
+          type: "Form",
+          name: "who_form",
+          "init-values": {
+            client_name: "${data.client_name}",
+            client_email: "${data.client_email}",
+            client_phone: "${data.client_phone}",
+          },
+          children: [
+            {
+              type: "TextInput",
+              name: "client_name",
+              label: "Client",
+              required: true,
+              "input-type": "text",
+              "max-chars": 80,
+            },
+            {
+              type: "TextInput",
+              name: "client_email",
+              label: "Email",
+              "helper-text": "Optional. They get a copy by email.",
+              required: false,
+              "input-type": "email",
+              "max-chars": 120,
+            },
+            {
+              type: "TextInput",
+              name: "client_phone",
+              label: "Phone",
+              "helper-text": `Optional. We send the ${o.key} to their WhatsApp.`,
+              required: false,
+              "input-type": "phone",
+              "max-chars": 20,
+            },
+            {
+              type: "Footer",
+              label: "Next",
+              "on-click-action": {
+                name: "navigate",
+                next: { type: "screen", name: "WORK" },
+                payload: carriedPayload("form", "data"),
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+/**
  * The form, once per number of items on it.
  *
  * `items` counts the first, so it runs 1 to 5. `entry` is the copy a Flow
@@ -789,7 +877,7 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
  */
 function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<string, unknown> {
   const extras = extrasOf(items);
-  const mine = { ...carriedPayload("form"), ...itemPayload(extras.length, "form") };
+  const mine = { ...carriedPayload("data", "form"), ...itemPayload(extras.length, "form") };
 
   /** The boxes for the items after the first, in the order they were added. */
   const itemBoxes = extras.flatMap((w, i) => {
@@ -866,7 +954,7 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
               // screen it lands on does not declare it, which is the whole
               // removal: no blanking, no flag, nothing to fall out of step.
               payload: {
-                ...carriedPayload("form"),
+                ...carriedPayload("data", "form"),
                 ...itemPayload(extras.length - 1, "form"),
               },
             },
@@ -885,7 +973,7 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
       children: [
         {
           type: "TextSubheading",
-          text: entry ? "Who it is for, and what it is for." : "Your invoice so far.",
+          text: "What is it for?",
         },
         {
           type: "Form",
@@ -899,8 +987,6 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
            * `init-value` on a TextInput is rejected outright.
            */
           "init-values": {
-            client_name: "${data.client_name}",
-            client_email: "${data.client_email}",
             description: "${data.description}",
             qty: "${data.qty}",
             amount: "${data.amount}",
@@ -918,23 +1004,6 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
             ),
           },
           children: [
-            {
-              type: "TextInput",
-              name: "client_name",
-              label: "Client",
-              required: true,
-              "input-type": "text",
-              "max-chars": 80,
-            },
-            {
-              type: "TextInput",
-              name: "client_email",
-              label: "Email",
-              "helper-text": "Optional. They get a copy by email too.",
-              required: false,
-              "input-type": "email",
-              "max-chars": 120,
-            },
             {
               type: "TextInput",
               name: "description",
@@ -1028,13 +1097,24 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
               : []),
             ...links,
             {
-              type: "TextInput",
+              /*
+               * A calendar, not words.
+               *
+               * The box used to take "Friday" or "in two weeks" and send it
+               * through the same reader as a sentence, which worked and which
+               * nobody could see working until the draft came back. A picker
+               * shows the day being chosen, cannot be misspelt, and cannot go
+               * behind today. The sentence still takes words.
+               *
+               * The value comes back as YYYY-MM-DD, and `handleInvoiceForm`
+               * reads that before trying it as words.
+               */
+              type: "DatePicker",
               name: "due_date",
               label: o.dateLabel,
               "helper-text": o.dateHelp,
               required: false,
-              "input-type": "text",
-              "max-chars": 40,
+              "min-date": "${data.today}",
             },
             {
               type: "Footer",
@@ -1063,6 +1143,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
   json: {
     version: VERSION,
     screens: [
+      whoScreen(o),
       formScreen(o, 1, true),
       ...TOTALS.map((_, i) => formScreen(o, i + 1, false)),
       ...EXTRA_ITEMS.map((_, index) => itemScreen(index, o)),
@@ -1074,6 +1155,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
         data: {
           client_name: { type: "string", __example__: "Daniel Uwak" },
           client_email: { type: "string", __example__: "" },
+          client_phone: { type: "string", __example__: "" },
           description: { type: "string", __example__: "Website design" },
           // A string for the reason `amount` below is one.
           qty: { type: "string", __example__: "" },
@@ -1099,7 +1181,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           plan: { type: "string", __example__: "one" },
           notes: { type: "string", __example__: "" },
           vat: { type: "boolean", __example__: false },
-          pass_fees: { type: "boolean", __example__: false },
+          today: { type: "string", __example__: "2026-09-26" },
           /*
            * A string for the same reason `amount` is one: it arrives out of a
            * Dropdown on WORK as `${form.currency}`, and what a form returns is
@@ -1130,7 +1212,6 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                 plan: "${data.plan}",
                 notes: "${data.notes}",
                 vat: "${data.vat}",
-                pass_fees: "${data.pass_fees}",
               },
               children: [
                 {
@@ -1144,11 +1225,6 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                   type: "OptIn",
                   name: "vat",
                   label: "Add 7.5% VAT",
-                },
-                {
-                  type: "OptIn",
-                  name: "pass_fees",
-                  label: "Client pays the transaction fee",
                 },
                 {
                   type: "TextArea",
@@ -1166,6 +1242,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                     payload: {
                       client_name: "${data.client_name}",
                       client_email: "${data.client_email}",
+                      client_phone: "${data.client_phone}",
                       description: "${data.description}",
                       qty: "${data.qty}",
                       amount: "${data.amount}",
@@ -1176,7 +1253,6 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       currency: "${data.currency}",
                       plan: "${form.plan}",
                       vat: "${form.vat}",
-                      pass_fees: "${form.pass_fees}",
                       notes: "${form.notes}",
                     },
                   },
@@ -1196,7 +1272,7 @@ const invoice = documentFlow({
   name: "Balans invoice",
   title: "New invoice",
   dateLabel: "Due",
-  dateHelp: "Optional. Friday, 30 September, in two weeks.",
+  dateHelp: "Optional. The day they should pay by.",
 });
 
 const quote = documentFlow({
@@ -1206,7 +1282,7 @@ const quote = documentFlow({
   // "Valid until" is eleven characters and wraps. "Valid to" says the same
   // thing in eight, and the helper carries the rest.
   dateLabel: "Valid to",
-  dateHelp: "Optional. How long the price stands — 30 September, in two weeks.",
+  dateHelp: "Optional. The last day the price stands.",
 });
 
 /**
@@ -1237,6 +1313,7 @@ const request: FlowDefinition = {
         data: {
           client_name: { type: "string", __example__: "Daniel Uwak" },
           client_email: { type: "string", __example__: "" },
+          client_phone: { type: "string", __example__: "" },
           description: { type: "string", __example__: "Studio session" },
           amount: { type: "number", __example__: 20000 },
         },
@@ -1253,6 +1330,7 @@ const request: FlowDefinition = {
               "init-values": {
                 client_name: "${data.client_name}",
                 client_email: "${data.client_email}",
+                client_phone: "${data.client_phone}",
                 description: "${data.description}",
                 amount: "${data.amount}",
               },
@@ -1273,6 +1351,15 @@ const request: FlowDefinition = {
                   required: false,
                   "input-type": "email",
                   "max-chars": 120,
+                },
+                {
+                  type: "TextInput",
+                  name: "client_phone",
+                  label: "Phone",
+                  "helper-text": "Optional. We send the request to their WhatsApp.",
+                  required: false,
+                  "input-type": "phone",
+                  "max-chars": 20,
                 },
                 {
                   type: "TextInput",
@@ -1300,6 +1387,7 @@ const request: FlowDefinition = {
                     payload: {
                       client_name: "${form.client_name}",
                       client_email: "${form.client_email}",
+                      client_phone: "${form.client_phone}",
                       description: "${form.description}",
                       amount: "${form.amount}",
                     },
@@ -1358,7 +1446,7 @@ const consent: FlowDefinition = {
             },
             {
               type: "TextBody",
-              text: "Free covers 5 documents a month with a 1% fee on payments. Pro is \u20a64,000 a month with no fee. Cancel any time \u2014 your invoices and records stay where they are.",
+              text: "Free covers 5 documents a month. Pro is \u20a64,000 a month for unlimited documents, your logo and every design. Balans takes no fee on what your clients pay you. Cancel any time \u2014 your invoices and records stay where they are.",
             },
             {
               type: "TextBody",

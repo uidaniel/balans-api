@@ -41,6 +41,7 @@ import { env, require_ } from "../config.ts";
 const SUBACCOUNT_PATH = "/subaccount";
 const INITIALIZE_PATH = "/transaction/initialize";
 const VERIFY_PATH = "/transaction/verify";
+const CHARGE_PATH = "/charge";
 
 type Envelope<T> = {
   status?: boolean;
@@ -375,6 +376,89 @@ export async function initTransaction(
     authorizationUrl: url,
     accessCode: res.body.access_code ?? "",
     reference: res.body.reference ?? input.reference,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Paying us by transfer                                                      */
+/* -------------------------------------------------------------------------- */
+
+export type TransferAccount = {
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  /** When the account stops taking this payment. */
+  expiresAt: Date;
+  reference: string;
+};
+
+export type TransferResult =
+  | { ok: true; account: TransferAccount }
+  | { ok: false; message: string; retryable: boolean };
+
+/**
+ * An account number to pay Pro into, made for this one payment.
+ *
+ * Paystack's "Pay with Transfer" through the Charge API: it opens a
+ * temporary account for the exact amount, and a transfer to it arrives as an
+ * ordinary `charge.success` on the webhook, under the reference we chose —
+ * which is the same `sub_` reference `confirmSubscription` already knows how
+ * to turn into a month of Pro.
+ *
+ * Replaces the Monnify checkout for Pro. Nearly everybody here pays by
+ * transfer anyway, and a checkout page was a detour to reach an account
+ * number; this is the account number.
+ *
+ * Needs "Pay with Transfer" switched on for the Paystack business. Until it
+ * is, Paystack refuses the charge and the caller says so rather than failing
+ * quietly.
+ */
+export async function chargeByTransfer(
+  input: {
+    email: string;
+    amountKobo: number;
+    reference: string;
+    expiresAt: Date;
+    metadata: Record<string, unknown>;
+  },
+  fetchImpl: typeof fetch = fetch,
+): Promise<TransferResult> {
+  const res = await call<{
+    reference?: string;
+    account_number?: string;
+    account_name?: string;
+    account_expires_at?: string;
+    bank?: { name?: string };
+  }>(
+    CHARGE_PATH,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: input.email,
+        amount: input.amountKobo,
+        reference: input.reference,
+        bank_transfer: { account_expires_at: input.expiresAt.toISOString() },
+        metadata: input.metadata,
+      }),
+    },
+    fetchImpl,
+  );
+
+  if (!res.ok) return { ok: false, message: res.message, retryable: res.status >= 500 };
+
+  const b = res.body;
+  if (!b.account_number) {
+    return { ok: false, message: "no account number returned", retryable: true };
+  }
+  return {
+    ok: true,
+    account: {
+      bankName: b.bank?.name ?? "Paystack",
+      accountNumber: b.account_number,
+      accountName: b.account_name ?? "Balans",
+      expiresAt: b.account_expires_at ? new Date(b.account_expires_at) : input.expiresAt,
+      reference: b.reference ?? input.reference,
+    },
   };
 }
 

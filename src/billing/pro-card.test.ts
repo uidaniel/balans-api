@@ -238,7 +238,7 @@ describe("the card that arrives once the money is in", () => {
 
   it("rides on the activation message", () => {
     // The one message in the product somebody has actually paid for.
-    const branch = notify.slice(notify.indexOf("text: proStarted()"));
+    const branch = notify.slice(notify.indexOf("text: proStarted("));
     assert.match(branch.slice(0, 700), /image: proCardUrl\(/);
   });
 

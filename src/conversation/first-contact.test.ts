@@ -63,14 +63,29 @@ const flowBody = (out: ReturnType<typeof say>): string => {
   return flow.body ?? "";
 };
 
-const [SET_ME_UP = "", EXAMPLE = "", HOW = "", SAFE = ""] = PROMPTS;
+/*
+ * The ice breaker is "Get Started" alone now. The other three were retired
+ * from above the chat, but they are still what strangers type, so they are
+ * kept here as things a first message says.
+ */
+const [GET_STARTED = ""] = PROMPTS;
+const SET_ME_UP = "Set me up";
+const EXAMPLE = "Invoice Tunde 20k for logo design, due Friday";
+const HOW = "How does Balans work?";
+const SAFE = "Is my money safe?";
 
-describe("the four things offered above an empty chat", () => {
-  it("is four of them, inside Meta's limit", () => {
-    // Meta takes at most four, at 80 characters each, and keeps whatever it
-    // already had when a write is refused.
-    assert.equal(PROMPTS.length, 4);
+describe("the thing offered above an empty chat", () => {
+  it("is one button, Get Started", () => {
+    // One invitation, not a menu to study before saying anything.
+    assert.deepEqual(PROMPTS, ["Get Started"]);
     for (const p of PROMPTS) assert.ok(p.length <= 80, `${p} is ${p.length} characters`);
+  });
+
+  it("answers Get Started exactly as it answers hello", () => {
+    assert.equal(flowBody(say("new", GET_STARTED)), VOICE.setupInvite);
+    assert.equal(flowBody(say("new", GET_STARTED)), flowBody(say("new", "hi")));
+    // And it is not an instruction to replay after setup.
+    assert.equal(say("new", GET_STARTED).context.opener, undefined);
   });
 
   it("carries no emoji, because Meta will not keep one", () => {
@@ -146,7 +161,7 @@ describe("a stranger's first message", () => {
   it("answers the money question with where the money goes", () => {
     const body = flowBody(say("new", SAFE));
     assert.match(body, /never holds your money/);
-    assert.match(body, /Monnify/, "it names who actually takes the payment");
+    assert.match(body, /your own bank account/, "it says where the money actually goes");
     assert.match(body, /your own bank account/);
   });
 

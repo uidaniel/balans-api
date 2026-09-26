@@ -30,7 +30,7 @@ import { bankDetailsOf } from "./bank-details.ts";
 export function legalLines(): [string, string] {
   return [
     `Balans is a product of ${env.LEGAL_ENTITY_NAME}. Balans is not a bank and does not hold customer funds.`,
-    "Payments are processed by Monnify and settle directly to the merchant's bank account.",
+    "Payments go directly to the merchant's own bank account.",
   ];
 }
 

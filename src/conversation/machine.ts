@@ -139,6 +139,11 @@ export type PendingDoc = {
   clientName?: string;
   clientEmail?: string | null;
   /**
+   * The client's WhatsApp number, international digits ("2348031234567").
+   * With one, the document goes to them from Balans when it is sent.
+   */
+  clientPhone?: string | null;
+  /**
    * The work, priced in kobo — always, including on an invoice agreed in
    * dollars. `originalUnitAmountMinor` is what was agreed, kept beside it for
    * the client's copy, which shows "$200" against the logo because $200 is
@@ -473,7 +478,19 @@ const GREETING =
  * a business name, so the account would come out called "👋 Set me up".
  */
 const SETUP_ME =
-  /^(?:\p{Extended_Pictographic}\uFE0F?\s*)?(?:set (?:me )?up|setup|sign me up|get me started|let'?s (?:start|go|do it)|start)[.!]*$/iu;
+  /^(?:\p{Extended_Pictographic}\uFE0F?\s*)?(?:set (?:me )?up|setup|sign me up|get(?: me)? started|let'?s (?:start|go|do it)|start)[.!]*$/iu;
+
+/**
+ * The way out of a wrong client name, under "How much is X paying?".
+ *
+ * The id is what a tap sends back, so it is also a sentence that works typed.
+ */
+export const CHANGE_NAME: ReplyButton = { id: "change client name", title: "Change name" };
+const CHANGE_NAME_ASK =
+  /^(?:change|edit|fix|wrong)(?: the)?(?: client(?:'?s)?)? name[.!]*$|^(?:that'?s|that is) (?:the )?wrong name[.!]*$/i;
+/** "change the name to Daniel", "the name is Daniel", "rename it to Daniel", "it's for Daniel". */
+const CHANGE_NAME_TO =
+  /^(?:(?:please |pls |abeg )?(?:change|update|set|make)(?: the)?(?: client(?:'?s)?)? name(?: to| as)?|(?:the )?(?:client(?:'?s)? )?name (?:is|should be)|rename(?: it| him| her| them)? (?:to|as)|(?:it'?s|it is|this is) for) (.+?)[.!]*$/i;
 
 /** What to do next, under an answer that has the setup button beneath it. */
 const SETUP_NUDGE = "Tap below to set up. It takes about a minute.";
@@ -535,8 +552,8 @@ export const VOICE = {
     `\u{1F4A1} ${b("Three steps, all in this chat.")}`,
     lines(
       `1. Tell me who to bill and what for \u2014 ${i("invoice Tunde 20k for logo design")}.`,
-      "2. I write the invoice in your business name and add a payment link.",
-      "3. They tap it and pay. The money goes to your bank, and I tell you.",
+      "2. I write the invoice in your business name and send it to them.",
+      "3. They pay straight into your bank account. Tell me when it lands and I send the receipt.",
     ),
   ),
 
@@ -555,8 +572,8 @@ export const VOICE = {
   moneySafe: para(
     `\u{1F512} ${b("Your money never passes through us.")}`,
     lines(
-      "Monnify, a licensed Nigerian payment processor, takes the payment.",
-      "It settles straight into your own bank account \u2014 the one you give us here.",
+      "Your client pays by transfer straight into your own bank account \u2014 the one you give us here.",
+      "A client abroad pays by card through Paystack, a licensed payment processor, and it settles to the same account.",
       "Balans is not a bank and never holds your money.",
     ),
   ),
@@ -1511,7 +1528,7 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       return takeCode(text, context);
 
     case "onboarding:consent":
-      return takeConsent(text, context, consentVersion);
+      return takeConsent(text, context, consentVersion, today(msg));
 
     /*
      * "Is this your logo?", answered.
@@ -2150,6 +2167,15 @@ function buildOrAsk(doc: PendingDoc, ctx: Context, now: Civil, askDate = false):
           key: form.key as "invoice" | "quote" | "request",
           body: form.body,
           cta: form.cta,
+          /*
+           * A blank form still opens on its data, not on none.
+           *
+           * With nothing handed over, every `${data.x}` the form binds was
+           * undefined: the currency box showed to free accounts as
+           * "Optional", Amount lost its line, and the date picker had no
+           * floor. The request form declares none of these, so it opens bare.
+           */
+          ...(doc.type === "payment_request" ? {} : formValues({ type: doc.type, lines: [] }, now)),
           fallback: { line: template, holdAt: "awaiting_field:client_name" },
         },
       ],
@@ -2168,6 +2194,7 @@ function buildOrAsk(doc: PendingDoc, ctx: Context, now: Civil, askDate = false):
   if (!totalOf(doc)) {
     return {
       replies: [askFor("amount", { clientName: doc.clientName })],
+      buttons: [CHANGE_NAME],
       next: "awaiting_field:amount",
       context,
       effects: [],
@@ -2221,7 +2248,7 @@ function withDefaults(doc: PendingDoc, now: Civil): PendingDoc {
  * The date goes across as words rather than a calendar value: the field takes
  * words, and the same reader handles "8 October 2026" as handles "Friday".
  */
-function formValues(doc: PendingDoc): {
+function formValues(doc: PendingDoc, now: Civil): {
   screen: string;
   data: Record<string, string | number | boolean>;
 } {
@@ -2256,10 +2283,12 @@ function formValues(doc: PendingDoc): {
    */
   const items = Math.min(Math.max(doc.lines.length, 1), EXTRA_ITEMS.length + 1);
   const onEntry = items <= 1;
+  const iso = (c: Civil): string => `${c.y}-${String(c.m).padStart(2, "0")}-${String(c.d).padStart(2, "0")}`;
 
   const values: Record<string, string | number | boolean> = {
     client_name: doc.clientName ?? "",
     client_email: doc.clientEmail ?? "",
+    client_phone: doc.clientPhone ?? "",
     description: first?.description ?? "",
     /*
      * The first item's own amount, not the document total.
@@ -2286,11 +2315,12 @@ function formValues(doc: PendingDoc): {
      * and shows one only when it is not one.
      */
     qty: onEntry ? (first?.qty ?? 1) : qtyText(first),
-    due_date: doc.dueDate ? formatLongDate(doc.dueDate) : "",
+    // What the date picker returns and takes: YYYY-MM-DD.
+    due_date: doc.dueDate ? iso(doc.dueDate) : "",
+    today: iso(now),
     plan: planIdFor({ depositPercent: doc.depositPercent, instalments: doc.instalments }),
     notes: doc.notes ?? "",
     vat: doc.vatPercent != null,
-    pass_fees: doc.passFeesToClient === true,
     /*
      * What the draft is priced in, and whether the box that says so is even
      * shown (International PRD section 5).
@@ -2322,7 +2352,15 @@ function formValues(doc: PendingDoc): {
     values[f.amount] = line ? String(unit(line)) : "";
   });
 
-  return { screen: onEntry ? "WORK" : formScreenId(items), data: values };
+  /*
+   * A draft with one item opens on the first page, who it is for, and
+   * carries its item to the second. One with more opens on the page that
+   * holds all of them: there is one "who" page and it can only hand on to
+   * the one-item form, and a second copy per item count is five more screens
+   * for the rare edit that is about the client rather than the work — which
+   * is a sentence away anyway ("change the client to Daniel").
+   */
+  return { screen: onEntry ? "WHO" : formScreenId(items), data: values };
 }
 
 /**
@@ -2334,14 +2372,6 @@ function formValues(doc: PendingDoc): {
  * invoice quietly shrinking, so the caller offers words instead.
  */
 export const overflowsForm = (doc: PendingDoc): boolean => doc.lines.length > EXTRA_ITEMS.length + 1;
-
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-
-/** "8 October 2026" — readable in a form, and readable back by the parser. */
-const formatLongDate = (c: Civil): string => `${c.d} ${MONTHS[c.m - 1]} ${c.y}`;
 
 const totalOf = (doc: PendingDoc): number =>
   doc.lines.length
@@ -2432,6 +2462,30 @@ function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound
 
   const answer = text.trim();
 
+  /*
+   * The name, changed while something else is being asked.
+   *
+   * "How much is Hi paying?" is what somebody got for saying hello to an
+   * empty invoice, and neither "change the name to Daniel" nor anything else
+   * they typed could get them out of it: every message was read as an amount
+   * and refused. The button under the question sends CHANGE_NAME's id; the
+   * sentence carries the new name with it.
+   */
+  if (state !== "awaiting_field:client_name") {
+    if (CHANGE_NAME_ASK.test(answer)) {
+      return {
+        replies: [askFor("client_name", {})],
+        next: "awaiting_field:client_name",
+        context: { ...ctx, doc: { ...doc, clientName: undefined }, attempts: 0 },
+        effects: [],
+      };
+    }
+    const renamed = CHANGE_NAME_TO.exec(answer)?.[1]?.replace(/\s+/g, " ").trim();
+    if (renamed && renamed.length >= 2 && renamed.length <= 80) {
+      return buildOrAsk({ ...doc, clientName: titleCaseName(renamed) }, ctx, now);
+    }
+  }
+
   switch (state) {
     case "awaiting_field:client_name": {
       // The form comes back filled in, or as a plain name. A parse arrives
@@ -2446,6 +2500,9 @@ function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound
       // is worse than asking once more.
       if (
         name.startsWith("/") ||
+        // "Hi" on an invoice is somebody saying hello, not naming a client.
+        GREETING.test(name) ||
+        SETUP_ME.test(name) ||
         name.length < 2 ||
         name.length > 80 ||
         name.split(" ").length > 6
@@ -2458,7 +2515,10 @@ function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound
     case "awaiting_field:amount": {
       const kobo = parseAmountToKobo(answer);
       if (kobo === null || kobo <= 0) {
-        return retry("awaiting_field:amount", ctx, askFor("amount", { clientName: doc.clientName }));
+        return {
+          ...retry("awaiting_field:amount", ctx, askFor("amount", { clientName: doc.clientName })),
+          buttons: [CHANGE_NAME],
+        };
       }
       // It attaches to the single line if there is one, so "20k" after
       // "invoice Tunde for a logo" prices the logo rather than adding a line.
@@ -2615,7 +2675,7 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
           key: "invoice",
           body: VOICE.changeInvite,
           cta: "Change the invoice",
-          ...formValues(doc),
+          ...formValues(doc, now),
           fallback: { line: VOICE.changeByHand, holdAt: "awaiting_confirm" },
         },
       ],
@@ -2728,6 +2788,9 @@ function applyIn(doc: PendingDoc, c: Correction): PendingDoc {
   // Null is an instruction here, not an absence: "no email" takes the address
   // off, and `undefined` is the field nobody mentioned.
   if (c.clientEmail !== undefined) next.clientEmail = c.clientEmail;
+  // A number that is not one is left as it was rather than wiped.
+  if (c.clientPhone === null) next.clientPhone = null;
+  else if (c.clientPhone) next.clientPhone = normalisePhone(c.clientPhone) ?? next.clientPhone;
   if (c.dueDate) next.dueDate = c.dueDate;
 
   /*
@@ -3171,7 +3234,7 @@ function takeCode(text: string, ctx: Context): Step {
   };
 }
 
-function takeConsent(text: string, ctx: Context, version: string): Step {
+function takeConsent(text: string, ctx: Context, version: string, now: Civil): Step {
   if (/\b(i agree|agree|agreed|yes|accept|i accept)\b/i.test(text)) {
     /*
      * Setup is done, and they asked for something before any of it started.
@@ -3204,6 +3267,7 @@ function takeConsent(text: string, ctx: Context, version: string): Step {
           key: "invoice",
           body: VOICE.doneCaption,
           cta: "Create invoice",
+          ...formValues({ type: "invoice", lines: [] }, now),
           image: SETUP_DONE_CARD,
           // Without a published form there is no card either, so the fallback
           // has to carry the example the card was showing.

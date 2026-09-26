@@ -26,7 +26,7 @@ import { env, require_ } from "../config.ts";
  * them.
  */
 export const COMMANDS: { command_name: string; command_description: string }[] = [
-  { command_name: "invoice", command_description: "Bill a client and get a payment link" },
+  { command_name: "invoice", command_description: "Bill a client and send it to them" },
   { command_name: "quote", command_description: "Send a quote before the work starts" },
   { command_name: "collect", command_description: "Ask someone for money, no invoice needed" },
   { command_name: "owed", command_description: "See who still owes you" },
@@ -34,42 +34,27 @@ export const COMMANDS: { command_name: string; command_description: string }[] =
   { command_name: "status", command_description: "Check whether one invoice is paid" },
   { command_name: "settings", command_description: "Your business name, payout bank and due days" },
   { command_name: "design", command_description: "Choose how your invoices look" },
-  { command_name: "pro", command_description: "Unlimited invoices and a lower fee" },
+  { command_name: "pro", command_description: "Unlimited invoices, your logo and every design" },
   { command_name: "help", command_description: "What I can do" },
 ];
 
 /**
  * Ice breakers: the tappable suggestions above an empty chat.
  *
- * At most four, 80 characters each. These are sentences rather than commands
- * on purpose — the product's real interface is a sentence, and a first-time
- * user tapping one learns that they can simply say what they want.
+ * One, and it is "Get Started". There used to be four — setup, an example
+ * invoice and two questions — and a stranger facing four choices before
+ * saying anything read them as a menu to study. One button is an invitation.
+ * Tapping it sends "Get Started", which the machine answers exactly as it
+ * answers "hi": the welcome card and the setup form for somebody new, the
+ * menu for somebody who is not (see SETUP_ME in machine.ts and the greeting
+ * in parser/commands.ts).
  *
- * All four are written for a stranger, because only a stranger ever sees
- * them: WhatsApp shows ice breakers above an *empty* chat, so the person
- * reading them has never sent us anything. "Who owes me?" and "How did I do
- * this month?" were two of the four, and both answer with nothing — there
- * are no debtors and no month behind somebody who has not signed up. Two
- * slots in four spent proving the product is empty.
- *
- * So: one that starts setup, one that shows the trick before anybody has
- * committed to anything, and two that answer the questions people have
- * before they will do either. The money one is there because in Nigeria it
- * is the first question about anything touching a bank account, and the
- * people who will not ask it out loud are the ones who quietly leave.
- *
- * No emoji on any of them, which is not a style choice. Meta replaces every
- * emoji in an ice breaker with U+FFFD, the replacement character — proved by
- * writing "👋 Set me up" as correct UTF-8 and reading back "\ufffd Set me
- * up", and again with two emoji from the basic plane, which fare no better.
- * So a waving hand here is a black diamond on a stranger's first screen.
+ * No emoji, which is not a style choice. Meta replaces every emoji in an ice
+ * breaker with U+FFFD, the replacement character — proved by writing "👋 Set
+ * me up" as correct UTF-8 and reading back "\ufffd Set me up". So a waving
+ * hand here is a black diamond on a stranger's first screen.
  */
-export const PROMPTS: string[] = [
-  "Set me up",
-  "Invoice Tunde 20k for logo design, due Friday",
-  "How does Balans work?",
-  "Is my money safe?",
-];
+export const PROMPTS: string[] = ["Get Started"];
 
 function url(path: string): string {
   return `https://graph.facebook.com/${env.WA_GRAPH_VERSION}/${path}`;

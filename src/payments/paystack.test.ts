@@ -34,6 +34,7 @@ const KEY = "sk_test_0000000000000000000000000000000000000000";
 process.env.PAYSTACK_SECRET_KEY = KEY;
 
 const {
+  chargeByTransfer,
   createSubAccount,
   initTransaction,
   listBanks,
@@ -454,5 +455,54 @@ describe("Paystack's bank codes, which are not Monnify's", () => {
   it("gives an empty list rather than throwing when the lookup fails", async () => {
     const { fetchImpl } = answering({ status: false, message: "nope" }, 500);
     assert.deepEqual(await listBanks(fetchImpl), []);
+  });
+});
+
+describe("an account number to pay Pro into", () => {
+  const expires = new Date("2026-09-26T12:00:00Z");
+  const ask = (fetchImpl: typeof fetch) =>
+    chargeByTransfer(
+      { email: "kemi@x.ng", amountKobo: 400_000, reference: "sub_abc_1", expiresAt: expires, metadata: { purpose: "balans_pro" } },
+      fetchImpl,
+    );
+
+  it("asks Paystack for a transfer account, for the exact amount, under our reference", async () => {
+    const { fetchImpl, seen } = answering({
+      status: true,
+      message: "Charge attempted",
+      data: {
+        status: "pending_bank_transfer",
+        reference: "sub_abc_1",
+        account_number: "9876543210",
+        account_name: "PAYSTACK CHECKOUT",
+        account_expires_at: "2026-09-26T12:00:00.000Z",
+        bank: { name: "Paystack-Titan" },
+      },
+    });
+    const r = await ask(fetchImpl);
+    assert.ok(r.ok);
+    assert.match(seen[0]!.url, /\/charge$/);
+    assert.equal(seen[0]!.sent.amount, 400_000);
+    assert.equal(seen[0]!.sent.reference, "sub_abc_1");
+    assert.deepEqual(seen[0]!.sent.bank_transfer, { account_expires_at: expires.toISOString() });
+    assert.deepEqual(r.account, {
+      bankName: "Paystack-Titan",
+      accountNumber: "9876543210",
+      accountName: "PAYSTACK CHECKOUT",
+      expiresAt: expires,
+      reference: "sub_abc_1",
+    });
+  });
+
+  it("says so when Paystack will not open one", async () => {
+    const { fetchImpl } = answering({ status: false, message: "Pay with transfer is not enabled" }, 400);
+    const r = await ask(fetchImpl);
+    assert.equal(r.ok, false);
+    assert.ok(!r.ok && /not enabled/.test(r.message));
+  });
+
+  it("does not treat an answer with no account number as one", async () => {
+    const { fetchImpl } = answering({ status: true, data: { status: "pending_bank_transfer" } });
+    assert.equal((await ask(fetchImpl)).ok, false);
   });
 });

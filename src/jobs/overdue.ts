@@ -27,6 +27,7 @@ import { retireSupersededAccounts } from "../settings/bank-change.ts";
 import { expireLapsedSubscriptions, renewalsDue } from "../billing/subscription.ts";
 import { payBy } from "../documents/summary.ts";
 import { bankDetailsOf, type BankDetails } from "../documents/bank-details.ts";
+import { emailReminderToClient } from "../email/client-reminder.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Quiet hours (F13)                                                          */
@@ -239,6 +240,13 @@ export async function sendDueReminders(
     );
 
     if (outcome.kind === "sent") sent += 1;
+
+    // And to the client themselves, on Pro, by email (see client-reminder.ts).
+    // Independent of the WhatsApp outcome: the client's reminder should not
+    // depend on whether the sender's phone was reachable.
+    await emailReminderToClient(r.document_id, today, log).catch((err: unknown) =>
+      log.error({ err, documentId: r.document_id }, "client reminder email failed"),
+    );
   }
 
   if (sent) log.info({ count: sent }, "reminders sent");

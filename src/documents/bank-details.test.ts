@@ -10,7 +10,7 @@ import { describe, it } from "node:test";
 import { deliveryFor, untrackedNote } from "./bank-details.ts";
 import { renderDocument } from "./page.ts";
 import { payable, type PublicDocument } from "./public.ts";
-import { payBy, bankDetailsSentNote } from "./summary.ts";
+import { payBy } from "./summary.ts";
 import { asCommand } from "../parser/commands.ts";
 
 const bank = { bankName: "GTBank", accountName: "KEMI ADEYEMI STUDIO", accountNumber: "0123456789", last4: "6789" };
@@ -64,8 +64,7 @@ describe("the messages", () => {
     assert.match(payBy("https://payment.balans.ng/i/abc", null), /Click the link to pay:/);
   });
 
-  it("tells the sender how it becomes paid, in the words that do it", () => {
-    assert.match(bankDetailsSentNote(16, "Zenith"), /\*Zenith paid invoice 16\*/);
+  it("tells the client payments to this account are not tracked", () => {
     assert.match(untrackedNote("Kemi"), /Ask Kemi for confirmation/);
   });
 });
@@ -86,5 +85,14 @@ describe("telling us about a payment", () => {
     assert.deepEqual(asCommand("/signature"), { intent: "signature" });
     assert.deepEqual(asCommand("signature"), { intent: "signature" });
     assert.deepEqual(asCommand("remove signature"), { intent: "remove_signature" });
+  });
+});
+
+describe("the Mark as paid button", () => {
+  it("asks before it marks anything: its id is the question, not the answer", () => {
+    // "mark invoice 16 as paid" is record_payment, which asks "Mark Invoice
+    // 16 ... as paid?"; only "yes mark invoice 16 paid" records it.
+    assert.deepEqual(asCommand("mark invoice 16 as paid"), { intent: "record_payment", documentNumber: 16 });
+    assert.notDeepEqual(asCommand("mark invoice 16 as paid"), { intent: "confirm_payment", documentNumber: 16 });
   });
 });

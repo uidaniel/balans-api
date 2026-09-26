@@ -187,7 +187,7 @@ export function limitReachedMessage(used: number, limit: number, today: Civil): 
     `🛑 That is your ${b(`${limit} documents`)} for this month.`,
     lines(
       `You have sent ${used}. The count resets on ${resetDay(today)}.`,
-      `Reply ${b("upgrade")} for unlimited documents and a lower fee.`,
+      `Reply ${b("upgrade")} for unlimited documents, your logo and every design.`,
     ),
     i("Invoices already sent still work, and you still get paid."),
   );

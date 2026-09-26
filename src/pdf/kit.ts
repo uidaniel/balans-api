@@ -609,7 +609,7 @@ export function payInfo(d: DocumentData, opts: { label?: boolean; className?: st
         ? `<p class="how">The quote, online</p>`
         : d.bankDetails
           ? `<p class="how">Bank transfer to ${esc(d.bankDetails.accountName)}<br>Account details at the link</p>`
-          : `<p class="how">Card, bank transfer or USSD<br>Protected by Monnify</p>`
+          : `<p class="how">Card, bank transfer or USSD<br>Protected by ${d.foreign ? "Paystack" : "Monnify"}</p>`
     }
   </div>`;
 }

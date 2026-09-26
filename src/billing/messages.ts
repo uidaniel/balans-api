@@ -7,7 +7,7 @@
  */
 
 import { formatNaira } from "../../core/totals.ts";
-import { defaults } from "../config.ts";
+import { defaults, env } from "../config.ts";
 import { availableTo } from "../pdf/templates.ts";
 import { b, i, lines, para } from "../whatsapp/format.ts";
 import type { SubscriptionState } from "./subscription.ts";
@@ -29,13 +29,13 @@ export function proOffer(used: number): string {
     `⭐ ${b("Balans Pro")} — ${b(formatNaira(pro.priceKobo))} a month.`,
     lines(
       `✅ Unlimited invoices (Free stops at ${free.documentsPerMonth}; you have used ${used})`,
-      // Stated as the absence of a thing, not as a smaller number. "0.5%
-      // instead of 1%" is an argument somebody has to do arithmetic to
-      // believe; "no fee" is a fact they can check on the next invoice.
-      pro.feePercentBps === 0
-        ? `✅ ${b("No transaction fee")} — Free pays ${free.feePercentBps / 100}%`
-        : `✅ ${pro.feePercentBps / 100}% transaction fee instead of ${free.feePercentBps / 100}%`,
-      `✅ Automatic reminders, so you stop chasing`,
+      // No fee line any more. Naira invoices are paid straight into the
+      // user's own account on every plan, so there is no fee for Pro to
+      // remove, and saying "no transaction fee" would sell the absence of
+      // something Free does not charge either.
+      `✅ Reminders to your clients by email, so you stop chasing`,
+      // Only while it is switched on: an offer is a promise.
+      ...(env.INTL_ENABLED ? [`✅ Invoices in dollars and pounds, paid by card`] : []),
       `✅ Your logo on every invoice`,
       // Counted from the registry, so the claim cannot outlive the designs.
       `✅ All ${availableTo("pro").length} invoice designs`,
@@ -125,14 +125,35 @@ export function proActive(state: SubscriptionState): string {
   );
 }
 
-/** F18: activated by the first money in, whether a deduction or the link. */
-export function proStarted(): string {
+/**
+ * F18: activated by the first money in, whether a deduction or the link.
+ *
+ * With what was paid, when it is known, as the receipt: the same facts the
+ * email carries, for somebody who will never open the email.
+ */
+export function proStarted(receipt?: { paidKobo: number; until: Date }): string {
+  const day = (d: Date) =>
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: defaults.behaviour.timezone,
+      day: "numeric",
+      month: "long",
+    }).format(d);
   return para(
     `🎉 ${b("Pro is active.")}`,
+    ...(receipt
+      ? [
+          lines(
+            `🧾 ${b("Receipt")}`,
+            `Paid: ${b(formatNaira(receipt.paidKobo))}, by bank transfer, ${day(new Date())}`,
+            `Pro until: ${b(day(receipt.until))}`,
+            "A copy is in your email.",
+          ),
+        ]
+      : []),
     lines(
-      pro.feePercentBps === 0
-        ? "Unlimited invoices, no transaction fee, and reminders that go out on their own."
-        : "Unlimited invoices, a lower fee, and reminders that go out on their own.",
+      env.INTL_ENABLED
+        ? "Unlimited invoices, reminders that go out on their own, and invoices in dollars and pounds."
+        : "Unlimited invoices, and reminders that go out on their own.",
       "Send me your logo as a picture and it goes on every invoice from the next one.",
       `Reply ${b("/design")} to pick how they look.`,
     ),

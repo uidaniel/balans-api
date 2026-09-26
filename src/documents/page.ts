@@ -881,6 +881,91 @@ function trustBlock(doc: PublicDocument): string {
 }
 
 /** A 404 that does not confirm whether the token was ever real. */
+/**
+ * Paying for Pro: the account to transfer into, and nothing else.
+ *
+ * The account is Paystack's, opened for this payment alone, so it is shown
+ * with the amount to send and when it stops working — a transfer after that
+ * does not land. The page asks the server every few seconds whether the money
+ * has arrived and moves on to the success page by itself, so nobody is left
+ * refreshing a page that has already done its job.
+ */
+export function renderProTransfer(o: {
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  amountKobo: number;
+  expiresAt: Date;
+  /** Where the page asks whether it has been paid. */
+  statusUrl: string;
+  /** Where it goes once it has. */
+  doneUrl: string;
+}): string {
+  const amount = formatNaira(o.amountKobo);
+  const typed = o.amountKobo % 100 === 0 ? String(o.amountKobo / 100) : (o.amountKobo / 100).toFixed(2);
+  const until = o.expiresAt.toLocaleTimeString("en-GB", {
+    timeZone: "Africa/Lagos",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  const copyIcon = (what: string, value: string) =>
+    `<button class="icopy copy" type="button" data-copy="${esc(value)}" aria-label="Copy the ${what}">` +
+    `<svg class="i-no" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/>` +
+    `<path d="M5 15V5.5A2.5 2.5 0 0 1 7.5 3H15"/></svg>` +
+    `<svg class="i-yes" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5 9.5 17.5 19.5 6.5"/></svg></button>`;
+  const row = (key: string, v: string) =>
+    `<div class="trow"><span class="tk">${key}</span><span class="tv">${v}</span></div>`;
+
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="format-detection" content="telephone=no">
+<title>Pay for Balans Pro</title><meta name="robots" content="noindex,nofollow">
+<style>${CSS}
+.wait{display:flex;align-items:center;gap:10px;margin-top:18px;font-size:14px;color:var(--ink-65)}
+.wait i{width:9px;height:9px;border-radius:50%;background:var(--marigold);animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.35;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+</style></head><body>
+<div class="sheet"><div class="top" style="padding-bottom:28px">
+  <div class="brand">${logoAvailable() ? logoSvg("28px") : `<span class="dot"></span>balans`}</div>
+  <p class="kind">Balans Pro &middot; one month</p>
+  <h1>${amount}</h1>
+  <p class="from">Transfer this exact amount from any bank app. Pro switches on the moment it lands.</p>
+  <div class="pay bankpay" style="margin-top:22px">
+    <div class="tcard">
+      <p class="teyebrow">Pay by bank transfer</p>
+      <div class="tbox">
+        ${row("Bank", esc(o.bankName))}
+        ${row("Account number", `<span class="acct">${esc(o.accountNumber)}</span>`)}
+        ${row("Account name", esc(o.accountName))}
+        ${row("Amount", `<span class="tamt">${amount}</span>${copyIcon("amount", typed)}`)}
+      </div>
+      <button class="tcopy copy" type="button" data-copy="${esc(o.accountNumber)}">Copy account number</button>
+    </div>
+    <p class="tfine">This account is for this payment only and closes at <strong>${esc(until)}</strong>.
+      Your receipt comes to your email and to WhatsApp once it is paid.</p>
+  </div>
+  <p class="wait"><i></i>Waiting for your transfer&hellip;</p>
+</div></div>
+<p class="foot">${markSvg("16px")}<a href="https://balans.ng">balans.ng</a></p>
+<script>${COPY_JS}
+(function () {
+  var tries = 0;
+  function ask() {
+    tries += 1;
+    fetch(${JSON.stringify(o.statusUrl)}, { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (b) { if (b && b.active) location.replace(${JSON.stringify(o.doneUrl)}); })
+      .catch(function () {})
+      .then(function () { if (tries < 720) setTimeout(ask, 5000); });
+  }
+  setTimeout(ask, 5000);
+})();
+</script>
+</body></html>`;
+}
+
 export function renderNotFound(): string {
   return `<!doctype html>
 <html lang="en"><head>

@@ -32,8 +32,32 @@ import { emailTransport } from "./conversation/handle.ts";
 import { modelConfigured } from "./parser/model.ts";
 import { chromePath } from "./pdf/chrome.ts";
 import { startScheduler, stopScheduler } from "./jobs/scheduler.ts";
+import { migrate } from "./db/migrate.ts";
 
 const app = buildServer();
+
+/*
+ * The schema first, then the code that needs it.
+ *
+ * Migrations used to be a separate `npm run migrate` somebody had to remember
+ * after a push. On 26 September 2026 nobody did: the bank-details code went
+ * live against a database without its columns, and every "Send it" failed
+ * with "Something went wrong on our side" until they were added by hand.
+ *
+ * So the process applies what is pending before it listens. Each migration
+ * runs in its own transaction and is recorded, so this is a no-op on every
+ * boot but the first after one is added. A migration that fails stops the
+ * boot: the health check never passes, and the deploy watcher puts the
+ * previous commit back rather than serving code whose tables are missing.
+ */
+if (env.DATABASE_URL) {
+  try {
+    await migrate((m) => app.log.info(m));
+  } catch (e) {
+    app.log.fatal({ err: e }, "migrations failed, not starting");
+    process.exit(1);
+  }
+}
 
 try {
   await app.listen({ port: env.PORT, host: "0.0.0.0" });

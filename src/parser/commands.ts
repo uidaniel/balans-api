@@ -120,7 +120,7 @@ const SOCIAL: [RegExp, SocialKind][] = [
     "thanks",
   ],
   [
-    /^(hi|hey|hello|helo|yo|sup|howfar|how far|good morning|good afternoon|good evening|morning|afternoon|evening|well done|hi there|hello there|greetings|salut)$/,
+    /^(hi|hey|hello|helo|yo|sup|howfar|how far|good morning|good afternoon|good evening|morning|afternoon|evening|well done|hi there|hello there|greetings|salut|get started|lets get started|let's get started)$/,
     "greeting",
   ],
   [

@@ -16,7 +16,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const read = (p: string) =>
   readFileSync(new URL(p, import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -78,10 +78,20 @@ describe("coming back from a Pro payment", () => {
   });
 });
 
-describe("the page it lands on", () => {
-  const page = read("../../../balans/src/app/pro/success/page.tsx");
-  const button = read("../../../balans/src/app/pro/success/back-to-chat.tsx");
-  const closer = read("../../../balans/src/app/pro/success/close-window.tsx");
+/*
+ * The site is its own repository, checked out beside this one — side by side
+ * on the Windows machine, under "Web Projects" on the Mac. Wherever it is not
+ * found these are skipped rather than failed: a missing checkout is not a
+ * broken page.
+ */
+const SITE = ["../../../balans/", "../../../../Web Projects/balans/"].find((d) =>
+  existsSync(new URL(`${d}src/app/pro/success/page.tsx`, import.meta.url)),
+);
+
+describe("the page it lands on", { skip: SITE ? false : "the site repository is not checked out beside this one" }, () => {
+  const page = SITE ? read(`${SITE}src/app/pro/success/page.tsx`) : "";
+  const button = SITE ? read(`${SITE}src/app/pro/success/back-to-chat.tsx`) : "";
+  const closer = SITE ? read(`${SITE}src/app/pro/success/close-window.tsx`) : "";
 
   it("is kept out of search results", () => {
     // The end of a private flow. A stranger arriving on "payment received"

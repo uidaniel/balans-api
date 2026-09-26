@@ -102,6 +102,11 @@ export type Correction = {
    * address meant discarding the draft and writing the whole invoice again.
    */
   clientEmail?: string | null;
+  /**
+   * The client's WhatsApp number as typed, or null to take it off. Read into
+   * international digits by the machine, which owns what a number is.
+   */
+  clientPhone?: string | null;
   description?: string;
   vatPercent?: number | null;
   depositPercent?: number | null;
@@ -274,6 +279,16 @@ const RENAME_LINE =
   /^(?:change|rename|correct|fix|update|edit)\s+(?:the\s+)?(.+?)\s+(?:to|into)\s+(.+)$/i;
 
 /** "no email", "remove the email", "don't email it". */
+/**
+ * "their number is 0803 123 4567", "whatsapp: +44 7700 900123",
+ * "send it to 08031234567". Digits only after the verb, so "send it to
+ * Tunde" stays a name and "send it to tunde@x.com" stays an email.
+ */
+const SET_PHONE =
+  /(?:^|\b)(?:(?:(?:the|his|her|their|client(?:'|’)?s?)\s+)?(?:whats\s?app|phone|mobile|number)(?:\s+number)?\s*(?:is|to|should be|:|=)\s*|(?:send|forward)\s+(?:it\s+)?to\s+)(\+?\d[\d\s-]{8,18}\d)\s*[.!]*$/i;
+const NO_PHONE =
+  /\b(?:no|remove|without|drop|take off|forget)\s+(?:the\s+|their\s+)?(?:whats\s?app|phone|number)(?:\s+number)?\b|\bdo\s?n(?:o|')?t\s+(?:send it on\s+)?whats\s?app\b/i;
+
 const NO_EMAIL =
   /\b(?:no|remove|without|drop|take off|forget|cancel)\s+(?:the\s+)?e-?mail\b|\bdo\s?n(?:o|')?t\s+e-?mail\b/i;
 
@@ -504,6 +519,20 @@ export function readCorrection(
    * a person called "Daniel@x.com", and the draft would come back addressed
    * to an email address.
    */
+  /*
+   * The number first of all: its digits would otherwise be read as a price.
+   */
+  if (NO_PHONE.test(rest)) {
+    out.clientPhone = null;
+    rest = tidy(rest.replace(NO_PHONE, ""));
+  } else {
+    const phone = SET_PHONE.exec(rest);
+    if (phone) {
+      out.clientPhone = phone[1]!;
+      rest = tidy(rest.slice(0, phone.index));
+    }
+  }
+
   if (NO_EMAIL.test(rest)) {
     out.clientEmail = null;
     rest = tidy(rest.replace(NO_EMAIL, ""));

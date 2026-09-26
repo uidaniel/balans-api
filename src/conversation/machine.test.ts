@@ -626,16 +626,18 @@ describe("a tapped button", () => {
     assert.deepEqual(data, {
       client_name: "Zenith Homes",
       client_email: "pay@zenith.ng",
+      client_phone: "",
       description: "duplex render",
       amount: 350_000,
       // A number, because WORK's Quantity box is a number input like its
       // Amount, and a number box cannot be handed an empty string.
       qty: 1,
-      due_date: "8 October 2026",
+      // What the date picker takes, and its floor.
+      due_date: "2026-10-08",
+      today: "2026-09-23",
       plan: "deposit_50",
       notes: "half now",
       vat: true,
-      pass_fees: true,
       /*
        * Naira, and no currency box. Both are the safe default, and both are
        * sent by this function rather than left out — the screen declares
@@ -659,8 +661,8 @@ describe("a tapped button", () => {
     });
 
     // Which screen, said out loud, because the data above only makes sense
-    // against it.
-    assert.equal(out.effects.find((e) => e.type === "send_flow")?.screen, "WORK");
+    // against it: the first page, which hands its items on to WORK.
+    assert.equal(out.effects.find((e) => e.type === "send_flow")?.screen, "WHO");
   });
 
   it("opens the form on every line a draft already has", () => {

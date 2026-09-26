@@ -217,6 +217,7 @@ export async function notifyProActive(
   userId: string,
   until: Date,
   log: FastifyBaseLogger,
+  paidKobo?: number,
 ): Promise<void> {
   const { rows } = await db()
     .query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [userId])
@@ -232,7 +233,7 @@ export async function notifyProActive(
     {
       userId,
       phone,
-      text: proStarted(),
+      text: proStarted(paidKobo ? { paidKobo, until } : undefined),
       /*
        * The card, with the confirmation underneath it.
        *

@@ -452,7 +452,12 @@ export function sendTemplate(
   to: string,
   template: string,
   params: string[],
-  opts: { language?: string; fetchImpl?: Transport } = {},
+  opts: {
+    language?: string;
+    fetchImpl?: Transport;
+    /** The end of the template's link button, for a template that has one. */
+    urlSuffix?: string;
+  } = {},
 ): Promise<SendResult> {
   const phone = normalisePhone(to);
   if (!phone) {
@@ -468,9 +473,21 @@ export function sendTemplate(
       template: {
         name: template,
         language: { code: opts.language ?? "en" },
-        components: params.length
-          ? [{ type: "body", parameters: params.map((text) => ({ type: "text", text })) }]
-          : [],
+        components: [
+          ...(params.length
+            ? [{ type: "body", parameters: params.map((text) => ({ type: "text", text })) }]
+            : []),
+          ...(opts.urlSuffix
+            ? [
+                {
+                  type: "button",
+                  sub_type: "url",
+                  index: "0",
+                  parameters: [{ type: "text", text: opts.urlSuffix }],
+                },
+              ]
+            : []),
+        ],
       },
     },
     opts.fetchImpl ?? fetch,
@@ -712,6 +729,15 @@ export function sendButtons(
      * Takes precedence over `header`. A header is one thing or the other.
      */
     headerImage?: string;
+    /**
+     * A file above the message, by uploaded media id.
+     *
+     * A plain document message cannot carry buttons, but a button message
+     * can carry a document as its header — which is how a sent invoice
+     * arrives as one bubble with "Mark as paid" under it instead of two.
+     * Takes precedence over both of the above.
+     */
+    headerDocument?: { id: string; filename: string };
     footer?: string;
   },
   opts: { fetchImpl?: Transport } = {},
@@ -746,7 +772,9 @@ export function sendButtons(
       type: "interactive",
       interactive: {
         type: "button",
-        ...(content.headerImage
+        ...(content.headerDocument
+          ? { header: { type: "document", document: content.headerDocument } }
+          : content.headerImage
           ? {
               header: {
                 type: "image",

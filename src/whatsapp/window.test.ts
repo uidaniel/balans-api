@@ -14,10 +14,12 @@ import { withinQuietHours, promptMessage } from "../jobs/overdue.ts";
 describe("the templates we register with Meta", () => {
   const names = Object.keys(TEMPLATES) as TemplateName[];
 
-  it("covers exactly the six F16 names", () => {
+  it("covers the six F16 names, and the two that reach a client", () => {
     assert.deepEqual(
       [...names].sort(),
       [
+        "client_invoice",
+        "client_quote",
         "invoice_overdue_prompt",
         "invoice_viewed",
         "monthly_summary_ready",

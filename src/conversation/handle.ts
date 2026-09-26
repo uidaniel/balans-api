@@ -11,7 +11,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { randomUUID } from "node:crypto";
 import { legalConsentVersion } from "../config.ts";
 import { db, tx } from "../db/pool.ts";
-import { markRead, sendButtons, sendText, type ReplyButton } from "../whatsapp/client.ts";
+import { markRead, normalisePhone, sendButtons, sendText, type ReplyButton } from "../whatsapp/client.ts";
 import {
   createSubAccount,
   initTransaction,
@@ -55,8 +55,8 @@ import {
   draftSummary,
   quoteButtons,
   sentMessage,
-  bankDetailsSentNote,
   convertedForward,
+  displayPhone,
 } from "../documents/summary.ts";
 import { partsFor } from "../documents/parts.ts";
 import { linesFromForm } from "../documents/form-lines.ts";
@@ -91,6 +91,7 @@ import {
 import { defaultPeriod, readPeriod } from "../../core/period.ts";
 import { renderDocumentPdf, renderReceiptPdf } from "../documents/pdf.ts";
 import { emailDocumentToClient } from "../email/client-delivery.ts";
+import { whatsappDocumentToClient } from "../documents/client-whatsapp.ts";
 import { cancelDocument, convertQuote, findForResend, stopReminders } from "../documents/actions.ts";
 import {
   accountInForce,
@@ -257,8 +258,8 @@ async function sendConsentForm(
 const FLOW_SCREEN = {
   onboarding: "BUSINESS",
   business_details: "DETAILS",
-  invoice: "WORK",
-  quote: "WORK",
+  invoice: "WHO",
+  quote: "WHO",
   consent: "TERMS",
   request: "WORK",
 } as const;
@@ -1315,6 +1316,7 @@ async function runEffects(
             type: doc.type,
             clientName: doc.clientName ?? "",
             clientEmail: doc.clientEmail ?? null,
+            clientPhone: doc.clientPhone ?? null,
             lines: doc.lines,
             dueDate: doc.dueDate ?? null,
             vatPercent: doc.vatPercent ?? null,
@@ -1460,18 +1462,21 @@ async function runEffects(
           };
 
           /*
-           * On a naira invoice there is nothing to confirm the payment by, so
-           * the sender is told, once per invoice and in their own words, how it
-           * becomes paid. Its own message: the one above is for forwarding.
+           * "Mark as paid", on the invoice itself.
+           *
+           * A naira invoice is paid straight into the sender's bank, so
+           * nothing tells us it landed except them. The button sits under the
+           * invoice they will come back to when it does, rather than on a
+           * second message explaining it; the tap asks before it marks
+           * anything (see record_payment), so a stray one changes nothing.
            */
-          const explainBankDetails = async (): Promise<void> => {
-            if (!confirmed.bank || !ctx.phone) return;
-            const sent = await sendText(
-              ctx.phone,
-              bankDetailsSentNote(confirmed.number, draft.clientName, confirmed.type === "payment_request"),
-            );
-            if (sent.ok) await recordOutbound(userId, sent.waMessageId, "sent", { kind: "text" });
+          const toClient = async (): Promise<void> => {
+            await tellIfClientWhatsAppFailed(confirmed.id, userId, ctx.phone, log);
           };
+
+          const markPaid: ReplyButton[] = confirmed.bank
+            ? [{ id: `mark invoice ${confirmed.number} as paid`, title: "Mark as paid" }]
+            : [];
 
           const offerDesigns = async (): Promise<void> => {
             if (!ctx.phone || (await hasChosenTemplate(userId))) return;
@@ -1494,11 +1499,27 @@ async function runEffects(
           if (pdf && ctx.phone) {
             const up = await uploadDocument(pdf.bytes, pdf.filename);
             if (up.ok) {
-              const sent = await sendDocument(ctx.phone, up.mediaId, pdf.filename, forward);
+              // With the button when there is one; a plain document if Meta
+              // will not take that, since the invoice matters more than the tap.
+              const withButton = markPaid.length
+                ? await sendButtons(ctx.phone, {
+                    body: forward,
+                    buttons: markPaid,
+                    headerDocument: { id: up.mediaId, filename: pdf.filename },
+                  })
+                : null;
+              if (withButton && !withButton.ok) {
+                log.warn({ userId, reason: withButton.reason }, "could not send the invoice with its button");
+              }
+              const sent = withButton?.ok
+                ? withButton
+                : await sendDocument(ctx.phone, up.mediaId, pdf.filename, forward);
               if (sent.ok) {
-                await recordOutbound(userId, sent.waMessageId, "sent", { kind: "document" });
+                await recordOutbound(userId, sent.waMessageId, "sent", {
+                  kind: withButton?.ok ? "interactive" : "document",
+                });
+                await toClient();
                 await offerQuoteActions();
-                await explainBankDetails();
                 await offerDesigns();
                 break;
               }
@@ -1511,9 +1532,8 @@ async function runEffects(
           // No renderer, no upload, or a failed send: the link still works, and
           // that is the part that gets them paid.
           extra.push(forward);
-          if (confirmed.bank) {
-            extra.push(bankDetailsSentNote(confirmed.number, draft.clientName, confirmed.type === "payment_request"));
-          }
+          if (markPaid.length) buttons = markPaid;
+          await toClient();
           await offerQuoteActions();
           await offerDesigns();
           break;
@@ -2219,12 +2239,26 @@ async function runEffects(
             }
             log.info({ userId, documentId: inv.id, paidKobo: done.paidKobo }, "offline payment recorded");
 
+            /*
+             * Said plainly and on its own first: the thing somebody tapped
+             * "Yes" to has happened. The receipt follows as a document, and
+             * a caption under a PDF is easy to miss.
+             */
+            const confirmation = lines(
+              `✅ ${b("Done.")} Invoice ${number} is marked paid.`,
+              `${formatNaira(done.paidKobo)} from ${done.clientName}, by direct transfer.`,
+            );
+            if (ctx.phone) {
+              const said = await sendText(ctx.phone, confirmation);
+              if (said.ok) await recordOutbound(userId, said.waMessageId, "sent", { kind: "text" });
+              else extra.push(confirmation);
+            } else {
+              extra.push(confirmation);
+            }
+
             // The receipt, to forward to the client: "Payment received outside
             // Balans" is on it, so they know whose word it rests on.
-            const words = lines(
-              `✅ ${b(`Invoice ${number} marked paid`)} — ${formatNaira(done.paidKobo)} from ${done.clientName}.`,
-              "Here is the receipt to send them.",
-            );
+            const words = "🧾 Here is the receipt to send them.";
             const receipt = await renderReceiptPdf(done.paymentId, log);
             if (receipt && ctx.phone) {
               const up = await uploadDocument(receipt.bytes, receipt.filename);
@@ -2236,7 +2270,9 @@ async function runEffects(
                 }
               }
             }
-            extra.push(words);
+            // No receipt came back: the payment is recorded either way, so
+            // say that, not "here is the receipt" over nothing.
+            log.warn({ userId, paymentId: done.paymentId }, "offline receipt could not be sent");
             break;
           }
 
@@ -2309,6 +2345,8 @@ async function runEffects(
                 log.error({ documentId: inv.id, why: r.why }, "client delivery failed");
               }
             });
+            // The invoice a quote became goes where the quote did.
+            await tellIfClientWhatsAppFailed(inv.id, userId, ctx.phone, log);
 
             const link = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/${inv.publicToken}`;
             const forward = convertedForward(
@@ -2729,6 +2767,10 @@ async function handleInvoiceForm(
 ): Promise<void> {
   const clientName = (fields.client_name ?? "").trim();
   const email = (fields.client_email ?? "").trim().toLowerCase();
+  const phoneTyped = (fields.client_phone ?? "").trim();
+  // Anything a WhatsApp number could be, or nothing. A number we cannot use
+  // is dropped rather than refusing the invoice; the draft says so below.
+  const clientPhone = phoneTyped ? normalisePhone(phoneTyped) : null;
   const notes = (fields.notes ?? "").trim();
   const duePhrase = (fields.due_date ?? "").trim();
 
@@ -2790,7 +2832,13 @@ async function handleInvoiceForm(
   // a sentence. A phrase we cannot read is not worth refusing the whole
   // invoice over — the draft goes out without a due date and the user can say
   // "due Friday" to the summary, which already works.
-  const resolved = duePhrase ? resolveDueDate(duePhrase, today) : null;
+  // The picker sends YYYY-MM-DD; anything else is words from an older form.
+  const picked = /^(\d{4})-(\d{2})-(\d{2})$/.exec(duePhrase);
+  const resolved = picked
+    ? { date: { y: Number(picked[1]), m: Number(picked[2]), d: Number(picked[3]) } }
+    : duePhrase
+      ? resolveDueDate(duePhrase, today)
+      : null;
   if (duePhrase && !resolved) {
     log.info({ userId, duePhrase }, "unreadable due date from the invoice form");
   }
@@ -2801,13 +2849,15 @@ async function handleInvoiceForm(
     type,
     clientName,
     clientEmail: email || null,
+    clientPhone,
     lines: items.lines,
     dueDate: resolved?.date ?? null,
     // An OptIn comes back as the string "true", not a boolean.
     vatPercent: fields.vat === "true" ? VAT_PERCENT : null,
     depositPercent,
     instalments,
-    passFeesToClient: fields.pass_fees === "true",
+    // No longer asked: the form's fee box went with the Monnify split.
+    passFeesToClient: false,
     notes: notes || null,
   };
 
@@ -2869,7 +2919,11 @@ async function handleInvoiceForm(
     outcome.holdAt ?? (outcome.draftId ? "awaiting_confirm" : "idle"),
     outcome.draftId ? context : {},
   );
-  await reply(userId, phone, outcome.lines, log, outcome.buttons, outcome.buttonsImage);
+  const phoneNote =
+    phoneTyped && !clientPhone
+      ? [para(`📵 ${b(`"${phoneTyped}" is not a number I can send to.`)}`, "The draft is below without it. Say *their number is 0803 123 4567* to add it.")]
+      : [];
+  await reply(userId, phone, [...phoneNote, ...outcome.lines], log, outcome.buttons, outcome.buttonsImage);
 
   log.info({ userId, draftId: outcome.draftId, depositPercent, instalments }, "draft from a form");
 }
@@ -2988,6 +3042,31 @@ async function formCurrency(
  * be ignored.
  */
 type FlowData = Record<string, string | number | boolean>;
+
+/**
+ * Sends a document to the client's WhatsApp and, if that fails, says so.
+ *
+ * Silence would be worse than the failure: the draft said "WhatsApp to", so
+ * the sender believes it went. Until Meta approves the templates this is the
+ * message they get, and it tells them the one thing to do instead.
+ */
+async function tellIfClientWhatsAppFailed(
+  documentId: string,
+  userId: string,
+  phone: string | undefined,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  const r = await whatsappDocumentToClient(documentId, log);
+  if (r.ok || r.why !== "send_failed" || !phone || !r.to) return;
+  const text = await sendText(
+    phone,
+    para(
+      `📵 ${b(`I could not send it to ${displayPhone(r.to)} on WhatsApp.`)}`,
+      "Forward the one above to them instead.",
+    ),
+  );
+  if (text.ok) await recordOutbound(userId, text.waMessageId, "sent", { kind: "text" });
+}
 
 async function openedAbroad(
   userId: string,

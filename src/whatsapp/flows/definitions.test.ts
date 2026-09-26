@@ -449,8 +449,8 @@ describe("line items on the document forms", () => {
     const payloadOf = (n: Node) => (action(n).payload ?? {}) as Record<string, string>;
     const target = (n: Node) => ((action(n).next as Node).name as string) ?? "";
     const linkTo = (id: string, text: RegExp) => links(id).find((l) => text.test(String(l.text)));
-    /** Every form screen: the entry copy, then one per number of items. */
-    const forms = () => ["WORK", ...TOTALS.map((_, i) => FORM(i + 1))];
+    /** Every form screen: who it is for, the entry copy, then one per number of items. */
+    const forms = () => ["WHO", "WORK", ...TOTALS.map((_, i) => FORM(i + 1))];
 
     describe(key, () => {
       /*
@@ -476,7 +476,7 @@ describe("line items on the document forms", () => {
           const init = (form?.["init-values"] ?? {}) as Record<string, string>;
           const fields = new Set(
             walk(s.layout)
-              .filter((n) => typeof n.name === "string" && /Input|TextArea|OptIn|Dropdown/.test(String(n.type)))
+              .filter((n) => typeof n.name === "string" && /Input|TextArea|OptIn|Dropdown|DatePicker/.test(String(n.type)))
               .map((n) => String(n.name)),
           );
 
@@ -646,7 +646,7 @@ describe("line items on the document forms", () => {
           assert.ok(q < names.indexOf(amount), `${id}: ${qty} should come before ${amount}`);
           assert.equal(named(id, qty)!.required, false, "optional: empty means one");
         };
-        for (const id of forms()) above(id, "qty", "amount");
+        for (const id of forms().slice(1)) above(id, "qty", "amount");
         for (let items = 2; items <= 5; items++) {
           for (const w of WORDS.slice(0, items - 1)) above(FORM(items), `item_${w}_qty`, `item_${w}_amount`);
         }
@@ -660,6 +660,41 @@ describe("line items on the document forms", () => {
         for (const w of WORDS) assert.equal(submit[`item_${w}_qty`], `\${data.item_${w}_qty}`);
         // Saving an item hands its quantity to the form it returns to.
         for (const w of WORDS) assert.equal(payloadOf(footer(ITEM(w)))[`item_${w}_qty`], `\${form.item_${w}_qty}`);
+      });
+
+      it("asks who it is for on its own page, first", () => {
+        const who = screen("WHO");
+        assert.deepEqual(
+          inputs("WHO").map((n) => n.name),
+          ["client_name", "client_email", "client_phone"],
+        );
+        assert.equal(named("WHO", "client_name")!.required, true);
+        assert.equal(named("WHO", "client_phone")!["input-type"], "phone");
+        assert.equal(named("WHO", "client_phone")!.required, false);
+        assert.equal(json.screens[0], who, "the first page is the first screen");
+        // And hands on to the item page, reading its own three from the form.
+        const next = footer("WHO");
+        assert.equal(target(next), "WORK");
+        for (const f of ["client_name", "client_email", "client_phone"]) {
+          assert.equal(payloadOf(next)[f], `\${form.${f}}`);
+        }
+        // Nothing about the client is asked again on the item pages.
+        for (const id of forms().slice(1)) {
+          assert.equal(named(id, "client_name"), undefined, `${id} asks for the client again`);
+        }
+      });
+
+      it("picks the date on a calendar that starts today", () => {
+        for (const id of forms().slice(1)) {
+          const picker = walk(screen(id)).find((n) => n.name === "due_date")!;
+          assert.equal(picker.type, "DatePicker", `${id} still takes the date as words`);
+          assert.equal(picker["min-date"], "${data.today}");
+        }
+      });
+
+      it("no longer offers to pass the fee to the client", () => {
+        assert.ok(!walk(json).some((n) => n.name === "pass_fees"));
+        assert.ok(!JSON.stringify(json).includes("pass_fees"));
       });
 
       it("keeps every screen inside the two-link budget", () => {

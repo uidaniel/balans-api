@@ -34,18 +34,17 @@ export function payBy(link: string | null, bank: BankDetails | null): string {
 }
 
 /**
- * What the sender is told after a naira invoice goes out (addendum 3.5).
+ * A stored WhatsApp number the way its owner would write it.
  *
- * Nothing will confirm this payment on its own, so the one thing worth
- * saying is how it becomes paid — in the words that do it, with this
- * client's name and this invoice's number already in them.
+ * Nigerian numbers go back to "0803 123 4567", which is how everybody here
+ * reads one; anything else keeps its country code with a plus.
  */
-export function bankDetailsSentNote(number: number, clientName: string, request = false): string {
-  const label = request ? "Request" : "Invoice";
-  return lines(
-    `🏦 ${b(`${label} ${number} is ready.`)} Its link shows your bank details for the transfer.`,
-    `I'll mark it paid the moment you tell me: ${b(`${clientName} paid ${label.toLowerCase()} ${number}`)}`,
-  );
+export function displayPhone(digits: string): string {
+  if (/^234\d{10}$/.test(digits)) {
+    const local = `0${digits.slice(3)}`;
+    return `${local.slice(0, 4)} ${local.slice(4, 7)} ${local.slice(7)}`;
+  }
+  return `+${digits}`;
 }
 
 /** F6: description defaults to "Services" if absent, and the draft says so. */
@@ -342,6 +341,7 @@ export function draftSummary(
 
   if (draft.passFeesToClient) sections.push([row("Fees", "Client pays the transaction fee")]);
   if (draft.clientEmail) sections.push([row("Email to", draft.clientEmail)]);
+  if (draft.clientPhone) sections.push([row("WhatsApp to", displayPhone(draft.clientPhone))]);
 
   /*
    * What they will actually be paid, under the amount they are approving.

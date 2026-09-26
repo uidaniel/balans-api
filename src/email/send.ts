@@ -194,7 +194,7 @@ export function verificationEmail(code: string, businessName?: string): Omit<Ema
       "",
       "—",
       `Balans is a product of ${env.LEGAL_ENTITY_NAME}.`,
-      "Payments processed by Monnify.",
+      "Balans is not a bank and never holds your money.",
     ].join("\n"),
 
     html: layout({
@@ -281,7 +281,7 @@ export function welcomeEmail(opts: {
       "",
       "—",
       `Balans is a product of ${env.LEGAL_ENTITY_NAME}.`,
-      "Payments processed by Monnify.",
+      "Balans is not a bank and never holds your money.",
     ]
       .filter((l, i, all) => l !== "" || all[i - 1] !== "")
       .join("\n"),
@@ -368,20 +368,19 @@ export function proEmail(opts: {
   const paid = formatNaira(opts.amountKobo);
   const designs = availableTo("pro").length;
   const chat = opts.waNumber ? `https://wa.me/${opts.waNumber}` : null;
-  const fee = pro.feePercentBps === 0 ? "None" : `${pro.feePercentBps / 100}%`;
 
   const facts = [
     { label: "Plan", value: "Balans Pro" },
     { label: "Paid", value: paid },
     { label: "Active until", value: until },
-    { label: "Balans fee on payments", value: fee },
+    { label: "Paid by", value: "Bank transfer" },
   ];
   const renewal = `We will message you on WhatsApp three days before it ends. Reply settings in the chat to change or cancel it.`;
   const footer = [
     "",
     "—",
     `Balans is a product of ${env.LEGAL_ENTITY_NAME}.`,
-    "Payments processed by Monnify.",
+    "Balans is not a bank and never holds your money.",
   ];
 
   if (!opts.first) {
@@ -431,9 +430,7 @@ export function proEmail(opts: {
     text: [
       business ? `${business} is on Balans Pro.` : "You are on Balans Pro.",
       "",
-      `Your payment of ${paid} went through. From your next message: unlimited invoices${
-        pro.feePercentBps === 0 ? ", and no Balans fee on what your clients pay you" : ""
-      }.`,
+      `Your payment of ${paid} went through. From your next message: unlimited invoices, your logo and every design.`,
       "",
       ...firstSteps.flatMap((s, i) => [`${i + 1}. ${s.title}`, `   ${s.text.replace(/<\/?strong>/g, "")}`, ""]),
       ...facts.map((f) => `${f.label}: ${f.value}`),
@@ -450,9 +447,7 @@ export function proEmail(opts: {
       heading: business ? `${business} is on Pro` : "Thanks for going Pro",
       body: [
         paragraph(
-          `Your payment of <strong>${esc(paid)}</strong> went through. From your next message you have unlimited invoices${
-            pro.feePercentBps === 0 ? ", and no Balans fee on what your clients pay you" : ""
-          }.`,
+          `Your payment of <strong>${esc(paid)}</strong> went through. From your next message you have unlimited invoices, your logo and every design.`,
         ),
         steps(firstSteps),
         detailCard(facts),

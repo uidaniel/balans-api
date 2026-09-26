@@ -27,6 +27,34 @@ export async function baseline(log: (m: string) => void = console.log): Promise<
   return migrate(log, { recordOnly: true });
 }
 
+const hash = (s: string): string => createHash("sha256").update(s).digest("hex").slice(0, 16);
+
+/**
+ * A migration's fingerprint, taken with Unix line endings.
+ *
+ * The repository is written on Windows and deployed from Linux and macOS, and
+ * .gitattributes gives every checkout its own native endings. So the same
+ * file hashed differently depending on whose machine ran it: 0022 was applied
+ * from a Windows checkout, and on 26 September 2026 every other machine
+ * refused to migrate past it, calling a file nobody had touched "changed
+ * after it was applied".
+ */
+export function checksumOf(sql: string): string {
+  return hash(sql.replace(/\r\n/g, "\n"));
+}
+
+/**
+ * Whether a recorded checksum is this file, whatever endings it was hashed with.
+ *
+ * Rows written before `checksumOf` normalised hold the raw hash, which is
+ * either the Unix or the Windows form of the same text. Both are the same
+ * migration; any other difference is a real edit and still stops the run.
+ */
+export function sameMigration(recorded: string, sql: string): boolean {
+  const unix = sql.replace(/\r\n/g, "\n");
+  return recorded === hash(unix) || recorded === hash(unix.replace(/\n/g, "\r\n"));
+}
+
 export async function migrate(
   log: (m: string) => void = console.log,
   opts: { recordOnly?: boolean } = {},
@@ -50,13 +78,13 @@ export async function migrate(
   let count = 0;
   for (const name of files) {
     const sql = await readFile(join(DIR, name), "utf8");
-    const checksum = createHash("sha256").update(sql).digest("hex").slice(0, 16);
+    const checksum = checksumOf(sql);
     const seen = applied.get(name);
 
     if (seen) {
       // An edited migration means the database and the repo disagree about what
       // the schema is. Better to stop than to guess which one is right.
-      if (seen !== checksum) {
+      if (!sameMigration(seen, sql)) {
         throw new Error(
           `Migration ${name} changed after it was applied (${seen} -> ${checksum}). ` +
             `Add a new migration instead of editing this one.`,

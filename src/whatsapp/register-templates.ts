@@ -49,6 +49,17 @@ async function create(spec: TemplateSpec): Promise<{ ok: boolean; detail: string
           // review copy it has never seen filled in.
           example: { body_text: [spec.example] },
         },
+        ...(spec.footer ? [{ type: "FOOTER", text: spec.footer }] : []),
+        ...(spec.button
+          ? [
+              {
+                type: "BUTTONS",
+                buttons: [
+                  { type: "URL", text: spec.button.text, url: spec.button.url, example: [spec.button.example] },
+                ],
+              },
+            ]
+          : []),
       ],
     }),
   });

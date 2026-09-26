@@ -165,7 +165,7 @@ export async function monnifyRoutes(app: FastifyInstance): Promise<void> {
       case "pro_activated":
         // Somebody paid for Pro rather than an invoice. Same rule as above:
         // the subscription is already active, so telling them is best effort.
-        void notifyProActive(outcome.userId, outcome.until, req.log);
+        void notifyProActive(outcome.userId, outcome.until, req.log, outcome.paidKobo);
         // And in writing, where it can be found again: the chat scrolls away,
         // and this is the only record of the payment outside it.
         void emailProActive(outcome.userId, outcome.until, outcome.paidKobo, req.log);

@@ -208,11 +208,10 @@ export async function paystackRoutes(app: FastifyInstance): Promise<void> {
         return reply.send({ ok: true });
 
       case "pro_activated":
-        // Nothing routes Pro through Paystack today — subscriptions are naira
-        // — but `confirmPayment` can reach this branch and silently doing
-        // nothing with it would be a subscription somebody paid for and was
-        // never told about.
-        void notifyProActive(outcome.userId, outcome.until, req.log);
+        // Pro is paid here since 26 September 2026: a transfer to the account
+        // /pro/start opened. The message carries the receipt; the email is the
+        // copy to keep.
+        void notifyProActive(outcome.userId, outcome.until, req.log, outcome.paidKobo);
         void emailProActive(outcome.userId, outcome.until, outcome.paidKobo, req.log);
         return reply.send({ ok: true });
 
