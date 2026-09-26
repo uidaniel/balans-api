@@ -55,7 +55,7 @@ import {
 import { partsFor } from "../documents/parts.ts";
 import { linesFromForm } from "../documents/form-lines.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { openProTransfer } from "../billing/pro-transfer.ts";
+import { proStartUrl } from "../billing/pro-link.ts";
 import { pickerUrlFor } from "../http/routes/templates.ts";
 import { clearLogo, saveLogo } from "../brand/user-logo.ts";
 import {
@@ -99,11 +99,12 @@ import { raiseSecurityAlert } from "../settings/alerts.ts";
 import { openSubscription, stateOf } from "../billing/subscription.ts";
 import {
   deductChosen,
-  proTransferFailed,
-  proTransferMessage,
+  PRO_PAY_FOOTER,
+  proPayLabel,
+  proPayLink,
+  proPayPrompt,
   proActive,
   proOffer,
-  proOfferButtons,
 } from "../billing/messages.ts";
 import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
 import { sendCta, sendFlow, sendList } from "../whatsapp/client.ts";
@@ -208,6 +209,36 @@ async function limitCard(
 
   log.warn({ userId, reason: sent.reason }, "limit card failed, sending the limit as words");
   return { stop: true, words };
+}
+
+/**
+ * The Pro offer's button: "Pay ₦3,000", opening Paystack's checkout.
+ *
+ * Sent here rather than through `reply` because it is a link button, which
+ * `reply` does not send. False when it could not go, and the caller says the
+ * same thing with the link in words.
+ */
+async function sendProButton(
+  userId: string,
+  phone: string | undefined,
+  body: string,
+  headerImage: string | undefined,
+  log: FastifyBaseLogger,
+): Promise<boolean> {
+  if (!phone) return false;
+  const sent = await sendCta(phone, {
+    body,
+    label: proPayLabel(),
+    url: proStartUrl(userId),
+    ...(headerImage ? { headerImage } : {}),
+    footer: PRO_PAY_FOOTER,
+  });
+  if (sent.ok) {
+    await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+    return true;
+  }
+  log.warn({ userId, reason: sent.reason }, "Pro checkout button failed, sending the link as words");
+  return false;
 }
 
 /**
@@ -1951,17 +1982,14 @@ async function runEffects(
            * invoice that they had finished five.
            */
           /*
-           * One message, with "Pay Now" as a reply button under the card.
-           *
-           * It was a link button to a payment page, which took people out of
-           * WhatsApp into its browser to read an account number. Since 26
-           * September 2026 the tap comes back here as "pay now" and the
-           * account arrives in the chat (start_pro below), so the whole
-           * payment happens where the offer was.
+           * One message: the card, the offer, and "Pay ₦3,000" under it,
+           * which opens Paystack's checkout in WhatsApp's own browser (see
+           * billing/pro-checkout.ts). Card, transfer, USSD, all on one page
+           * people already know, instead of an account number to copy.
            */
-          extra.push(proOffer(used));
-          buttonsImage = UPGRADE_CARD;
-          buttons = proOfferButtons();
+          if (!(await sendProButton(userId, ctx.phone, proOffer(used), UPGRADE_CARD, log))) {
+            extra.push(proPayLink(proOffer(used), proStartUrl(userId)));
+          }
           break;
         }
 
@@ -1973,20 +2001,14 @@ async function runEffects(
           }
 
           /*
-           * The account, in the chat.
-           *
-           * A Paystack account opened for this one payment, sent as words the
-           * person copies into their bank app. Tapping "Pay Now" again inside
-           * the hour gives the same account, not a second one. The webhook
-           * does the rest: a month of Pro and a receipt, here and by email.
+           * "pay now", typed: the same checkout button, under fewer words.
+           * The checkout itself is opened when the button is tapped, so a
+           * button tapped tomorrow opens a fresh one rather than a stale one.
            */
-          const transfer = await openProTransfer(userId, log);
-          if (transfer.kind === "already_pro") {
+          if ((await planOf(userId)) === "pro") {
             extra.push(proActive(await stateOf(userId)));
-          } else if (transfer.kind === "failed") {
-            extra.push(proTransferFailed());
-          } else {
-            extra.push(proTransferMessage(transfer.account, transfer.amountKobo));
+          } else if (!(await sendProButton(userId, ctx.phone, proPayPrompt(), undefined, log))) {
+            extra.push(proPayLink(proPayPrompt(), proStartUrl(userId)));
           }
           break;
         }

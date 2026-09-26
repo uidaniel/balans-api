@@ -73,8 +73,8 @@ describe("coming back from a Pro payment", () => {
 
   it("uses the reference prefix the checkout actually writes", () => {
     // Two files agreeing on a string with nothing to enforce it.
-    const pro = read("./pro-transfer.ts");
-    assert.match(pro, /const reference = `sub_\$\{/, "the checkout writes sub_");
+    const pro = read("./pro-checkout.ts");
+    assert.match(pro, /`sub_\$\{subscriptionId/, "the checkout writes sub_");
   });
 });
 
@@ -161,5 +161,17 @@ describe("the page it lands on", { skip: SITE ? false : "the site repository is 
 
     assert.doesNotMatch(rendered, /revealing soon/);
     assert.match(rendered, /Head back to your Balans chat/, "an instruction, not a dead link");
+  });
+});
+
+describe("a checkout reference", () => {
+  it("names its subscription, so any checkout opened for it can pay it", async () => {
+    const { proReference, subscriptionPrefixOf } = await import("./pro-checkout.ts");
+    const id = "3f2a9c1e-77b0-4d2e-9a51-0c6e1f2b8d4a";
+    const ref = proReference(id);
+    assert.equal(subscriptionPrefixOf(ref), "3f2a9c1e77b04d2e");
+    assert.notEqual(proReference(id), ref, "a fresh one each time");
+    assert.equal(subscriptionPrefixOf("inv_123"), null);
+    assert.equal(subscriptionPrefixOf("sub_zz"), null);
   });
 });

@@ -21,7 +21,8 @@
 import type { FastifyBaseLogger } from "fastify";
 import { db, tx } from "../db/pool.ts";
 import { verifyTransaction, type VerifiedTransaction } from "./monnify.ts";
-import { activateByReference, collect, deductionFor, stateOf } from "../billing/subscription.ts";
+import { activateByReference, attachPaymentReference, collect, deductionFor, stateOf } from "../billing/subscription.ts";
+import { subscriptionPrefixOf } from "../billing/pro-checkout.ts";
 import { settleParts } from "../documents/parts.ts";
 
 export type ConfirmOutcome =
@@ -77,7 +78,28 @@ async function confirmSubscription(
     `SELECT id, price_kobo, status FROM subscriptions WHERE payment_reference = $1`,
     [reference],
   );
-  const sub = rows[0];
+  let sub = rows[0];
+
+  /*
+   * A checkout opened before the latest one.
+   *
+   * Every tap on "Pay" opens a new Paystack checkout, and only the newest
+   * reference is on the subscription. Somebody who opens it twice and pays
+   * in the first tab has paid all the same, so a reference that names its
+   * subscription (billing/pro-checkout.ts) is found by that name, and becomes
+   * the subscription's reference so the activation below matches it.
+   */
+  const prefix = sub ? null : subscriptionPrefixOf(reference);
+  if (prefix) {
+    const { rows: named } = await db().query<{ id: string; price_kobo: string; status: string }>(
+      `SELECT id, price_kobo, status FROM subscriptions
+        WHERE replace(id::text, '-', '') LIKE $1 || '%'
+        ORDER BY period_start DESC LIMIT 1`,
+      [prefix],
+    );
+    sub = named[0];
+    if (sub && sub.status !== "active") await attachPaymentReference(sub.id, reference);
+  }
   if (!sub) return null;
 
   if (sub.status === "active") return { kind: "already_confirmed", reference };

@@ -45,28 +45,31 @@ export function proOffer(used: number): string {
 }
 
 /**
- * The two ways to start Pro.
+ * The button under the offer, which opens Paystack's checkout.
  *
- * Ids are the phrases the parser already reads, so a tap and a typed reply
- * take the same path and neither needs a special case.
+ * Since 26 September 2026 it opens the checkout in WhatsApp's own browser
+ * rather than sending an account number to copy: one tap, and card, bank
+ * transfer, USSD and the rest are all on the page. At most 20 characters,
+ * which Meta enforces by refusing the whole message.
  */
-export const proOfferButtons = (): { id: string; title: string }[] => [
-  /*
-   * One button, and no picture on it.
-   *
-   * Deduct-from-invoice is gone from the offer. Two ways to pay is a decision
-   * to make before the one that matters — whether to upgrade at all — and the
-   * second one needed a line of explanation above it to be understood, which
-   * is a lot of message for an alternative most people were never going to
-   * take.
-   *
-   * The id stays the phrase the parser reads, so a tap and a typed "pay now"
-   * are the same message. `asProChoice` still understands "from my invoices"
-   * for anybody who knows to ask, and the billing path behind it is untouched
-   * — this removes the offer, not the feature.
-   */
-  { id: "pay now", title: "Pay Now" },
-];
+export const proPayLabel = (): string => `Pay ${formatNaira(pro.priceKobo)}`;
+
+/** Under the button, at most 60 characters. */
+export const PRO_PAY_FOOTER = "Card, bank transfer or USSD, through Paystack";
+
+/** For "pay now" typed or tapped: the same button, with less to read above it. */
+export function proPayPrompt(): string {
+  return para(
+    `⭐ ${b(`Pro is ${formatNaira(pro.priceKobo)} a month.`)}`,
+    "Tap below to pay by card, bank transfer or USSD.",
+    i("Pro starts the moment it goes through, and your receipt comes here and to your email."),
+  );
+}
+
+/** When the button cannot be sent: the same thing, as a link in words. */
+export function proPayLink(words: string, url: string): string {
+  return para(words, `Pay here: ${url}`);
+}
 
 /** Deduct-from-invoice, confirmed. The cap is the reassurance, so it is said. */
 export function deductChosen(): string {
@@ -79,44 +82,6 @@ export function deductChosen(): string {
     i("Nothing to pay today."),
   );
 }
-
-/**
- * The account to pay into, in the chat.
- *
- * Since 26 September 2026 "Pay Now" answers with this rather than a link out
- * of WhatsApp: the account is the thing they need, so it is the message. Each
- * detail on a line of its own, so a long-press on the number copies little
- * else, and the amount said as "exactly" because Paystack matches a transfer
- * to this account by its amount.
- */
-export function proTransferMessage(
-  account: { bankName: string; accountNumber: string; accountName: string; expiresAt: Date },
-  amountKobo: number,
-): string {
-  const closes = new Intl.DateTimeFormat("en-GB", {
-    timeZone: defaults.behaviour.timezone,
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(account.expiresAt);
-  return para(
-    `⭐ ${b(`Transfer ${formatNaira(amountKobo)} to start Pro`)}`,
-    lines(
-      `Bank: ${b(account.bankName)}`,
-      `Account number: ${b(account.accountNumber)}`,
-      `Account name: ${b(account.accountName)}`,
-      `Amount: ${b(formatNaira(amountKobo))}`,
-    ),
-    lines(
-      `Send exactly ${formatNaira(amountKobo)} before ${closes}. This account is for this one payment.`,
-      i("Pro starts the moment it lands, and your receipt comes here and to your email."),
-    ),
-  );
-}
-
-/** When no account could be opened. */
-export const proTransferFailed = (): string =>
-  "⏳ I could not open an account for the payment just now. Reply *pay* to try again in a minute.";
 
 export function proActive(state: SubscriptionState): string {
   const until = state.periodEnd

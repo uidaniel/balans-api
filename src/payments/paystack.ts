@@ -381,6 +381,45 @@ export async function initTransaction(
   };
 }
 
+/**
+ * Paystack's checkout for a month of Pro.
+ *
+ * Unlike an invoice's card payment, this is Balans being paid, so there is no
+ * subaccount and no split, and every channel Paystack offers is left on:
+ * card, bank transfer, USSD and the rest, chosen on Paystack's own page.
+ */
+export async function initProCheckout(
+  input: {
+    email: string;
+    amountKobo: number;
+    reference: string;
+    callbackUrl: string;
+    metadata: Record<string, unknown>;
+  },
+  fetchImpl: typeof fetch = fetch,
+): Promise<InitResult> {
+  const res = await call<{ authorization_url?: string; access_code?: string; reference?: string }>(
+    INITIALIZE_PATH,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: input.email,
+        amount: input.amountKobo,
+        currency: "NGN",
+        reference: input.reference,
+        callback_url: input.callbackUrl,
+        metadata: input.metadata,
+      }),
+    },
+    fetchImpl,
+  );
+
+  if (!res.ok) return { ok: false, message: res.message, retryable: res.status >= 500 };
+  const url = res.body.authorization_url;
+  if (!url) return { ok: false, message: "no authorization url returned", retryable: true };
+  return { ok: true, authorizationUrl: url, accessCode: res.body.access_code ?? "", reference: res.body.reference ?? input.reference };
+}
+
 /* -------------------------------------------------------------------------- */
 /* Whose account is this                                                      */
 /* -------------------------------------------------------------------------- */

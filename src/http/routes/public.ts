@@ -12,6 +12,7 @@
  *     number; what is owed is read from the row.
  */
 
+import { subscriptionPrefixOf } from "../../billing/pro-checkout.ts";
 import { clientNumber } from "../../documents/client-number.ts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
@@ -797,9 +798,15 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
        * subscription row it belongs to.
        */
       if (reference.startsWith("sub_")) {
+        // By the exact reference, or by the subscription it names: every tap
+        // on "Pay" opens its own checkout (billing/pro-checkout.ts).
         const { rows } = await db().query<{ status: string }>(
-          `SELECT status FROM subscriptions WHERE payment_reference = $1 LIMIT 1`,
-          [reference],
+          `SELECT status FROM subscriptions
+            WHERE payment_reference = $1
+               OR ($2::text IS NOT NULL AND replace(id::text, '-', '') LIKE $2 || '%')
+            ORDER BY (payment_reference = $1) DESC, period_start DESC
+            LIMIT 1`,
+          [reference, subscriptionPrefixOf(reference)],
         );
 
         const status = rows[0]?.status;

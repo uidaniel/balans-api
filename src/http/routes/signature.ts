@@ -59,7 +59,8 @@ h1{margin-top:26px;font-family:"Geist",sans-serif;font-weight:800;font-size:34px
 .tabs button[aria-selected=true]{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(16,35,28,.12)}
 .pane{margin-top:16px}
 .pad{position:relative;border-radius:16px;background:#fff;box-shadow:inset 0 0 0 1px var(--line);touch-action:none}
-.pad canvas{display:block;width:100%;height:200px;border-radius:16px;cursor:crosshair}
+.pad canvas{display:block;width:100%;height:200px;border-radius:16px;cursor:crosshair;touch-action:none;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .pad .base{position:absolute;left:22px;right:22px;bottom:52px;border-top:1.5px dashed rgba(16,35,28,.18);pointer-events:none}
 .pad .hint{position:absolute;left:0;right:0;top:44%;text-align:center;font-size:15px;color:rgba(16,35,28,.35);pointer-events:none}
 .row{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:14px;color:var(--faint)}
@@ -106,15 +107,39 @@ document.querySelectorAll(".tabs button").forEach((t) => t.addEventListener("cli
 
 // Draw
 const cv = $("#pad"), ctx = cv.getContext("2d");
+/*
+ * Sizes the canvas to its box, and only when the box really changed.
+ *
+ * Setting a canvas's width wipes it, and a phone fires "resize" whenever its
+ * browser bar slides in or out, which a finger moving on the page does. So
+ * every stroke on a phone was erased as it was drawn and the pad stayed
+ * blank. Now an unchanged size is left alone, and a real change (turning the
+ * phone) carries the drawing across.
+ */
 function fit() {
   const r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
-  cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d);
+  const w = Math.round(r.width * d), h = Math.round(r.height * d);
+  if (!w || !h || (w === cv.width && h === cv.height)) return;
+  let keep = null;
+  if (drawn) {
+    keep = document.createElement("canvas"); keep.width = cv.width; keep.height = cv.height;
+    keep.getContext("2d").drawImage(cv, 0, 0);
+  }
+  cv.width = w; cv.height = h;
   ctx.setTransform(d, 0, 0, d, 0, 0); ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = INK;
-  drawn = false; $("#hint").hidden = false; ready();
+  if (keep) {
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(keep, 0, 0, w, keep.height * (w / keep.width)); ctx.restore();
+  } else { drawn = false; $("#hint").hidden = false; }
+  ready();
 }
 let pts = [], last = 0;
 function pos(e) { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, t: performance.now() }; }
-cv.addEventListener("pointerdown", (e) => { cv.setPointerCapture(e.pointerId); pts = [pos(e)]; last = 3.2; $("#hint").hidden = true; });
+cv.addEventListener("pointerdown", (e) => {
+  // No scrolling, text selection or long-press menu while signing.
+  e.preventDefault();
+  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+  pts = [pos(e)]; last = 3.2; $("#hint").hidden = true;
+});
 cv.addEventListener("pointermove", (e) => {
   if (!pts.length) return;
   const p = pos(e), a = pts[pts.length - 1];
@@ -130,8 +155,11 @@ cv.addEventListener("pointermove", (e) => {
   } else { ctx.moveTo(a.x, a.y); ctx.lineTo(p.x, p.y); }
   ctx.stroke(); pts.push(p); drawn = true; ready();
 });
-["pointerup", "pointercancel", "pointerleave"].forEach((n) => cv.addEventListener(n, () => { pts = []; }));
-$("#clear").addEventListener("click", () => { ctx.clearRect(0, 0, cv.width, cv.height); drawn = false; $("#hint").hidden = false; ready(); });
+["pointerup", "pointercancel"].forEach((n) => cv.addEventListener(n, () => { pts = []; }));
+$("#clear").addEventListener("click", () => {
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height); ctx.restore();
+  drawn = false; $("#hint").hidden = false; ready();
+});
 window.addEventListener("resize", fit); fit();
 
 // Type
