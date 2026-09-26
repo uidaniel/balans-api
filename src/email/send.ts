@@ -59,8 +59,12 @@ export type Email = {
   /** Where a reply should land. The user, for anything about their invoice. */
   replyTo?: string;
 
-  /** A PDF, for an invoice or a receipt. */
-  attachments?: { filename: string; content: Buffer }[];
+  /**
+   * A PDF, for an invoice or a receipt, or a calendar invitation. The type is
+   * worth giving for the invitation: `text/calendar; method=REQUEST` is what a
+   * mail client looks for before it draws an event card.
+   */
+  attachments?: { filename: string; content: Buffer; contentType?: string }[];
 
   /**
    * Pictures shown in the body beyond the logo, which every message carries.
@@ -145,6 +149,7 @@ export async function sendEmail(
                 ...(email.attachments ?? []).map((a) => ({
                   filename: a.filename,
                   content: a.content.toString("base64"),
+                  ...(a.contentType ? { content_type: a.contentType } : {}),
                 })),
               ],
             }

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { googleCalendarUrl, icsFor, type DueEvent } from "./calendar.ts";
-import { calendarLine } from "../email/client-delivery.ts";
+import { dueInvite } from "../email/client-delivery.ts";
 
 const e: DueEvent = {
   uid: "doc-1",
@@ -47,10 +47,31 @@ describe("the calendar event", () => {
     assert.match(u.searchParams.get("details") ?? "", /payment\.balans\.ng\/i\/abc/);
   });
 
-  it("offers both in the email, escaped", () => {
-    const line = calendarLine(e, `${e.link}/calendar.ics`);
-    assert.match(line, /Google Calendar/);
-    assert.match(line, /href="https:\/\/payment\.balans\.ng\/i\/abc\/calendar\.ics"/);
-    assert.match(line, /&amp;/, "the URL's own ampersands, escaped in the attribute");
+  it("goes in the email as an invitation, which is what draws the card", () => {
+    const att = dueInvite(
+      e,
+      { name: "Danny Codes LTD", email: "danny@x.ng" },
+      { name: "Tunde Olamide", email: "tunde@y.ng" },
+      new Date("2026-09-25T10:00:00Z"),
+    )!;
+    assert.equal(att.filename, "invite.ics");
+    assert.equal(att.contentType, "text/calendar; charset=utf-8; method=REQUEST");
+    const ics = att.content.toString("utf8");
+    assert.match(ics, /METHOD:REQUEST\r\n/);
+    assert.match(ics, /ORGANIZER;CN="Danny Codes LTD":mailto:danny@x\.ng/);
+    // Unfolded first: the attendee line is long enough to be folded.
+    const flat = ics.replace(/\r\n /g, "");
+    assert.match(flat, /ATTENDEE;CN="Tunde Olamide";[^\r]*RSVP=FALSE:mailto:tunde@y\.ng/);
+    for (const line of ics.split("\r\n")) assert.ok(Buffer.byteLength(line) <= 75, line);
+  });
+
+  it("stays a plain file when it is not being sent to anyone", () => {
+    const ics = icsFor(e);
+    assert.match(ics, /METHOD:PUBLISH/);
+    assert.doesNotMatch(ics, /ORGANIZER|ATTENDEE/);
+  });
+
+  it("is not sent without an organiser to send it from", () => {
+    assert.equal(dueInvite(e, { name: "X", email: null }, { name: "Y", email: "y@z.ng" }), null);
   });
 });

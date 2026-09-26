@@ -24,7 +24,7 @@ import { sendEmail } from "./send.ts";
 import { amount, layout, paragraph, button } from "./layout.ts";
 import { renderDocumentPdf } from "../documents/pdf.ts";
 import { documentLink } from "../documents/links.ts";
-import { googleCalendarUrl } from "../documents/calendar.ts";
+import { icsFor, type DueEvent } from "../documents/calendar.ts";
 
 export type DeliveryResult =
   | { ok: true }
@@ -52,20 +52,32 @@ export function closingLine(type: string, label: string, link: string | null): s
 }
 
 /**
- * "Add to calendar", under the Pay button (invoices only).
+ * The due date as a calendar invitation, attached (invoices only).
  *
- * The due date in the client's own calendar, with the link in it and a
- * reminder the day before: the nudge to pay that does not have to come from
- * the freelancer. Google gets a link that opens the event filled in; Apple
- * and Outlook get the same event as a file from the invoice's address.
+ * Attached rather than linked: an invitation is what Gmail, Apple Mail and
+ * Outlook read to show an event card at the top of the email, with the date
+ * and "Add to calendar" on it. Two links under the Pay button asked the
+ * client to notice a line of text and leave for a website.
+ *
+ * From the business, to the client: that pairing is what makes it an
+ * invitation to their calendar rather than a stray file. Null when there is
+ * no due date or nothing to address it to.
  */
-export function calendarLine(e: Parameters<typeof googleCalendarUrl>[0], icsUrl: string): string {
-  const a = (href: string, words: string) =>
-    `<a href="${esc(href)}" class="bl-ink" style="color:#10231C;font-weight:600;text-decoration:underline">${words}</a>`;
-  return paragraph(
-    `Add the due date to your calendar: ${a(googleCalendarUrl(e), "Google Calendar")} · ${a(icsUrl, "Apple or Outlook")}`,
-    true,
-  );
+export function dueInvite(
+  e: DueEvent,
+  from: { name: string; email: string | null },
+  to: { name: string; email: string },
+  now = new Date(),
+): { filename: string; content: Buffer; contentType: string } | null {
+  if (!from.email) return null;
+  return {
+    filename: "invite.ics",
+    content: Buffer.from(
+      icsFor(e, now, { organizer: { name: from.name, email: from.email }, attendee: to }),
+      "utf8",
+    ),
+    contentType: "text/calendar; charset=utf-8; method=REQUEST",
+  };
 }
 
 /**
@@ -136,19 +148,6 @@ export async function emailDocumentToClient(
     d.notes ? paragraph(esc(d.notes), true) : "",
     link && d.type !== "quote" ? button(`Pay ${formatNaira(d.total_kobo)}`, link) : "",
     link && d.type === "quote" ? button("View quote", link) : "",
-    link && d.public_token && d.type === "invoice" && when
-      ? calendarLine(
-          {
-            uid: documentId,
-            business,
-            amount: formatNaira(d.total_kobo),
-            number: d.number,
-            due: when,
-            link,
-          },
-          `${link}/calendar.ics`,
-        )
-      : "",
     paragraph(closingLine(d.type, label, link), true),
   ]
     .filter(Boolean)
@@ -158,6 +157,18 @@ export async function emailDocumentToClient(
   // one either — see the line about it being attached, below.
   const pdf =
     d.type === "payment_request" ? null : await renderDocumentPdf(documentId, log);
+
+  // The due date, for the client's calendar. The support address stands in
+  // as organiser when the business has no email on file, so the card still
+  // shows; replies to the email itself still go to the business.
+  const invite =
+    link && d.type === "invoice" && when
+      ? dueInvite(
+          { uid: documentId, business, amount: formatNaira(d.total_kobo), number: d.number, due: when, link },
+          { name: business, email: d.business_email ?? env.SUPPORT_EMAIL },
+          { name: d.client_name, email: d.client_email },
+        )
+      : null;
 
   const sent = await sendEmail(
     {
@@ -186,22 +197,18 @@ export async function emailDocumentToClient(
         }.`,
         "",
         link ? (d.type === "quote" ? `View it here: ${link}` : `Pay here: ${link}`) : "",
-        link && d.type === "invoice" && when
-          ? `Add the due date to your calendar: ${googleCalendarUrl({
-              uid: documentId,
-              business,
-              amount: formatNaira(d.total_kobo),
-              number: d.number,
-              due: when,
-              link,
-            })} (Google), or ${link}/calendar.ics (Apple or Outlook)`
-          : "",
         "",
         d.notes ?? "",
       ]
         .filter(Boolean)
         .join("\n"),
-      attachments: pdf ? [{ filename: pdf.filename, content: pdf.bytes }] : undefined,
+      attachments:
+        pdf || invite
+          ? [
+              ...(pdf ? [{ filename: pdf.filename, content: pdf.bytes }] : []),
+              ...(invite ? [invite] : []),
+            ]
+          : undefined,
     },
     log,
   );
