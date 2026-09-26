@@ -32,7 +32,7 @@ import {
   type PendingDoc,
   type State,
 } from "./machine.ts";
-import { FRESH_WHO, splitForPlan } from "../whatsapp/flows/definitions.ts";
+import { FRESH_WHO, currencyOptions, splitForPlan } from "../whatsapp/flows/definitions.ts";
 import { VAT_PERCENT } from "../parser/extract.ts";
 import { forLog, type Parsed } from "../parser/schema.ts";
 import { b, i, lines, para, row } from "../whatsapp/format.ts";
@@ -1650,6 +1650,7 @@ async function runEffects(
               invoice_number_start: number;
               business_name: string | null;
               logo_url: string | null;
+              signature_url: string | null;
             }>(
               /*
                * The name comes from here, not from the conversation.
@@ -1661,7 +1662,7 @@ async function runEffects(
                * printed on all of their invoices.
                */
               `SELECT default_due_days, template_id, invoice_number_start,
-                      business_name, logo_url
+                      business_name, logo_url, signature_url
                  FROM users WHERE id = $1`,
               [userId],
             ),
@@ -1686,6 +1687,7 @@ async function runEffects(
                 // F21: the logo is a Pro feature, so the row only exists for
                 // somebody who can use it.
                 logo: plan === "pro" ? { set: Boolean(p?.logo_url) } : null,
+                signature: Boolean(p?.signature_url),
               }),
             );
             if (sent.ok) {
@@ -2331,6 +2333,35 @@ async function handleOnboardingForm(
     return;
   }
 
+  /*
+   * Already checked, inside the form, since 26 September 2026: the bank gave
+   * the name, the form showed it, and "Yes, that's me" is what closed it. So
+   * there is no "Is that you?" left to ask. The name is the one the endpoint
+   * kept (see whatsapp/flows/endpoint.ts), never the one in the payload, and
+   * only for the bank and number the form finished with.
+   */
+  const checked = had.flowChecked;
+  if (checked && checked.bankCode === bank.code && checked.accountNumber === accountNumber) {
+    await saveBankAccount(userId, {
+      bankCode: bank.code,
+      bankName: bank.name,
+      accountNumber,
+      accountName: checked.accountName,
+    });
+    await saveConversation(userId, "onboarding:confirm_account", {
+      ...keep,
+      email,
+      resolvedAccountName: checked.accountName,
+    });
+    // The same "yes" the "✅ That's me" button sends, through the same path,
+    // so what follows (the email code) cannot drift from the typed version.
+    await handleInbound(
+      { waMessageId: `replay:${userId}`, from: phone, kind: "text", text: "yes", sentAt: new Date(), replay: true },
+      log,
+    );
+    return;
+  }
+
   const resolved = await checkAccount(accountNumber, bank);
   if (!resolved.ok) {
     await saveConversation(userId, "onboarding:bank", { ...keep, email });
@@ -2865,7 +2896,7 @@ async function formCurrency(
  * exactly the form it saw yesterday — and nothing in it that exists only to
  * be ignored.
  */
-type FlowData = Record<string, string | number | boolean>;
+type FlowData = Record<string, unknown>;
 
 /**
  * Sends a document to the client's WhatsApp and, if that fails, says so.
@@ -2911,15 +2942,27 @@ async function openedForPlan(
   data: FlowData | undefined,
 ): Promise<FlowData | undefined> {
   if (!data || !("can_whatsapp_client" in data)) return data;
-  if ((await planOf(userId)) !== "pro") return data;
+  const pro = (await planOf(userId)) === "pro";
+
+  /*
+   * The currency box, while dollars and pounds are switched on at all. Free
+   * sees it with naira the only choice and the other two greyed out, which
+   * is how they learn Pro has them; Pro can choose any. The request form has
+   * no currency box to switch.
+   */
+  const currency =
+    env.INTL_ENABLED && "can_bill_abroad" in data
+      ? {
+          show_currency: true,
+          currencies: currencyOptions(pro),
+          ...(pro ? { can_bill_abroad: true, amount_help: ABROAD_HELP } : {}),
+        }
+      : {};
 
   return {
     ...data,
-    can_whatsapp_client: true,
-    phone_help: PHONE_PRO_HELP,
-    // Dollars and pounds only while they are switched on; the request form
-    // has no currency box to switch.
-    ...(env.INTL_ENABLED && "can_bill_abroad" in data ? { can_bill_abroad: true, amount_help: ABROAD_HELP } : {}),
+    ...currency,
+    ...(pro ? { can_whatsapp_client: true, phone_help: PHONE_PRO_HELP } : {}),
   };
 }
 

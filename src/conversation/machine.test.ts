@@ -4,7 +4,7 @@ import { step, VOICE, type Context, type State } from "./machine.ts";
 import type { Parsed } from "../parser/schema.ts";
 import type { Civil } from "../../core/dates.ts";
 import type { Correction } from "../parser/corrections.ts";
-import { FLOWS } from "../whatsapp/flows/definitions.ts";
+import { FLOWS, currencyOptions } from "../whatsapp/flows/definitions.ts";
 import { readCorrection } from "../parser/corrections.ts";
 import { asCommand } from "../parser/commands.ts";
 import { settingsMenu } from "../settings/messages.ts";
@@ -650,6 +650,10 @@ describe("a tapped button", () => {
        */
       currency: "",
       can_bill_abroad: false,
+      // Hidden until the caller finds international invoicing on; then Free
+      // sees it with only naira choosable, which is this list.
+      show_currency: false,
+      currencies: currencyOptions(false),
       amount_help: "Naira, before VAT. Digits only.",
       // The Phone box, greyed out until the caller finds the sender on Pro.
       can_whatsapp_client: false,
@@ -824,7 +828,7 @@ describe("a tapped button", () => {
       for (const [key, value] of Object.entries(effect.data ?? {})) {
         const want: string | undefined = (screen!.data?.[key] as { type?: string } | undefined)?.type;
         assert.equal(
-          typeof value,
+          Array.isArray(value) ? "array" : typeof value,
           want,
           `${lines} lines: ${effect.screen} declares ${key} as ${want}`,
         );

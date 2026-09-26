@@ -10,6 +10,7 @@ import { healthRoutes } from "./routes/health.ts";
 import { brandRoutes } from "./routes/brand.ts";
 import { whatsappRoutes } from "./routes/whatsapp.ts";
 import { publicRoutes } from "./routes/public.ts";
+import { flowRoutes } from "./routes/flows.ts";
 import { proRoutes } from "./routes/pro.ts";
 import { monnifyRoutes } from "./routes/monnify.ts";
 import { paystackRoutes } from "./routes/paystack.ts";
@@ -119,6 +120,7 @@ export function buildServer(): FastifyInstance {
   // character of it is one more chance to mistype.
   app.register(publicRoutes);
   app.register(proRoutes);
+  app.register(flowRoutes);
   // Also unprefixed: /designs/{token} is a link opened from a phone.
   app.register(templateRoutes);
   // Also unprefixed and opened from a phone: /signature/{token}.

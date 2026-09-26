@@ -611,7 +611,7 @@ export function sendFlow(
     /** The screen to open on. */
     screen: string;
     /** Values the first screen starts with, for an edit form. */
-    data?: Record<string, string | number | boolean>;
+    data?: Record<string, unknown>;
     header?: string;
     /**
      * A picture above the message, by URL.

@@ -98,16 +98,20 @@ describe("the price on the page", () => {
     assert.match(html(), /<h1>\$500\.00<\/h1>/);
   });
 
-  it("says what will actually leave the client's account, and who converts it", () => {
+  it("says what will actually leave the client's account, and who converts it, before the card", () => {
     /*
-     * Section 9, word for word, and the reason is not politeness. The naira
-     * figure is what appears on their statement; meeting it there for the
-     * first time is how somebody decides they were overcharged by whoever
-     * sent the invoice.
+     * Section 9, and the reason is not politeness. The naira figure is what
+     * appears on their statement; meeting it there for the first time is how
+     * somebody decides they were overcharged by whoever sent the invoice.
+     * Since 26 September 2026 it is said in the step between "Continue to
+     * payment" and the card, with the rate, rather than under the headline.
      */
     const out = html();
-    assert.match(out, /Charged in Naira as <b>₦663,500<\/b>/);
-    assert.match(out, /Your bank converts this and may apply its own exchange rate or fees/);
+    const step = out.slice(out.indexOf('id="confirm"'));
+    assert.match(step, /Your card is charged in naira\. Your bank converts it and may add its own exchange rate or fees/);
+    assert.match(step, /You pay<\/span><b>₦663,500<\/b>/);
+    assert.match(step, /Rate<\/span><b>\$1 = ₦1,327\.00<\/b>/);
+    assert.ok(out.indexOf('href="#confirm"') < out.indexOf('id="confirm"'), "the step opens from the button");
   });
 
   it("itemises in the currency each line was quoted in", () => {
@@ -116,11 +120,16 @@ describe("the price on the page", () => {
     assert.match(html(), /Brand identity<\/td><td class="r">\$500\.00<\/td>/);
   });
 
-  it("charges in naira on the button, because that is what the button does", () => {
-    // The headline is a price two people agreed. The button is a figure about
-    // to leave a bank account, and one that said "$500" would charge a
-    // different number than it read.
-    assert.match(html(), /Pay ₦663,500 by card/);
+  it("totals in what was agreed while nothing is paid", () => {
+    assert.match(html(), /Total<\/span><span>\$500\.00<\/span>/);
+  });
+
+  it("charges in naira on the card button, and only there", () => {
+    // The page reads in dollars, so its button says where it goes. The button
+    // that charges says the naira it charges, because that is what it does.
+    const out = html();
+    assert.match(out, /<a class="pay-btn" href="#confirm">Continue to payment<\/a>/);
+    assert.match(out, /<button class="pay-btn" type="submit">Pay ₦663,500 by card<\/button>/);
   });
 
   it("keeps what is still owed in naira", () => {

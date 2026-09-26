@@ -240,7 +240,7 @@ export function layout({ preheader, heading, eyebrow, banner, body }: LayoutOpti
   <!-- Footer. Section 12 requires both lines on every email. -->
   <tr><td class="bl-pad" style="padding:16px ${GUTTER}px 28px ${GUTTER}px;font-family:${FONT};">
     <p style="${P}font-size:12px;line-height:18px;color:${LIGHT.faint};" class="bl-faint">
-      Balans is a product of ${esc(env.LEGAL_ENTITY_NAME)}. Payments are processed by Monnify.<br />
+      Balans is a product of ${esc(env.LEGAL_ENTITY_NAME)}. Card payments are processed by Paystack.<br />
       <a href="${esc(env.SITE_URL)}/terms" style="color:${LIGHT.faint};text-decoration:underline;">Terms</a>
       &middot; <a href="${esc(env.SITE_URL)}/privacy" style="color:${LIGHT.faint};text-decoration:underline;">Privacy</a>
       &middot; <a href="mailto:${esc(env.SUPPORT_EMAIL)}" style="color:${LIGHT.faint};text-decoration:underline;">${esc(env.SUPPORT_EMAIL)}</a><br />

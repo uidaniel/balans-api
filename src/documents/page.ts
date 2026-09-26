@@ -19,6 +19,7 @@ import { agreedTotalMinor } from "../../core/exchange.ts";
 import { outstandingKobo, payable, payableLabel, payableNowKobo, type PublicDocument } from "./public.ts";
 import { logoAvailable, logoSvg, markSvg, processorLogo, type Processor } from "../brand/logo.ts";
 import { FONT, fontFacesForPage } from "../pdf/fonts.ts";
+import { env } from "../config.ts";
 
 /** HTML-escapes text. Also escapes quotes, for anything inside an attribute. */
 export function esc(s: string): string {
@@ -140,9 +141,28 @@ font-size:13.5px;font-weight:600;color:var(--ink);text-decoration:none;
 box-shadow:inset 0 0 0 1.5px rgba(16,35,28,.2);transition:box-shadow .2s}
 .files a:hover{box-shadow:inset 0 0 0 1.5px var(--ink)}
 .foot{display:flex;align-items:center;justify-content:center;gap:8px;max-width:600px;
-margin:20px auto 0;font-size:12.5px;color:var(--ink-50)}
+margin:20px auto 0;padding:0 16px;font-size:12.5px;line-height:1.5;color:var(--ink-50)}
 .foot a{color:inherit;text-underline-offset:3px}
 .foot svg{width:16px;height:16px;flex:none}
+.foot b{color:var(--ink-65);font-weight:600}
+.badge svg.psmark{width:12px;height:12px;margin-right:-3px}
+/* The step before a card is charged in naira for a foreign price. Opened by
+   :target, so it needs no JavaScript: the button is a link to #confirm, and
+   closing it is a link back. */
+.modal{display:none;position:fixed;inset:0;z-index:10;background:rgba(16,35,28,.45);
+align-items:flex-end;justify-content:center;padding:16px}
+.modal:target{display:flex}
+.msheet{width:100%;max-width:440px;background:var(--paper);border-radius:24px;padding:26px 22px 18px;
+box-shadow:0 20px 60px rgba(16,35,28,.25)}
+@media (min-width:600px){.modal{align-items:center}}
+.msheet h2{margin:0;font:700 22px/1.2 var(--display);letter-spacing:-.02em}
+.msheet p{margin:10px 0 0;font-size:14.5px;line-height:1.55;color:var(--ink-65)}
+.msheet p b{color:var(--ink);font-weight:600}
+.mrows{margin:18px 0 20px;padding:14px 16px;border-radius:16px;background:var(--cream)}
+.mrows .row{padding:5px 0}
+.mrows .row b{color:var(--ink);font-variant-numeric:tabular-nums}
+.mclose{display:block;margin-top:10px;padding:12px;text-align:center;font-size:14px;font-weight:600;
+color:var(--ink-65);text-decoration:none}
 /* The transfer step is the one thing on this page that is an action rather
    than a document, so it sits on ink and everything above it stays paper —
    the same move as the pay panel on the site. */
@@ -392,9 +412,42 @@ const money = (doc: PublicDocument, kobo: number, minor: number | null): string 
  * receive, what Paystack takes, what Balans takes. The client agreed to a
  * price, not to somebody else's margins.
  */
-function convertedLine(doc: PublicDocument): string {
+/**
+ * The agreed price, what it comes to in naira, and at what rate.
+ *
+ * Said in the step between "Continue to payment" and the card, since 26
+ * September 2026, rather than under the headline: the page is about the
+ * price that was agreed, and the naira only matters to somebody about to pay.
+ * The rate is the one this invoice was priced at, worked back from its own
+ * two figures, so it always agrees with them.
+ */
+function conversionStep(doc: PublicDocument, amountKobo: number): string {
   if (!doc.foreign) return "";
-  return `<p class="fx">Charged in Naira as <b>${formatNaira(doc.totalKobo)}</b>. Your bank converts this and may apply its own exchange rate or fees.</p>`;
+  const agreed = agreedTotalMinor(doc.foreign.amountMinor, doc.subtotalKobo, doc.vatKobo);
+  const symbol = formatMoney(100, doc.foreign.currency).replace(/[\d.,]/g, "");
+  const perUnit = agreed > 0 ? doc.totalKobo / agreed : doc.foreign.rate;
+  const rate = `₦${perUnit.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const whole = amountKobo === doc.totalKobo;
+  return `<div class="mrows">
+      ${whole ? `<div class="row"><span>${esc(LABEL[doc.type])} total</span><b>${formatMoney(agreed, doc.foreign.currency)}</b></div>` : ""}
+      <div class="row"><span>Rate</span><b>${symbol}1 = ${rate}</b></div>
+      <div class="row"><span>You pay</span><b>${formatNaira(amountKobo)}</b></div>
+    </div>`;
+}
+
+/**
+ * A figure on the totals block: the agreed currency while nothing has been
+ * paid, naira once anything has (see the note on the totals below).
+ */
+function agreedTotals(doc: PublicDocument): { subtotal: string; vat: string; total: string } | null {
+  if (!doc.foreign || doc.amountPaidKobo > 0) return null;
+  const c = doc.foreign.currency;
+  const total = agreedTotalMinor(doc.foreign.amountMinor, doc.subtotalKobo, doc.vatKobo);
+  return {
+    subtotal: formatMoney(doc.foreign.amountMinor, c),
+    vat: formatMoney(total - doc.foreign.amountMinor, c),
+    total: formatMoney(total, c),
+  };
 }
 
 export function renderDocument(
@@ -423,6 +476,9 @@ export function renderDocument(
     doc.type === "invoice" &&
     outstanding > 0 &&
     compare(doc.dueDate, today) < 0;
+
+  // An invoice priced abroad totals in what was agreed; see `agreedTotals`.
+  const agreed = agreedTotals(doc);
 
   const rows = doc.lines
     .map(
@@ -457,7 +513,6 @@ export function renderDocument(
     }</div>
     <div class="kind">${label} ${clientNumber(doc.ref, doc.number) ?? ""}</div>
     <h1>${doc.foreign ? formatMoney(agreedTotalMinor(doc.foreign.amountMinor, doc.subtotalKobo, doc.vatKobo), doc.foreign.currency) : formatNaira(doc.totalKobo)}</h1>
-    ${convertedLine(doc)}
     <div class="from">From <b>${esc(doc.businessName)}</b> to ${esc(doc.clientName)}</div>
     ${statusPill(doc, today, overdue)}
   </div>
@@ -470,8 +525,8 @@ export function renderDocument(
   <div class="totals">
     ${
       doc.vatKobo > 0
-        ? `<div class="row"><span>Subtotal</span><span>${formatNaira(doc.subtotalKobo)}</span></div>
-           <div class="row"><span>VAT</span><span>${formatNaira(doc.vatKobo)}</span></div>`
+        ? `<div class="row"><span>Subtotal</span><span>${agreed?.subtotal ?? formatNaira(doc.subtotalKobo)}</span></div>
+           <div class="row"><span>VAT</span><span>${agreed?.vat ?? formatNaira(doc.vatKobo)}</span></div>`
         : ""
     }
     ${
@@ -486,7 +541,7 @@ export function renderDocument(
         ? `<div class="row"><span>Total</span><span>${formatNaira(doc.totalKobo)}</span></div>
            <div class="row paidoff"><span>Paid</span><span>&minus;${formatNaira(doc.amountPaidKobo)}</span></div>
            <div class="row grand"><span>Still owed</span><span>${formatNaira(outstanding)}</span></div>`
-        : `<div class="row grand"><span>Total</span><span>${formatNaira(doc.totalKobo)}</span></div>`
+        : `<div class="row grand"><span>Total</span><span>${agreed?.total ?? formatNaira(doc.totalKobo)}</span></div>`
     }
   </div>
 
@@ -509,7 +564,7 @@ export function renderDocument(
     }
   </div>
 </div>
-<p class="foot">${markSvg("16px")}<span>Invoiced with <a href="https://balans.ng">Balans</a></span></p>
+${footer(doc)}
 ${opts.transfer ? `<script>${TRANSFER_JS}</script>` : doc.bank && can.ok === false ? `<script>${COPY_JS}</script>` : ""}
 </body></html>`;
 }
@@ -619,26 +674,42 @@ function payBlock(
       ].toLowerCase()} yet. Please contact ${esc(doc.businessName)}.</div>`;
     }
 
+    /*
+     * Abroad, one step between the page and the card, since 26 September
+     * 2026. The page talks in the price that was agreed ("Total $500.00"),
+     * and a button saying "Pay ₦664,480" under it read as a different bill.
+     * So the button says where it goes, and the step it opens says what the
+     * card will actually be charged, in naira, at what rate, before anything
+     * is charged.
+     */
+    if (doc.foreign) {
+      return `<div class="pay">
+    ${opts.error ? `<p class="banner cancelled" style="margin:0 0 14px">${esc(opts.error.text)}</p>` : ""}
+    <a class="pay-btn" href="#confirm">Continue to payment</a>
+    <p class="secure">Paid by card to ${esc(doc.businessName)}. Takes about a minute.</p>
+  </div>
+  <div class="modal" id="confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <div class="msheet">
+      <h2 id="confirm-title">You pay in naira</h2>
+      <p>Your card is charged in naira. Your bank converts it and may add its own exchange rate or fees.</p>
+      ${conversionStep(doc, amount)}
+      <form method="post" action="/i/${esc(opts.token)}/pay">
+        <button class="pay-btn" type="submit">Pay ${formatNaira(amount)} by card${
+          partLabel ? ` &middot; ${esc(partLabel)}` : ""
+        }</button>
+      </form>
+      <a class="mclose" href="#">Cancel</a>
+    </div>
+  </div>`;
+    }
+
     // A plain form post, so the button works with no JavaScript at all.
     return `<div class="pay">
     ${opts.error ? `<p class="banner cancelled" style="margin:0 0 14px">${esc(opts.error.text)}</p>` : ""}
     <form method="post" action="/i/${esc(opts.token)}/pay">
-      <button class="pay-btn" type="submit">Pay ${formatNaira(amount)}${
-        /*
-         * In naira, on both kinds of invoice, and section 9 spells it out:
-         * "Pay ₦663,500 by card". The headline is the price two people
-         * agreed; this button is a figure about to leave a bank account, and
-         * putting "$500" on it would be a button that charges a different
-         * number than it says.
-         */
-        doc.foreign ? " by card" : ""
-      }${partLabel ? ` &middot; ${esc(partLabel)}` : ""}</button>
+      <button class="pay-btn" type="submit">Pay ${formatNaira(amount)}${partLabel ? ` &middot; ${esc(partLabel)}` : ""}</button>
     </form>
-    <p class="secure">${
-      doc.foreign
-        ? `Paid by card to ${esc(doc.businessName)}. Takes about a minute.`
-        : `Pay by bank transfer to ${esc(doc.businessName)}. Takes about a minute.`
-    }</p>
+    <p class="secure">Pay by bank transfer to ${esc(doc.businessName)}. Takes about a minute.</p>
   </div>`;
   }
 
@@ -866,7 +937,7 @@ function trustBlock(doc: PublicDocument): string {
       ${
         mark
           ? `<img src="${mark}" alt="${processorName}" width="74" height="12">`
-          : `<b>${processorName}</b>`
+          : `${processor === "paystack" ? PAYSTACK_MARK : ""}<b>${processorName}</b>`
       }
     </span>
     <p class="tsmall">
@@ -879,6 +950,31 @@ function trustBlock(doc: PublicDocument): string {
       }
     </p>
   </div>`;
+}
+
+/**
+ * Paystack's mark, drawn from their own artwork: four bars, the last short.
+ * Inline for the same reason as every other mark on this page.
+ */
+const PAYSTACK_MARK = `<svg class="psmark" viewBox="0 0 422 413" aria-hidden="true"><g fill="#0AA5DB">
+<rect width="399" height="84" rx="24"/><rect y="110" width="422" height="84" rx="24"/>
+<rect y="220" width="399" height="83" rx="24"/><rect y="329" width="244" height="84" rx="24"/></g></svg>`;
+
+/**
+ * The line under every page, and the one place Balans asks for anything.
+ *
+ * Whoever receives an invoice is very often somebody who sends them too: the
+ * event planner paying a photographer bills her own clients. So the page
+ * says, once and quietly, what made it and where to get it, under everything
+ * the client came for. The link is tagged so the site can tell these visits
+ * from the rest.
+ */
+function footer(doc: PublicDocument): string {
+  const site = env.SITE_URL.replace(/\/$/, "");
+  const verb = doc.type === "quote" ? "Quoted" : doc.type === "payment_request" ? "Requested" : "Billed";
+  return `<p class="foot">${markSvg("16px")}<span>${verb} with <b>Balans</b> on WhatsApp. <a href="${esc(
+    `${site}/?utm_source=${doc.type}&utm_medium=page_footer`,
+  )}">Send your own invoices in seconds</a></span></p>`;
 }
 
 /** A 404 that does not confirm whether the token was ever real. */

@@ -61,6 +61,11 @@
  * The chat can do that confirmation with two buttons, which already work. So
  * these Flows are `navigate`: they collect, they close, and the verification
  * happens in the conversation where it is already understood.
+ *
+ * Except setup, since 26 September 2026. A mistyped account number came back
+ * as two messages and a form that had to be filled in again from nothing, so
+ * the setup Flow now does ask the bank before it closes (whatsapp/flows/
+ * endpoint.ts). The others have nothing to ask.
  */
 
 import { bankOptions, mfbOptions } from "./banks.ts";
@@ -86,6 +91,8 @@ export type FlowDefinition = {
   /** Shown in the Flows list in Meta's UI. */
   name: string;
   categories: string[];
+  /** Whether it calls /flows/endpoint, which publishing has to point it at. */
+  endpoint?: boolean;
   json: unknown;
 };
 
@@ -96,16 +103,25 @@ export type FlowDefinition = {
 /**
  * Two screens, four fields, one submit — against six back-and-forth messages.
  *
- * The bank lookup deliberately stays outside. What comes back from this is a
- * bank and ten digits; turning that into "Is this ADA OKON?" is a Monnify call
- * and a yes, and the chat already asks that well.
+ * The bank lookup happens inside, since 26 September 2026: "Check account"
+ * asks the bank, a wrong number is said under the box, and a right one comes
+ * back as a last screen with the name on it.
  */
 const onboarding: FlowDefinition = {
   key: "onboarding",
   name: "Balans onboarding",
   categories: ["SIGN_UP"],
+  endpoint: true,
   json: {
     version: VERSION,
+    /*
+     * The one Flow that calls this server, since 26 September 2026: Finish on
+     * PAYOUT asks the bank whose account it is before the form closes. See
+     * whatsapp/flows/endpoint.ts, and the note at the top of this file for
+     * why the others still do not.
+     */
+    data_api_version: "3.0",
+    routing_model: { BUSINESS: ["PAYOUT"], PAYOUT: ["CONFIRM"], CONFIRM: [] },
     screens: [
       {
         id: "BUSINESS",
@@ -149,6 +165,9 @@ const onboarding: FlowDefinition = {
                     payload: {
                       business_name: "${form.business_name}",
                       email: "${form.email}",
+                      // Nothing wrong yet. Filled in by the endpoint when the
+                      // bank does not know the account.
+                      error_messages: {},
                     },
                   },
                 },
@@ -160,12 +179,23 @@ const onboarding: FlowDefinition = {
       {
         id: "PAYOUT",
         title: "Where money lands",
-        terminal: true,
-        success: true,
         // Carried through from the first screen so the submit holds all four.
         data: {
           business_name: { type: "string", __example__: "Kemi Adeyemi Studio" },
           email: { type: "string", __example__: "kemi@studio.ng" },
+          /*
+           * Why the bank refused the account, said under the Account box.
+           * Empty until then. The Form's `error-messages`, keyed by field:
+           * [Probe, 26 Sep 2026] Meta refuses `error-message` on a TextInput
+           * at 7.1 ("Property 'error-message' is not allowed in 'TextInput'
+           * component") and accepts this, while refusing a made-up property
+           * in the same place.
+           */
+          error_messages: {
+            type: "object",
+            properties: { account_number: { type: "string" } },
+            __example__: {},
+          },
         },
         layout: {
           type: "SingleColumnLayout",
@@ -177,6 +207,7 @@ const onboarding: FlowDefinition = {
             {
               type: "Form",
               name: "payout_form",
+              "error-messages": "${data.error_messages}",
               children: [
                 {
                   // Paystack's list, in two because a dropdown holds 200 and
@@ -209,9 +240,9 @@ const onboarding: FlowDefinition = {
                 },
                 {
                   type: "Footer",
-                  label: "Finish",
+                  label: "Check account",
                   "on-click-action": {
-                    name: "complete",
+                    name: "data_exchange",
                     payload: {
                       business_name: "${data.business_name}",
                       email: "${data.email}",
@@ -222,6 +253,56 @@ const onboarding: FlowDefinition = {
                   },
                 },
               ],
+            },
+          ],
+        },
+      },
+      {
+        /*
+         * The name the bank gave, before anything is saved.
+         *
+         * This is the question the chat used to ask afterwards ("That account
+         * is ADA OKON at GTBank. Is that you?"), asked where the answer can
+         * still be changed: the back arrow is the "not me", and it returns to
+         * a form with everything still in it.
+         */
+        id: "CONFIRM",
+        title: "Is this you?",
+        terminal: true,
+        success: true,
+        data: {
+          business_name: { type: "string", __example__: "Kemi Adeyemi Studio" },
+          email: { type: "string", __example__: "kemi@studio.ng" },
+          bank: { type: "string", __example__: "058" },
+          mfb_bank: { type: "string", __example__: "" },
+          account_number: { type: "string", __example__: "0123456789" },
+          account_name: { type: "string", __example__: "KEMI ADEYEMI" },
+          account_line: { type: "string", __example__: "GTBank · 0123456789" },
+        },
+        layout: {
+          type: "SingleColumnLayout",
+          children: [
+            { type: "TextSubheading", text: "Your clients will pay into" },
+            { type: "TextHeading", text: "${data.account_name}" },
+            { type: "TextBody", text: "${data.account_line}" },
+            {
+              type: "TextCaption",
+              text: "Not you? Go back and check the bank and the account number.",
+            },
+            {
+              type: "Footer",
+              label: "Yes, that's me",
+              "on-click-action": {
+                name: "complete",
+                payload: {
+                  business_name: "${data.business_name}",
+                  email: "${data.email}",
+                  bank: "${data.bank}",
+                  mfb_bank: "${data.mfb_bank}",
+                  account_number: "${data.account_number}",
+                  account_name: "${data.account_name}",
+                },
+              },
             },
           ],
         },
@@ -520,6 +601,23 @@ const extrasOf = (items: number): readonly string[] => EXTRA_ITEMS.slice(0, item
  * WORK, which initialises them as number inputs, and strings everywhere else,
  * which is all a form ever returns. See `formScreen`.
  */
+const CURRENCIES_SCHEMA = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      title: { type: "string" },
+      description: { type: "string" },
+      enabled: { type: "boolean" },
+    },
+  },
+  __example__: [
+    { id: "NGN", title: "Naira (₦)", description: "", enabled: true },
+    { id: "USD", title: "US Dollar ($)", description: "Upgrade to Pro to get paid in dollars.", enabled: false },
+  ],
+};
+
 const carriedData = (numbers: "string" | "number"): Record<string, unknown> => ({
   client_name: { type: "string", __example__: "Daniel Uwak" },
   client_email: { type: "string", __example__: "" },
@@ -568,6 +666,15 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
    */
   can_bill_abroad: { type: "boolean", __example__: false },
   /*
+   * Whether the box is on the screen at all, and what is in its list.
+   *
+   * Separate from `can_bill_abroad` because Free sees the box too, with only
+   * naira choosable (see `currencyOptions`). A form opened from a message
+   * older than these keys has neither, and keeps the box hidden.
+   */
+  show_currency: { type: "boolean", __example__: false },
+  currencies: CURRENCIES_SCHEMA,
+  /*
    * The line under the Amount box, which cannot be fixed text any more.
    *
    * "Naira, before VAT" is right for almost everybody and flatly wrong above
@@ -615,10 +722,33 @@ const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<str
   // it and when, and every screen is only carrying them.
   today: "${data.today}",
   can_bill_abroad: "${data.can_bill_abroad}",
+  show_currency: "${data.show_currency}",
+  currencies: "${data.currencies}",
   amount_help: "${data.amount_help}",
   can_whatsapp_client: "${data.can_whatsapp_client}",
   phone_help: "${data.phone_help}",
 });
+
+/**
+ * What the currency box lists, by plan.
+ *
+ * Pro can choose all three. Free sees all three and can choose naira, with
+ * the other two greyed out and a line under each saying what turns them on:
+ * the list is where somebody discovers they could be paid in dollars, so it
+ * is where the upgrade is mentioned. `enabled` on a data-source item is Flow
+ * JSON's own greying-out, so nothing unchoosable can come back from the form.
+ */
+export type CurrencyOption = { id: string; title: string; description?: string; enabled?: boolean };
+
+export function currencyOptions(pro: boolean): CurrencyOption[] {
+  const locked = (what: string): Partial<CurrencyOption> =>
+    pro ? {} : { enabled: false, description: `Upgrade to Pro to get paid in ${what}.` };
+  return [
+    { id: "NGN", title: "Naira (₦)" },
+    { id: "USD", title: "US Dollar ($)", ...locked("dollars") },
+    { id: "GBP", title: "Pound (£)", ...locked("pounds") },
+  ];
+}
 
 /** Some number of extra items, declared. Always strings: a form returns strings. */
 function itemData(count: number): Record<string, unknown> {
@@ -1106,12 +1236,15 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
                */
               label: "Currency",
               required: "${data.can_bill_abroad}",
-              visible: "${data.can_bill_abroad}",
-              "data-source": [
-                { id: "NGN", title: "Naira (₦)" },
-                { id: "USD", title: "US Dollar ($)" },
-                { id: "GBP", title: "Pound (£)" },
-              ],
+              /*
+               * Shown to Free too, since 26 September 2026, with dollars and
+               * pounds in the list but greyed out and a line under each
+               * saying Pro turns them on. A feature nobody can see is one
+               * nobody upgrades for. Which list arrives is decided by
+               * `openedForPlan` in handle.ts; see `currencyOptions`.
+               */
+              visible: "${data.show_currency}",
+              "data-source": "${data.currencies}",
             },
             {
               type: "TextInput",
@@ -1233,6 +1366,8 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           // Never shown on this screen and never edited here; TERMS only has
           // to declare them because it is the screen that hands everything on.
           can_bill_abroad: { type: "boolean", __example__: false },
+          show_currency: { type: "boolean", __example__: false },
+          currencies: CURRENCIES_SCHEMA,
           amount_help: { type: "string", __example__: "Naira, before VAT. Digits only." },
           can_whatsapp_client: { type: "boolean", __example__: false },
           phone_help: { type: "string", __example__: "WhatsApp delivery comes with Pro." },

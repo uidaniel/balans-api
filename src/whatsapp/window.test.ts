@@ -165,4 +165,35 @@ describe("the reminder prompt", () => {
     assert.match(bare, /the invoice/);
     assert.doesNotMatch(bare, /null|undefined/);
   });
+  it("does not call an invoice late on the day it is due", () => {
+    // The first reminder goes on the due date, when the client still has the
+    // whole day. "IS LATE ... was due today" said otherwise, to both of them.
+    const onTheDay = promptMessage({
+      number: 3,
+      clientName: "Zenith Homes",
+      businessName: "Kemi Adeyemi Studio",
+      owedKobo: 350_000_00,
+      due: { y: 2026, m: 9, d: 27 },
+      today: { y: 2026, m: 9, d: 27 },
+      link: "https://balans.ng/i/abc",
+    });
+    assert.match(onTheDay, /IS DUE TODAY/);
+    assert.match(onTheDay, /is due today\./);
+    assert.doesNotMatch(onTheDay, /LATE|was due/);
+  });
+
+  it("says a dollar invoice in dollars", () => {
+    const abroad = promptMessage({
+      number: 4,
+      clientName: "Rajhni Williams",
+      businessName: "Danny Codes Ltd",
+      owedKobo: 664_480_00,
+      owedAgreed: "$500.00",
+      due: { y: 2026, m: 9, d: 28 },
+      today: { y: 2026, m: 10, d: 1 },
+      link: "https://balans.ng/i/abc",
+    });
+    assert.match(abroad, /\$500\.00/);
+    assert.doesNotMatch(abroad, /₦664,480/);
+  });
 });

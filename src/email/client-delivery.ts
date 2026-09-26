@@ -20,6 +20,8 @@ import { db } from "../db/pool.ts";
 import { env } from "../config.ts";
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
+import type { Foreign } from "../../core/currency.ts";
+import { amountFor } from "../documents/client-whatsapp.ts";
 import { sendEmail } from "./send.ts";
 import { amount, layout, paragraph, button } from "./layout.ts";
 import { renderDocumentPdf } from "../documents/pdf.ts";
@@ -106,11 +108,16 @@ export async function emailDocumentToClient(
     business_name: string | null;
     business_email: string | null;
     plan: "free" | "pro";
+    currency: Foreign | "NGN";
+    original_amount_minor: number | null;
+    subtotal_kobo: number;
+    vat_kobo: number;
   }>(
     `SELECT d.user_id, COALESCE(substring(d.ref from 4), d.number::text) AS number, d.type, d.total_kobo, d.due_date, d.valid_until,
             d.public_token, d.notes,
             c.name AS client_name, c.email AS client_email,
-            u.business_name, u.email AS business_email, u.plan
+            u.business_name, u.email AS business_email, u.plan,
+            d.currency, d.original_amount_minor, d.subtotal_kobo, d.vat_kobo
        FROM documents d
        JOIN clients c ON c.id = d.client_id
        JOIN users u   ON u.id = d.user_id
@@ -123,6 +130,12 @@ export async function emailDocumentToClient(
   if (!d.client_email) return { ok: false, why: "no_client_email" };
 
   const label = d.type === "quote" ? "Quote" : "Invoice";
+  /*
+   * The price in what it was agreed in, VAT and all. A client billed $500
+   * reads "$500.00" here, not the naira the card is charged; the page they
+   * land on says what that comes to before they pay.
+   */
+  const price = amountFor(d);
   const business = d.business_name ?? "A Balans user";
   const link = d.public_token
     ? documentLink(d.type, d.public_token)
@@ -142,11 +155,11 @@ export async function emailDocumentToClient(
     paragraph(`${esc(business)} has sent you ${label.toLowerCase()}.`),
     amount(
       d.type === "quote" ? "Quoted" : "Amount due",
-      formatNaira(d.total_kobo),
+      price,
       when ? `${dateWord} ${formatFriendly(when)}` : undefined,
     ),
     d.notes ? paragraph(esc(d.notes), true) : "",
-    link && d.type !== "quote" ? button(`Pay ${formatNaira(d.total_kobo)}`, link) : "",
+    link && d.type !== "quote" ? button(`Pay ${price}`, link) : "",
     link && d.type === "quote" ? button("View quote", link) : "",
     paragraph(closingLine(d.type, label, link), true),
   ]
@@ -164,7 +177,7 @@ export async function emailDocumentToClient(
   const invite =
     link && d.type === "invoice" && when
       ? dueInvite(
-          { uid: documentId, business, amount: formatNaira(d.total_kobo), number: d.number, due: when, link },
+          { uid: documentId, business, amount: price, number: d.number, due: when, link },
           { name: business, email: d.business_email ?? env.SUPPORT_EMAIL },
           { name: d.client_name, email: d.client_email },
         )
@@ -179,10 +192,10 @@ export async function emailDocumentToClient(
       replyTo: d.business_email ?? undefined,
       subject:
         d.number === null
-          ? `${label} from ${business} — ${formatNaira(d.total_kobo)}`
-          : `${label} #${d.number} from ${business} — ${formatNaira(d.total_kobo)}`,
+          ? `${label} from ${business} — ${price}`
+          : `${label} #${d.number} from ${business} — ${price}`,
       html: layout({
-        preheader: `${formatNaira(d.total_kobo)}${when ? `, ${dateWord.toLowerCase()} ${formatFriendly(when)}` : ""}.`,
+        preheader: `${price}${when ? `, ${dateWord.toLowerCase()} ${formatFriendly(when)}` : ""}.`,
         // Who it is from, over what it is: the two things a client checks
         // before deciding whether this is a message they have to deal with.
         eyebrow: business,
@@ -192,7 +205,7 @@ export async function emailDocumentToClient(
       text: [
         `${d.client_name},`,
         "",
-        `${business} has sent you ${label.toLowerCase()}${d.number === null ? "" : ` #${d.number}`} for ${formatNaira(d.total_kobo)}${
+        `${business} has sent you ${label.toLowerCase()}${d.number === null ? "" : ` #${d.number}`} for ${price}${
           when ? `, ${dateWord.toLowerCase()} ${formatFriendly(when)}` : ""
         }.`,
         "",

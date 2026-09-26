@@ -32,7 +32,7 @@ import {
 import { formatNaira } from "../../core/totals.ts";
 import { resolveDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
-import { EXTRA_ITEMS, FRESH_WHO, formScreenId, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
+import { EXTRA_ITEMS, FRESH_WHO, currencyOptions, formScreenId, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION, draftButtons } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
 import { INFO, type Foreign } from "../../core/currency.ts";
@@ -76,6 +76,12 @@ export type Context = {
   bankName?: string;
   accountNumber?: string;
   resolvedAccountName?: string;
+  /**
+   * The account the setup form's endpoint checked with the bank, left for
+   * the chat so it does not ask "Is that you?" about a name already shown in
+   * the form. See whatsapp/flows/endpoint.ts.
+   */
+  flowChecked?: { bankCode: string; accountNumber: string; accountName: string };
   email?: string;
   /** Wrong answers in a row on the current step. */
   attempts?: number;
@@ -248,7 +254,7 @@ export type Effect =
        * What makes "Change it" an edit rather than a re-type. Sent as the
        * screen's `data`, which its Form reads through `init-values`.
        */
-      data?: Record<string, string | number | boolean>;
+      data?: Record<string, unknown>;
       /**
        * Which screen the form opens on.
        *
@@ -1001,6 +1007,7 @@ export const VOICE = {
       b("Your account"),
       "/settings — name, bank, due days",
       "/design — how your invoices look",
+      "/signature — sign your invoices",
       "/pro — unlimited invoices",
     ),
     lines(
@@ -1709,6 +1716,10 @@ function atSettingsMenu(text: string, ctx: Context, msg: Inbound): Step {
    * Nothing here needs to know whether one is set - both answers are useful
    * either way, and the row above already said which it is.
    */
+  // The signature row, on every plan. The page is the whole feature.
+  if (s === "signature") {
+    return { replies: [], next: "idle", context: forget(ctx), effects: [{ type: "show_signature" }] };
+  }
   if (/^(logo|my logo|change (my )?logo|set (my )?logo)\b/.test(s)) {
     return { replies: [VOICE.logoHow], next: "idle", context: forget(ctx), effects: [] };
   }
@@ -2297,7 +2308,7 @@ function withDefaults(doc: PendingDoc, now: Civil): PendingDoc {
 export function blankForm(
   key: "invoice" | "quote" | "request",
   now: Civil,
-): { screen: string; data: Record<string, string | number | boolean> } {
+): { screen: string; data: Record<string, unknown> } {
   return key === "request"
     ? { screen: "WORK", data: { ...PHONE_OFF } }
     : formValues({ type: key, lines: [] }, now);
@@ -2305,7 +2316,7 @@ export function blankForm(
 
 function formValues(doc: PendingDoc, now: Civil): {
   screen: string;
-  data: Record<string, string | number | boolean>;
+  data: Record<string, unknown>;
 } {
   /*
    * One unit's price, in the currency the form will read it in.
@@ -2340,7 +2351,7 @@ function formValues(doc: PendingDoc, now: Civil): {
   const onEntry = items <= 1;
   const iso = (c: Civil): string => `${c.y}-${String(c.m).padStart(2, "0")}-${String(c.d).padStart(2, "0")}`;
 
-  const values: Record<string, string | number | boolean> = {
+  const values: Record<string, unknown> = {
     client_name: doc.clientName ?? "",
     client_email: doc.clientEmail ?? "",
     client_phone: doc.clientPhone ?? "",
@@ -2382,12 +2393,14 @@ function formValues(doc: PendingDoc, now: Civil): {
      *
      * Hidden by default and naira by default, because this function is pure
      * and cannot ask what plan somebody is on. The caller knows, and turns it
-     * on where it applies — see `openedAbroad` in handle.ts. Defaulting the
+     * on where it applies — see `openedForPlan` in handle.ts. Defaulting the
      * other way would put a currency box in front of every freelancer sending
      * an ordinary naira invoice.
      */
     currency: doc.foreign?.currency ?? "",
     can_bill_abroad: false,
+    show_currency: false,
+    currencies: currencyOptions(false),
     amount_help: NAIRA_HELP,
     ...PHONE_OFF,
   };

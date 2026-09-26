@@ -32,7 +32,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { FLOWS } from "./definitions.ts";
+import { FLOWS, currencyOptions } from "./definitions.ts";
 
 type Screen = {
   id: string;
@@ -91,16 +91,16 @@ describe("where the currency box is, and who sees it", () => {
     }
   });
 
-  it("is hidden unless the person opening it can use it", () => {
+  it("is shown by its own flag, so Free can see what Pro unlocks", () => {
     /*
      * The form is one published definition and cannot be built per user, so
-     * the box is always in the JSON and `visible` decides who sees it. For a
-     * free account it is a field that exists only to be ignored, on a form
-     * that is already long.
+     * the box is always in the JSON and `visible` decides who sees it. Since
+     * 26 September 2026 that is Free too, with dollars and pounds greyed out
+     * in the list — so it is not the flag that says who can use it.
      */
     for (const s of work) {
       const box = boxesOn(s).find((c) => c.name === "currency")!;
-      assert.equal(box.visible, "${data.can_bill_abroad}", `${s.id}`);
+      assert.equal(box.visible, "${data.show_currency}", `${s.id}`);
     }
   });
 
@@ -122,14 +122,31 @@ describe("where the currency box is, and who sees it", () => {
     for (const s of work) {
       const box = boxesOn(s).find((c) => c.name === "currency")!;
       assert.equal(box.required, "${data.can_bill_abroad}", `${s.id}`);
-      assert.equal(box.required, box.visible, `${s.id} can drift out of step`);
     }
+    // Required only where it is also shown: `openedForPlan` never turns on
+    // `can_bill_abroad` without `show_currency` beside it.
+    const handle = readFileSync(new URL("../../conversation/handle.ts", import.meta.url), "utf8");
+    const fn = handle.slice(handle.indexOf("async function openedForPlan"));
+    const body = fn.slice(0, fn.indexOf("\n}\n"));
+    assert.match(body, /show_currency: true,[\s\S]*can_bill_abroad: true/);
   });
 
   it("offers the two currencies Balans takes, and naira", () => {
     const box = boxesOn(work[0]!).find((c) => c.name === "currency")!;
-    const ids = (box["data-source"] as { id: string }[]).map((o) => o.id);
-    assert.deepEqual(ids, ["NGN", "USD", "GBP"]);
+    assert.equal(box["data-source"], "${data.currencies}");
+    for (const pro of [true, false]) {
+      assert.deepEqual(currencyOptions(pro).map((o) => o.id), ["NGN", "USD", "GBP"]);
+    }
+  });
+
+  it("greys out dollars and pounds on Free, and says what turns them on", () => {
+    const [ngn, usd, gbp] = currencyOptions(false);
+    assert.notEqual(ngn!.enabled, false);
+    assert.equal(usd!.enabled, false);
+    assert.equal(gbp!.enabled, false);
+    assert.match(usd!.description!, /Pro/);
+    assert.match(gbp!.description!, /Pro/);
+    for (const o of currencyOptions(true)) assert.notEqual(o.enabled, false, o.id);
   });
 
   it("does not use the component `init-value` Meta refuses", () => {

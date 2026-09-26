@@ -28,6 +28,7 @@ import { expireLapsedSubscriptions, renewalsDue } from "../billing/subscription.
 import { payBy } from "../documents/summary.ts";
 import { bankDetailsOf, type BankDetails } from "../documents/bank-details.ts";
 import { emailReminderToClient } from "../email/client-reminder.ts";
+import { amountFor } from "../documents/client-whatsapp.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Quiet hours (F13)                                                          */
@@ -169,9 +170,14 @@ export async function sendDueReminders(
     public_token: string | null;
     client_name: string;
     business_name: string | null;
+    subtotal_kobo: number;
+    vat_kobo: number;
+    currency: string;
+    original_amount_minor: number | null;
   }>(
     `SELECT r.id, r.kind, d.id AS document_id, d.user_id, u.wa_phone,
             d.number, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token,
+            d.subtotal_kobo, d.vat_kobo, d.currency, d.original_amount_minor,
             c.name AS client_name, u.business_name
        FROM reminders r
        JOIN documents d ON d.id = r.document_id
@@ -197,6 +203,9 @@ export async function sendDueReminders(
     if (claimed.rowCount === 0) continue;
 
     const owed = r.total_kobo - r.amount_paid_kobo;
+    // Nothing paid yet on a dollar invoice: still owed in dollars. Part paid,
+    // the rest is only known in naira, which is what was charged.
+    const owedAgreed = r.currency !== "NGN" && r.amount_paid_kobo === 0 ? amountFor(r) : undefined;
     const due: Civil = {
       y: r.due_date.getFullYear(),
       m: r.due_date.getMonth() + 1,
@@ -219,12 +228,13 @@ export async function sendDueReminders(
           today,
           link,
           bank: await bankDetailsOf(r.document_id),
+          owedAgreed,
         }),
         fallback: {
           template: "invoice_overdue_prompt",
           params: [
             r.number === null ? "" : String(r.number),
-            formatNaira(owed),
+            owedAgreed ?? formatNaira(owed),
             formatFriendly(due, today),
             r.client_name,
           ],
@@ -271,9 +281,20 @@ export function promptMessage(x: {
   link: string | null;
   /** The account a naira invoice was sent with; replaces the link. */
   bank?: BankDetails | null;
+  /** What is owed in dollars or pounds, on an invoice priced in them. */
+  owedAgreed?: string;
 }): string {
   const which = x.number === null ? "INVOICE" : `INVOICE #${x.number}`;
   const when = formatFriendly(x.due, x.today);
+  const owed = x.owedAgreed ?? formatNaira(x.owedKobo);
+  /*
+   * The first reminder goes on the due date itself, and an invoice due today
+   * is not late. "IS LATE ... was due today" told the sender their client
+   * had missed a date they still had hours to meet, and handed them a
+   * message saying the same to the client.
+   */
+  const today =
+    x.due.y === x.today.y && x.due.m === x.today.m && x.due.d === x.today.d;
 
   /*
    * The part meant for the client, kept plain.
@@ -293,16 +314,18 @@ export function promptMessage(x: {
   const from = x.businessName === "us" ? "" : ` from ${x.businessName}`;
 
   const forward = para(
-    `Hi ${x.clientName} — a quick note that the invoice${from} for ${formatNaira(x.owedKobo)} was due ${when}.`,
+    today
+      ? `Hi ${x.clientName} — a quick note that the invoice${from} for ${owed} is due today.`
+      : `Hi ${x.clientName} — a quick note that the invoice${from} for ${owed} was due ${when}.`,
     x.bank ? payBy(x.link, x.bank) : x.link ? `Pay here: ${x.link}` : "",
     "Thank you.",
   );
 
   return para(
-    block(`⏰ ${b(`${which} IS LATE`)}`, [
+    block(`⏰ ${b(today ? `${which} IS DUE TODAY` : `${which} IS LATE`)}`, [
       row("Client", x.clientName),
-      row("Amount", b(formatNaira(x.owedKobo))),
-      row("Was due", when),
+      row("Amount", b(owed)),
+      ...(today ? [] : [row("Was due", when)]),
     ]),
     // The rules here were doing real work rather than decorating \u2014 they
     // marked where the copyable message stopped. Its own paragraph says the

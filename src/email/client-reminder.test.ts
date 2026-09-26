@@ -26,3 +26,15 @@ it("tells a client who already paid what to do", () => {
   // On a direct transfer nothing tells us it arrived except the sender.
   assert.match(reminderEmail({ ...base, bankTransfer: true }).text, /Already paid\?/);
 });
+
+it("does not call it late on the day it is due", () => {
+  const m = reminderEmail({ ...base, due: base.today, bankTransfer: true });
+  assert.match(m.text, /is due today\./);
+  assert.doesNotMatch(m.text, /was due/);
+});
+
+it("says a dollar invoice in dollars", () => {
+  const m = reminderEmail({ ...base, owedAgreed: "$500.00", bankTransfer: false });
+  assert.match(m.subject, /\$500\.00/);
+  assert.match(m.html, /Pay \$500\.00/);
+});

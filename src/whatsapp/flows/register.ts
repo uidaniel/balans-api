@@ -4,6 +4,9 @@
  *   npm run flows            create or update, then publish
  *   npm run flows -- --draft create or update, leave unpublished
  *   npm run flows -- --list  what exists now
+ *   npm run flows -- --endpoint-key
+ *                            make the endpoint's key pair and give Meta the
+ *                            public half (once; again only to replace it)
  *
  * Run it whenever `definitions.ts` changes. Meta validates the Flow JSON on
  * upload and refuses it with line and column numbers, which is the only
@@ -18,6 +21,7 @@
 import { closeDb, db } from "../../db/pool.ts";
 import { env } from "../../config.ts";
 import { FLOWS, type FlowDefinition } from "./definitions.ts";
+import { makeEndpointKey } from "./endpoint.ts";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 
@@ -120,6 +124,17 @@ async function register(def: FlowDefinition, existing: Existing[], publish: bool
     console.log(`${def.key}: created ${id}`);
   }
 
+  /*
+   * Where it asks, for a Flow that asks anything. Set before publishing,
+   * because publishing is when Meta pings it: an endpoint that does not
+   * answer is a Flow that will not publish.
+   */
+  if (def.endpoint) {
+    const endpoint_uri = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/flows/endpoint`;
+    await graph(id, { method: "POST", body: JSON.stringify({ endpoint_uri }) });
+    console.log(`${def.key}: endpoint ${endpoint_uri}`);
+  }
+
   if (publish) {
     // A published Flow can be sent to anybody. A draft can only be opened by
     // someone with developer access to the app, which is what --draft is for.
@@ -139,7 +154,17 @@ if (
   try {
     const existing = await listFlows();
 
-    if (args.includes("--list")) {
+    if (args.includes("--endpoint-key")) {
+      const publicKey = await makeEndpointKey();
+      const form = new URLSearchParams({ business_public_key: publicKey });
+      const res = await fetch(`${GRAPH}/${env.WA_PHONE_NUMBER_ID}/whatsapp_business_encryption`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${env.WA_ACCESS_TOKEN}` },
+        body: form,
+      });
+      console.log(`endpoint key made; Meta says ${res.status} ${await res.text()}`);
+      if (!res.ok) process.exitCode = 1;
+    } else if (args.includes("--list")) {
       if (!existing.length) console.log("no flows yet");
       for (const f of existing) console.log(`${f.id}  ${f.status.padEnd(10)} ${f.name}`);
     } else {

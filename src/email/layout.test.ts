@@ -55,7 +55,7 @@ describe("the email shell", () => {
 
   it("puts the two required lines in the footer", () => {
     assert.match(html, /Balans is a product of /);
-    assert.match(html, /Payments are processed by Monnify/);
+    assert.match(html, /Card payments are processed by Paystack/);
   });
 
   it("declares both themes, and overrides the inline light one for dark", () => {

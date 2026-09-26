@@ -125,6 +125,7 @@ export const SETTINGS_ROW_IDS = [
   "invoice design",
   "invoice number",
   "logo",
+  "signature",
   "close my account",
 ] as const;
 
@@ -140,6 +141,8 @@ export function settingsList(x: {
   invoiceStart: number;
   /** F21: Pro only. Null for anybody who cannot have one. */
   logo: { set: boolean } | null;
+  /** Whether a signature is on their documents. Every plan has the row. */
+  signature?: boolean;
 }): {
   body: string;
   button: string;
@@ -238,6 +241,18 @@ ${rest}`,
                 },
               ]
             : []),
+          {
+            /*
+             * The signature page. It existed from 26 September 2026 but was
+             * only reachable by typing "signature", which nothing said, so
+             * nobody found it.
+             */
+            id: "signature",
+            title: "Signature",
+            description: x.signature
+              ? "On your invoices \u2014 tap to change it"
+              : "Not set \u2014 tap to draw or type one",
+          },
           {
             /*
              * Not "delete my account", which is the phrase that CONFIRMS a

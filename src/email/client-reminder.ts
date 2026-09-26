@@ -18,6 +18,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
+import { amountFor } from "../documents/client-whatsapp.ts";
 import { documentLink } from "../documents/links.ts";
 import { sendEmail } from "./send.ts";
 import { amount, button, layout, paragraph } from "./layout.ts";
@@ -36,18 +37,23 @@ export function reminderEmail(x: {
   /** What the client reads, "0019": see documents/client-number.ts. */
   number: number | string | null;
   owedKobo: number;
+  /** The same, said in dollars or pounds on an invoice priced in them. */
+  owedAgreed?: string;
   due: Civil;
   today: Civil;
   link: string;
   bankTransfer: boolean;
 }): ReminderEmail {
   const which = x.number === null ? "the invoice" : `invoice #${x.number}`;
-  const owed = formatNaira(x.owedKobo);
+  const owed = x.owedAgreed ?? formatNaira(x.owedKobo);
   const when = formatFriendly(x.due, x.today);
+  // Sent on the due date first, when nothing is late yet. See promptMessage.
+  const today = x.due.y === x.today.y && x.due.m === x.today.m && x.due.d === x.today.d;
+  const dueWords = today ? "is due today" : `was due ${when}`;
   const body = [
     paragraph(`${esc(x.clientName)},`),
-    paragraph(`A friendly reminder that ${which} from ${esc(x.business)} was due ${esc(when)}.`),
-    amount("Still to pay", owed, `Was due ${when}`),
+    paragraph(`A friendly reminder that ${which} from ${esc(x.business)} ${esc(dueWords)}.`),
+    amount(today ? "To pay" : "Still to pay", owed, today ? "Due today" : `Was due ${when}`),
     // A naira invoice's link opens the business's own account; one abroad,
     // the card checkout. The button says which.
     button(x.bankTransfer ? "See how to pay" : `Pay ${owed}`, x.link),
@@ -63,7 +69,7 @@ export function reminderEmail(x: {
     replyTo: x.businessEmail ?? undefined,
     subject: `Reminder: ${which} from ${x.business} — ${owed}`,
     html: layout({
-      preheader: `${owed}, due ${when}.`,
+      preheader: `${owed}, ${today ? "due today" : `due ${when}`}.`,
       eyebrow: x.business,
       heading: "A quick reminder",
       body,
@@ -71,7 +77,7 @@ export function reminderEmail(x: {
     text: [
       `${x.clientName},`,
       "",
-      `A friendly reminder that ${which} from ${x.business} for ${owed} was due ${when}.`,
+      `A friendly reminder that ${which} from ${x.business} for ${owed} ${dueWords}.`,
       "",
       `${x.bankTransfer ? "How to pay" : "Pay here"}: ${x.link}`,
       "",
@@ -103,8 +109,13 @@ export async function emailReminderToClient(
     business_name: string | null;
     business_email: string | null;
     plan: "free" | "pro";
+    subtotal_kobo: number;
+    vat_kobo: number;
+    currency: string;
+    original_amount_minor: number | null;
   }>(
     `SELECT COALESCE(substring(d.ref from 4), d.number::text) AS number, d.type, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token, d.delivery_type,
+            d.subtotal_kobo, d.vat_kobo, d.currency, d.original_amount_minor,
             c.name AS client_name, c.email AS client_email, c.email_status,
             u.business_name, u.email AS business_email, u.plan
        FROM documents d
@@ -126,6 +137,9 @@ export async function emailReminderToClient(
     businessEmail: d.business_email,
     number: d.number,
     owedKobo: d.total_kobo - d.amount_paid_kobo,
+    // A dollar invoice nobody has paid into yet is still owed in dollars. Part
+    // paid, the rest is only known in naira, which is what was charged.
+    owedAgreed: d.currency !== "NGN" && d.amount_paid_kobo === 0 ? amountFor(d) : undefined,
     due: { y: d.due_date.getFullYear(), m: d.due_date.getMonth() + 1, d: d.due_date.getDate() },
     today,
     link: documentLink(d.type, d.public_token),

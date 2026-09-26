@@ -34,6 +34,7 @@ export const COMMANDS: { command_name: string; command_description: string }[] =
   { command_name: "status", command_description: "Check whether one invoice is paid" },
   { command_name: "settings", command_description: "Your business name, payout bank and due days" },
   { command_name: "design", command_description: "Choose how your invoices look" },
+  { command_name: "signature", command_description: "Draw or type the signature on your invoices" },
   { command_name: "pro", command_description: "Unlimited invoices, your logo and every design" },
   { command_name: "help", command_description: "What I can do" },
 ];
