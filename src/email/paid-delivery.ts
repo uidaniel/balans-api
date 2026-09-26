@@ -18,6 +18,7 @@
  * cost a copy of the paperwork, never the payment.
  */
 
+import { clientNumber } from "../documents/client-number.ts";
 import type { FastifyBaseLogger } from "fastify";
 
 import { db } from "../db/pool.ts";
@@ -118,7 +119,8 @@ export async function emailPaidToClient(
     if (!d.client_email) return { ok: false, why: "no_client_email" };
 
     const business = d.business_name ?? "A Balans user";
-    const label = d.number === null ? "Invoice" : `Invoice #${d.number}`;
+    const shown = clientNumber(d.ref, d.number);
+    const label = shown === null ? "Invoice" : `Invoice #${shown}`;
     const link = d.public_token
       ? `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/${d.public_token}`
       : null;

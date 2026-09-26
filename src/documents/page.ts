@@ -11,6 +11,7 @@
  * user input is rendered into markup a third party sees.
  */
 
+import { clientNumber } from "./client-number.ts";
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { formatMoney } from "../../core/currency.ts";
@@ -439,7 +440,7 @@ export function renderDocument(
      renders it as a blue call link. Tapping the thing we are asking somebody
      to copy would offer to dial it. -->
 <meta name="format-detection" content="telephone=no,date=no,address=no,email=no">
-<title>${label} ${doc.number} from ${esc(doc.businessName)}</title>
+<title>${label} ${clientNumber(doc.ref, doc.number) ?? ""} from ${esc(doc.businessName)}</title>
 <meta name="robots" content="noindex,nofollow">
 <meta name="description" content="${label} for ${esc(formatNaira(doc.totalKobo))} from ${esc(doc.businessName)}.">
 <style>${CSS}</style>
@@ -454,7 +455,7 @@ export function renderDocument(
       // a footnote on the surface that has to carry the most trust.
       logoAvailable() ? logoSvg("40px") : `<span class="dot"></span>balans`
     }</div>
-    <div class="kind">${label} ${doc.number}</div>
+    <div class="kind">${label} ${clientNumber(doc.ref, doc.number) ?? ""}</div>
     <h1>${doc.foreign ? formatMoney(agreedTotalMinor(doc.foreign.amountMinor, doc.subtotalKobo, doc.vatKobo), doc.foreign.currency) : formatNaira(doc.totalKobo)}</h1>
     ${convertedLine(doc)}
     <div class="from">From <b>${esc(doc.businessName)}</b> to ${esc(doc.clientName)}</div>

@@ -427,3 +427,33 @@ describe("a card that cannot be taken at all", () => {
     );
   });
 });
+
+describe("the number a client reads", () => {
+  it("is the reference's four digits, not the sender's own count", () => {
+    const html = render(doc({ number: 2, ref: "BL-0019" }));
+    assert.match(html, /Invoice 0019/);
+    assert.doesNotMatch(html, /Invoice 2\b/);
+  });
+
+  it("falls back to the count on a document from before references", () => {
+    assert.match(render(doc({ number: 7, ref: null })), /Invoice 7/);
+  });
+});
+
+describe("a card invoice with no Monnify subaccount", () => {
+  /*
+   * Setup stopped making Monnify subaccounts on 26 September 2026, and every
+   * dollar invoice after that said "Online payment is not set up". A card
+   * payment settles through a Paystack subaccount made on the first payment,
+   * so a bank account is all it needs.
+   */
+  const card = { currency: "USD", amountMinor: 600_00, rate: 1328.96 } as PublicDocument["foreign"];
+
+  it("can be paid when the sender has a bank account", () => {
+    assert.deepEqual(payable(doc({ foreign: card, subAccountCode: null, hasPayoutAccount: true })), { ok: true });
+  });
+
+  it("cannot when they have none", () => {
+    assert.equal(payable(doc({ foreign: card, subAccountCode: null, hasPayoutAccount: false })).ok, false);
+  });
+});

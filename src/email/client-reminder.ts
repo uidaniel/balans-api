@@ -33,7 +33,8 @@ export function reminderEmail(x: {
   clientName: string;
   business: string;
   businessEmail: string | null;
-  number: number | null;
+  /** What the client reads, "0019": see documents/client-number.ts. */
+  number: number | string | null;
   owedKobo: number;
   due: Civil;
   today: Civil;
@@ -89,7 +90,7 @@ export async function emailReminderToClient(
   log: FastifyBaseLogger,
 ): Promise<boolean> {
   const { rows } = await db().query<{
-    number: number | null;
+    number: string | null;
     type: string;
     total_kobo: number;
     amount_paid_kobo: number;
@@ -103,7 +104,7 @@ export async function emailReminderToClient(
     business_email: string | null;
     plan: "free" | "pro";
   }>(
-    `SELECT d.number, d.type, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token, d.delivery_type,
+    `SELECT COALESCE(substring(d.ref from 4), d.number::text) AS number, d.type, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token, d.delivery_type,
             c.name AS client_name, c.email AS client_email, c.email_status,
             u.business_name, u.email AS business_email, u.plan
        FROM documents d

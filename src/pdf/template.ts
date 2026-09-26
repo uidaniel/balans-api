@@ -51,7 +51,8 @@ export type Variant = "invoice" | "quote" | "receipt" | "sample";
 
 export type DocumentData = {
   variant: Variant;
-  number: number | null;
+  /** What the client reads: see clientNumber in documents/client-number.ts. */
+  number: number | string | null;
   /**
    * The platform-wide reference, for support. Null on a sample and on
    * anything issued before references existed.

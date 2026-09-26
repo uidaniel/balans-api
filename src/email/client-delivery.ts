@@ -93,7 +93,8 @@ export async function emailDocumentToClient(
 ): Promise<DeliveryResult> {
   const { rows } = await db().query<{
     user_id: string;
-    number: number | null;
+    /** What the client reads, "0019": see documents/client-number.ts. */
+    number: string | null;
     type: string;
     total_kobo: number;
     due_date: Date | null;
@@ -106,7 +107,7 @@ export async function emailDocumentToClient(
     business_email: string | null;
     plan: "free" | "pro";
   }>(
-    `SELECT d.user_id, d.number, d.type, d.total_kobo, d.due_date, d.valid_until,
+    `SELECT d.user_id, COALESCE(substring(d.ref from 4), d.number::text) AS number, d.type, d.total_kobo, d.due_date, d.valid_until,
             d.public_token, d.notes,
             c.name AS client_name, c.email AS client_email,
             u.business_name, u.email AS business_email, u.plan

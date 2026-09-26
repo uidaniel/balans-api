@@ -26,7 +26,7 @@ export type DueEvent = {
   business: string;
   /** Already formatted: "₦750,000". */
   amount: string;
-  number: number | null;
+  number: number | string | null;
   due: Civil;
   /** The payment page. */
   link: string;

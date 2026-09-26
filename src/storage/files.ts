@@ -119,7 +119,7 @@ export async function exists(key: string): Promise<boolean> {
  * would argue with, which is a longer list than it first appears: quotes and
  * semicolons break the header itself.
  */
-export function fileName(kind: string, number: number | null, client: string): string {
+export function fileName(kind: string, number: number | string | null, client: string): string {
   const safe = client
     .normalize("NFKD")
     // Anything outside plain ASCII letters, digits and spaces becomes a gap.

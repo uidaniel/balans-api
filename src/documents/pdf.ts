@@ -11,6 +11,7 @@
  * to a link rather than losing the invoice.
  */
 
+import { clientNumber } from "./client-number.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
 import { env } from "../config.ts";
@@ -253,7 +254,7 @@ async function loadForRender(
     templateId: r.plan === "pro" || !isProTemplate(r.template_id) ? r.template_id : null,
     doc: {
       variant,
-      number: r.number,
+      number: clientNumber(r.ref, r.number),
       ref: r.ref,
       businessName: r.business_name ?? "A Balans user",
       businessEmail: r.business_email,

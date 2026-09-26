@@ -59,7 +59,7 @@ export function amountFor(d: {
 /** The template and its words, for one document. Pure, so it can be tested. */
 export function clientMessage(d: {
   type: string;
-  number: number | null;
+  number: number | string | null;
   client_name: string;
   business_name: string | null;
   amount: string;
@@ -89,7 +89,7 @@ export async function whatsappDocumentToClient(
   const { rows } = await db().query<{
     user_id: string;
     type: string;
-    number: number | null;
+    number: string | null;
     total_kobo: number;
     subtotal_kobo: number;
     vat_kobo: number;
@@ -100,7 +100,7 @@ export async function whatsappDocumentToClient(
     client_phone: string | null;
     business_name: string | null;
   }>(
-    `SELECT d.user_id, d.type, d.number, d.total_kobo, d.subtotal_kobo, d.vat_kobo, d.currency,
+    `SELECT d.user_id, d.type, COALESCE(substring(d.ref from 4), d.number::text) AS number, d.total_kobo, d.subtotal_kobo, d.vat_kobo, d.currency,
             d.original_amount_minor, d.public_token,
             c.name AS client_name, c.phone AS client_phone, u.business_name
        FROM documents d

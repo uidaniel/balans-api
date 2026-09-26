@@ -61,6 +61,17 @@ export type PublicDocument = {
   notes: string | null;
   /** Where the user's share settles. Absent means the page cannot take money. */
   subAccountCode: string | null;
+  /**
+   * Whether the sender has a bank account in force at all.
+   *
+   * What a card payment needs: its Paystack subaccount is made from this
+   * account the first time a client pays (see paystack-subaccount.ts), so
+   * the Monnify code above is not asked about. Optional so older fixtures
+   * without it read as "has one only if it has a Monnify code".
+   */
+  hasPayoutAccount?: boolean;
+  /** "BL-0019": what the client reads as the number (see client-number.ts). */
+  ref?: string | null;
   plan: "free" | "pro";
   /** F7: empty for an ordinary invoice, two or more for a deposit. */
   parts: Part[];
@@ -113,13 +124,15 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     fx_rate: string | null;
     client_name: string;
     sub_account_code: string | null;
+    has_payout_account: boolean;
+    ref: string | null;
     delivery_type: "payment_link" | "bank_details";
     bank_details_bank_name: string | null;
     bank_details_account_name: string | null;
     bank_details_account_last4: string | null;
     bank_details_account_number_encrypted: Buffer | null;
   }>(
-    `SELECT d.id, d.user_id, d.type, d.number, d.status,
+    `SELECT d.id, d.user_id, d.type, d.number, d.ref, d.status,
             d.subtotal_kobo, d.vat_kobo, d.total_kobo, d.amount_paid_kobo,
             d.pass_fees_to_client, d.due_date, d.valid_until, d.issue_date, d.notes,
             d.currency, d.original_amount_minor, d.fx_rate,
@@ -127,7 +140,8 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
             d.bank_details_account_last4, d.bank_details_account_number_encrypted,
             u.business_name, u.plan,
             c.name AS client_name,
-            b.subaccount_code AS sub_account_code
+            b.subaccount_code AS sub_account_code,
+            (b.id IS NOT NULL) AS has_payout_account
        FROM documents d
        JOIN users u   ON u.id = d.user_id
        JOIN clients c ON c.id = d.client_id
@@ -162,6 +176,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     userId: r.user_id,
     type: r.type,
     number: r.number,
+    ref: r.ref,
     status: r.status,
     businessName: r.business_name ?? "A Balans user",
     clientName: r.client_name,
@@ -181,6 +196,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     issueDate: civil(r.issue_date),
     notes: r.notes,
     subAccountCode: r.sub_account_code,
+    hasPayoutAccount: r.has_payout_account,
     plan: r.plan,
     // The account stamped on it when it was sent — never the live one, so a
     // bank change cannot redirect money a client is about to send.
@@ -277,6 +293,16 @@ export function payable(d: PublicDocument): { ok: true } | { ok: false; why: str
   // A naira invoice is paid by transfer to the sender's own account, which
   // the page shows instead of a Pay button (see bank-details.ts).
   if (d.bank) return { ok: false, why: "bank_details" };
+  /*
+   * Priced abroad: a card payment through Paystack, settling to the sender's
+   * own bank account through a subaccount made on the first payment. So it
+   * needs a bank account, not a Monnify subaccount. Asking for the Monnify
+   * one turned every dollar invoice into "Online payment is not set up" once
+   * setup stopped making them, on 26 September 2026.
+   */
+  if (d.foreign) {
+    return d.hasPayoutAccount || d.subAccountCode ? { ok: true } : { ok: false, why: "no_account" };
+  }
   // Without a subaccount the money has nowhere to settle but our own wallet,
   // which is the one thing Balans must never do.
   if (!d.subAccountCode) return { ok: false, why: "no_account" };

@@ -12,6 +12,7 @@
  *     number; what is owed is read from the row.
  */
 
+import { clientNumber } from "../../documents/client-number.ts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
 import { defaults, env } from "../../config.ts";
@@ -337,7 +338,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
 
     const name = fileName(
       doc.type === "quote" ? "Quote" : "Invoice",
-      doc.number,
+      clientNumber(doc.ref, doc.number),
       doc.clientName,
     );
 
@@ -364,7 +365,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       uid: doc.id,
       business: doc.businessName,
       amount: formatNaira(owed),
-      number: doc.number,
+      number: clientNumber(doc.ref, doc.number),
       due: doc.dueDate,
       link: documentLink(doc.type, req.params.token),
     });
@@ -620,7 +621,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       // placeholder that might belong to somebody real.
       customerEmail: `${reference}@receipts.balans.ng`,
       paymentReference: reference,
-      description: `${doc.type === "quote" ? "Quote" : "Invoice"} ${doc.number} from ${doc.businessName}`,
+      description: `${doc.type === "quote" ? "Quote" : "Invoice"} ${clientNumber(doc.ref, doc.number)} from ${doc.businessName}`,
       redirectUrl: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/pay/callback?ref=${reference}`,
       // Everything but our fee goes straight to the user's subaccount. This is
       // the line that keeps Balans out of the money.
