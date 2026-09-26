@@ -20,6 +20,7 @@ import type { Inbound } from "../whatsapp/inbound.ts";
 import {
   ABROAD_HELP,
   PHONE_PRO_HELP,
+  blankForm,
   repriced,
   step,
   draftOnScreen,
@@ -1055,7 +1056,11 @@ async function runEffects(
             data: await openedForPlan(
               userId,
               effect.data ??
-                (effect.key === "business_details" ? await detailsFor(userId) : undefined),
+                (effect.key === "business_details"
+                  ? await detailsFor(userId)
+                  : effect.key === "invoice" || effect.key === "quote" || effect.key === "request"
+                    ? blankForm(effect.key, ctx.today).data
+                    : undefined),
             ),
             // A draft flow opens for anyone with developer access to the app,
             // which is how this is tested before verification comes through.

@@ -2212,9 +2212,7 @@ function buildOrAsk(doc: PendingDoc, ctx: Context, now: Civil, askDate = false):
            * floor. The request form declares only the Phone box's two, so
            * that is all it is given.
            */
-          ...(doc.type === "payment_request"
-            ? { screen: "WORK", data: { ...PHONE_OFF } }
-            : formValues({ type: doc.type, lines: [] }, now)),
+          ...blankForm(form.key as "invoice" | "quote" | "request", now),
           fallback: { line: template, holdAt: "awaiting_field:client_name" },
         },
       ],
@@ -2287,6 +2285,24 @@ function withDefaults(doc: PendingDoc, now: Civil): PendingDoc {
  * The date goes across as words rather than a calendar value: the field takes
  * words, and the same reader handles "8 October 2026" as handles "Friday".
  */
+/**
+ * What an empty document form opens with.
+ *
+ * Every form the three document Flows are sent with needs this, however it
+ * was sent: the "Create invoice" button on the setup-done card went out with
+ * no data at all, and a form with no data has every binding undefined — the
+ * Phone box came up typeable on Free and the date picker had no floor.
+ * handle.ts falls back to it for any document form sent without data.
+ */
+export function blankForm(
+  key: "invoice" | "quote" | "request",
+  now: Civil,
+): { screen: string; data: Record<string, string | number | boolean> } {
+  return key === "request"
+    ? { screen: "WORK", data: { ...PHONE_OFF } }
+    : formValues({ type: key, lines: [] }, now);
+}
+
 function formValues(doc: PendingDoc, now: Civil): {
   screen: string;
   data: Record<string, string | number | boolean>;

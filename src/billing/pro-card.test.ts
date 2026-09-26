@@ -16,7 +16,7 @@
  * not take the message down with it.
  *
  * And because a card is a picture, its claims are the only ones in the
- * product no test can read. "₦4,000" and "8 designs" are painted on. If the
+ * product no test can read. "₦3,000" and "8 designs" are painted on. If the
  * config moves, the artwork is silently wrong and nothing fails. The last
  * block fails instead, and says which file to redraw.
  */
@@ -81,7 +81,7 @@ describe("the Pro message", () => {
     // with images turned off, or on a client that will not load one, still
     // gets the whole offer.
     const words = proOffer(2);
-    assert.match(words, /4,000/, "the price");
+    assert.match(words, /3,000/, "the price");
     assert.match(words, /Unlimited invoices/);
     assert.match(words, /logo on every invoice/);
     assert.match(words, /invoice designs/);
@@ -247,7 +247,7 @@ describe("what the cards have painted on them", () => {
   });
 
   it("still match the Pro price", () => {
-    assert.equal(defaults.plans.pro.priceKobo, 4_000_00, 'both cards say "₦4,000 a month"');
+    assert.equal(defaults.plans.pro.priceKobo, 3_000_00, 'both cards say "₦3,000 a month"');
   });
 
   it("still match the number of designs", () => {

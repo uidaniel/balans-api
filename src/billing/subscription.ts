@@ -140,8 +140,8 @@ export async function openSubscription(
 
   return tx(async (c) => {
     // One open subscription at a time. Asking twice should not owe twice.
-    const { rows: open } = await c.query<{ id: string; price_kobo: number }>(
-      `SELECT id, price_kobo FROM subscriptions
+    const { rows: open } = await c.query<{ id: string; price_kobo: number; status: string }>(
+      `SELECT id, price_kobo, status FROM subscriptions
         WHERE user_id = $1 AND status IN ('pending', 'collecting')
         ORDER BY period_start DESC LIMIT 1`,
       [userId],
@@ -153,6 +153,23 @@ export async function openSubscription(
         method,
       ]);
       await c.query(`UPDATE users SET plan_collection_method = $2 WHERE id = $1`, [userId, method]);
+      /*
+       * Opened at an old price and nothing paid yet: take today's. The price
+       * went from ₦4,000 to ₦3,000 on 26 September 2026, and an offer that
+       * says ₦3,000 must not open an account asking for ₦4,000. The transfer
+       * account goes with it, because Paystack matches a transfer by amount.
+       * A subscription already collecting from invoices keeps its figure.
+       */
+      if (open[0].status === "pending" && open[0].price_kobo !== priceKobo) {
+        await c.query(
+          `UPDATE subscriptions
+              SET price_kobo = $2, transfer_bank_name = NULL, transfer_account_number = NULL,
+                  transfer_account_name = NULL, transfer_expires_at = NULL
+            WHERE id = $1`,
+          [open[0].id, priceKobo],
+        );
+        return { id: open[0].id, priceKobo };
+      }
       return { id: open[0].id, priceKobo: open[0].price_kobo };
     }
 

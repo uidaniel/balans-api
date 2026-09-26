@@ -210,11 +210,11 @@ export const defaults = {
      * Pro takes no transaction fee at all.
      *
      * It was 0.5%. On the numbers that is worth about ₦840 a month from a
-     * user sending twelve invoices — a rounding error beside the ₦4,000
+     * user sending twelve invoices — a rounding error beside the ₦3,000
      * subscription, and it made the pitch conditional: "cheaper fees" is an
      * argument somebody has to do arithmetic to believe.
      *
-     * Zero is a sentence instead: pay ₦4,000 and keep everything except what
+     * Zero is a sentence instead: pay ₦3,000 and keep everything except what
      * the bank takes. For a freelancer billing ₦350,000 that is the difference
      * between ₦1,000 of Balans fees and none.
      *
@@ -222,7 +222,7 @@ export const defaults = {
      * applying the rate, so a 0% fee with a ₦50 floor still charges ₦50.
      */
     pro: {
-      priceKobo: 4_000_00,
+      priceKobo: 3_000_00, // ₦4,000 until 26 September 2026
       documentsPerMonth: null,
       feePercentBps: 0,
       feeMinKobo: 0,
