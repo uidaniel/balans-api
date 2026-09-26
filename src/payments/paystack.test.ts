@@ -34,6 +34,7 @@ const KEY = "sk_test_0000000000000000000000000000000000000000";
 process.env.PAYSTACK_SECRET_KEY = KEY;
 
 const {
+  resolveAccountNumber,
   chargeByTransfer,
   createSubAccount,
   initTransaction,
@@ -504,5 +505,29 @@ describe("an account number to pay Pro into", () => {
   it("does not treat an answer with no account number as one", async () => {
     const { fetchImpl } = answering({ status: true, data: { status: "pending_bank_transfer" } });
     assert.equal((await ask(fetchImpl)).ok, false);
+  });
+});
+
+describe("whose account a number is", () => {
+  it("takes the name the bank gives", async () => {
+    const { fetchImpl, seen } = answering({
+      status: true,
+      data: { account_number: "0123456789", account_name: "KEMI ADEYEMI", bank_id: 9 },
+    });
+    const r = await resolveAccountNumber("0123456789", "999992", fetchImpl);
+    assert.ok(r.ok && r.account.accountName === "KEMI ADEYEMI");
+    assert.match(seen[0]!.url, /\/bank\/resolve\?account_number=0123456789&bank_code=999992$/);
+  });
+
+  it("calls a number the bank does not know the user's mistake", async () => {
+    const { fetchImpl } = answering({ status: false, message: "Could not resolve account name. Check parameters or try again." }, 422);
+    const r = await resolveAccountNumber("0000000000", "058", fetchImpl);
+    assert.ok(!r.ok && r.reason === "invalid_details");
+  });
+
+  it("calls anything else ours, so it can be asked again elsewhere", async () => {
+    const { fetchImpl } = answering({ status: false, message: "Test mode daily limit exceeded" }, 429);
+    const r = await resolveAccountNumber("0123456789", "058", fetchImpl);
+    assert.ok(!r.ok && r.reason === "provider_error");
   });
 });

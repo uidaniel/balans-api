@@ -201,7 +201,7 @@ export const legalConsentVersion = process.env.LEGAL_CONSENT_VERSION ?? "2026-09
 export const defaults = {
   plans: {
     free: {
-      documentsPerMonth: 5,
+      documentsPerMonth: 3,
       feePercentBps: 100, // 1%
       feeMinKobo: 100_00,
       feeCapKobo: 1_000_00,

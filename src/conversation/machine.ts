@@ -119,7 +119,7 @@ export type Context = {
     bankName: string;
     accountNumber: string;
     accountName: string;
-    subAccountCode: string;
+    subAccountCode: string | null;
   };
 
   /**

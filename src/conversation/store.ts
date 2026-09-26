@@ -180,7 +180,7 @@ export async function saveBankAccount(
   await db().query(
     `INSERT INTO bank_accounts
        (user_id, bank_code, bank_name, account_last4, account_number_encrypted, account_name, provider, status)
-     VALUES ($1, $2, $3, $4, $5, $6, 'monnify', 'pending')`,
+     VALUES ($1, $2, $3, $4, $5, $6, 'paystack', 'pending')`,
     [
       userId,
       bank.bankCode,
@@ -266,7 +266,7 @@ export async function reopenAccount(userId: string): Promise<void> {
  * unique index permits exactly one active account per user — which is what
  * stops a half-finished bank change leaving money going to two places.
  */
-export async function activateBankAccount(userId: string, subAccountCode: string): Promise<void> {
+export async function activateBankAccount(userId: string, subAccountCode: string | null): Promise<void> {
   await tx(async (c) => {
     await c.query(
       `UPDATE bank_accounts SET status = 'retired' WHERE user_id = $1 AND status = 'active'`,

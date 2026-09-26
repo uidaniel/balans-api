@@ -19,7 +19,9 @@
     "templates": "node --env-file=.env.local --experimental-strip-types src/whatsapp/register-templates.ts",
     "jobs": "node --env-file=.env.local --experimental-strip-types src/jobs/run-once.ts",
     "commands": "node --env-file=.env.local --experimental-strip-types src/whatsapp/register-commands.ts",
-    "flows": "node --env-file=.env.local --experimental-strip-types src/whatsapp/flows/register.ts"
+    "flows": "node --env-file=.env.local --experimental-strip-types src/whatsapp/flows/register.ts",
+    "banks": "node --env-file=.env.local --experimental-strip-types src/whatsapp/flows/refresh-banks.ts",
+    "cards": "node --experimental-strip-types src/billing/pro-cards.ts"
   },
   "dependencies": {
     "fastify": "^5.2.1",

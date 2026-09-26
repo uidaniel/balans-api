@@ -63,8 +63,9 @@
  * happens in the conversation where it is already understood.
  */
 
-import { bankOptions } from "./banks.ts";
-import { env } from "../../config.ts";
+import { bankOptions, mfbOptions } from "./banks.ts";
+import { defaults, env } from "../../config.ts";
+import { formatNaira } from "../../../core/totals.ts";
 
 /** The marketing site, which owns the legal documents. */
 const site = env.SITE_URL.replace(/[/]$/, "");
@@ -171,18 +172,31 @@ const onboarding: FlowDefinition = {
           children: [
             {
               type: "TextSubheading",
-              text: "Your client pays, the money is split as they pay, and your share lands here.",
+              text: "Your clients pay straight into this account.",
             },
             {
               type: "Form",
               name: "payout_form",
               children: [
                 {
+                  // Paystack's list, in two because a dropdown holds 200 and
+                  // there are 287 banks. See banks.ts.
                   type: "Dropdown",
                   name: "bank",
                   label: "Bank",
                   required: true,
                   "data-source": bankOptions(),
+                },
+                {
+                  type: "TextCaption",
+                  text: "Not in the list? Choose \u201cMicrofinance bank (below)\u201d, then pick yours here.",
+                },
+                {
+                  type: "Dropdown",
+                  name: "mfb_bank",
+                  label: "MFB",
+                  required: false,
+                  "data-source": mfbOptions(),
                 },
                 {
                   type: "TextInput",
@@ -194,15 +208,6 @@ const onboarding: FlowDefinition = {
                   "max-chars": 10,
                 },
                 {
-                  type: "TextInput",
-                  name: "other_bank",
-                  label: "Other bank",
-                  "helper-text": "Only if you chose Other above. Leave it empty otherwise.",
-                  required: false,
-                  "input-type": "text",
-                  "max-chars": 60,
-                },
-                {
                   type: "Footer",
                   label: "Finish",
                   "on-click-action": {
@@ -211,7 +216,7 @@ const onboarding: FlowDefinition = {
                       business_name: "${data.business_name}",
                       email: "${data.email}",
                       bank: "${form.bank}",
-                      other_bank: "${form.other_bank}",
+                      mfb_bank: "${form.mfb_bank}",
                       account_number: "${form.account_number}",
                     },
                   },
@@ -1446,7 +1451,9 @@ const consent: FlowDefinition = {
             },
             {
               type: "TextBody",
-              text: "Free covers 5 documents a month. Pro is \u20a64,000 a month for unlimited documents, your logo and every design. Balans takes no fee on what your clients pay you. Cancel any time \u2014 your invoices and records stay where they are.",
+              // From the config, so the screen somebody agrees to cannot
+              // disagree with the limit that is actually enforced.
+              text: `Free covers ${defaults.plans.free.documentsPerMonth} documents a month. Pro is ${formatNaira(defaults.plans.pro.priceKobo)} a month for unlimited documents, your logo and every design. Balans takes no fee on what your clients pay you. Cancel any time \u2014 your invoices and records stay where they are.`,
             },
             {
               type: "TextBody",

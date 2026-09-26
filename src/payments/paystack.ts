@@ -196,7 +196,9 @@ export type PaystackBank = { name: string; code: string };
  */
 export async function listBanks(fetchImpl: typeof fetch = fetch): Promise<PaystackBank[]> {
   const res = await call<{ name?: string; code?: string }[]>(
-    `/bank?currency=NGN&perPage=100`,
+    // All of them. At 100 a page the list stopped at "L", and 187 banks —
+    // Moniepoint, OPay, PalmPay among them — could not be found at all.
+    `/bank?country=nigeria&currency=NGN&perPage=500`,
     { method: "GET" },
     fetchImpl,
   );
@@ -377,6 +379,46 @@ export async function initTransaction(
     accessCode: res.body.access_code ?? "",
     reference: res.body.reference ?? input.reference,
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Whose account is this                                                      */
+/* -------------------------------------------------------------------------- */
+
+export type AccountCheck =
+  | { ok: true; account: { accountNumber: string; accountName: string; bankCode: string } }
+  | { ok: false; reason: "invalid_details" | "provider_error"; message: string };
+
+/**
+ * Asks the bank, through Paystack, whose account this is.
+ *
+ * The name that comes back is what the user confirms and what every invoice
+ * prints, so it is never taken from the user. A 422 "Could not resolve
+ * account name" is somebody's typo; anything else — a bank that did not
+ * answer, a test key over its daily allowance — is ours, and the caller may
+ * ask somebody else before blaming the user for it.
+ */
+export async function resolveAccountNumber(
+  accountNumber: string,
+  bankCode: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<AccountCheck> {
+  const q = new URLSearchParams({ account_number: accountNumber, bank_code: bankCode });
+  const res = await call<{ account_number?: string; account_name?: string }>(
+    `/bank/resolve?${q}`,
+    { method: "GET" },
+    fetchImpl,
+  );
+  if (res.ok && res.body.account_name) {
+    return {
+      ok: true,
+      account: { accountNumber: res.body.account_number ?? accountNumber, accountName: res.body.account_name, bankCode },
+    };
+  }
+  if (!res.ok && res.status === 422 && /could not resolve|invalid|not found/i.test(res.message)) {
+    return { ok: false, reason: "invalid_details", message: res.message };
+  }
+  return { ok: false, reason: "provider_error", message: res.ok ? "no account name returned" : res.message };
 }
 
 /* -------------------------------------------------------------------------- */

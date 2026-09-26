@@ -29,6 +29,7 @@ import { proOffer, proOfferButtons, payLinkCaption, payLinkMessage } from "./mes
 import { LIMIT_CARD, UPGRADE_CARD, PRO_CARD } from "../conversation/machine.ts";
 import { defaults } from "../config.ts";
 import { availableTo } from "../pdf/templates.ts";
+import { proCardHtml } from "./pro-cards.ts";
 
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 const limit = defaults.plans.free.documentsPerMonth!;
@@ -258,13 +259,29 @@ describe("the card that arrives once the money is in", () => {
 
 describe("what the cards have painted on them", () => {
   /*
-   * Not assertions about the code. These are the values the artwork at
-   * assets/brand/limit.png and assets/brand/upgrade.png was drawn around.
-   * Changing one means redrawing them — this is here so that is a decision
-   * somebody makes rather than something they hear from a customer.
+   * The cards are drawn from pro-cards.ts (npm run cards), so what they say is
+   * read from the config when they are rendered. These check the page they
+   * are rendered from; the PNGs in assets/brand have to be re-rendered after
+   * a change, which is the one thing a test cannot do for you.
    */
-  it("still match the free document limit", () => {
-    assert.equal(limit, 5, 'limit.png says "Five done" and "five documents a month"');
+  it("state the free document limit, in words", () => {
+    const words = ["zero", "one", "two", "three", "four", "five", "six"];
+    const html = proCardHtml("limit");
+    const n = words[limit]!;
+    assert.match(html, new RegExp(`${n[0]!.toUpperCase()}${n.slice(1)} done\\.`));
+    assert.match(html, new RegExp(`covers ${n} documents a month`));
+  });
+
+  it("promise nothing that went away with the Monnify split", () => {
+    for (const kind of ["limit", "upgrade"] as const) {
+      // The words on the card, not the fonts embedded in its stylesheet.
+      const words = proCardHtml(kind).replace(/<style>[\s\S]*?<\/style>/, "").replace(/<[^>]+>/g, " ");
+      assert.doesNotMatch(words, /\bfee\b/i, `${kind} still mentions a fee`);
+    }
+  });
+
+  it("only say \"done\" on the card for somebody who is", () => {
+    assert.doesNotMatch(proCardHtml("upgrade"), /done\./);
   });
 
   it("still match the Pro price", () => {

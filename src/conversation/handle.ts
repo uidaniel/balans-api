@@ -12,14 +12,8 @@ import { randomUUID } from "node:crypto";
 import { legalConsentVersion } from "../config.ts";
 import { db, tx } from "../db/pool.ts";
 import { markRead, normalisePhone, sendButtons, sendText, type ReplyButton } from "../whatsapp/client.ts";
-import {
-  createSubAccount,
-  initTransaction,
-  listBanks,
-  matchBank,
-  payoutBlocked,
-  resolveAccount,
-} from "../payments/monnify.ts";
+import { initTransaction } from "../payments/monnify.ts";
+import { checkAccount, findBank } from "../payments/bank-directory.ts";
 import { checkCode, issueCode } from "../lib/codes.ts";
 import { sendEmail, transport, verificationEmail, welcomeEmail } from "../email/send.ts";
 import { displayNumber } from "../whatsapp/number.ts";
@@ -268,7 +262,7 @@ import { owedCard } from "../documents/owed-card.ts";
 import { periodCard } from "../documents/period-card.ts";
 import { invoiceableKobo } from "../../core/amount.ts";
 import { totalsFor } from "../../core/totals.ts";
-import { OTHER_BANK } from "../whatsapp/flows/banks.ts";
+import { MFB_CHOICE } from "../whatsapp/flows/banks.ts";
 import { sendDocument, uploadDocument } from "../whatsapp/client.ts";
 import {
   loadConversation,
@@ -803,7 +797,7 @@ type EffectOutcome = {
     bankName: string;
     accountNumber: string;
     accountName: string;
-    subAccountCode: string;
+    subAccountCode: string | null;
   };
 };
 
@@ -852,7 +846,7 @@ async function runEffects(
       bankName: string;
       accountNumber: string;
       accountName: string;
-      subAccountCode: string;
+      subAccountCode: string | null;
     };
   } = { today: { y: 1970, m: 1, d: 1 } },
 ): Promise<EffectOutcome> {
@@ -865,7 +859,7 @@ async function runEffects(
     bankName: string;
     accountNumber: string;
     accountName: string;
-    subAccountCode: string;
+    subAccountCode: string | null;
   } | undefined;
   // The bank's answer, so the machine's context carries it into the next turn.
   let resolvedName: string | undefined;
@@ -912,8 +906,7 @@ async function runEffects(
         case "resolve_account": {
           // F17: the name comes from the bank, never from the user. It is what
           // they confirm, and what the name check in F26 compares against.
-          const banks = await listBanks();
-          const bank = matchBank(effect.bankQuery, banks);
+          const bank = await findBank(effect.bankQuery);
 
           if (!bank) {
             extra.push(
@@ -926,27 +919,7 @@ async function runEffects(
             break;
           }
 
-
-          // Said before the name check, not after it. Learning that an account
-          // cannot be paid into is bad news either way; hearing it after you
-          // have confirmed your own name is worse, and costs two more messages.
-          const blocked = payoutBlocked(bank.code);
-          if (blocked) {
-            log.info({ userId, bank: bank.name }, "payout-blocked bank offered");
-            extra.push(
-              para(
-                `⛔ ${b(`${blocked} cannot receive payouts yet.`)}`,
-                lines(
-                  "Our payments provider will not settle into wallet accounts like",
-                  `${b("OPay")}, ${b("PalmPay")} or ${b("Moniepoint")} — we are working on it.`,
-                ),
-                `Send a regular bank account instead — like ${b("GTBank 0123456789")}.`,
-              ),
-            );
-            holdAt = "onboarding:bank";
-            break;
-          }
-          const resolved = await resolveAccount(effect.accountNumber, bank.code);
+          const resolved = await checkAccount(effect.accountNumber, bank);
 
           if (!resolved.ok) {
             log.warn({ userId, reason: resolved.reason }, "account resolution failed");
@@ -1005,60 +978,16 @@ async function runEffects(
             break;
           }
 
-          const created = await createSubAccount({
-            accountNumber: pending.accountNumber,
-            bankCode: pending.bankCode,
-            email: pending.email ?? `${userId}@users.balans.ng`,
-          });
-
-          if (!created.ok) {
-            await flagSetupForReview(userId, created.message, log);
-            const tries = await countSetupFailures(userId);
-            log.error(
-              { userId, message: created.message, retryable: created.retryable, tries },
-              "subaccount creation failed",
-            );
-
-            // F1: after three failures, stop asking and hand it to a person.
-            // Repeating a question somebody has already answered correctly three
-            // times is the worst thing a setup flow can do to them.
-            if (tries >= 3) {
-              extra.push(
-                para(
-                  `🙋 ${b("I cannot set that account up for payouts.")}`,
-                  lines(
-                    `Email ${b("hello@balans.ng")} and a person will finish it with you — usually the same day.`,
-                    "Nothing you have told me is lost.",
-                  ),
-                ),
-              );
-              holdAt = "onboarding:bank";
-              break;
-            }
-
-            extra.push(
-              created.retryable
-                ? lines(
-                    "⏳ Our payments provider is not answering just now.",
-                    `Reply ${b("yes")} to try that account again.`,
-                  )
-                : para(
-                    b("That account cannot receive payouts."),
-                    lines(
-                      "Some fintech and wallet accounts are not supported yet.",
-                      `Send a ${b("regular bank account")} instead — like ${b("GTBank 0123456789")}.`,
-                    ),
-                  ),
-            );
-            holdAt = created.retryable ? "onboarding:confirm_account" : "onboarding:bank";
-            break;
-          }
-
-          await activateBankAccount(userId, created.account.subAccountCode);
-          log.info(
-            { userId, subAccount: created.account.subAccountCode, reused: created.reused ?? false },
-            created.reused ? "reused an existing subaccount" : "subaccount created",
-          );
+          /*
+           * Confirmed, so it is the account. Nothing to create at a processor
+           * any more: a naira invoice is paid straight into it, and the
+           * Paystack subaccount a card payment needs is made the first time
+           * somebody bills abroad (see paystack-subaccount.ts). This step
+           * used to create a Monnify subaccount, and failed for every OPay,
+           * PalmPay and Moniepoint account Monnify would not settle into.
+           */
+          await activateBankAccount(userId, null);
+          log.info({ userId }, "payout account confirmed");
           break;
         }
 
@@ -1880,8 +1809,7 @@ async function runEffects(
         }
 
         case "resolve_new_account": {
-          const banks = await listBanks();
-          const bank = matchBank(effect.bankQuery, banks);
+          const bank = await findBank(effect.bankQuery);
           if (!bank) {
             extra.push(
               lines(
@@ -1893,27 +1821,7 @@ async function runEffects(
             break;
           }
 
-
-          // Said before the name check, not after it. Learning that an account
-          // cannot be paid into is bad news either way; hearing it after you
-          // have confirmed your own name is worse, and costs two more messages.
-          const blocked = payoutBlocked(bank.code);
-          if (blocked) {
-            log.info({ userId, bank: bank.name }, "payout-blocked bank offered");
-            extra.push(
-              para(
-                `⛔ ${b(`${blocked} cannot receive payouts yet.`)}`,
-                lines(
-                  "Our payments provider will not settle into wallet accounts like",
-                  `${b("OPay")}, ${b("PalmPay")} or ${b("Moniepoint")} — we are working on it.`,
-                ),
-                `Send a regular bank account instead — like ${b("GTBank 0123456789")}.`,
-              ),
-            );
-            holdAt = "settings:bank_details";
-            break;
-          }
-          const resolved = await resolveAccount(effect.accountNumber, bank.code);
+          const resolved = await checkAccount(effect.accountNumber, bank);
           if (!resolved.ok) {
             extra.push(
               resolved.reason === "invalid_details"
@@ -1927,33 +1835,14 @@ async function runEffects(
             break;
           }
 
-          // The subaccount is created now, so that committing is only a
-          // scheduling decision and cannot fail halfway.
-          const created = await createSubAccount({
-            accountNumber: effect.accountNumber,
-            bankCode: bank.code,
-            email: `${userId}@users.balans.ng`,
-          });
-          if (!created.ok) {
-            log.error({ userId, message: created.message }, "new subaccount failed");
-            extra.push(
-              created.retryable
-                ? "Our payments provider is not answering. Send the details again in a moment."
-                : para(
-                    b("That account cannot receive payouts."),
-                    `Send a ${b("regular bank account")} instead.`,
-                  ),
-            );
-            holdAt = "settings:bank_details";
-            break;
-          }
-
           pendingBankChange = {
             bankCode: bank.code,
             bankName: bank.name,
             accountNumber: effect.accountNumber,
             accountName: resolved.account.accountName,
-            subAccountCode: created.account.subAccountCode,
+            // No Monnify subaccount any more: naira is paid straight into the
+            // account, and the Paystack one for card payments is made on demand.
+            subAccountCode: null,
           };
           resolvedName = resolved.account.accountName;
 
@@ -2040,7 +1929,7 @@ async function runEffects(
            * The upgrade card, for anybody who asks.
            *
            * Headed "Upgrade to Pro.", which is true whoever is reading it.
-           * The other card is headed "Five done. Go unlimited." and belongs
+           * The other card is headed "Three done. Go unlimited." and belongs
            * only on the message that says they have run out — see the limit
            * card. Swapping the two would tell somebody on their second
            * invoice that they had finished five.
@@ -2481,10 +2370,21 @@ async function handleOnboardingForm(
   const { context: had } = await loadConversation(userId);
   const keep = had.opener ? { opener: had.opener } : {};
 
-  // "Other" means the dropdown did not have their bank, so the free-text box
-  // beside it is the real answer.
+  // A Paystack code from either dropdown. "Microfinance bank (below)" in the
+  // first means the answer is in the second.
   const chosen = (fields.bank ?? "").trim();
-  const bankQuery = chosen === OTHER_BANK ? (fields.other_bank ?? "").trim() : chosen;
+  const bankQuery = chosen === MFB_CHOICE ? (fields.mfb_bank ?? "").trim() : chosen;
+
+  if (chosen === MFB_CHOICE && !bankQuery) {
+    await saveConversation(userId, "onboarding:bank", { ...keep, ...(email ? { email } : {}) });
+    await reply(
+      userId,
+      phone,
+      [para(`🤔 ${b("Which microfinance bank?")}`, VOICE.askBank)],
+      log,
+    );
+    return;
+  }
 
   log.info({ userId, hasName: Boolean(businessName), hasEmail: Boolean(email) }, "onboarding form received");
 
@@ -2498,8 +2398,7 @@ async function handleOnboardingForm(
 
   await setBusinessName(userId, businessName);
 
-  const banks = await listBanks();
-  const bank = matchBank(bankQuery, banks);
+  const bank = await findBank(bankQuery);
   if (!bank) {
     await saveConversation(userId, "onboarding:bank", { ...keep, email });
     await reply(
@@ -2511,7 +2410,7 @@ async function handleOnboardingForm(
     return;
   }
 
-  const resolved = await resolveAccount(accountNumber, bank.code);
+  const resolved = await checkAccount(accountNumber, bank);
   if (!resolved.ok) {
     await saveConversation(userId, "onboarding:bank", { ...keep, email });
     await reply(
@@ -3202,41 +3101,6 @@ const ACTION_NAMES: Record<string, string> = {
   record_payment: "Recording an offline payment",
   stop_reminders: "Reminders",
 };
-
-/**
- * How many times payout setup has failed for this user.
- *
- * Counted from `risk_flags` rather than the conversation context, because the
- * conversation is reset by "cancel" and this must not be. Somebody who has hit
- * the same wall three times has hit it three times, whatever they typed in
- * between.
- */
-async function countSetupFailures(userId: string): Promise<number> {
-  const { rows } = await db().query<{ n: number }>(
-    `SELECT COUNT(*)::int AS n FROM risk_flags
-      WHERE user_id = $1 AND kind = 'setup_failed' AND created_at > now() - interval '7 days'`,
-    [userId],
-  );
-  return rows[0]?.n ?? 0;
-}
-
-/** Records the failure, and on the third one asks a human to step in (F1). */
-async function flagSetupForReview(
-  userId: string,
-  why: string,
-  log: FastifyBaseLogger,
-): Promise<void> {
-  try {
-    await db().query(
-      `INSERT INTO risk_flags (user_id, kind, detail, status)
-       VALUES ($1, 'setup_failed', $2, 'open')`,
-      [userId, why.slice(0, 500)],
-    );
-    log.error({ userId, why }, "payout setup flagged for admin review");
-  } catch (err) {
-    log.error({ err, userId }, "could not flag payout setup for review");
-  }
-}
 
 /**
  * What the business-details form opens filled in with.

@@ -16,8 +16,9 @@
  * typing their account number and being told they are set up.
  *
  * The bank code is the awkward part and it is worth being loud about: the two
- * providers' codes are different namespaces with no mapping between them. The
- * stored `bank_code` is Monnify's. Sent to Paystack it is refused at best,
+ * providers' codes are different namespaces with no mapping between them.
+ * Accounts added before 26 September 2026 hold Monnify's code; later ones
+ * hold Paystack's (`provider = 'paystack'`), which is used as it is. Sent to Paystack it is refused at best,
  * and at worst names a different institution — which is somebody's money
  * settling somewhere else. So it is translated by *name*, exactly, and a name
  * that does not match produces no subaccount rather than a near miss.
@@ -36,6 +37,8 @@ export type SubaccountResult =
 type Row = {
   id: string;
   bank_name: string;
+  bank_code: string;
+  provider: string;
   account_number_encrypted: Buffer;
   paystack_subaccount_code: string | null;
   business_name: string | null;
@@ -55,7 +58,7 @@ export async function paystackSubaccountFor(
   log: FastifyBaseLogger,
 ): Promise<SubaccountResult> {
   const { rows } = await db().query<Row>(
-    `SELECT b.id, b.bank_name, b.account_number_encrypted, b.paystack_subaccount_code,
+    `SELECT b.id, b.bank_name, b.bank_code, b.provider, b.account_number_encrypted, b.paystack_subaccount_code,
             u.business_name, u.email
        FROM bank_accounts b
        JOIN users u ON u.id = b.user_id
@@ -76,7 +79,13 @@ export async function paystackSubaccountFor(
   // The same list the Pay button was drawn from. Two different lists here
   // would mean a button that appears and then refuses.
   const banks = await cachedBanks();
-  const match = matchByName(bank.bank_name, banks);
+  // An account chosen from Paystack's list (every one since 26 September
+  // 2026) already holds Paystack's code; only older, Monnify-coded rows have
+  // to be translated by name.
+  const match =
+    bank.provider === "paystack"
+      ? (banks.find((b) => b.code === bank.bank_code) ?? { name: bank.bank_name, code: bank.bank_code })
+      : matchByName(bank.bank_name, banks);
   if (!match) {
     /*
      * Loud, because it is a dead end for this user until somebody acts. Their

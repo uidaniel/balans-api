@@ -117,7 +117,7 @@ export async function scheduleBankChange(
     bankName: string;
     accountNumber: string;
     accountName: string;
-    subAccountCode: string;
+    subAccountCode: string | null;
   },
   log: FastifyBaseLogger,
 ): Promise<Date> {
@@ -158,7 +158,7 @@ export async function scheduleBankChange(
       `INSERT INTO bank_accounts
          (user_id, bank_code, bank_name, account_last4, account_number_encrypted,
           account_name, provider, subaccount_code, status, effective_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'monnify', $7, 'active', $8)`,
+       VALUES ($1, $2, $3, $4, $5, $6, 'paystack', $7, 'active', $8)`,
       [
         userId,
         bank.bankCode,

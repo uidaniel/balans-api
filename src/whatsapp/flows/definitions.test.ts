@@ -17,8 +17,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { FLOWS, PLANS, planIdFor, splitForPlan } from "./definitions.ts";
-import { FLOW_BANKS, OTHER_BANK, bankOptions } from "./banks.ts";
+import { MFB_CHOICE, PAYSTACK_BANKS, DROPDOWN_MAX, bankOptions, bankTitle, isMicrofinance, mfbOptions } from "./banks.ts";
 import { shapeFor } from "../../documents/parts.ts";
+import { matchBank } from "../../payments/monnify.ts";
 
 type Node = Record<string, unknown>;
 
@@ -379,42 +380,59 @@ describe("the payment plans a form can offer", () => {
   });
 });
 
-describe("the bank dropdown", () => {
-  const rows = bankOptions();
+describe("the bank dropdowns", () => {
+  const banks = bankOptions();
+  const mfbs = mfbOptions();
 
-  it("offers every bank on the list, once", () => {
-    assert.equal(rows.length, FLOW_BANKS.length);
-    assert.equal(new Set(rows.map((r) => r.id)).size, rows.length, "a bank appears twice");
+  it("offers every bank Paystack lists, and nothing called Other", () => {
+    const offered = new Set([...banks, ...mfbs].map((r) => r.id));
+    for (const b of PAYSTACK_BANKS) assert.ok(offered.has(b.code), `${b.name} cannot be chosen`);
+    assert.ok(![...banks, ...mfbs].some((r) => /^other$/i.test(r.title)));
   });
 
-  it("is alphabetical, ignoring capitals", () => {
-    // Ignoring capitals matters: a plain sort puts every all-caps name
-    // (FCMB, GTBank, UBA) in a block before the lower-case ones, which is not
-    // alphabetical to anyone looking for their bank.
-    const names = rows.slice(0, -1).map((r) => r.title);
-    const sorted = [...names].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
-    assert.deepEqual(names, sorted);
+  it("fits each dropdown inside WhatsApp's 200", () => {
+    assert.ok(banks.length <= DROPDOWN_MAX, `${banks.length} in the first`);
+    assert.ok(mfbs.length <= DROPDOWN_MAX, `${mfbs.length} in the second`);
   });
 
-  it("keeps Other at the bottom", () => {
-    // Sorted into the O's it sits between Optimus and Palmpay and gets tapped
-    // by somebody scanning for their own bank.
-    assert.equal(rows.at(-1)?.id, OTHER_BANK);
-    assert.equal(rows.filter((r) => r.id === OTHER_BANK).length, 1);
+  it("keeps every title inside Meta's thirty characters, and distinct", () => {
+    for (const list of [banks, mfbs]) {
+      for (const r of list) assert.ok(r.title.length <= 30, `${r.title} is ${r.title.length}`);
+      assert.equal(new Set(list.map((r) => r.title.toLowerCase())).size, list.length);
+      assert.equal(new Set(list.map((r) => r.id)).size, list.length, "a bank appears twice");
+    }
   });
 
-  it("does not reorder the source list", () => {
-    // `sort` mutates. If it ever reached FLOW_BANKS itself, the grouping that
-    // makes the list readable to edit would quietly disappear.
-    const before = [...FLOW_BANKS];
-    bankOptions();
-    assert.deepEqual([...FLOW_BANKS], before);
+  it("finds the banks people are actually paid into in the first one", () => {
+    const ids = new Set(banks.map((r) => r.id));
+    // GTBank, Access, OPay, PalmPay, Moniepoint, Kuda.
+    for (const code of ["058", "044", "999992", "999991", "50515", "50211"]) {
+      assert.ok(ids.has(code), `${code} is missing from the first dropdown`);
+    }
   });
 
-  it("uses the display name as the id", () => {
-    // What comes back from the form is matched to a live Monnify code by
-    // `matchBank`, so the value has to be something it can read.
-    for (const r of rows) assert.equal(r.id, r.title);
+  it("sends the rest to the second one, and says so last", () => {
+    assert.deepEqual(banks.at(-1), { id: MFB_CHOICE, title: "Microfinance bank (below)" });
+    assert.ok(mfbs.every((r) => isMicrofinance(PAYSTACK_BANKS.find((b) => b.code === r.id)!.name)));
+  });
+
+  it("shortens a long name to the part that says which bank", () => {
+    assert.equal(bankTitle("OPay Digital Services Limited (OPay)"), "OPay");
+    assert.equal(bankTitle("Guaranty Trust Bank"), "Guaranty Trust Bank");
+    assert.equal(bankTitle("Lagos Building Investment Company Plc."), "Lagos Building Investment");
+  });
+
+  it("still finds a bank somebody types, in Paystack's names", () => {
+    const find = (q: string) => matchBank(q, [...PAYSTACK_BANKS])?.code;
+    assert.equal(find("gtbank"), "058");
+    assert.equal(find("opay"), "999992");
+    assert.equal(find("moniepoint"), "50515");
+    assert.equal(find("uba"), "033");
+    assert.equal(find("my bank is zenith"), "057");
+  });
+
+  it("uses Paystack's code as the value, so nothing is matched by name", () => {
+    for (const r of banks.slice(0, -1)) assert.ok(PAYSTACK_BANKS.some((b) => b.code === r.id));
   });
 });
 

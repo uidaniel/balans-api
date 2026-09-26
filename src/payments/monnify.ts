@@ -377,16 +377,16 @@ const ALIASES: Record<string, string[]> = {
  * So when several entries match one name, the licensed bank wins. "OPAY 3"
  * and "PAYCOM (OPAY)" are the same institution; only one of them settles.
  */
-const isLicensedBank = (b: Bank): boolean => /^\d{3}$/.test(b.code);
+const isLicensedBank = (b: { code: string }): boolean => /^\d{3}$/.test(b.code);
 
-export function matchBank(query: string, banks: Bank[]): Bank | null {
+export function matchBank<B extends { name: string; code: string }>(query: string, banks: B[]): B | null {
   const q = query.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
   if (!q) return null;
 
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 
   /** Licensed bank first, then the plainer name. */
-  const best = (a: Bank, b: Bank) =>
+  const best = (a: B, b: B) =>
     Number(isLicensedBank(b)) - Number(isLicensedBank(a)) || a.name.length - b.name.length;
 
   // Aliases before exact matches. An alias is a curated statement about what
@@ -426,7 +426,7 @@ export function matchBank(query: string, banks: Bank[]): Bank | null {
   const phraseIn = (needle: string) =>
     needle.includes(" ") ? q.includes(needle) : words.has(needle);
 
-  let found: { bank: Bank; needle: number } | null = null;
+  let found: { bank: B; needle: number } | null = null;
   for (const bank of banks) {
     const name = norm(bank.name);
     for (const needle of [name, ...(ALIASES[name] ?? [])]) {
