@@ -8,11 +8,9 @@
  */
 
 import type { FastifyBaseLogger } from "fastify";
-import { randomUUID } from "node:crypto";
 import { legalConsentVersion } from "../config.ts";
 import { db, tx } from "../db/pool.ts";
 import { markRead, normalisePhone, sendButtons, sendText, type ReplyButton } from "../whatsapp/client.ts";
-import { initTransaction } from "../payments/monnify.ts";
 import { checkAccount, findBank } from "../payments/bank-directory.ts";
 import { checkCode, issueCode } from "../lib/codes.ts";
 import { sendEmail, transport, verificationEmail, welcomeEmail } from "../email/send.ts";
@@ -55,7 +53,7 @@ import {
 import { partsFor } from "../documents/parts.ts";
 import { linesFromForm } from "../documents/form-lines.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { proStartUrl } from "../billing/pro-link.ts";
+import { openProTransfer } from "../billing/pro-transfer.ts";
 import { pickerUrlFor } from "../http/routes/templates.ts";
 import { clearLogo, saveLogo } from "../brand/user-logo.ts";
 import {
@@ -95,11 +93,11 @@ import {
   CHANGE_DELAY_HOURS,
 } from "../settings/bank-change.ts";
 import { raiseSecurityAlert } from "../settings/alerts.ts";
-import { attachPaymentReference, openSubscription, stateOf } from "../billing/subscription.ts";
+import { openSubscription, stateOf } from "../billing/subscription.ts";
 import {
   deductChosen,
-  payLinkCaption,
-  payLinkMessage,
+  proTransferFailed,
+  proTransferMessage,
   proActive,
   proOffer,
   proOfferButtons,
@@ -1935,55 +1933,14 @@ async function runEffects(
            * invoice that they had finished five.
            */
           /*
-           * One message, and the button is the payment.
+           * One message, with "Pay Now" as a reply button under the card.
            *
-           * "Pay Now" used to be a reply button: tapping it sent the words
-           * "Pay Now" into the chat, the bot answered with a second message,
-           * and the link was on that one. Two taps and three bubbles to reach
-           * a checkout, with the middle bubble saying nothing anybody needed.
-           *
-           * A message carries reply buttons or one link button, never both,
-           * so making the offer's own button the link is the whole change.
-           * It goes to our own page rather than to Monnify, because this
-           * message will still be in the chat next week and a checkout URL
-           * will not \u2014 see `proStartUrl`.
+           * It was a link button to a payment page, which took people out of
+           * WhatsApp into its browser to read an account number. Since 26
+           * September 2026 the tap comes back here as "pay now" and the
+           * account arrives in the chat (start_pro below), so the whole
+           * payment happens where the offer was.
            */
-          const offer = ctx.phone
-            ? await sendCta(ctx.phone, {
-                body: proOffer(used),
-                label: "Pay Now",
-                url: proStartUrl(userId),
-                headerImage: UPGRADE_CARD,
-              })
-            : null;
-
-          if (offer?.ok) {
-            await recordOutbound(userId, offer.waMessageId, "sent", { kind: "interactive" });
-            break;
-          }
-
-          /*
-           * Without the card, then without the button.
-           *
-           * Meta documents image headers on cta_url and refuses them outright
-           * on a list, so this is not taken on trust. Losing the picture is
-           * worth keeping the button; losing the button costs the tap.
-           */
-          const plain = ctx.phone
-            ? await sendCta(ctx.phone, {
-                body: proOffer(used),
-                label: "Pay Now",
-                url: proStartUrl(userId),
-              })
-            : null;
-
-          if (plain?.ok) {
-            log.warn({ userId }, "Pro card rejected as a cta_url header; sent without it");
-            await recordOutbound(userId, plain.waMessageId, "sent", { kind: "interactive" });
-            break;
-          }
-
-          if (plain) log.warn({ userId, reason: plain.reason }, "Pro offer button failed");
           extra.push(proOffer(used));
           buttonsImage = UPGRADE_CARD;
           buttons = proOfferButtons();
@@ -1997,61 +1954,22 @@ async function runEffects(
             break;
           }
 
-          // A payment link is just an invoice we are the client of: the same
-          // Monnify initialisation, with no split, because this one is ours.
-          const opened = await openSubscription(userId, "link", log);
-          const reference = `sub_${opened.id.replace(/-/g, "").slice(0, 16)}_${randomUUID().slice(0, 8)}`;
-          const { rows } = await db().query<{ email: string | null }>(
-            `SELECT email FROM users WHERE id = $1`, [userId]);
-
-          const init = await initTransaction({
-            amountKobo: opened.priceKobo,
-            customerName: businessName ?? "Balans user",
-            customerEmail: rows[0]?.email ?? `${userId}@users.balans.ng`,
-            paymentReference: reference,
-            description: "Balans Pro, one month",
-            redirectUrl: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/pay/callback?ref=${reference}`,
-            // No split: this payment is ours, not the user's.
-          });
-
-          if (!init.ok) {
-            log.error({ userId, message: init.message }, "could not create a Pro payment link");
-            extra.push("⏳ I could not reach the payment provider. Try again in a moment.");
-            break;
-          }
-
-          // Without this the webhook has nothing to match the payment to, and
-          // a paid subscription stays pending forever.
-          await attachPaymentReference(opened.id, reference);
-          await db().query(
-            `UPDATE subscriptions SET status = 'pending' WHERE id = $1`, [opened.id]);
-
           /*
-           * A button, not a bare link.
+           * The account, in the chat.
            *
-           * Tapping a URL in WhatsApp hands the person to whatever browser
-           * their phone opens, and they then pay on a page that arrived with
-           * no context. A cta_url opens in WhatsApp's own browser, so the
-           * chat is still behind it and the payment finishes where it
-           * started. It costs the same as the text message it replaces.
+           * A Paystack account opened for this one payment, sent as words the
+           * person copies into their bank app. Tapping "Pay Now" again inside
+           * the hour gives the same account, not a second one. The webhook
+           * does the rest: a month of Pro and a receipt, here and by email.
            */
-          const button = ctx.phone
-            ? await sendCta(ctx.phone, {
-                body: payLinkCaption(),
-                label: `Pay ${formatNaira(opened.priceKobo)}`,
-                url: init.checkoutUrl,
-              })
-            : null;
-
-          if (button?.ok) {
-            await recordOutbound(userId, button.waMessageId, "sent", { kind: "interactive" });
-            break;
+          const transfer = await openProTransfer(userId, log);
+          if (transfer.kind === "already_pro") {
+            extra.push(proActive(await stateOf(userId)));
+          } else if (transfer.kind === "failed") {
+            extra.push(proTransferFailed());
+          } else {
+            extra.push(proTransferMessage(transfer.account, transfer.amountKobo));
           }
-
-          if (button) {
-            log.warn({ userId, reason: button.reason }, "pay button failed, sending the link");
-          }
-          extra.push(payLinkMessage(init.checkoutUrl));
           break;
         }
         case "save_logo":

@@ -63,8 +63,26 @@ export async function softReset(userId: string): Promise<void> {
 }
 
 export async function hardReset(userId: string): Promise<void> {
-  // Everything else is ON DELETE CASCADE from users.
-  await db().query(`DELETE FROM users WHERE id = $1`, [userId]);
+  /*
+   * Most things are ON DELETE CASCADE from users, but money is not: payments,
+   * the fee ledger and the documents they point at refuse to go by accident.
+   * This is the one place they go on purpose, children first.
+   */
+  await tx(async (c) => {
+    const docs = `SELECT id FROM documents WHERE user_id = $1`;
+    await c.query(
+      `DELETE FROM fee_ledger
+        WHERE user_id = $1 OR payment_id IN (SELECT id FROM payments WHERE document_id IN (${docs}))`,
+      [userId],
+    );
+    await c.query(`DELETE FROM payments WHERE document_id IN (${docs})`, [userId]);
+    await c.query(`UPDATE documents SET parent_id = NULL WHERE user_id = $1`, [userId]);
+    await c.query(`DELETE FROM documents WHERE user_id = $1`, [userId]);
+    await c.query(`DELETE FROM recurring_schedules WHERE client_id IN (SELECT id FROM clients WHERE user_id = $1)`, [userId]);
+    await c.query(`DELETE FROM clients WHERE user_id = $1`, [userId]);
+    await c.query(`UPDATE users SET referred_by = NULL WHERE referred_by = $1`, [userId]);
+    await c.query(`DELETE FROM users WHERE id = $1`, [userId]);
+  });
 }
 
 if (process.argv[1] && import.meta.url === (await import("node:url")).pathToFileURL(process.argv[1]).href) {

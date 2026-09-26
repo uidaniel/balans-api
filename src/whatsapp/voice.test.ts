@@ -117,7 +117,8 @@ const messages: [string, () => string][] = [
 
   ["pro offer", () => billing.proOffer(3)],
   ["pro, deducting", () => billing.deductChosen()],
-  ["pro pay link", () => billing.payLinkMessage("https://x.ng/p")],
+  ["pro transfer account", () => billing.proTransferMessage({ bankName: "Wema Bank", accountNumber: "9912345678", accountName: "Balans", expiresAt: new Date("2026-09-26T15:00:00Z") }, 400000)],
+  ["pro transfer failed", () => billing.proTransferFailed()],
   ["pro started", () => billing.proStarted()],
 
   ["security alert", () => alerts.alertMessage({ what: "a bank change was requested", detail: ["GTBank ••6789"], undoHint: "reply stop." } as never, "14:20 today")],

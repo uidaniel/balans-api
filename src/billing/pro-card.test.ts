@@ -25,7 +25,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 
-import { proOffer, proOfferButtons, payLinkCaption, payLinkMessage } from "./messages.ts";
+import { proOffer, proOfferButtons, proTransferMessage } from "./messages.ts";
 import { LIMIT_CARD, UPGRADE_CARD, PRO_CARD } from "../conversation/machine.ts";
 import { defaults } from "../config.ts";
 import { availableTo } from "../pdf/templates.ts";
@@ -140,86 +140,48 @@ describe("the card reaching the message", () => {
 
 describe("the Pay Now button", () => {
   /*
-   * It used to be a reply button.
+   * A reply button, and the account comes back in the chat.
    *
-   * Tapping it sent the words "Pay Now" into the chat, the bot answered with
-   * a second message, and the link was on that one — two taps and three
-   * bubbles to reach a checkout, with the middle bubble saying nothing
-   * anybody needed. A WhatsApp message carries reply buttons or one link
-   * button and never both, so the offer's own button had to become the link.
+   * It was a link button to a page in WhatsApp's browser that showed the
+   * account number. People asked for the number in the chat itself, so the
+   * tap now arrives as "pay now" and the reply is the account.
    */
   const handle = read("../conversation/handle.ts");
   const from = handle.indexOf('case "show_upgrade"');
   const offer = handle.slice(from, handle.indexOf('case "start_pro"', from));
 
-  it("is the link itself, not a reply that asks for one", () => {
-    assert.match(offer, /sendCta\(/, "the offer goes out as a link button");
-    assert.match(offer, /label: "Pay Now"/);
-    assert.match(offer, /url: proStartUrl\(userId\)/);
-  });
-
-  it("points at our own page, not straight at the checkout", () => {
-    /*
-     * A WhatsApp message sits in the chat for ever and a Monnify checkout
-     * URL does not. Somebody scrolling back to last week's offer has to find
-     * a live link, and the transaction is made when they press it — so
-     * reading the offer costs nothing at Monnify.
-     */
-    const link = readFileSync(new URL("./pro-link.ts", import.meta.url), "utf8");
-    assert.match(link, /\/pro\/start\?t=/);
-
-    // Asserted on the code, not the file: the comment above this branch
-    // explains the choice and says the provider's name while doing it.
+  it("is a reply button under the upgrade card, not a link out of the chat", () => {
+    assert.match(offer, /buttonsImage = UPGRADE_CARD/);
+    assert.match(offer, /buttons = proOfferButtons\(\)/);
     const code = offer.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
-    assert.doesNotMatch(code, /monnify|checkoutUrl/i, "the button must not carry a checkout URL");
-  });
-
-  it("falls back without the picture before it falls back without the button", () => {
-    // Meta documents image headers on cta_url and refuses them on a list, so
-    // this is not taken on trust. Losing the picture beats losing the tap.
-    const withCard = offer.indexOf("headerImage: UPGRADE_CARD");
-    const withoutCard = offer.indexOf("const plain");
-    const words = offer.indexOf("buttons = proOfferButtons()");
-
-    assert.ok(withCard > -1 && withoutCard > withCard, "picture first, then without it");
-    assert.ok(words > withoutCard, "and only then back to a reply button");
+    assert.doesNotMatch(code, /sendCta\(|proStartUrl/, "no link button on the offer");
+    assert.equal(proOfferButtons()[0]!.title, "Pay Now");
   });
 });
 
-describe("paying for it, by typing", () => {
+describe("paying for it", () => {
   const handle = read("../conversation/handle.ts");
   const start = handle.slice(handle.indexOf('case "start_pro"'));
-  const branch = start.slice(0, 3000);
+  const branch = start.slice(0, 2000);
 
-  it("opens the checkout in WhatsApp, not in a browser tab", () => {
-    /*
-     * Tapping a bare URL hands the person to whatever browser their phone
-     * opens, and they then pay on a page that arrived with no context. A
-     * cta_url opens in WhatsApp's own browser, so the chat is still behind
-     * it. It costs the same as the text message it replaces.
-     */
-    assert.match(branch, /sendCta\(/, "the link goes out as a button");
-    const cta = branch.slice(branch.indexOf("sendCta("));
-    assert.match(cta.slice(0, 400), /url: init\.checkoutUrl/);
+  it("puts the account in the chat", () => {
+    assert.match(branch, /openProTransfer\(userId, log\)/);
+    assert.match(branch, /extra\.push\(proTransferMessage\(transfer\.account, transfer\.amountKobo\)\)/);
+    const code = branch.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+    assert.doesNotMatch(code, /sendCta\(|checkoutUrl|initTransaction/, "no link, no Monnify");
   });
 
-  it("keeps the price on the button", () => {
-    const label = `Pay ${"\u20a64,000"}`;
-    assert.ok(label.length <= 20, "a reply button title is capped at twenty");
-    assert.match(branch, /label: `Pay \$\{formatNaira/);
-  });
-
-  it("does not put the URL in the words above it", () => {
-    // Otherwise the message carries both, and the bare one is the one that
-    // throws them out of the chat.
-    assert.doesNotMatch(payLinkCaption(), /https?:\/\//);
-    assert.match(payLinkCaption(), /4,000/, "but it still says the price");
-  });
-
-  it("falls back to the link when the button will not send", () => {
-    // Words only, so the link has to be in them.
-    assert.match(payLinkMessage("https://pay.example/x"), /https:\/\/pay\.example\/x/);
-    assert.match(branch, /extra\.push\(payLinkMessage\(init\.checkoutUrl\)\)/);
+  it("says the bank, the number, the name and the exact amount", () => {
+    const words = proTransferMessage(
+      { bankName: "Wema Bank", accountNumber: "9912345678", accountName: "Balans", expiresAt: new Date("2026-09-26T15:00:00Z") },
+      400000,
+    );
+    assert.match(words, /Wema Bank/);
+    assert.match(words, /\*9912345678\*/);
+    assert.match(words, /Account name: \*Balans\*/);
+    assert.match(words, /exactly ₦4,000/);
+    assert.match(words, /4:00\s?pm/i, "closing time in Lagos");
+    assert.doesNotMatch(words, /https?:\/\//, "no link in it");
   });
 });
 

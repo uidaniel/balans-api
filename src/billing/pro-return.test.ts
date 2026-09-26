@@ -73,7 +73,7 @@ describe("coming back from a Pro payment", () => {
 
   it("uses the reference prefix the checkout actually writes", () => {
     // Two files agreeing on a string with nothing to enforce it.
-    const pro = read("../http/routes/pro.ts");
+    const pro = read("./pro-transfer.ts");
     assert.match(pro, /const reference = `sub_\$\{/, "the checkout writes sub_");
   });
 });

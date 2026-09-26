@@ -80,30 +80,42 @@ export function deductChosen(): string {
 }
 
 /**
- * The same offer, as the words above a button.
+ * The account to pay into, in the chat.
  *
- * No URL in it. A bare link in WhatsApp is a grey line of text somebody has
- * to decide to trust, and tapping it throws them out of the chat into
- * whatever browser their phone opens \u2014 where they are then paying, on a page
- * that arrived with no context. The button opens in WhatsApp's own browser
- * and says what it does before they press it.
+ * Since 26 September 2026 "Pay Now" answers with this rather than a link out
+ * of WhatsApp: the account is the thing they need, so it is the message. Each
+ * detail on a line of its own, so a long-press on the number copies little
+ * else, and the amount said as "exactly" because Paystack matches a transfer
+ * to this account by its amount.
  */
-export function payLinkCaption(): string {
+export function proTransferMessage(
+  account: { bankName: string; accountNumber: string; accountName: string; expiresAt: Date },
+  amountKobo: number,
+): string {
+  const closes = new Intl.DateTimeFormat("en-GB", {
+    timeZone: defaults.behaviour.timezone,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(account.expiresAt);
   return para(
-    `\u2b50 ${b(`Pro is ${formatNaira(pro.priceKobo)} for a month.`)}`,
-    "It starts the moment the payment clears.",
-    i("Card, transfer or USSD."),
+    `⭐ ${b(`Transfer ${formatNaira(amountKobo)} to start Pro`)}`,
+    lines(
+      `Bank: ${b(account.bankName)}`,
+      `Account number: ${b(account.accountNumber)}`,
+      `Account name: ${b(account.accountName)}`,
+      `Amount: ${b(formatNaira(amountKobo))}`,
+    ),
+    lines(
+      `Send exactly ${formatNaira(amountKobo)} before ${closes}. This account is for this one payment.`,
+      i("Pro starts the moment it lands, and your receipt comes here and to your email."),
+    ),
   );
 }
 
-/** Words only, for when the button will not send. The link has to be in it. */
-export function payLinkMessage(url: string): string {
-  return para(
-    `⭐ ${b(`Pro is ${formatNaira(pro.priceKobo)} for a month.`)}`,
-    lines("Pay here and it starts straight away:", url),
-    i("Card, transfer or USSD."),
-  );
-}
+/** When no account could be opened. */
+export const proTransferFailed = (): string =>
+  "⏳ I could not open an account for the payment just now. Reply *pay* to try again in a minute.";
 
 export function proActive(state: SubscriptionState): string {
   const until = state.periodEnd
