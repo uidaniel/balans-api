@@ -422,7 +422,10 @@ const brand = (file: string): string =>
 function fingerprint(file: string): string {
   try {
     const bytes = readFileSync(new URL(`../../assets/brand/${file}`, import.meta.url));
-    return createHash("sha256").update(bytes).digest("hex").slice(0, 10);
+    // Twelve characters since 26 September 2026: a deploy check fetched the
+    // ten-character address before the new picture was live, and Cloudflare
+    // kept the old one under it for a year. A new length is a new address.
+    return createHash("sha256").update(bytes).digest("hex").slice(0, 12);
   } catch {
     return "0";
   }
