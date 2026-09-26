@@ -498,6 +498,18 @@ export const itemScreenId = (w: string): string => `ITEM_${w.toUpperCase()}`;
  */
 export const formScreenId = (items: number): string => `WORK_${TOTALS[items - 1]}`;
 
+/*
+ * The first two pages again, with nothing filled in, for a new document.
+ *
+ * WhatsApp checks a Form's `init-values` the moment the screen opens, so a
+ * required box started on "" is a box shown in red before anybody has
+ * touched it: Client and Item both did, on every new invoice. These copies
+ * have no `init-values` at all. The originals keep theirs for editing a
+ * draft, where every required value is there to put back.
+ */
+export const FRESH_WHO = "WHO_NEW";
+export const FRESH_WORK = "WORK_NEW";
+
 /** The extra items a screen showing `items` items has: 0 to 4 of them. */
 const extrasOf = (items: number): readonly string[] => EXTRA_ITEMS.slice(0, items - 1);
 
@@ -816,9 +828,9 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
  * Everything else rides through in `data`, typed as WORK declares it, so a
  * draft reopened here still has its items when Next lands on the next page.
  */
-function whoScreen(o: DocumentFlow): Record<string, unknown> {
+function whoScreen(o: DocumentFlow, fresh = false): Record<string, unknown> {
   return {
-    id: "WHO",
+    id: fresh ? FRESH_WHO : "WHO",
     title: o.title,
     terminal: false,
     data: carriedData("number"),
@@ -829,11 +841,15 @@ function whoScreen(o: DocumentFlow): Record<string, unknown> {
         {
           type: "Form",
           name: "who_form",
-          "init-values": {
-            client_name: "${data.client_name}",
-            client_email: "${data.client_email}",
-            client_phone: "${data.client_phone}",
-          },
+          ...(fresh
+            ? {}
+            : {
+                "init-values": {
+                  client_name: "${data.client_name}",
+                  client_email: "${data.client_email}",
+                  client_phone: "${data.client_phone}",
+                },
+              }),
           children: [
             {
               type: "TextInput",
@@ -867,7 +883,7 @@ function whoScreen(o: DocumentFlow): Record<string, unknown> {
               label: "Next",
               "on-click-action": {
                 name: "navigate",
-                next: { type: "screen", name: "WORK" },
+                next: { type: "screen", name: fresh ? FRESH_WORK : "WORK" },
                 payload: carriedPayload("form", "data"),
               },
             },
@@ -893,7 +909,7 @@ function whoScreen(o: DocumentFlow): Record<string, unknown> {
  * what to render, so `init-values` can name every box and be right, and the
  * payloads can read every box and be right.
  */
-function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<string, unknown> {
+function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = false): Record<string, unknown> {
   const extras = extrasOf(items);
   const mine = { ...carriedPayload("data", "form"), ...itemPayload(extras.length, "form") };
 
@@ -982,7 +998,7 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
   ];
 
   return {
-    id: entry ? "WORK" : formScreenId(items),
+    id: fresh ? FRESH_WORK : entry ? "WORK" : formScreenId(items),
     title: o.title,
     terminal: false,
     data: { ...carriedData(entry ? "number" : "string"), ...itemData(extras.length) },
@@ -1004,23 +1020,27 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean): Record<stri
            * Starting values belong to the Form, not to each input: at 7.1
            * `init-value` on a TextInput is rejected outright.
            */
-          "init-values": {
-            description: "${data.description}",
-            qty: "${data.qty}",
-            amount: "${data.amount}",
-            due_date: "${data.due_date}",
-            currency: "${data.currency}",
-            ...Object.fromEntries(
-              extras.flatMap((w) => {
-                const f = itemFields(w);
-                return [
-                  [f.description, `\${data.${f.description}}`],
-                  [f.qty, `\${data.${f.qty}}`],
-                  [f.amount, `\${data.${f.amount}}`],
-                ];
+          ...(fresh
+            ? {}
+            : {
+                "init-values": {
+                  description: "${data.description}",
+                  qty: "${data.qty}",
+                  amount: "${data.amount}",
+                  due_date: "${data.due_date}",
+                  currency: "${data.currency}",
+                  ...Object.fromEntries(
+                    extras.flatMap((w) => {
+                      const f = itemFields(w);
+                      return [
+                        [f.description, `\${data.${f.description}}`],
+                        [f.qty, `\${data.${f.qty}}`],
+                        [f.amount, `\${data.${f.amount}}`],
+                      ];
+                    }),
+                  ),
+                },
               }),
-            ),
-          },
           children: [
             {
               type: "TextInput",
@@ -1163,6 +1183,8 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
     screens: [
       whoScreen(o),
       formScreen(o, 1, true),
+      whoScreen(o, true),
+      formScreen(o, 1, true, true),
       ...TOTALS.map((_, i) => formScreen(o, i + 1, false)),
       ...EXTRA_ITEMS.map((_, index) => itemScreen(index, o)),
       {

@@ -680,6 +680,26 @@ describe("line items on the document forms", () => {
         for (const w of WORDS) assert.equal(payloadOf(footer(ITEM(w)))[`item_${w}_qty`], `\${form.item_${w}_qty}`);
       });
 
+      it("opens a new document on pages with nothing filled in", () => {
+        /*
+         * WhatsApp checks init-values when a screen opens, so a required box
+         * started on "" is red before anybody types — Client and Item both
+         * were. The fresh copies have none, and are otherwise the same pages.
+         */
+        const formOf = (id: string) => (screen(id) as { layout: { children: Node[] } }).layout.children.find((c) => c.type === "Form")!;
+        for (const id of ["WHO_NEW", "WORK_NEW"]) {
+          assert.equal(formOf(id)["init-values"], undefined, `${id} fills nothing in`);
+        }
+        assert.ok(formOf("WHO")["init-values"], "the editing copy still does");
+        assert.ok(formOf("WORK")["init-values"]);
+        assert.deepEqual(screen("WHO_NEW").data, screen("WHO").data);
+        assert.deepEqual(screen("WORK_NEW").data, screen("WORK").data);
+        assert.deepEqual(inputs("WHO_NEW").map((n) => n.name), inputs("WHO").map((n) => n.name));
+        assert.deepEqual(inputs("WORK_NEW").map((n) => n.name), inputs("WORK").map((n) => n.name));
+        assert.equal(target(footer("WHO_NEW")), "WORK_NEW", "fresh leads to fresh");
+        assert.equal(target(footer("WHO")), "WORK");
+      });
+
       it("asks who it is for on its own page, first", () => {
         const who = screen("WHO");
         assert.deepEqual(

@@ -32,7 +32,7 @@ import {
   type PendingDoc,
   type State,
 } from "./machine.ts";
-import { splitForPlan } from "../whatsapp/flows/definitions.ts";
+import { FRESH_WHO, splitForPlan } from "../whatsapp/flows/definitions.ts";
 import { VAT_PERCENT } from "../parser/extract.ts";
 import { forLog, type Parsed } from "../parser/schema.ts";
 import { b, i, lines, para, row } from "../whatsapp/format.ts";
@@ -253,8 +253,9 @@ async function sendConsentForm(
 const FLOW_SCREEN = {
   onboarding: "BUSINESS",
   business_details: "DETAILS",
-  invoice: "WHO",
-  quote: "WHO",
+  // The copies with nothing filled in: see FRESH_WHO in definitions.ts.
+  invoice: FRESH_WHO,
+  quote: FRESH_WHO,
   consent: "TERMS",
   request: "WORK",
 } as const;

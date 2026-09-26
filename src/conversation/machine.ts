@@ -32,7 +32,7 @@ import {
 import { formatNaira } from "../../core/totals.ts";
 import { resolveDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
-import { EXTRA_ITEMS, formScreenId, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
+import { EXTRA_ITEMS, FRESH_WHO, formScreenId, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION, draftButtons } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
 import { INFO, type Foreign } from "../../core/currency.ts";
@@ -2416,7 +2416,15 @@ function formValues(doc: PendingDoc, now: Civil): {
    * for the rare edit that is about the client rather than the work — which
    * is a sentence away anyway ("change the client to Daniel").
    */
-  return { screen: onEntry ? "WHO" : formScreenId(items), data: values };
+  /*
+   * A new document opens on the copy with nothing filled in, because a
+   * required box started on "" shows as an error before anybody types. A
+   * draft being changed has its client, so it opens on the filled-in one.
+   */
+  return {
+    screen: onEntry ? (doc.clientName ? "WHO" : FRESH_WHO) : formScreenId(items),
+    data: values,
+  };
 }
 
 /**
