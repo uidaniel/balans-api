@@ -563,6 +563,16 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
    * data binding, so it says the true thing in both cases.
    */
   amount_help: { type: "string", __example__: "Naira, before VAT. Digits only." },
+  /*
+   * Whether the Phone box can be typed in, and the line under it.
+   *
+   * Sending the invoice to the client's WhatsApp is Pro. On Free the box is
+   * still there, greyed out, with a line saying it comes with Pro: a feature
+   * nobody can see is one nobody upgrades for. Off by default; turned on by
+   * `openedForPlan` in handle.ts, which is the side that knows the plan.
+   */
+  can_whatsapp_client: { type: "boolean", __example__: false },
+  phone_help: { type: "string", __example__: "WhatsApp delivery comes with Pro." },
 });
 
 /**
@@ -594,6 +604,8 @@ const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<str
   today: "${data.today}",
   can_bill_abroad: "${data.can_bill_abroad}",
   amount_help: "${data.amount_help}",
+  can_whatsapp_client: "${data.can_whatsapp_client}",
+  phone_help: "${data.phone_help}",
 });
 
 /** Some number of extra items, declared. Always strings: a form returns strings. */
@@ -844,7 +856,8 @@ function whoScreen(o: DocumentFlow): Record<string, unknown> {
               type: "TextInput",
               name: "client_phone",
               label: "Phone",
-              "helper-text": `Optional. We send the ${o.key} to their WhatsApp.`,
+              "helper-text": "${data.phone_help}",
+              enabled: "${data.can_whatsapp_client}",
               required: false,
               "input-type": "phone",
               "max-chars": 20,
@@ -1199,6 +1212,8 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           // to declare them because it is the screen that hands everything on.
           can_bill_abroad: { type: "boolean", __example__: false },
           amount_help: { type: "string", __example__: "Naira, before VAT. Digits only." },
+          can_whatsapp_client: { type: "boolean", __example__: false },
+          phone_help: { type: "string", __example__: "WhatsApp delivery comes with Pro." },
           // Strings, like everywhere. TERMS initialises none of them, so it
           // carries no starting numbers either. See itemData.
           ...itemData(EXTRA_ITEMS.length),
@@ -1315,12 +1330,15 @@ const request: FlowDefinition = {
         title: "Request a payment",
         terminal: true,
         success: true,
+        /*
+         * Only the two things decided by who opens it. The request form has
+         * always opened blank, so the starting values it once declared were
+         * never handed over; a screen given some of its keys and not others
+         * dies, so it now declares exactly what it is given.
+         */
         data: {
-          client_name: { type: "string", __example__: "Daniel Uwak" },
-          client_email: { type: "string", __example__: "" },
-          client_phone: { type: "string", __example__: "" },
-          description: { type: "string", __example__: "Studio session" },
-          amount: { type: "number", __example__: 20000 },
+          can_whatsapp_client: { type: "boolean", __example__: false },
+          phone_help: { type: "string", __example__: "WhatsApp delivery comes with Pro." },
         },
         layout: {
           type: "SingleColumnLayout",
@@ -1332,13 +1350,6 @@ const request: FlowDefinition = {
             {
               type: "Form",
               name: "request_form",
-              "init-values": {
-                client_name: "${data.client_name}",
-                client_email: "${data.client_email}",
-                client_phone: "${data.client_phone}",
-                description: "${data.description}",
-                amount: "${data.amount}",
-              },
               children: [
                 {
                   type: "TextInput",
@@ -1361,7 +1372,8 @@ const request: FlowDefinition = {
                   type: "TextInput",
                   name: "client_phone",
                   label: "Phone",
-                  "helper-text": "Optional. We send the request to their WhatsApp.",
+                  "helper-text": "${data.phone_help}",
+                  enabled: "${data.can_whatsapp_client}",
                   required: false,
                   "input-type": "phone",
                   "max-chars": 20,

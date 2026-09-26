@@ -533,6 +533,19 @@ const SETUP_NUDGE = "Tap below to set up. It takes about a minute.";
  * shown at all.
  */
 export const NAIRA_HELP = "Naira, before VAT. Digits only.";
+
+/*
+ * The line under the client's Phone box, by plan.
+ *
+ * Sending to the client's WhatsApp is Pro, so on Free the box is greyed out
+ * and says so rather than being hidden: it is how somebody finds out Pro
+ * does this at all. `openedForPlan` in handle.ts swaps in the Pro line.
+ */
+export const PHONE_FREE_HELP = "Sending to their WhatsApp is a Pro feature. Upgrade to turn it on.";
+export const PHONE_PRO_HELP = "Optional. We send it to their WhatsApp too.";
+
+/** What the forms open with before anybody's plan is known. */
+export const PHONE_OFF = { can_whatsapp_client: false, phone_help: PHONE_FREE_HELP } as const;
 export const ABROAD_HELP = "Before VAT, in the currency above. Digits only.";
 
 export const VOICE = {
@@ -2193,9 +2206,12 @@ function buildOrAsk(doc: PendingDoc, ctx: Context, now: Civil, askDate = false):
            * With nothing handed over, every `${data.x}` the form binds was
            * undefined: the currency box showed to free accounts as
            * "Optional", Amount lost its line, and the date picker had no
-           * floor. The request form declares none of these, so it opens bare.
+           * floor. The request form declares only the Phone box's two, so
+           * that is all it is given.
            */
-          ...(doc.type === "payment_request" ? {} : formValues({ type: doc.type, lines: [] }, now)),
+          ...(doc.type === "payment_request"
+            ? { screen: "WORK", data: { ...PHONE_OFF } }
+            : formValues({ type: doc.type, lines: [] }, now)),
           fallback: { line: template, holdAt: "awaiting_field:client_name" },
         },
       ],
@@ -2354,6 +2370,7 @@ function formValues(doc: PendingDoc, now: Civil): {
     currency: doc.foreign?.currency ?? "",
     can_bill_abroad: false,
     amount_help: NAIRA_HELP,
+    ...PHONE_OFF,
   };
 
   /*

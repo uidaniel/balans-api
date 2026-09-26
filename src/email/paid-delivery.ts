@@ -110,12 +110,12 @@ async function paidRow(documentId: string): Promise<Row | null> {
 export async function emailPaidToClient(
   documentId: string,
   log: FastifyBaseLogger,
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: true; to: string } | { ok: false; why: "no_client_email" | "failed" }> {
   try {
     const d = await paidRow(documentId);
-    if (!d) return { ok: false };
+    if (!d) return { ok: false, why: "failed" };
     // Nothing to send to nobody. Most clients pay without ever giving one.
-    if (!d.client_email) return { ok: false };
+    if (!d.client_email) return { ok: false, why: "no_client_email" };
 
     const business = d.business_name ?? "A Balans user";
     const label = d.number === null ? "Invoice" : `Invoice #${d.number}`;
@@ -210,18 +210,18 @@ export async function emailPaidToClient(
 
     if (!sent.ok) {
       log.error({ documentId, reason: sent.reason }, "could not email the receipt to the client");
-      return { ok: false };
+      return { ok: false, why: "failed" };
     }
 
     log.info(
       { documentId, attached: attachments.length },
       "paid invoice and receipt emailed to client",
     );
-    return { ok: true };
+    return { ok: true, to: d.client_email };
   } catch (e) {
     // Never throws. The money has already moved.
     log.error({ err: (e as Error).message, documentId }, "paid client email failed");
-    return { ok: false };
+    return { ok: false, why: "failed" };
   }
 }
 

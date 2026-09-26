@@ -19,6 +19,7 @@ import { markEmailVerified, setEmail, recordConsent, saveBankAccount, activateBa
 import type { Inbound } from "../whatsapp/inbound.ts";
 import {
   ABROAD_HELP,
+  PHONE_PRO_HELP,
   repriced,
   step,
   draftOnScreen,
@@ -81,7 +82,8 @@ import {
   summaryMessage,
 } from "../documents/reports.ts";
 import { defaultPeriod, readPeriod } from "../../core/period.ts";
-import { renderDocumentPdf, renderReceiptPdf } from "../documents/pdf.ts";
+import { renderDocumentPdf } from "../documents/pdf.ts";
+import { emailPaidToClient } from "../email/paid-delivery.ts";
 import { emailDocumentToClient } from "../email/client-delivery.ts";
 import { whatsappDocumentToClient } from "../documents/client-whatsapp.ts";
 import { cancelDocument, convertQuote, findForResend, stopReminders } from "../documents/actions.ts";
@@ -1050,7 +1052,7 @@ async function runEffects(
             // The invoice form carries its starting values on the effect;
             // business details are read here because only this side has a
             // database.
-            data: await openedAbroad(
+            data: await openedForPlan(
               userId,
               effect.data ??
                 (effect.key === "business_details" ? await detailsFor(userId) : undefined),
@@ -1239,11 +1241,19 @@ async function runEffects(
             break;
           }
 
+          /*
+           * A client number typed into the chat ("their number is 0803…")
+           * only sticks on Pro, where it is used. On Free it is said once and
+           * left off, so the draft never claims a "WhatsApp to" it will not do.
+           */
+          const phoneAllowed = !doc.clientPhone || gate.plan === "pro";
+          if (!phoneAllowed) extra.push(clientWhatsAppIsPro());
+
           const draft = await createDraft(userId, {
             type: doc.type,
             clientName: doc.clientName ?? "",
             clientEmail: doc.clientEmail ?? null,
-            clientPhone: doc.clientPhone ?? null,
+            clientPhone: phoneAllowed ? (doc.clientPhone ?? null) : null,
             lines: doc.lines,
             dueDate: doc.dueDate ?? null,
             vatPercent: doc.vatPercent ?? null,
@@ -1309,7 +1319,7 @@ async function runEffects(
           // inbox too. Not awaited — the user is waiting on their own message,
           // and a slow mail provider must not hold it up.
           void emailDocumentToClient(confirmed.id, log).then((r) => {
-            if (!r.ok && r.why !== "no_client_email" && r.why !== "not_pro") {
+            if (!r.ok && r.why !== "no_client_email") {
               log.error({ documentId: confirmed.id, why: r.why }, "client delivery failed");
             }
           });
@@ -2047,39 +2057,26 @@ async function runEffects(
             log.info({ userId, documentId: inv.id, paidKobo: done.paidKobo }, "offline payment recorded");
 
             /*
-             * Said plainly and on its own first: the thing somebody tapped
-             * "Yes" to has happened. The receipt follows as a document, and
-             * a caption under a PDF is easy to miss.
+             * The receipt goes to the client's email, and only there.
+             *
+             * It used to come back here as a PDF for the sender to forward,
+             * which made them the courier for their own paperwork. The client
+             * is emailed the paid invoice and the receipt (the same email a
+             * transfer through Balans sends), and nothing goes to anybody's
+             * WhatsApp. Awaited, so the reply can say where it went.
              */
-            const confirmation = lines(
-              `✅ ${b("Done.")} Invoice ${number} is marked paid.`,
-              `${formatNaira(done.paidKobo)} from ${done.clientName}, by direct transfer.`,
+            const emailed = await emailPaidToClient(inv.id, log);
+            extra.push(
+              lines(
+                `✅ ${b("Done.")} Invoice ${number} is marked paid.`,
+                `${formatNaira(done.paidKobo)} from ${done.clientName}, by direct transfer.`,
+                emailed.ok
+                  ? `📧 Receipt emailed to ${emailed.to}.`
+                  : emailed.why === "no_client_email"
+                    ? i(`${done.clientName} has no email on file, so no receipt was sent.`)
+                    : i("The receipt email did not go through. The payment is recorded either way."),
+              ),
             );
-            if (ctx.phone) {
-              const said = await sendText(ctx.phone, confirmation);
-              if (said.ok) await recordOutbound(userId, said.waMessageId, "sent", { kind: "text" });
-              else extra.push(confirmation);
-            } else {
-              extra.push(confirmation);
-            }
-
-            // The receipt, to forward to the client: "Payment received outside
-            // Balans" is on it, so they know whose word it rests on.
-            const words = "🧾 Here is the receipt to send them.";
-            const receipt = await renderReceiptPdf(done.paymentId, log);
-            if (receipt && ctx.phone) {
-              const up = await uploadDocument(receipt.bytes, receipt.filename);
-              if (up.ok) {
-                const sent = await sendDocument(ctx.phone, up.mediaId, receipt.filename, words);
-                if (sent.ok) {
-                  await recordOutbound(userId, sent.waMessageId, "sent", { kind: "document" });
-                  break;
-                }
-              }
-            }
-            // No receipt came back: the payment is recorded either way, so
-            // say that, not "here is the receipt" over nothing.
-            log.warn({ userId, paymentId: done.paymentId }, "offline receipt could not be sent");
             break;
           }
 
@@ -2148,7 +2145,7 @@ async function runEffects(
 
             const inv = made.value;
             void emailDocumentToClient(inv.id, log).then((r) => {
-              if (!r.ok && r.why !== "no_client_email" && r.why !== "not_pro") {
+              if (!r.ok && r.why !== "no_client_email") {
                 log.error({ documentId: inv.id, why: r.why }, "client delivery failed");
               }
             });
@@ -2587,7 +2584,10 @@ async function handleInvoiceForm(
   const phoneTyped = (fields.client_phone ?? "").trim();
   // Anything a WhatsApp number could be, or nothing. A number we cannot use
   // is dropped rather than refusing the invoice; the draft says so below.
-  const clientPhone = phoneTyped ? normalisePhone(phoneTyped) : null;
+  // The box is greyed out on Free, so a number here means Pro — but the plan
+  // is checked rather than trusted from what the form sent.
+  const phoneAllowed = !phoneTyped || (await planOf(userId)) === "pro";
+  const clientPhone = phoneTyped && phoneAllowed ? normalisePhone(phoneTyped) : null;
   const notes = (fields.notes ?? "").trim();
   const duePhrase = (fields.due_date ?? "").trim();
 
@@ -2736,8 +2736,9 @@ async function handleInvoiceForm(
     outcome.holdAt ?? (outcome.draftId ? "awaiting_confirm" : "idle"),
     outcome.draftId ? context : {},
   );
-  const phoneNote =
-    phoneTyped && !clientPhone
+  const phoneNote = !phoneAllowed
+    ? [clientWhatsAppIsPro()]
+    : phoneTyped && !clientPhone
       ? [para(`📵 ${b(`"${phoneTyped}" is not a number I can send to.`)}`, "The draft is below without it. Say *their number is 0803 123 4567* to add it.")]
       : [];
   await reply(userId, phone, [...phoneNote, ...outcome.lines], log, outcome.buttons, outcome.buttonsImage);
@@ -2885,19 +2886,35 @@ async function tellIfClientWhatsAppFailed(
   if (text.ok) await recordOutbound(userId, text.waMessageId, "sent", { kind: "text" });
 }
 
-async function openedAbroad(
+/** A client number from somebody on Free: said once, and left off the draft. */
+function clientWhatsAppIsPro(): string {
+  return para(
+    `⭐ ${b("Sending to your client's WhatsApp is a Pro feature.")}`,
+    `The draft is below without their number. Reply ${b("upgrade")} to turn it on.`,
+  );
+}
+
+/**
+ * The form's starting data, with what the sender's plan switches on.
+ *
+ * Only the document forms carry these keys. Onboarding and the rest do not
+ * declare them, and a Flow handed one key too many dies at the first tap.
+ */
+async function openedForPlan(
   userId: string,
   data: FlowData | undefined,
 ): Promise<FlowData | undefined> {
-  // Only the document forms carry these three. Onboarding and the rest do not
-  // declare them, and a Flow handed one key too many dies at the first tap.
-  if (!data || !("can_bill_abroad" in data)) return data;
-  if (!env.INTL_ENABLED) return data;
+  if (!data || !("can_whatsapp_client" in data)) return data;
+  if ((await planOf(userId)) !== "pro") return data;
 
-  const plan = await planOf(userId);
-  if (plan !== "pro") return data;
-
-  return { ...data, can_bill_abroad: true, amount_help: ABROAD_HELP };
+  return {
+    ...data,
+    can_whatsapp_client: true,
+    phone_help: PHONE_PRO_HELP,
+    // Dollars and pounds only while they are switched on; the request form
+    // has no currency box to switch.
+    ...(env.INTL_ENABLED && "can_bill_abroad" in data ? { can_bill_abroad: true, amount_help: ABROAD_HELP } : {}),
+  };
 }
 
 /**

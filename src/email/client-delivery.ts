@@ -28,7 +28,7 @@ import { icsFor, type DueEvent } from "../documents/calendar.ts";
 
 export type DeliveryResult =
   | { ok: true }
-  | { ok: false; why: "no_client_email" | "not_pro" | "send_failed" | "not_found" };
+  | { ok: false; why: "no_client_email" | "send_failed" | "not_found" };
 
 const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -83,13 +83,13 @@ export function dueInvite(
 /**
  * Emails a document to the client it is for.
  *
- * Client delivery is a Pro feature (F21). A Free user's invoice still has a
- * link and a PDF in WhatsApp — this adds the inbox, not the invoice.
+ * Every plan, since 26 September 2026. It was Pro (F21); the email is now how
+ * every invoice reaches a client who was given an address, and what Pro adds
+ * is the copy to the client's WhatsApp (see client-whatsapp.ts).
  */
 export async function emailDocumentToClient(
   documentId: string,
   log: FastifyBaseLogger,
-  opts: { requirePro?: boolean } = { requirePro: true },
 ): Promise<DeliveryResult> {
   const { rows } = await db().query<{
     user_id: string;
@@ -120,7 +120,6 @@ export async function emailDocumentToClient(
   const d = rows[0];
   if (!d) return { ok: false, why: "not_found" };
   if (!d.client_email) return { ok: false, why: "no_client_email" };
-  if (opts.requirePro !== false && d.plan !== "pro") return { ok: false, why: "not_pro" };
 
   const label = d.type === "quote" ? "Quote" : "Invoice";
   const business = d.business_name ?? "A Balans user";

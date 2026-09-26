@@ -651,6 +651,9 @@ describe("a tapped button", () => {
       currency: "",
       can_bill_abroad: false,
       amount_help: "Naira, before VAT. Digits only.",
+      // The Phone box, greyed out until the caller finds the sender on Pro.
+      can_whatsapp_client: false,
+      phone_help: "Sending to their WhatsApp is a Pro feature. Upgrade to turn it on.",
       /*
        * And nothing else. The form is one screen per number of items now, so
        * a one-line draft opens on the screen that has one set of boxes — and

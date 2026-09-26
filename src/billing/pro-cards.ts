@@ -34,7 +34,7 @@ export function proPoints(): string[] {
     "Unlimited invoices and quotes",
     "Your logo on every invoice",
     `${availableTo("pro").length} invoice designs`,
-    "Invoices emailed to your clients",
+    "Invoices sent to your client\u2019s WhatsApp",
     "Automatic reminders to late clients",
     "Deposits and milestones",
   ];

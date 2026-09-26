@@ -6,8 +6,10 @@
  * the invoice arrives on its own the moment it is sent — and it arrives from
  * Balans, which is how a client who bills people too finds out it exists.
  *
- * Every plan, not just Pro. The email copy is a Pro feature; this is how the
- * product is found, and a template costs about what a service reply does.
+ * Pro only, since 26 September 2026: the email copy is free on every plan,
+ * and this is what Pro adds on top. The form shows the phone box to Free
+ * users greyed out, saying so (see `phone_help` in definitions.ts), and this
+ * checks the plan again because a number can also be typed into the chat.
  *
  * It has to be a template. The client has never written to us, so there is
  * no 24-hour window, and anything but an approved template is refused. Until
@@ -22,11 +24,12 @@ import { formatNaira } from "../../core/totals.ts";
 import { formatMoney, type Currency } from "../../core/currency.ts";
 import { agreedTotalMinor } from "../../core/exchange.ts";
 import { sendTemplate } from "../whatsapp/client.ts";
+import { planOf } from "./queries.ts";
 import { TEMPLATES, TEMPLATE_LANGUAGE } from "../whatsapp/window.ts";
 
 export type WhatsAppDelivery =
   | { ok: true; to: string }
-  | { ok: false; why: "no_client_phone" | "not_found" | "send_failed"; to?: string };
+  | { ok: false; why: "no_client_phone" | "not_found" | "not_pro" | "send_failed"; to?: string };
 
 /** "Tunde" out of "Tunde Olamide": a greeting, not a form of address. */
 export const firstName = (name: string): string => name.trim().split(/\s+/)[0] || name.trim();
@@ -84,6 +87,7 @@ export async function whatsappDocumentToClient(
   log: FastifyBaseLogger,
 ): Promise<WhatsAppDelivery> {
   const { rows } = await db().query<{
+    user_id: string;
     type: string;
     number: number | null;
     total_kobo: number;
@@ -96,7 +100,7 @@ export async function whatsappDocumentToClient(
     client_phone: string | null;
     business_name: string | null;
   }>(
-    `SELECT d.type, d.number, d.total_kobo, d.subtotal_kobo, d.vat_kobo, d.currency,
+    `SELECT d.user_id, d.type, d.number, d.total_kobo, d.subtotal_kobo, d.vat_kobo, d.currency,
             d.original_amount_minor, d.public_token,
             c.name AS client_name, c.phone AS client_phone, u.business_name
        FROM documents d
@@ -109,6 +113,7 @@ export async function whatsappDocumentToClient(
   const d = rows[0];
   if (!d || !d.public_token) return { ok: false, why: "not_found" };
   if (!d.client_phone) return { ok: false, why: "no_client_phone" };
+  if ((await planOf(d.user_id)) !== "pro") return { ok: false, why: "not_pro" };
 
   const { template, params } = clientMessage({ ...d, amount: amountFor(d) });
   const sent = await sendTemplate(d.client_phone, template, params, {
