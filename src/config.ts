@@ -196,7 +196,14 @@ export function require_(...keys: (keyof typeof env)[]): void {
 /* -------------------------------------------------------------------------- */
 
 /** Stored as users.consent_version when someone accepts (PRD section 12). */
-export const legalConsentVersion = process.env.LEGAL_CONSENT_VERSION ?? "2026-09-draft-1";
+/*
+ * The version printed on balans.ng/terms and /privacy — `legal.version` in the
+ * web repo's src/lib/config.ts — and it must be kept in step with it by hand.
+ * What is stored is the version, not the words, so a label that matches no
+ * published text proves nothing about what somebody agreed to. It said
+ * "2026-09-draft-1" while the site said 3.1 until 27 September 2026.
+ */
+export const legalConsentVersion = process.env.LEGAL_CONSENT_VERSION ?? "3.1";
 
 export const defaults = {
   plans: {
