@@ -33,6 +33,8 @@ import { modelConfigured } from "./parser/model.ts";
 import { chromePath } from "./pdf/chrome.ts";
 import { startScheduler, stopScheduler } from "./jobs/scheduler.ts";
 import { migrate } from "./db/migrate.ts";
+import { publishChangedFlows } from "./whatsapp/flows/register.ts";
+import { submitMissingTemplates } from "./whatsapp/register-templates.ts";
 
 const app = buildServer();
 
@@ -84,6 +86,17 @@ app.log.info(
 );
 
 startScheduler(app.log);
+
+// The forms' screens live at Meta, not in this image. Publishing the ones that
+// changed is what makes a push deploy a form as well as the code behind it.
+// Not awaited: nothing about serving requests waits on Meta.
+void publishChangedFlows(app.log).catch((e) =>
+  app.log.error({ err: (e as Error).message }, "publishing Flows at boot failed"),
+);
+// And the message templates the code sends, the same way.
+void submitMissingTemplates(app.log).catch((e) =>
+  app.log.error({ err: (e as Error).message }, "submitting templates at boot failed"),
+);
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {

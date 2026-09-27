@@ -121,7 +121,13 @@ const onboarding: FlowDefinition = {
      * why the others still do not.
      */
     data_api_version: "3.0",
-    routing_model: { BUSINESS: ["PAYOUT"], PAYOUT: ["CONFIRM"], CONFIRM: [] },
+    routing_model: {
+      BUSINESS: ["PAYOUT"],
+      PAYOUT: ["CONFIRM"],
+      CONFIRM: ["CODE"],
+      CODE: ["DONE"],
+      DONE: [],
+    },
     screens: [
       {
         id: "BUSINESS",
@@ -249,6 +255,10 @@ const onboarding: FlowDefinition = {
                       bank: "${form.bank}",
                       mfb_bank: "${form.mfb_bank}",
                       account_number: "${form.account_number}",
+                      // Tells the endpoint this is the form that finishes
+                      // setup itself. One without it is the older form, and
+                      // its CONFIRM screen expects the older answer.
+                      form_version: "2",
                     },
                   },
                 },
@@ -257,52 +267,355 @@ const onboarding: FlowDefinition = {
           ],
         },
       },
+      confirmScreen("onboarding"),
+      codeScreen("onboarding"),
       {
         /*
-         * The name the bank gave, before anything is saved.
+         * The screen that says it worked, before the form closes.
          *
-         * This is the question the chat used to ask afterwards ("That account
-         * is ADA OKON at GTBank. Is that you?"), asked where the answer can
-         * still be changed: the back arrow is the "not me", and it returns to
-         * a form with everything still in it.
+         * Everything is already done by the time this shows: the account is
+         * saved, the email proved, the terms recorded. The button only closes
+         * the form, and the one message the chat sends after it is the way
+         * into a first invoice. Closing the form with the cross instead loses
+         * nothing but that message.
          */
-        id: "CONFIRM",
-        title: "Is this you?",
+        id: "DONE",
+        title: "You're set up",
         terminal: true,
         success: true,
         data: {
-          business_name: { type: "string", __example__: "Kemi Adeyemi Studio" },
-          email: { type: "string", __example__: "kemi@studio.ng" },
-          bank: { type: "string", __example__: "058" },
-          mfb_bank: { type: "string", __example__: "" },
-          account_number: { type: "string", __example__: "0123456789" },
           account_name: { type: "string", __example__: "KEMI ADEYEMI" },
           account_line: { type: "string", __example__: "GTBank · 0123456789" },
         },
         layout: {
           type: "SingleColumnLayout",
           children: [
-            { type: "TextSubheading", text: "Your clients will pay into" },
-            { type: "TextHeading", text: "${data.account_name}" },
-            { type: "TextBody", text: "${data.account_line}" },
+            { type: "TextHeading", text: "You're all set" },
             {
-              type: "TextCaption",
-              text: "Not you? Go back and check the bank and the account number.",
+              type: "TextBody",
+              text: "Your account is verified and ready to send invoices.",
+            },
+            { type: "TextSubheading", text: "Clients pay into" },
+            { type: "TextBody", text: "${data.account_name}" },
+            { type: "TextCaption", text: "${data.account_line}" },
+            {
+              type: "Footer",
+              label: "Start invoicing",
+              "on-click-action": { name: "complete", payload: { done: "1" } },
+            },
+          ],
+        },
+      },
+    ],
+  },
+};
+
+/*
+ * The three screens both account forms share.
+ *
+ * Setup and a later bank change ask the same questions in the same order —
+ * which bank, whose account, prove it is you — and a difference between the
+ * two would be somebody learning one form and being surprised by the other.
+ * What differs is what is carried through (a new user's name and email; an
+ * existing user's current account) and whether the terms are on CONFIRM.
+ */
+
+type AccountForm = "onboarding" | "payout_change";
+
+/** The Form's `error-messages`, keyed by field. Empty until something is wrong. */
+function errorsFor(...fields: string[]) {
+  return {
+    type: "object",
+    properties: Object.fromEntries(fields.map((f) => [f, { type: "string" }])),
+    __example__: {},
+  };
+}
+
+/**
+ * "Is this you?", with the answer given by ticking rather than by a button.
+ *
+ * The chat used to ask this afterwards ("That account is ADA OKON at GTBank.
+ * Is that you?"). Here it is asked where the answer can still be changed: the
+ * back arrow is the "not me", and it returns to a form with everything still
+ * in it. The tick is the same idea as a bank app's "the details above are
+ * correct" — nobody moves money on a name they have not been made to look at.
+ */
+function confirmScreen(form: AccountForm): Record<string, unknown> {
+  const setup = form === "onboarding";
+  return {
+    id: "CONFIRM",
+    title: "Confirm account",
+    terminal: false,
+    // Only what this screen shows or sends on. The account itself is not
+    // carried: the endpoint kept it when the bank named it, and takes it from
+    // there rather than from anything that comes back through the client.
+    data: {
+      ...(setup
+        ? {
+            business_name: { type: "string", __example__: "Kemi Adeyemi Studio" },
+            email: { type: "string", __example__: "kemi@studio.ng" },
+          }
+        : {}),
+      account_name: { type: "string", __example__: "KEMI ADEYEMI" },
+      account_line: { type: "string", __example__: "GTBank · 0123456789" },
+      error_messages: errorsFor(...(setup ? ["confirmed", "agreed"] : ["confirmed"])),
+    },
+    layout: {
+      type: "SingleColumnLayout",
+      children: [
+        { type: "TextSubheading", text: "Account name" },
+        { type: "TextHeading", text: "${data.account_name}" },
+        { type: "TextSubheading", text: "Bank and account number" },
+        { type: "TextBody", text: "${data.account_line}" },
+        {
+          type: "TextCaption",
+          text: setup
+            ? "Not you? Go back and check the bank and the account number."
+            : "It takes effect in 24 hours. Until then, payments go to your current account.",
+        },
+        ...(setup
+          ? [
+              {
+                type: "EmbeddedLink",
+                text: "Read the Terms of use",
+                "on-click-action": { name: "open_url", url: `${site}/terms` },
+              },
+              {
+                type: "EmbeddedLink",
+                text: "Read the Privacy Notice",
+                "on-click-action": { name: "open_url", url: `${site}/privacy` },
+              },
+            ]
+          : []),
+        {
+          type: "Form",
+          name: "confirm_form",
+          "error-messages": "${data.error_messages}",
+          children: [
+            {
+              type: "OptIn",
+              name: "confirmed",
+              label: "The details above are correct",
+              required: true,
+            },
+            ...(setup
+              ? [
+                  {
+                    type: "OptIn",
+                    name: "agreed",
+                    label: "I agree to the Terms and the Privacy Notice",
+                    required: true,
+                  },
+                ]
+              : []),
+            {
+              type: "Footer",
+              label: setup ? "Continue" : "Send code",
+              "on-click-action": {
+                name: "data_exchange",
+                payload: {
+                  ...(setup
+                    ? { business_name: "${data.business_name}", email: "${data.email}", agreed: "${form.agreed}" }
+                    : {}),
+                  account_name: "${data.account_name}",
+                  account_line: "${data.account_line}",
+                  confirmed: "${form.confirmed}",
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * The code from the email, typed on the form rather than into the chat.
+ *
+ * The typed code was the step people got lost on: the chat asked for it,
+ * they went to their inbox, came back, and the message they needed was three
+ * bubbles up. Here the box is waiting for it, a wrong code is said under the
+ * box, and "Send a new code" is on the same screen rather than a word to
+ * remember to type.
+ */
+function codeScreen(form: AccountForm): Record<string, unknown> {
+  return {
+    id: "CODE",
+    title: "Check your email",
+    terminal: false,
+    data: {
+      email: { type: "string", __example__: "kemi@studio.ng" },
+      masked_email: { type: "string", __example__: "k***@studio.ng" },
+      notice: { type: "string", __example__: "" },
+      has_notice: { type: "boolean", __example__: false },
+      error_messages: errorsFor("code"),
+    },
+    layout: {
+      type: "SingleColumnLayout",
+      children: [
+        { type: "TextSubheading", text: "We sent a 6-digit code to" },
+        { type: "TextBody", text: "${data.masked_email}" },
+        { type: "TextCaption", text: "${data.notice}", visible: "${data.has_notice}" },
+        {
+          type: "Form",
+          name: "code_form",
+          "error-messages": "${data.error_messages}",
+          children: [
+            {
+              type: "TextInput",
+              name: "code",
+              label: "Code",
+              "helper-text": "Check spam if it is not in your inbox.",
+              required: true,
+              "input-type": "number",
+              "max-chars": 6,
             },
             {
               type: "Footer",
-              label: "Yes, that's me",
+              label: form === "onboarding" ? "Verify and finish" : "Confirm change",
               "on-click-action": {
-                name: "complete",
-                payload: {
-                  business_name: "${data.business_name}",
-                  email: "${data.email}",
-                  bank: "${data.bank}",
-                  mfb_bank: "${data.mfb_bank}",
-                  account_number: "${data.account_number}",
-                  account_name: "${data.account_name}",
-                },
+                name: "data_exchange",
+                payload: { code: "${form.code}", email: "${data.email}" },
               },
+            },
+          ],
+        },
+        {
+          type: "EmbeddedLink",
+          text: "Send a new code",
+          "on-click-action": {
+            name: "data_exchange",
+            payload: { resend: "1", email: "${data.email}" },
+          },
+        },
+      ],
+    },
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Changing the bank (PRD F17)                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The payout account, changed inside a form rather than across a chat.
+ *
+ * The chat version asked for a code, then for the bank and number in a
+ * sentence, then "move your payouts there?", each a message and each a place
+ * to get stuck. F17's four protections are all still here, in the same order
+ * the chat applied them: the account named by the bank before anything
+ * moves, a code to the verified email, the alert to WhatsApp and email, and
+ * the 24-hour delay.
+ */
+const payoutChange: FlowDefinition = {
+  key: "payout_change",
+  name: "Balans payout account",
+  categories: ["OTHER"],
+  endpoint: true,
+  json: {
+    version: VERSION,
+    data_api_version: "3.0",
+    routing_model: {
+      PAYOUT: ["CONFIRM"],
+      CONFIRM: ["CODE"],
+      CODE: ["DONE"],
+      DONE: [],
+    },
+    screens: [
+      {
+        id: "PAYOUT",
+        title: "Change payout account",
+        data: {
+          current_line: { type: "string", __example__: "Access Bank · ····4321 · KEMI ADEYEMI" },
+          error_messages: errorsFor("account_number"),
+        },
+        layout: {
+          type: "SingleColumnLayout",
+          children: [
+            { type: "TextSubheading", text: "Payments go to" },
+            { type: "TextBody", text: "${data.current_line}" },
+            {
+              type: "Form",
+              name: "payout_form",
+              "error-messages": "${data.error_messages}",
+              children: [
+                {
+                  type: "Dropdown",
+                  name: "bank",
+                  label: "New bank",
+                  required: true,
+                  "data-source": bankOptions(),
+                },
+                {
+                  type: "TextCaption",
+                  text: "Not in the list? Choose “Microfinance bank (below)”, then pick yours here.",
+                },
+                {
+                  type: "Dropdown",
+                  name: "mfb_bank",
+                  label: "MFB",
+                  required: false,
+                  "data-source": mfbOptions(),
+                },
+                {
+                  type: "TextInput",
+                  name: "account_number",
+                  label: "Account",
+                  "helper-text": "The 10 digits on your account.",
+                  required: true,
+                  "input-type": "number",
+                  "max-chars": 10,
+                },
+                {
+                  type: "Footer",
+                  label: "Check account",
+                  "on-click-action": {
+                    name: "data_exchange",
+                    payload: {
+                      current_line: "${data.current_line}",
+                      bank: "${form.bank}",
+                      mfb_bank: "${form.mfb_bank}",
+                      account_number: "${form.account_number}",
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      confirmScreen("payout_change"),
+      codeScreen("payout_change"),
+      {
+        id: "DONE",
+        title: "Change scheduled",
+        terminal: true,
+        success: true,
+        data: {
+          account_name: { type: "string", __example__: "KEMI ADEYEMI" },
+          account_line: { type: "string", __example__: "GTBank · ····6789" },
+          effective_line: {
+            type: "string",
+            __example__: "Payouts move here on Mon 28 Sep, 14:20. Until then they go to your current account.",
+          },
+        },
+        layout: {
+          type: "SingleColumnLayout",
+          children: [
+            { type: "TextHeading", text: "Change scheduled" },
+            { type: "TextSubheading", text: "New payout account" },
+            { type: "TextBody", text: "${data.account_name}" },
+            { type: "TextCaption", text: "${data.account_line}" },
+            { type: "TextBody", text: "${data.effective_line}" },
+            {
+              type: "TextCaption",
+              text: "We have sent a security alert to your WhatsApp and email. If this was not you, reply STOP to it now.",
+            },
+            {
+              type: "Footer",
+              label: "Done",
+              "on-click-action": { name: "complete", payload: { done: "1" } },
             },
           ],
         },
@@ -1667,6 +1980,7 @@ const consent: FlowDefinition = {
 
 export const FLOWS: readonly FlowDefinition[] = [
   onboarding,
+  payoutChange,
   businessDetails,
   invoice,
   quote,

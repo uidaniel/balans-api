@@ -37,6 +37,12 @@ export type PublicDocument = {
   /** Whose business is billing. The only thing about the user a client sees. */
   businessName: string;
   clientName: string;
+  /**
+   * Whether the sender gave the client's email. Only whether, never the
+   * address: this page opens for anybody holding the link. Optional so older
+   * fixtures and callers read as "unknown", which the page treats as no.
+   */
+  clientHasEmail?: boolean;
   lines: {
     description: string;
     qty: number;
@@ -123,6 +129,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     original_amount_minor: number | null;
     fx_rate: string | null;
     client_name: string;
+    client_has_email: boolean;
     sub_account_code: string | null;
     has_payout_account: boolean;
     ref: string | null;
@@ -140,6 +147,8 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
             d.bank_details_account_last4, d.bank_details_account_number_encrypted,
             u.business_name, u.plan,
             c.name AS client_name,
+            -- Whether there is one, never what it is: this page is public.
+            (c.email IS NOT NULL AND c.email <> '') AS client_has_email,
             b.subaccount_code AS sub_account_code,
             (b.id IS NOT NULL) AS has_payout_account
        FROM documents d
@@ -180,6 +189,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     status: r.status,
     businessName: r.business_name ?? "A Balans user",
     clientName: r.client_name,
+    clientHasEmail: r.client_has_email,
     lines: items.map((i) => ({
       description: i.description,
       qty: Number(i.qty),

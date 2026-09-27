@@ -28,7 +28,7 @@ import { expireLapsedSubscriptions, renewalsDue } from "../billing/subscription.
 import { payBy } from "../documents/summary.ts";
 import { bankDetailsOf, type BankDetails } from "../documents/bank-details.ts";
 import { emailReminderToClient } from "../email/client-reminder.ts";
-import { amountFor } from "../documents/client-whatsapp.ts";
+import { amountFor, whatsappReminderToClient } from "../documents/client-whatsapp.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Quiet hours (F13)                                                          */
@@ -215,6 +215,35 @@ export async function sendDueReminders(
       ? `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/${r.public_token}`
       : null;
 
+    /*
+     * The client first, then the freelancer — told what already happened.
+     *
+     * The freelancer used to be handed a message to copy and forward
+     * ("Send them this"), which is the step that gets forgotten, and the
+     * reason reminders exist at all. Where Balans can reach the client
+     * itself it does, and the freelancer hears that it did. Only where it
+     * cannot — no address and no number, or a Free plan — are they still
+     * given the words to send.
+     *
+     * Each channel independent of the other: a bounced email must not stop
+     * the WhatsApp, and neither depends on the freelancer's phone.
+     */
+    const isToday = due.y === today.y && due.m === today.m && due.d === today.d;
+    const emailed = await emailReminderToClient(r.document_id, today, log).catch((err: unknown) => {
+      log.error({ err, documentId: r.document_id }, "client reminder email failed");
+      return false;
+    });
+    const whatsapped = await whatsappReminderToClient(
+      r.document_id,
+      isToday ? "today" : formatFriendly(due, today),
+      log,
+    ).catch((err: unknown) => {
+      log.error({ err, documentId: r.document_id }, "client reminder WhatsApp failed");
+      return { ok: false as const };
+    });
+    const reminded = { email: emailed, whatsapp: whatsapped.ok };
+    const how = remindedHow(reminded);
+
     const outcome = await send(
       {
         userId: r.user_id,
@@ -229,16 +258,27 @@ export async function sendDueReminders(
           link,
           bank: await bankDetailsOf(r.document_id),
           owedAgreed,
+          reminded,
         }),
-        fallback: {
-          template: "invoice_overdue_prompt",
-          params: [
-            r.number === null ? "" : String(r.number),
-            owedAgreed ?? formatNaira(owed),
-            formatFriendly(due, today),
-            r.client_name,
-          ],
-        },
+        fallback: how
+          ? {
+              template: "client_reminded",
+              params: [
+                r.client_name,
+                r.number === null ? "" : String(r.number),
+                owedAgreed ?? formatNaira(owed),
+                how,
+              ],
+            }
+          : {
+              template: "invoice_overdue_prompt",
+              params: [
+                r.number === null ? "" : String(r.number),
+                owedAgreed ?? formatNaira(owed),
+                formatFriendly(due, today),
+                r.client_name,
+              ],
+            },
       },
       log,
     );
@@ -250,17 +290,23 @@ export async function sendDueReminders(
     );
 
     if (outcome.kind === "sent") sent += 1;
-
-    // And to the client themselves, on Pro, by email (see client-reminder.ts).
-    // Independent of the WhatsApp outcome: the client's reminder should not
-    // depend on whether the sender's phone was reachable.
-    await emailReminderToClient(r.document_id, today, log).catch((err: unknown) =>
-      log.error({ err, documentId: r.document_id }, "client reminder email failed"),
-    );
   }
 
   if (sent) log.info({ count: sent }, "reminders sent");
   return sent;
+}
+
+/**
+ * "by email", "on WhatsApp", "by email and on WhatsApp", or null for neither.
+ *
+ * One function for the chat message and the template, so the two can never
+ * describe the same reminder differently.
+ */
+export function remindedHow(r: { email: boolean; whatsapp: boolean }): string | null {
+  if (r.email && r.whatsapp) return "by email and on WhatsApp";
+  if (r.email) return "by email";
+  if (r.whatsapp) return "on WhatsApp";
+  return null;
 }
 
 /**
@@ -283,6 +329,8 @@ export function promptMessage(x: {
   bank?: BankDetails | null;
   /** What is owed in dollars or pounds, on an invoice priced in them. */
   owedAgreed?: string;
+  /** How Balans reached the client itself, if it did. */
+  reminded?: { email: boolean; whatsapp: boolean };
 }): string {
   const which = x.number === null ? "INVOICE" : `INVOICE #${x.number}`;
   const when = formatFriendly(x.due, x.today);
@@ -313,6 +361,26 @@ export function promptMessage(x: {
   // invoice from us" reads like a ransom note, so drop the clause entirely.
   const from = x.businessName === "us" ? "" : ` from ${x.businessName}`;
 
+  const heading = block(`⏰ ${b(today ? `${which} IS DUE TODAY` : `${which} IS LATE`)}`, [
+    row("Client", x.clientName),
+    row("Amount", b(owed)),
+    ...(today ? [] : [row("Was due", when)]),
+  ]);
+
+  /*
+   * Already reminded: say so, and say how. Nothing to copy, nothing to
+   * forward — the whole point of sending it for them.
+   */
+  const how = x.reminded ? remindedHow(x.reminded) : null;
+  if (how) {
+    return para(
+      heading,
+      `✅ ${b(`${x.clientName} has been reminded ${how}`)}, with the link to pay.`,
+      "Nothing for you to do. I will tell you the moment it is paid.",
+      `Reply ${b("stop reminders")} to turn these off for this invoice.`,
+    );
+  }
+
   const forward = para(
     today
       ? `Hi ${x.clientName} — a quick note that the invoice${from} for ${owed} is due today.`
@@ -322,11 +390,7 @@ export function promptMessage(x: {
   );
 
   return para(
-    block(`⏰ ${b(today ? `${which} IS DUE TODAY` : `${which} IS LATE`)}`, [
-      row("Client", x.clientName),
-      row("Amount", b(owed)),
-      ...(today ? [] : [row("Was due", when)]),
-    ]),
+    heading,
     // The rules here were doing real work rather than decorating \u2014 they
     // marked where the copyable message stopped. Its own paragraph says the
     // same thing: a blank line above and below it, and the instruction

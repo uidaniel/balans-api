@@ -154,6 +154,10 @@ align-items:flex-end;justify-content:center;padding:16px}
 .modal:target{display:flex}
 .msheet{width:100%;max-width:440px;background:var(--paper);border-radius:24px;padding:26px 22px 18px;
 box-shadow:0 20px 60px rgba(16,35,28,.25)}
+.mfield{display:block;margin:0 0 14px;font-size:13px;font-weight:600;color:var(--ink-65)}
+.mfield input{display:block;width:100%;margin-top:6px;height:48px;padding:0 14px;border-radius:14px;
+border:1px solid var(--ink-10);background:#fff;font:400 16px/1 var(--sans);color:var(--ink)}
+.mfield input:focus{outline:2px solid var(--ink);outline-offset:1px}
 @media (min-width:600px){.modal{align-items:center}}
 .msheet h2{margin:0;font:700 22px/1.2 var(--display);letter-spacing:-.02em}
 .msheet p{margin:10px 0 0;font-size:14.5px;line-height:1.55;color:var(--ink-65)}
@@ -694,6 +698,23 @@ function payBlock(
       <p>Your card is charged in naira. Your bank converts it and may add its own exchange rate or fees.</p>
       ${conversionStep(doc, amount)}
       <form method="post" action="/i/${esc(opts.token)}/pay">
+        ${
+          /*
+           * Where the receipt goes, asked here because nowhere later can.
+           *
+           * Paystack's checkout takes the email it is given when the payment
+           * starts and offers no box for one, so a client whose sender left
+           * the email out was paying with nowhere for the receipt to go. Only
+           * asked when there is none on file — somebody already known is not
+           * made to type it again.
+           */
+          doc.clientHasEmail
+            ? ""
+            : `<label class="mfield" for="receipt-email">Email for your receipt
+          <input id="receipt-email" name="email" type="email" inputmode="email" autocomplete="email"
+            required maxlength="254" placeholder="you@company.com">
+        </label>`
+        }
         <button class="pay-btn" type="submit">Pay ${formatNaira(amount)} by card${
           partLabel ? ` &middot; ${esc(partLabel)}` : ""
         }</button>

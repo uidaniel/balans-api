@@ -81,7 +81,7 @@ export type Context = {
    * the chat so it does not ask "Is that you?" about a name already shown in
    * the form. See whatsapp/flows/endpoint.ts.
    */
-  flowChecked?: { bankCode: string; accountNumber: string; accountName: string };
+  flowChecked?: { bankCode: string; bankName?: string; accountNumber: string; accountName: string };
   email?: string;
   /** Wrong answers in a row on the current step. */
   attempts?: number;

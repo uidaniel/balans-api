@@ -18,10 +18,12 @@
  * gets a new id, and a constant in a file would then point at nothing.
  */
 
+import { createHash } from "node:crypto";
+
 import { closeDb, db } from "../../db/pool.ts";
 import { env } from "../../config.ts";
 import { FLOWS, type FlowDefinition } from "./definitions.ts";
-import { makeEndpointKey } from "./endpoint.ts";
+import { endpointKey, makeEndpointKey } from "./endpoint.ts";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 
@@ -43,7 +45,7 @@ async function graph(path: string, init?: RequestInit): Promise<unknown> {
   return body;
 }
 
-async function listFlows(): Promise<Existing[]> {
+export async function listFlows(): Promise<Existing[]> {
   const body = (await graph(`${env.WA_BUSINESS_ACCOUNT_ID}/flows`)) as { data?: Existing[] };
   return body.data ?? [];
 }
@@ -98,7 +100,7 @@ async function upload(id: string, def: FlowDefinition): Promise<void> {
   }
 }
 
-async function register(def: FlowDefinition, existing: Existing[], publish: boolean): Promise<void> {
+export async function register(def: FlowDefinition, existing: Existing[], publish: boolean): Promise<void> {
   const found = existing.find((f) => f.name === def.name);
 
   let id: string;
@@ -145,6 +147,88 @@ async function register(def: FlowDefinition, existing: Existing[], publish: bool
   await saveFlowId(def.key, id);
 }
 
+/** Gives Meta the public half of a new endpoint key. */
+async function uploadEndpointKey(): Promise<{ ok: boolean; said: string }> {
+  const publicKey = await makeEndpointKey();
+  const form = new URLSearchParams({ business_public_key: publicKey });
+  const res = await fetch(`${GRAPH}/${env.WA_PHONE_NUMBER_ID}/whatsapp_business_encryption`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.WA_ACCESS_TOKEN}` },
+    body: form,
+  });
+  return { ok: res.ok, said: `${res.status} ${await res.text()}` };
+}
+
+const fingerprint = (def: FlowDefinition): string =>
+  createHash("sha256").update(JSON.stringify(def.json)).digest("hex").slice(0, 16);
+
+async function publishedFingerprint(key: string): Promise<string | null> {
+  const { rows } = await db().query<{ value: string }>(
+    `SELECT value_json #>> '{}' AS value FROM config WHERE key = $1`,
+    [`flow_hash.${key}`],
+  );
+  return rows[0]?.value ?? null;
+}
+
+async function saveFingerprint(key: string, hash: string): Promise<void> {
+  await db().query(
+    `INSERT INTO config (key, value_json, updated_by) VALUES ($1, to_jsonb($2::text), 'flows:boot')
+       ON CONFLICT (key) DO UPDATE
+       SET value_json = EXCLUDED.value_json, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    [`flow_hash.${key}`, hash],
+  );
+}
+
+/**
+ * Publishes every Flow whose JSON changed since it was last published.
+ *
+ * A push deploys the code, and the code is only half of a form: the screens
+ * live at Meta and used to change only when somebody remembered to run
+ * `npm run flows` on the box. When SSH was unreachable nobody could, and a
+ * deployed endpoint answering screens Meta had never been shown would break
+ * setup for everyone. So the running service does it after it starts
+ * listening — after, because publishing a Flow with an endpoint makes Meta
+ * ping that endpoint, and a server that is not up yet fails the ping.
+ *
+ * Only what changed, told by a hash of the JSON kept in `config`. A Flow
+ * Meta refuses is logged and skipped: the previous version stays live, and
+ * the boot is not failed over a form.
+ */
+export async function publishChangedFlows(log: {
+  info: (o: object, m: string) => void;
+  warn: (o: object, m: string) => void;
+  error: (o: object, m: string) => void;
+}): Promise<void> {
+  if (!env.WA_ACCESS_TOKEN || !env.WA_BUSINESS_ACCOUNT_ID || !env.DATABASE_URL) return;
+
+  const publish = env.WA_FLOWS_DRAFT !== "true";
+  let existing: Existing[];
+  try {
+    existing = await listFlows();
+  } catch (e) {
+    log.warn({ err: (e as Error).message }, "could not list Flows at Meta; not publishing any");
+    return;
+  }
+
+  if (FLOWS.some((f) => f.endpoint) && !(await endpointKey())) {
+    const made = await uploadEndpointKey();
+    if (made.ok) log.info({ said: made.said }, "Flow endpoint key made and given to Meta");
+    else log.error({ said: made.said }, "Flow endpoint key refused by Meta");
+  }
+
+  for (const def of FLOWS) {
+    const hash = fingerprint(def);
+    if ((await publishedFingerprint(def.key)) === hash && (await flowId(def.key))) continue;
+    try {
+      await register(def, existing, publish);
+      await saveFingerprint(def.key, hash);
+      log.info({ flow: def.key, hash, published: publish }, "Flow published at boot");
+    } catch (e) {
+      log.error({ flow: def.key, err: (e as Error).message }, "Flow refused at boot; the previous version stays live");
+    }
+  }
+}
+
 if (
   process.argv[1] &&
   import.meta.url === (await import("node:url")).pathToFileURL(process.argv[1]).href
@@ -155,15 +239,9 @@ if (
     const existing = await listFlows();
 
     if (args.includes("--endpoint-key")) {
-      const publicKey = await makeEndpointKey();
-      const form = new URLSearchParams({ business_public_key: publicKey });
-      const res = await fetch(`${GRAPH}/${env.WA_PHONE_NUMBER_ID}/whatsapp_business_encryption`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${env.WA_ACCESS_TOKEN}` },
-        body: form,
-      });
-      console.log(`endpoint key made; Meta says ${res.status} ${await res.text()}`);
-      if (!res.ok) process.exitCode = 1;
+      const made = await uploadEndpointKey();
+      console.log(`endpoint key made; Meta says ${made.said}`);
+      if (!made.ok) process.exitCode = 1;
     } else if (args.includes("--list")) {
       if (!existing.length) console.log("no flows yet");
       for (const f of existing) console.log(`${f.id}  ${f.status.padEnd(10)} ${f.name}`);

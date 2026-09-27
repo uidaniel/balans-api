@@ -69,6 +69,37 @@ async function create(spec: TemplateSpec): Promise<{ ok: boolean; detail: string
   return { ok: true, detail: `${body.id} (${body.status ?? "submitted"})` };
 }
 
+/**
+ * Submits every template in the code that Meta does not have yet.
+ *
+ * Run by the service at boot, so that a template added in a push goes to
+ * Meta for approval without anybody remembering `npm run templates --
+ * --submit` on a box they may not be able to reach. Only the missing ones:
+ * an existing template, approved or waiting, is left exactly as it is.
+ * Nothing here can fail the boot — a refused template is logged, and the
+ * code that would send it already falls back when Meta refuses the send.
+ */
+export async function submitMissingTemplates(log: {
+  info: (o: object, m: string) => void;
+  warn: (o: object, m: string) => void;
+}): Promise<void> {
+  if (!env.WA_ACCESS_TOKEN || !env.WA_BUSINESS_ACCOUNT_ID) return;
+  let existing: Existing[];
+  try {
+    existing = await list();
+  } catch (e) {
+    log.warn({ err: (e as Error).message }, "could not list templates at Meta; submitting none");
+    return;
+  }
+  const have = new Set(existing.map((t) => t.name));
+  for (const spec of Object.values(TEMPLATES)) {
+    if (have.has(spec.name)) continue;
+    const made = await create(spec);
+    if (made.ok) log.info({ template: spec.name, detail: made.detail }, "template submitted to Meta at boot");
+    else log.warn({ template: spec.name, detail: made.detail }, "template refused by Meta at boot");
+  }
+}
+
 export async function registerTemplates(submit: boolean): Promise<void> {
   const existing = await list();
   const byName = new Map(existing.map((t) => [t.name, t]));

@@ -9,7 +9,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { costOf, MESSAGE_COST_KOBO, TEMPLATES, type TemplateName } from "./window.ts";
-import { withinQuietHours, promptMessage } from "../jobs/overdue.ts";
+import { withinQuietHours, promptMessage, remindedHow } from "../jobs/overdue.ts";
 
 describe("the templates we register with Meta", () => {
   const names = Object.keys(TEMPLATES) as TemplateName[];
@@ -20,6 +20,8 @@ describe("the templates we register with Meta", () => {
       [
         "client_invoice",
         "client_quote",
+        "client_reminded",
+        "client_reminder",
         "invoice_overdue_prompt",
         "invoice_viewed",
         "monthly_summary_ready",
@@ -115,6 +117,50 @@ describe("quiet hours", () => {
     assert.equal(withinQuietHours(at(21)), true);
     // And 06:30 UTC is 07:30 Lagos, still quiet, though much of the world is up.
     assert.equal(withinQuietHours(at(6)), true);
+  });
+});
+
+describe("a reminder Balans sent for them", () => {
+  /*
+   * "Send them this — copy the message below" was the step that got
+   * forgotten, which is the reason reminders exist at all. Where Balans can
+   * reach the client itself it does, and the freelancer is told how.
+   */
+  const base = {
+    number: 3,
+    clientName: "Joshua Uwak",
+    businessName: "Danny Codes Ltd",
+    owedKobo: 1_350_000_00,
+    due: { y: 2026, m: 9, d: 27 },
+    today: { y: 2026, m: 9, d: 27 },
+    link: "https://payment.balans.ng/i/abc",
+  };
+
+  it("says the client was reminded, and how, with nothing to copy", () => {
+    const out = promptMessage({ ...base, reminded: { email: true, whatsapp: false } });
+    assert.match(out, /Joshua Uwak has been reminded by email/);
+    assert.doesNotMatch(out, /Send them this/, "still asking them to forward it");
+    assert.doesNotMatch(out, /Hi Joshua Uwak/, "the client's message is still in the freelancer's chat");
+  });
+
+  it("names WhatsApp when that is how it went, and both when both did", () => {
+    assert.match(promptMessage({ ...base, reminded: { email: false, whatsapp: true } }), /reminded on WhatsApp/);
+    assert.match(
+      promptMessage({ ...base, reminded: { email: true, whatsapp: true } }),
+      /reminded by email and on WhatsApp/,
+    );
+  });
+
+  it("falls back to the words to forward when neither could go", () => {
+    const out = promptMessage({ ...base, reminded: { email: false, whatsapp: false } });
+    assert.match(out, /Send them this/);
+    assert.match(out, /Hi Joshua Uwak/);
+  });
+
+  it("describes the same reminder the same way in the chat and in the template", () => {
+    assert.equal(remindedHow({ email: true, whatsapp: false }), "by email");
+    assert.equal(remindedHow({ email: false, whatsapp: false }), null);
+    assert.match(TEMPLATES.client_reminded.example[3]!, /by email|on WhatsApp/);
   });
 });
 

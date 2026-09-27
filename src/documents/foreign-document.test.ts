@@ -266,3 +266,37 @@ describe("the price on the sheet", () => {
     }
   });
 });
+
+describe("where a card payer's receipt goes", () => {
+  /*
+   * Paystack's checkout takes the email it is given when the payment starts
+   * and has no box for one. A client whose sender left the email out was
+   * paying with nowhere for the receipt to go — so the card step asks.
+   */
+  const draw = (clientHasEmail: boolean) =>
+    renderDocument(page({ clientHasEmail }), TODAY, { token: "a".repeat(32), cardReady: true });
+
+  it("asks for an email on the card step when there is none on file", () => {
+    const out = draw(false);
+    assert.match(out, /name="email" type="email"/);
+    assert.match(out, /Email for your receipt/);
+  });
+
+  it("does not make somebody already known type it again", () => {
+    assert.doesNotMatch(draw(true), /name="email"/);
+  });
+
+  it("never puts the client's address on a page anybody with the link can open", () => {
+    // Only whether there is one. The page is public, so no address is ever
+    // pre-filled into the box or printed anywhere on it.
+    assert.doesNotMatch(draw(false), /value="[^"]*@/);
+    assert.doesNotMatch(draw(true), /value="[^"]*@/);
+  });
+
+  it("keeps a typed address only where the sender gave none, and hands it to Paystack", () => {
+    const routes = readFileSync(new URL("../http/routes/public.ts", import.meta.url), "utf8");
+    assert.match(routes, /AND \(email IS NULL OR email = ''\)/, "a typed address could replace the sender's");
+    assert.match(routes, /email: payerEmail \?\? `\$\{reference\}@receipts\.balans\.ng`/);
+    assert.match(routes, /return again\("email"\)/, "a card payment goes ahead with nowhere for the receipt");
+  });
+});

@@ -128,3 +128,64 @@ export async function whatsappDocumentToClient(
   log.info({ documentId, template }, "document sent to the client's WhatsApp");
   return { ok: true, to: d.client_phone };
 }
+
+/**
+ * The due-date reminder, to the client's WhatsApp.
+ *
+ * Pro, like the invoice itself on this channel, and only for an invoice with
+ * something still owed. It uses `client_reminder`, which Meta has to approve
+ * before it will send; until then this fails, says so, and the reminder
+ * still goes by email if there is an address.
+ */
+export async function whatsappReminderToClient(
+  documentId: string,
+  due: string,
+  log: FastifyBaseLogger,
+): Promise<WhatsAppDelivery> {
+  const { rows } = await db().query<{
+    user_id: string;
+    total_kobo: number;
+    amount_paid_kobo: number;
+    subtotal_kobo: number;
+    vat_kobo: number;
+    currency: string;
+    original_amount_minor: number | null;
+    public_token: string | null;
+    client_name: string;
+    client_phone: string | null;
+    business_name: string | null;
+  }>(
+    `SELECT d.user_id, d.total_kobo, d.amount_paid_kobo, d.subtotal_kobo, d.vat_kobo, d.currency,
+            d.original_amount_minor, d.public_token,
+            c.name AS client_name, c.phone AS client_phone, u.business_name
+       FROM documents d
+       JOIN clients c ON c.id = d.client_id
+       JOIN users u   ON u.id = d.user_id
+      WHERE d.id = $1 AND d.type = 'invoice'`,
+    [documentId],
+  );
+
+  const d = rows[0];
+  if (!d || !d.public_token || d.total_kobo <= d.amount_paid_kobo) return { ok: false, why: "not_found" };
+  if (!d.client_phone) return { ok: false, why: "no_client_phone" };
+  if ((await planOf(d.user_id)) !== "pro") return { ok: false, why: "not_pro" };
+
+  // Nothing paid on a dollar invoice: still owed in dollars. Part paid, the
+  // rest is only known in naira, which is what was charged.
+  const owed =
+    d.currency !== "NGN" && d.amount_paid_kobo === 0 ? amountFor(d) : formatNaira(d.total_kobo - d.amount_paid_kobo);
+
+  const sent = await sendTemplate(
+    d.client_phone,
+    "client_reminder",
+    [firstName(d.client_name), d.business_name ?? "A Balans user", owed, due],
+    { language: TEMPLATE_LANGUAGE, urlSuffix: d.public_token },
+  );
+
+  if (!sent.ok) {
+    log.error({ documentId, reason: sent.reason }, "could not send the reminder to the client's WhatsApp");
+    return { ok: false, why: "send_failed", to: d.client_phone };
+  }
+  log.info({ documentId }, "reminder sent to the client's WhatsApp");
+  return { ok: true, to: d.client_phone };
+}

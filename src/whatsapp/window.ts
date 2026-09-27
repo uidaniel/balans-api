@@ -72,7 +72,9 @@ export type TemplateName =
   | "pro_renewal"
   | "security_alert"
   | "client_invoice"
-  | "client_quote";
+  | "client_quote"
+  | "client_reminder"
+  | "client_reminded";
 
 export type TemplateSpec = {
   name: TemplateName;
@@ -169,6 +171,46 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
       url: `${env.SITE_URL.replace(/\/$/, "")}/q/{{1}}`,
       example: `${env.SITE_URL.replace(/\/$/, "")}/q/1256e3fd1f1fb85572609f61607c3fa6`,
     },
+  },
+
+  /*
+   * The reminder, sent to the client rather than handed to the freelancer to
+   * forward. A template for the same reason `client_invoice` is: the client
+   * has never written to us, so there is no window to send anything else in.
+   *
+   * "The invoice from {{2}}" rather than "{{2}}'s invoice": the possessive
+   * turns "Daniel Adventures" into "Daniel Adventures's", and this goes to
+   * somebody else's client. "Due {{4}}" reads the same for today and for a
+   * date that has passed, and says nothing about anybody being late.
+   */
+  client_reminder: {
+    name: "client_reminder",
+    category: "UTILITY",
+    body: "Hello {{1}}, a reminder about the invoice from {{2}} for {{3}}, due {{4}}. Tap below to see it and pay.",
+    params: ["client", "business", "amount still owed", "due date, e.g. today or Mon, 28 Sep"],
+    example: ["Tunde", "Kemi Studio", "₦200,000", "today"],
+    footer: "Sent with Balans",
+    button: {
+      text: "View and pay",
+      url: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/{{1}}`,
+      example: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/1256e3fd1f1fb85572609f61607c3fa6`,
+    },
+  },
+
+  /*
+   * Telling the freelancer their client was reminded, outside the window.
+   *
+   * `invoice_overdue_prompt` asks them to reply and send a reminder
+   * themselves, which is wrong once Balans has already sent it. Starts with a
+   * word rather than a placeholder, because Meta flags templates that open on
+   * a variable.
+   */
+  client_reminded: {
+    name: "client_reminded",
+    category: "UTILITY",
+    body: "We reminded {{1}} about invoice {{2}} for {{3}}, {{4}}. Nothing for you to do. We will tell you the moment it is paid.",
+    params: ["client", "invoice number", "amount", "how, e.g. by email"],
+    example: ["Zenith Homes", "14", "₦350,000", "by email and on WhatsApp"],
   },
 
   security_alert: {

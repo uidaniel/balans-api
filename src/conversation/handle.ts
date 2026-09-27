@@ -13,8 +13,7 @@ import { db, tx } from "../db/pool.ts";
 import { markRead, normalisePhone, sendButtons, sendText, type ReplyButton } from "../whatsapp/client.ts";
 import { checkAccount, findBank } from "../payments/bank-directory.ts";
 import { checkCode, issueCode } from "../lib/codes.ts";
-import { sendEmail, transport, verificationEmail, welcomeEmail } from "../email/send.ts";
-import { displayNumber } from "../whatsapp/number.ts";
+import { sendEmail, transport, verificationEmail } from "../email/send.ts";
 import { markEmailVerified, setEmail, recordConsent, saveBankAccount, activateBankAccount, getPendingBank } from "./store.ts";
 import type { Inbound } from "../whatsapp/inbound.ts";
 import {
@@ -280,6 +279,38 @@ async function sendConsentForm(
   return true;
 }
 
+/**
+ * The bank-change form, opened on the current account.
+ *
+ * False when there is no published form or it would not send, and the caller
+ * falls back to the chat's code-then-sentence path.
+ */
+async function sendPayoutForm(
+  userId: string,
+  phone: string | undefined,
+  log: FastifyBaseLogger,
+): Promise<boolean> {
+  const id = await flowId("payout_change");
+  if (!id || !phone) return false;
+
+  const sent = await sendFlow(phone, {
+    body: "🏦 Change where your money lands. The new account is checked with your bank before anything moves.",
+    cta: "Change account",
+    flowId: id,
+    token: `payout_change:${userId}`,
+    screen: "PAYOUT",
+    data: { current_line: await currentAccountLine(userId), error_messages: {} },
+    draft: env.WA_FLOWS_DRAFT === "true",
+  });
+
+  if (!sent.ok) {
+    log.warn({ userId, reason: sent.reason }, "bank change form failed, asking in words");
+    return false;
+  }
+  await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+  return true;
+}
+
 /** The screen each Flow opens on. */
 const FLOW_SCREEN = {
   onboarding: "BUSINESS",
@@ -296,6 +327,7 @@ import { periodCard } from "../documents/period-card.ts";
 import { invoiceableKobo } from "../../core/amount.ts";
 import { totalsFor } from "../../core/totals.ts";
 import { MFB_CHOICE } from "../whatsapp/flows/banks.ts";
+import { currentAccountLine, sendWelcome } from "../whatsapp/flows/actions.ts";
 import { sendDocument, uploadDocument } from "../whatsapp/client.ts";
 import {
   loadConversation,
@@ -434,7 +466,21 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
       return;
     }
     if (key === "onboarding") {
+      // The form that finished everything itself ends with `done`. One
+      // without it is the older form, still open on somebody's phone, and
+      // takes the path it always did.
+      if (msg.flow.fields.done === "1") {
+        await finishSetupFromForm(user.id, msg.from, log);
+        return;
+      }
       await handleOnboardingForm(user.id, msg.from, msg.flow.fields, log);
+      return;
+    }
+    if (key === "payout_change") {
+      // Nothing to say. The form showed the change on its last screen, and
+      // the security alert has already gone to WhatsApp and email — which is
+      // the one message F17 insists on.
+      log.info({ userId: user.id }, "bank change form closed");
       return;
     }
     if (key === "consent") {
@@ -1805,6 +1851,18 @@ async function runEffects(
             break;
           }
 
+          /*
+           * The form, when there is one: the new account checked and named on
+           * the same screen, the code typed into a box, and a last screen
+           * saying when it takes effect. The chat below is the fallback and
+           * still has to work — an unpublished Flow must not leave somebody
+           * unable to move their money.
+           */
+          if (await sendPayoutForm(userId, ctx.phone, log)) {
+            holdAt = "idle";
+            break;
+          }
+
           const issued = await issueCode(userId, "bank_change", email);
           if (!issued.ok) {
             extra.push(
@@ -2431,32 +2489,6 @@ async function handleOnboardingForm(
 }
 
 /**
- * The welcome email, the first time somebody finishes signing up.
- *
- * Not awaited. The chat is where they are, and the message saying they are
- * set up must not wait up to fifteen seconds on an email provider; a welcome
- * that fails to send is logged and not retried, because a late welcome is
- * worse than none.
- */
-function sendWelcome(
-  userId: string,
-  consent: Awaited<ReturnType<typeof recordConsent>>,
-  log: FastifyBaseLogger,
-): void {
-  if (!consent.first || !consent.email) return;
-  const to = consent.email;
-
-  void (async () => {
-    const sent = await sendEmail(
-      { to, ...welcomeEmail({ businessName: consent.businessName, email: to, waNumber: await displayNumber() }) },
-      log,
-    );
-    if (sent.ok) log.info({ userId, delivered: sent.delivered }, "welcome email sent");
-    else log.warn({ userId, reason: sent.reason }, "welcome email not sent");
-  })().catch((e) => log.error({ userId, err: (e as Error).message }, "welcome email failed"));
-}
-
-/**
  * The terms, agreed.
  *
  * The OptIn is required in the form, so a submission that arrives without it
@@ -2467,6 +2499,63 @@ function sendWelcome(
  * What is recorded is the version, not the words. That is what makes it
  * possible to say later which terms a given person accepted.
  */
+/**
+ * Setup finished inside the form, and the form closed on "Start invoicing".
+ *
+ * Everything is already done: the endpoint saved the account, checked the
+ * code, recorded the terms and put the conversation back to idle (see
+ * whatsapp/flows/actions.ts). What is left is the one message the chat still
+ * owes — the way into a first invoice, or, for somebody who asked for an
+ * invoice before any of this started, that invoice.
+ *
+ * Checked against the database rather than taken on the form's word. A
+ * `done` from somebody who is not actually verified and agreed is a form that
+ * did not do what it says, and they get the old path's next question instead
+ * of a card promising they are set up.
+ */
+async function finishSetupFromForm(userId: string, phone: string, log: FastifyBaseLogger): Promise<void> {
+  const { rows } = await db().query<{ verified: boolean; agreed: boolean }>(
+    `SELECT email_verified_at IS NOT NULL AS verified, consent_version IS NOT NULL AS agreed
+       FROM users WHERE id = $1`,
+    [userId],
+  );
+  if (!rows[0]?.verified || !rows[0]?.agreed) {
+    log.warn({ userId }, "setup form said done for somebody who is not finished");
+    await saveConversation(userId, "onboarding:business_name", {});
+    await reply(userId, phone, [VOICE.setupByHand], log);
+    return;
+  }
+
+  const { context: had } = await loadConversation(userId);
+  await saveConversation(userId, "idle", {});
+
+  if (had.opener) {
+    await reply(userId, phone, [VOICE.doneNowThat], log);
+    await replayOpener(userId, phone, had.opener, log);
+    return;
+  }
+
+  const outcome = await runEffects(
+    [
+      {
+        type: "send_flow",
+        key: "invoice",
+        body: VOICE.doneCaption,
+        cta: "Create invoice",
+        image: SETUP_DONE_CARD,
+        fallback: { line: VOICE.done, holdAt: "idle" },
+      },
+    ],
+    userId,
+    undefined,
+    log,
+    { today: todayIn(defaults.behaviour.timezone), phone },
+  );
+  if (outcome.lines.length) {
+    await reply(userId, phone, outcome.lines, log, outcome.buttons, outcome.buttonsImage);
+  }
+}
+
 async function handleConsentForm(
   userId: string,
   phone: string,

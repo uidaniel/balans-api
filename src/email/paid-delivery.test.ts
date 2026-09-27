@@ -112,7 +112,8 @@ describe("the emails a payment sends", () => {
     assert.match(source, /receiptForDocument\(documentId, log\)/);
     // And the sentence about attachments changes when the receipt is missing,
     // so the email never promises a file that is not there.
-    assert.match(source, /receipt\n\s*\? "Your receipt and the paid invoice are attached/);
+    // `\r?` because a Windows checkout reads this file with CRLF endings.
+    assert.match(source, /receipt\r?\n\s*\? "Your receipt and the paid invoice are attached/);
   });
 
   it("only claims a receipt when a payment actually succeeded", () => {

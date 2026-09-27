@@ -142,6 +142,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     card_unavailable: {
       text: "Card payment is not available on this invoice yet. Please contact the sender.",
     },
+    email: { text: "Enter your email so your receipt has somewhere to go, then pay." },
   };
 
   app.get<{ Params: { token: string }; Querystring: { e?: string } }>(
@@ -428,6 +429,8 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     outstandingKobo: number,
     back: (error?: keyof typeof PAY_ERRORS) => unknown,
     again: (error: keyof typeof PAY_ERRORS) => unknown,
+    /** The client's email: on file, or typed on the card step just now. */
+    payerEmail: string | null,
   ): Promise<unknown> {
     void back;
 
@@ -479,10 +482,11 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     const reference = `bal_${doc.id.replace(/-/g, "").slice(0, 16)}_${randomUUID().slice(0, 8)}`;
 
     const init = await initPaystack({
-      // Paystack requires an email and sends its own receipt to it. The
-      // client's is often unknown, so a per-payment address on our own domain
-      // stands in rather than a placeholder that might belong to somebody real.
-      email: `${reference}@receipts.balans.ng`,
+      // Paystack requires an email and sends its own receipt to it, so the
+      // client's own address when there is one. Only when there is not does a
+      // per-payment address on our own domain stand in, rather than a
+      // placeholder that might belong to somebody real.
+      email: payerEmail ?? `${reference}@receipts.balans.ng`,
       amountKobo: split.clientPaysKobo,
       reference,
       subaccountCode: sub.code,
@@ -583,7 +587,40 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
      * sent.
      */
     if (doc.foreign) {
-      return payByCard(req, reply, doc, outstanding, back, again);
+      /*
+       * Where the receipt goes. Paystack's checkout takes the email it is
+       * given and has no box for one, so the card step asks when the sender
+       * left it out, and it is kept on the client — only if they had none, so
+       * a typed address can never replace one the sender gave.
+       */
+      const typed = String((req.body as Record<string, string> | undefined)?.email ?? "")
+        .trim()
+        .toLowerCase();
+      const valid = typed.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(typed);
+
+      let payerEmail: string | null = null;
+      if (valid) {
+        await db().query(
+          `UPDATE clients SET email = $2
+            WHERE id = (SELECT client_id FROM documents WHERE id = $1)
+              AND (email IS NULL OR email = '')`,
+          [doc.id, typed],
+        );
+        payerEmail = typed;
+      }
+      if (!payerEmail) {
+        const { rows } = await db().query<{ email: string | null }>(
+          `SELECT c.email FROM documents d JOIN clients c ON c.id = d.client_id WHERE d.id = $1`,
+          [doc.id],
+        );
+        payerEmail = rows[0]?.email || null;
+      }
+      if (!payerEmail) {
+        req.log.info({ documentId: doc.id }, "card pay without an email for the receipt");
+        return again("email");
+      }
+
+      return payByCard(req, reply, doc, outstanding, back, again, payerEmail);
     }
 
     // Pressing Pay twice must not mint a second account. Monnify matches a
