@@ -8,7 +8,7 @@
  */
 
 import { b, i, lines, para } from "../whatsapp/format.ts";
-import { CHANGE_DELAY_HOURS, type ActiveAccount } from "./bank-change.ts";
+import type { ActiveAccount } from "./bank-change.ts";
 
 export function settingsMenu(x: {
   businessName: string | null | undefined;
@@ -66,13 +66,9 @@ export function bankChangeScheduled(
   effectiveAt: Date,
 ): string {
   return para(
-    `✅ Your payouts will move to ${b(`${change.bankName} ••${change.accountNumber.slice(-4)}`)}.`,
-    lines(
-      `In ${b(`${CHANGE_DELAY_HOURS} hours`)} — ${whenWords(effectiveAt)}.`,
-      "Until then, money still goes to your current account.",
-      "That delay is deliberate: it gives you time to stop it if this was not you.",
-    ),
-    `We have emailed you about it. Reply ${b("stop")} to cancel the change.`,
+    `✅ Done. Your invoices now show ${b(`${change.bankName} ••${change.accountNumber.slice(-4)}`)}.`,
+    "That includes invoices you already sent that are not paid yet — the link your client has shows the new account.",
+    `We have emailed you about it. If this was not you, email hello@balans.ng straight away.`,
   );
 }
 

@@ -189,15 +189,6 @@ export function maskEmail(email: string): string {
   return `${name[0]}${"*".repeat(Math.max(1, Math.min(3, name.length - 1)))}@${domain}`;
 }
 
-const when = (d: Date): string =>
-  new Intl.DateTimeFormat("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: "Africa/Lagos",
-  }).format(d);
 
 /**
  * Whether a box was ticked.
@@ -318,7 +309,7 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
       data: {
         account_name: checked.accountName,
         account_line: `${checked.bankName} · ····${checked.accountNumber.slice(-4)}`,
-        effective_line: `Payouts move here on ${when(made.effectiveAt)}. Until then they go to your current account.`,
+        effective_line: "Your invoices show this account now, unpaid ones included.",
       },
     };
   }

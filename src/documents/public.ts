@@ -156,10 +156,15 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
        JOIN clients c ON c.id = d.client_id
        -- The account in force now, not one scheduled for tomorrow: F17's
        -- 24-hour delay is only a delay if every payment path honours it.
-       LEFT JOIN bank_accounts b
-              ON b.user_id = d.user_id
-             AND b.status = 'active'
-             AND (b.effective_at IS NULL OR b.effective_at <= now())
+       -- The newest of those, since an account a change has already replaced
+       -- stays 'active' with an older effective_at (migration 0010).
+       LEFT JOIN LATERAL (
+         SELECT id, subaccount_code FROM bank_accounts
+          WHERE user_id = d.user_id AND status = 'active'
+            AND (effective_at IS NULL OR effective_at <= now())
+          ORDER BY effective_at DESC NULLS LAST, created_at DESC
+          LIMIT 1
+       ) b ON true
       WHERE d.public_token = $1 AND d.status <> 'draft'
       LIMIT 1`,
     [token],

@@ -392,7 +392,7 @@ function confirmScreen(form: AccountForm): Record<string, unknown> {
           type: "TextCaption",
           text: setup
             ? "Not you? Go back and check the bank and the account number."
-            : "It takes effect in 24 hours. Until then, payments go to your current account.",
+            : "Your invoices will show it straight away, unpaid ones included.",
         },
         ...(setup
           ? [
@@ -542,7 +542,7 @@ const payoutChange: FlowDefinition = {
           account_line: { type: "string", __example__: "GTBank · ····6789" },
           effective_line: {
             type: "string",
-            __example__: "Payouts move here on Mon 28 Sep, 14:20. Until then they go to your current account.",
+            __example__: "Your invoices show this account now, unpaid ones included.",
           },
         },
         layout: {

@@ -33,7 +33,6 @@ import {
 } from "../../conversation/store.ts";
 import {
   accountInForce,
-  CHANGE_DELAY_HOURS,
   scheduleBankChange,
 } from "../../settings/bank-change.ts";
 import { raiseSecurityAlert } from "../../settings/alerts.ts";
@@ -291,11 +290,8 @@ export async function sendChangeCode(
 }
 
 /**
- * F17 steps 2 to 4: the code, then the change scheduled and the alert raised.
- *
- * Scheduled, not made. Payments keep settling to the current account for
- * `CHANGE_DELAY_HOURS`, which is the part that actually saves somebody whose
- * phone has been taken: the alert is only useful while there is time to act.
+ * F17: the code, then the change made and the alert raised. It is in force
+ * at once, open invoices included (see settings/bank-change.ts).
  */
 export async function finishChange(
   userId: string,
@@ -315,9 +311,9 @@ export async function finishChange(
       what: "your payout bank was changed",
       detail: [
         `New account: ${change.accountName} at ${change.bankName}, ending ${change.accountNumber.slice(-4)}.`,
-        `It takes effect in ${CHANGE_DELAY_HOURS} hours. Until then payments settle to your current account.`,
+        `It is in use now, including on invoices that are still unpaid.`,
       ],
-      undoHint: "reply STOP on WhatsApp or email hello@balans.ng now, and we will cancel it.",
+      undoHint: "email hello@balans.ng straight away and we will lock your account.",
     },
     log,
   );

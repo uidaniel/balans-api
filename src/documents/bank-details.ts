@@ -63,8 +63,20 @@ export async function attachBankDetails(
             bank_details_account_name = b.account_name,
             bank_details_account_last4 = b.account_last4,
             bank_details_account_number_encrypted = b.account_number_encrypted
-       FROM bank_accounts b
-      WHERE d.id = $1 AND b.user_id = $2 AND b.status = 'active'
+       FROM (
+         -- The account in force now, the same rule as accountInForce(). During
+         -- a scheduled change the new account is already 'active' with a
+         -- future effective_at; joining on status alone let Postgres pick it
+         -- and print the new number on invoices before F17's delay was up —
+         -- the one thing the delay is for, now that clients pay that number
+         -- directly and a transfer cannot be pulled back.
+         SELECT * FROM bank_accounts
+          WHERE user_id = $2 AND status = 'active'
+            AND (effective_at IS NULL OR effective_at <= now())
+          ORDER BY effective_at DESC NULLS LAST, created_at DESC
+          LIMIT 1
+       ) b
+      WHERE d.id = $1
       RETURNING d.bank_details_bank_name, d.bank_details_account_name,
                 d.bank_details_account_last4, d.bank_details_account_number_encrypted`,
     [documentId, userId],

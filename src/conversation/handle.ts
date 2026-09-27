@@ -92,7 +92,6 @@ import {
   cancelPendingChange,
   pendingChange,
   scheduleBankChange,
-  CHANGE_DELAY_HOURS,
 } from "../settings/bank-change.ts";
 import { raiseSecurityAlert } from "../settings/alerts.ts";
 import { openSubscription, stateOf } from "../billing/subscription.ts";
@@ -1956,7 +1955,7 @@ async function runEffects(
               `🏦 That account is ${b(resolved.account.accountName)} at ${bank.name}.`,
               lines(
                 `Move your payouts there?`,
-                `It takes effect in ${b("24 hours")} — until then, money goes to your current account.`,
+                `Your invoices, including unpaid ones, will show it straight away.`,
               ),
             ),
           );
@@ -1982,9 +1981,9 @@ async function runEffects(
               what: "your payout bank was changed",
               detail: [
                 `New account: ${change.accountName} at ${change.bankName}, ending ${change.accountNumber.slice(-4)}.`,
-                `It takes effect in ${CHANGE_DELAY_HOURS} hours. Until then payments settle to your current account.`,
+                `It is in use now, including on invoices that are still unpaid.`,
               ],
-              undoHint: "reply STOP on WhatsApp or email hello@balans.ng now, and we will cancel it.",
+              undoHint: "email hello@balans.ng straight away and we will lock your account.",
             },
             log,
           );

@@ -10,21 +10,24 @@
  *   2. The new account name resolved from the bank and confirmed out loud.
  *   3. A security alert to WhatsApp and email, so the real owner hears about
  *      it even if they are not the one doing it.
- *   4. A 24-hour delay before it takes effect. This is the one that actually
- *      saves somebody: an alert is only useful if there is still time to act
- *      on it.
  *
- * Until it takes effect, payments keep settling to the old account. That is
- * the safe direction to fail — money going to an account the user has had for
- * months is never the disaster.
+ * It takes effect at once. There used to be a 24-hour delay as a fourth step;
+ * it was dropped on 27 September 2026 because a freelancer must be able to
+ * put the right account on their invoice the moment they need to — clients pay
+ * that number directly, and an invoice showing an account they no longer use
+ * is its own way of losing money. The email code is what stands between a
+ * stolen phone and this change, and the alert is how the owner hears of it.
+ *
+ * Open invoices are moved to the new account in the same transaction, so the
+ * link a client already has shows the account that is in force.
  */
 
 import type { FastifyBaseLogger } from "fastify";
 import { db, tx } from "../db/pool.ts";
 import { encrypt } from "../lib/crypto.ts";
 
-/** F17 step 4. Long enough to notice an alert, short enough to be bearable. */
-export const CHANGE_DELAY_HOURS = 24;
+/** No delay: a change is in force as soon as it is confirmed. */
+export const CHANGE_DELAY_HOURS = 0;
 
 export type ActiveAccount = {
   id: string;
@@ -122,6 +125,7 @@ export async function scheduleBankChange(
   log: FastifyBaseLogger,
 ): Promise<Date> {
   const effectiveAt = new Date(Date.now() + CHANGE_DELAY_HOURS * 3_600_000);
+  const encrypted = encrypt(bank.accountNumber);
 
   await tx(async (c) => {
     // Any earlier scheduled change is replaced, not stacked. Two pending
@@ -164,11 +168,25 @@ export async function scheduleBankChange(
         bank.bankCode,
         bank.bankName,
         bank.accountNumber.slice(-4),
-        encrypt(bank.accountNumber),
+        encrypted,
         bank.accountName,
         bank.subAccountCode,
         effectiveAt,
       ],
+    );
+
+    // Invoices still waiting to be paid show the new account from now on.
+    // Paid and cancelled ones keep what they said: that is their record.
+    await c.query(
+      `UPDATE documents
+          SET bank_details_bank_name = $2,
+              bank_details_account_name = $3,
+              bank_details_account_last4 = $4,
+              bank_details_account_number_encrypted = $5
+        WHERE user_id = $1
+          AND delivery_type = 'bank_details'
+          AND status IN ('sent', 'viewed', 'overdue', 'part_paid')`,
+      [userId, bank.bankName, bank.accountName, bank.accountNumber.slice(-4), encrypted],
     );
   });
 

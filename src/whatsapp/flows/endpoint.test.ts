@@ -349,7 +349,7 @@ describe("changing the bank inside a form", () => {
     assert.equal(out.screen, "CODE");
   });
 
-  it("schedules the change only for the right code, and says when it takes effect", async () => {
+  it("makes the change only for the right code, and says it is in use now", async () => {
     done.length = 0;
     const wrong = (await answer(change("CODE", { code: "000000", email: "danny@x.ng" }), {
       recall: async () => account,
@@ -364,7 +364,7 @@ describe("changing the bank inside a form", () => {
     })) as { screen: string; data: Record<string, string> };
     assert.equal(right.screen, "DONE");
     assert.deepEqual(done, ["scheduled"]);
-    assert.match(right.data.effective_line!, /current account/);
+    assert.match(right.data.effective_line!, /now, unpaid ones included/);
     // The last four only: this is a confirmation screen, not a statement.
     assert.match(right.data.account_line!, /····6789$/);
     assert.deepEqual(Object.keys(right.data).sort(), declared("DONE"));
