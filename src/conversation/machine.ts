@@ -2397,7 +2397,10 @@ function formValues(doc: PendingDoc, now: Civil): {
      * other way would put a currency box in front of every freelancer sending
      * an ordinary naira invoice.
      */
-    currency: doc.foreign?.currency ?? "",
+    // Naira unless the draft is priced abroad. The box is required whenever
+    // it shows, so an empty start would make everybody pick naira on every
+    // invoice; this way the ordinary case is already chosen.
+    currency: doc.foreign?.currency ?? "NGN",
     can_bill_abroad: false,
     show_currency: false,
     currencies: currencyOptions(false),

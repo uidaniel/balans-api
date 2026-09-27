@@ -1493,7 +1493,15 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
                * into the broken combination.
                */
               label: "Currency",
-              required: "${data.can_bill_abroad}",
+              /*
+               * Bound to `show_currency`, the flag `visible` uses. It was left
+               * on `can_bill_abroad` when Free started seeing the box on 26
+               * September, so for Free the box showed but was not required —
+               * and WhatsApp wrote "Optional" in it. The two drifted apart,
+               * which is the exact thing binding them to one flag was for.
+               * The form opens on naira, so required costs nobody a tap.
+               */
+              required: "${data.show_currency}",
               /*
                * Shown to Free too, since 26 September 2026, with dollars and
                * pounds in the list but greyed out and a line under each

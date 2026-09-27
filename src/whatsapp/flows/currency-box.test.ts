@@ -119,16 +119,23 @@ describe("where the currency box is, and who sees it", () => {
      * One flag for both settings is what rules out the third state, where a
      * later edit moves one and not the other.
      */
+    /*
+     * And it was written the third way, on 26 September: Free started seeing
+     * the box (`visible` moved to `show_currency`) while `required` stayed on
+     * `can_bill_abroad`, which is Pro only. A Free user's box showed and was
+     * not required, and WhatsApp wrote "Optional" in it. So: the same
+     * binding, checked as the same string.
+     */
     for (const s of work) {
       const box = boxesOn(s).find((c) => c.name === "currency")!;
-      assert.equal(box.required, "${data.can_bill_abroad}", `${s.id}`);
+      assert.equal(box.required, "${data.show_currency}", `${s.id}`);
+      assert.equal(box.required, box.visible, `${s.id}: required and visible have drifted apart again`);
     }
-    // Required only where it is also shown: `openedForPlan` never turns on
-    // `can_bill_abroad` without `show_currency` beside it.
-    const handle = readFileSync(new URL("../../conversation/handle.ts", import.meta.url), "utf8");
-    const fn = handle.slice(handle.indexOf("async function openedForPlan"));
-    const body = fn.slice(0, fn.indexOf("\n}\n"));
-    assert.match(body, /show_currency: true,[\s\S]*can_bill_abroad: true/);
+  });
+
+  it("opens on naira, so being required costs nobody a tap", () => {
+    const machine = readFileSync(new URL("../../conversation/machine.ts", import.meta.url), "utf8");
+    assert.match(machine, /currency: doc\.foreign\?\.currency \?\? "NGN"/);
   });
 
   it("offers the two currencies Balans takes, and naira", () => {

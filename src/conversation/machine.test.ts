@@ -648,7 +648,9 @@ describe("a tapped button", () => {
        * with international invoicing switched on. This function cannot know:
        * it is pure and the plan is in the database.
        */
-      currency: "",
+      // Naira already chosen: the box is required whenever it shows, and an
+      // empty start would make everybody pick naira on every invoice.
+      currency: "NGN",
       can_bill_abroad: false,
       // Hidden until the caller finds international invoicing on; then Free
       // sees it with only naira choosable, which is this list.
