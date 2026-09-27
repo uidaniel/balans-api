@@ -457,6 +457,8 @@ export function sendTemplate(
     fetchImpl?: Transport;
     /** The end of the template's link button, for a template that has one. */
     urlSuffix?: string;
+    /** The picture for a template with an image header, by address. */
+    headerImage?: string;
   } = {},
 ): Promise<SendResult> {
   const phone = normalisePhone(to);
@@ -474,6 +476,9 @@ export function sendTemplate(
         name: template,
         language: { code: opts.language ?? "en" },
         components: [
+          ...(opts.headerImage
+            ? [{ type: "header", parameters: [{ type: "image", image: { link: opts.headerImage } }] }]
+            : []),
           ...(params.length
             ? [{ type: "body", parameters: params.map((text) => ({ type: "text", text })) }]
             : []),

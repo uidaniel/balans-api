@@ -35,6 +35,7 @@ import { startScheduler, stopScheduler } from "./jobs/scheduler.ts";
 import { migrate } from "./db/migrate.ts";
 import { publishChangedFlows } from "./whatsapp/flows/register.ts";
 import { submitMissingTemplates } from "./whatsapp/register-templates.ts";
+import { startBroadcasts, stopBroadcasts } from "./jobs/broadcast.ts";
 
 const app = buildServer();
 
@@ -93,6 +94,10 @@ startScheduler(app.log);
 void publishChangedFlows(app.log).catch((e) =>
   app.log.error({ err: (e as Error).message }, "publishing Flows at boot failed"),
 );
+// Tests and the launch message, queued from the admin. Seconds, not the
+// hourly scheduler: somebody who pressed "Send test" is watching their phone.
+startBroadcasts(app.log);
+
 // And the message templates the code sends, the same way.
 void submitMissingTemplates(app.log).catch((e) =>
   app.log.error({ err: (e as Error).message }, "submitting templates at boot failed"),
@@ -102,6 +107,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {
     app.log.info(`${signal} received, closing`);
     stopScheduler();
+    stopBroadcasts();
     await app.close();
     await closeRenderer();
     await closeDb();

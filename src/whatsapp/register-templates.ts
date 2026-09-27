@@ -30,7 +30,60 @@ async function list(): Promise<Existing[]> {
   return body.data ?? [];
 }
 
+/**
+ * The app the access token belongs to, which Meta's upload API is addressed
+ * to. Read from the token rather than configured, so there is no second value
+ * to keep in step with it.
+ */
+async function appId(): Promise<string | null> {
+  const t = env.WA_ACCESS_TOKEN;
+  const res = await fetch(url(`debug_token?input_token=${t}&access_token=${t}`));
+  const body = (await res.json().catch(() => ({}))) as { data?: { app_id?: string } };
+  return body.data?.app_id ?? null;
+}
+
+/**
+ * A sample image for a template's header, uploaded the way Meta requires.
+ *
+ * A template with an image header cannot be submitted with a link: Meta wants
+ * the file through its resumable upload API and a handle back, which goes in
+ * the submission. The real image is sent by address on every message; this
+ * is only what the reviewer looks at.
+ */
+async function uploadSample(address: string): Promise<{ ok: true; handle: string } | { ok: false; detail: string }> {
+  const app = await appId();
+  if (!app) return { ok: false, detail: "could not tell which app the token belongs to" };
+
+  const file = await fetch(address);
+  if (!file.ok) return { ok: false, detail: `the sample image did not load: ${address} said ${file.status}` };
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const type = file.headers.get("content-type") ?? "image/jpeg";
+
+  const session = await fetch(
+    url(`${app}/uploads?file_name=header.jpg&file_length=${bytes.length}&file_type=${encodeURIComponent(type)}`),
+    { method: "POST", headers: { authorization: `Bearer ${env.WA_ACCESS_TOKEN}` } },
+  );
+  const opened = (await session.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
+  if (!opened.id) return { ok: false, detail: opened.error?.message ?? `upload session refused (${session.status})` };
+
+  const sent = await fetch(url(opened.id), {
+    method: "POST",
+    headers: { authorization: `OAuth ${env.WA_ACCESS_TOKEN}`, file_offset: "0" },
+    body: bytes,
+  });
+  const done = (await sent.json().catch(() => ({}))) as { h?: string; error?: { message?: string } };
+  if (!done.h) return { ok: false, detail: done.error?.message ?? `upload refused (${sent.status})` };
+  return { ok: true, handle: done.h };
+}
+
 async function create(spec: TemplateSpec): Promise<{ ok: boolean; detail: string }> {
+  let header: Record<string, unknown> | null = null;
+  if (spec.header) {
+    const sample = await uploadSample(spec.header.sample);
+    if (!sample.ok) return { ok: false, detail: `header image: ${sample.detail}` };
+    header = { type: "HEADER", format: "IMAGE", example: { header_handle: [sample.handle] } };
+  }
+
   const res = await fetch(url(`${env.WA_BUSINESS_ACCOUNT_ID}/message_templates`), {
     method: "POST",
     headers: {
@@ -42,12 +95,14 @@ async function create(spec: TemplateSpec): Promise<{ ok: boolean; detail: string
       language: TEMPLATE_LANGUAGE,
       category: spec.category,
       components: [
+        ...(header ? [header] : []),
         {
           type: "BODY",
           text: spec.body,
           // Meta rejects a template with placeholders and no sample: it cannot
-          // review copy it has never seen filled in.
-          example: { body_text: [spec.example] },
+          // review copy it has never seen filled in. And one with a sample
+          // but no placeholders, so the sample goes only where it is needed.
+          ...(spec.params.length ? { example: { body_text: [spec.example] } } : {}),
         },
         ...(spec.footer ? [{ type: "FOOTER", text: spec.footer }] : []),
         ...(spec.button
@@ -98,6 +153,28 @@ export async function submitMissingTemplates(log: {
     if (made.ok) log.info({ template: spec.name, detail: made.detail }, "template submitted to Meta at boot");
     else log.warn({ template: spec.name, detail: made.detail }, "template refused by Meta at boot");
   }
+}
+
+/**
+ * Every template's status at Meta, written to `config` as `template_status`.
+ *
+ * For the admin, which has no Meta key of its own and needs to say whether
+ * the launch message can go yet. Refreshed at boot and by the broadcast loop,
+ * so an approval shows up within minutes rather than at the next deploy.
+ */
+export async function recordTemplateStatuses(): Promise<Record<string, string> | null> {
+  if (!env.WA_ACCESS_TOKEN || !env.WA_BUSINESS_ACCOUNT_ID) return null;
+  const existing = await list().catch(() => null);
+  if (!existing) return null;
+  const statuses = Object.fromEntries(existing.map((t) => [t.name, t.status]));
+  const { db } = await import("../db/pool.ts");
+  await db().query(
+    `INSERT INTO config (key, value_json, updated_by) VALUES ('template_status', $1::jsonb, 'templates')
+       ON CONFLICT (key) DO UPDATE
+       SET value_json = EXCLUDED.value_json, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    [JSON.stringify(statuses)],
+  );
+  return statuses;
 }
 
 export async function registerTemplates(submit: boolean): Promise<void> {

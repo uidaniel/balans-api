@@ -24,6 +24,7 @@ describe("the templates we register with Meta", () => {
         "client_reminder",
         "invoice_overdue_prompt",
         "invoice_viewed",
+        "launch_live",
         "monthly_summary_ready",
         "payment_received",
         "pro_renewal",
@@ -71,9 +72,16 @@ describe("the templates we register with Meta", () => {
     }
   });
 
-  it("is utility, not marketing", () => {
-    // These are all transactional. Marketing costs more and needs opt-in.
-    for (const name of names) assert.equal(TEMPLATES[name].category, "UTILITY", name);
+  it("is utility, not marketing, except the one message the waitlist asked for", () => {
+    /*
+     * Transactional messages are utility. Marketing costs about seven times
+     * as much and needs opt-in — which the waitlist is: its form promises one
+     * WhatsApp message the day Balans opens, and `launch_live` is that
+     * message. It is sent only from a broadcast, never from the bot.
+     */
+    for (const name of names) {
+      assert.equal(TEMPLATES[name].category, name === "launch_live" ? "MARKETING" : "UTILITY", name);
+    }
   });
 });
 

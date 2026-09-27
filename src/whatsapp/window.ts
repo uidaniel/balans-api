@@ -17,6 +17,7 @@
 
 import { db } from "../db/pool.ts";
 import { env } from "../config.ts";
+import { LAUNCH } from "../broadcast/launch.ts";
 
 /** Meta's window, with a margin. */
 const WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -74,7 +75,8 @@ export type TemplateName =
   | "client_invoice"
   | "client_quote"
   | "client_reminder"
-  | "client_reminded";
+  | "client_reminded"
+  | "launch_live";
 
 export type TemplateSpec = {
   name: TemplateName;
@@ -91,6 +93,12 @@ export type TemplateSpec = {
    * `url` ends in `{{1}}`; `example` is a whole URL Meta can open to review.
    */
   button?: { text: string; url: string; example: string };
+  /**
+   * A picture above the body. Meta wants a sample uploaded with the
+   * submission and the real one by address on every send; `sample` is the
+   * address the sample is fetched from.
+   */
+  header?: { type: "image"; sample: string };
 };
 
 export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
@@ -205,6 +213,23 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
    * word rather than a placeholder, because Meta flags templates that open on
    * a variable.
    */
+  /*
+   * "We're live", to the waitlist. Marketing, because it goes to people who
+   * asked to hear when Balans opened and have never written to us — about
+   * $0.05 each in Nigeria, against a utility template's $0.007. The words
+   * are in broadcast/launch.ts with the email, so the two cannot disagree.
+   */
+  launch_live: {
+    name: "launch_live",
+    category: "MARKETING",
+    body: LAUNCH.whatsapp.body,
+    params: [],
+    example: [],
+    footer: LAUNCH.whatsapp.footer,
+    button: LAUNCH.whatsapp.button,
+    header: { type: "image", sample: LAUNCH.image },
+  },
+
   client_reminded: {
     name: "client_reminded",
     category: "UTILITY",
