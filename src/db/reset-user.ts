@@ -4,6 +4,12 @@
  *   npm run reset -- 2348107408438        start onboarding again, same user
  *   npm run reset -- 2348107408438 --hard delete the user entirely
  *   npm run reset -- --last               whoever messaged most recently
+ *   npm run reset -- --everyone --hard    delete every user, from scratch
+ *
+ * `--everyone` needs `--hard` beside it and does nothing without it: wiping
+ * every account is not something a missing phone number should be able to
+ * turn a single-user reset into. The waitlist is a different table and is
+ * not touched.
  *
  * For development. Onboarding has six steps and a real bank lookup in the
  * middle, so walking it repeatedly is the only way to know it works — and
@@ -90,7 +96,33 @@ if (process.argv[1] && import.meta.url === (await import("node:url")).pathToFile
   const hard = args.includes("--hard");
   const phone = args.find((a) => !a.startsWith("--"));
 
-  try {
+  if (args.includes("--everyone")) {
+    try {
+      if (!hard) {
+        console.error("--everyone deletes every account. It only runs with --hard beside it.");
+        process.exitCode = 1;
+      } else {
+        const { rows } = await db().query<{ id: string; wa_phone: string }>(
+          `SELECT id, wa_phone FROM users ORDER BY created_at`,
+        );
+        let gone = 0;
+        for (const u of rows) {
+          // One user per transaction, so one that will not go does not keep
+          // the rest.
+          try {
+            await hardReset(u.id);
+            gone += 1;
+          } catch (e) {
+            console.error(`could not delete ${u.wa_phone.slice(0, 6)}…: ${(e as Error).message}`);
+            process.exitCode = 1;
+          }
+        }
+        console.log(`deleted ${gone} of ${rows.length} users — every next message starts from the top`);
+      }
+    } finally {
+      await closeDb();
+    }
+  } else try {
     const target = await find(phone);
 
     if (!target) {
