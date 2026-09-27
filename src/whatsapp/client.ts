@@ -459,6 +459,8 @@ export function sendTemplate(
     urlSuffix?: string;
     /** The picture for a template with an image header, by address. */
     headerImage?: string;
+    /** The token for a template whose button opens a Flow. */
+    flowToken?: string;
   } = {},
 ): Promise<SendResult> {
   const phone = normalisePhone(to);
@@ -489,6 +491,16 @@ export function sendTemplate(
                   sub_type: "url",
                   index: "0",
                   parameters: [{ type: "text", text: opts.urlSuffix }],
+                },
+              ]
+            : []),
+          ...(opts.flowToken
+            ? [
+                {
+                  type: "button",
+                  sub_type: "flow",
+                  index: "0",
+                  parameters: [{ type: "action", action: { flow_token: opts.flowToken } }],
                 },
               ]
             : []),

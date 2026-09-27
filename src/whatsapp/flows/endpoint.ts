@@ -34,7 +34,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { db } from "../../db/pool.ts";
 import { decrypt, encrypt } from "../../lib/crypto.ts";
 import { findBank, checkAccount } from "../../payments/bank-directory.ts";
-import { loadConversation, saveConversation } from "../../conversation/store.ts";
+import { loadConversation, saveConversation, upsertUser } from "../../conversation/store.ts";
 import { MFB_CHOICE } from "./banks.ts";
 import * as actions from "./actions.ts";
 
@@ -176,6 +176,8 @@ export type Deps = {
   remember?: (userId: string, account: Remembered) => Promise<void>;
   recall?: (userId: string) => Promise<Remembered | null>;
   actions?: Partial<typeof actions>;
+  /** The user with this WhatsApp number, made if there is none yet. */
+  userByPhone?: (waPhone: string) => Promise<{ id: string }>;
   log?: FastifyBaseLogger;
 };
 
@@ -236,8 +238,18 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
     return { data: { acknowledged: true } };
   }
 
-  const [key, userId] = (req.flow_token ?? "").split(":");
+  const [key, who, phone] = (req.flow_token ?? "").split(":");
   const known = key === "onboarding" || key === "payout_change";
+  /*
+   * `onboarding:wa:<number>` is the setup form sent to the waitlist, to
+   * people who are not users yet (jobs/broadcast.ts). They become one here,
+   * on their first tap, by the same upsert a first message would do. Only
+   * for setup: every other form belongs to somebody who already exists.
+   */
+  let userId = who;
+  if (key === "onboarding" && who === "wa" && phone && /^\d{10,15}$/.test(phone)) {
+    userId = (await (deps.userByPhone ?? upsertUser)(phone)).id;
+  }
   if (req.action !== "data_exchange" || !known || !userId) {
     deps.log?.warn({ action: req.action, screen: req.screen, key }, "flow endpoint asked something it does not answer");
     return { data: { acknowledged: true } };

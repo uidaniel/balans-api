@@ -5,7 +5,7 @@
  * admin's preview all read from here — so what staff preview is what goes
  * out, and changing the copy is one edit. The admin cannot import this file
  * (it is another application), so the service writes it to `config` at boot
- * as `broadcast.launch_live`, and the preview renders that.
+ * as `broadcast.launch_setup`, and the preview renders that.
  *
  * Once Meta approves the template its words are fixed. Changing `whatsapp`
  * below after approval needs a new template name, or the preview and the
@@ -13,12 +13,20 @@
  */
 
 import { env } from "../config.ts";
+import { button, layout, paragraph, steps, type InlineImage } from "../email/layout.ts";
 
 const site = env.SITE_URL.replace(/\/$/, "");
 
 export const LAUNCH = {
-  /** The template's name at Meta, and the campaign's id in `broadcasts`. */
-  campaign: "launch_live",
+  /**
+   * The template's name at Meta, and the campaign's id in `broadcasts`.
+   *
+   * `launch_setup`, not the first `launch_live`: that one's button opened the
+   * website, and a template's button cannot be changed once submitted. This
+   * one opens the setup form inside WhatsApp, so somebody who taps it is
+   * signing up without ever leaving the chat.
+   */
+  campaign: "launch_setup",
 
   /** 1080×1350, from the poster; public so WhatsApp and email can fetch it. */
   image: `${site}/broadcast/launch-2cdf09d77fed.jpg`,
@@ -32,56 +40,69 @@ export const LAUNCH = {
       "Tap below to set up. It takes about 3 minutes.",
     ].join("\n"),
     footer: "You are getting this because you joined our waitlist",
-    button: {
-      text: "Set me up",
-      // The end of the address is filled per send, so the button can be
-      // pointed somewhere else later without a new template.
-      url: `${site}/{{1}}`,
-      example: `${site}/start`,
-    },
-    /** What fills `{{1}}`: the chat with Balans, via the site. */
-    suffix: "start?ref=wa-launch",
+    /** Opens the setup form (the `onboarding` Flow) on its first screen. */
+    button: { text: "Set me up", flow: "onboarding", screen: "BUSINESS" },
   },
 
   email: {
-    subject: "Balans is live",
-    preheader: "You joined the waitlist. We are open — set up in three minutes.",
-    heading: "Balans is live.",
-    paragraphs: [
-      "You joined the waitlist, and we are open.",
-      "Send one line on WhatsApp — like “invoice Tunde 50k for logo design” — and get back a branded invoice with a link that pays straight into your own bank account.",
-      "Setting up takes about three minutes, all inside the chat.",
+    subject: "Balans is live. You're in.",
+    preheader: "You joined the waitlist. Set up in the chat in about 3 minutes.",
+    heading: "Balans is live, and you are in",
+    intro: "You joined the waitlist, so you are first through the door. Everything happens in WhatsApp: there is no app to install and nothing to log in to.",
+    steps: [
+      {
+        title: "Set up in the chat",
+        text: "Your business name, your email and the bank account you want paid into. About three minutes.",
+      },
+      {
+        title: "Send one line",
+        text: "Type something like <em>Invoice Tunde 50k for logo design</em>. You get back a branded invoice and a link to send your client.",
+      },
+      {
+        title: "Get paid straight to your bank",
+        text: "Your client pays into your own account, and you hear about it on WhatsApp the moment it lands.",
+      },
     ],
-    button: "Start on WhatsApp",
+    button: "Set me up on WhatsApp",
     link: `${site}/start?ref=email-launch`,
     footer: "You are getting this because you joined the Balans waitlist. Reply to this email and we will take you off.",
   },
 } as const;
 
-/** The email, as text and HTML. The poster is fetched by address, not attached. */
-export function launchEmail(): { subject: string; text: string; html: string } {
+/** The banner at the top of the email. Drawn in assets/email/launch-banner.html. */
+export const LAUNCH_BANNER: InlineImage = {
+  cid: "launch-banner",
+  file: "launch-banner.png",
+  alt: "Balans is live. You're in.",
+  width: 536,
+  height: 214,
+};
+
+/**
+ * The email, built on the same layout as every other Balans email: the coin,
+ * a drawn banner, the heading, three numbered steps and the marigold button.
+ */
+export function launchEmail(): { subject: string; text: string; html: string; images: InlineImage[] } {
   const e = LAUNCH.email;
-  const text = [e.heading, "", ...e.paragraphs.flatMap((p) => [p, ""]), `${e.button}: ${e.link}`, "", e.footer].join("\n");
+  const plain = (h: string) => h.replace(/<[^>]+>/g, "");
+  const text = [
+    e.heading + ".",
+    "",
+    e.intro,
+    "",
+    ...e.steps.flatMap((st, i) => [`${i + 1}. ${st.title}`, `   ${plain(st.text)}`, ""]),
+    `${e.button}: ${e.link}`,
+    "",
+    "—",
+    e.footer,
+  ].join("\n");
 
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const html = `<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(e.subject)}</title></head>
-<body style="margin:0;background:#f6f1e7;font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#10231c">
-<span style="display:none;max-height:0;overflow:hidden;opacity:0">${esc(e.preheader)}</span>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f1e7;padding:28px 12px">
-<tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fffdf8;border-radius:24px;overflow:hidden">
-<tr><td><img src="${LAUNCH.image}" width="560" alt="Balans is live" style="display:block;width:100%;height:auto;border:0"></td></tr>
-<tr><td style="padding:30px 32px 8px">
-<h1 style="margin:0 0 14px;font-size:26px;line-height:1.15;letter-spacing:-0.02em">${esc(e.heading)}</h1>
-${e.paragraphs.map((p) => `<p style="margin:0 0 14px;font-size:16px;line-height:1.55;color:rgba(16,35,28,.78)">${esc(p)}</p>`).join("\n")}
-</td></tr>
-<tr><td style="padding:10px 32px 34px">
-<a href="${e.link}" style="display:inline-block;background:#f5b82e;color:#10231c;font-weight:700;font-size:16px;text-decoration:none;padding:15px 28px;border-radius:999px">${esc(e.button)}</a>
-</td></tr>
-</table>
-<p style="max-width:520px;margin:18px auto 0;font-size:12px;line-height:1.5;color:rgba(16,35,28,.5)">${esc(e.footer)}</p>
-</td></tr></table></body></html>`;
+  const html = layout({
+    preheader: e.preheader,
+    banner: LAUNCH_BANNER,
+    heading: e.heading,
+    body: [paragraph(e.intro), steps([...e.steps]), button(e.button, e.link), paragraph(e.footer, true)].join("\n"),
+  });
 
-  return { subject: e.subject, text, html };
+  return { subject: e.subject, text, html, images: [LAUNCH_BANNER] };
 }

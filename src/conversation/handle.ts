@@ -459,8 +459,11 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
    * through the client and nothing that comes back from there is trusted.
    */
   if (msg.flow) {
-    const [key, tokenUser] = msg.flow.token.split(":");
-    if (tokenUser !== user.id) {
+    const [key, tokenUser, tokenPhone] = msg.flow.token.split(":");
+    // The waitlist's setup form names its person by number, not by id
+    // (jobs/broadcast.ts). The same person, as long as it is their number.
+    const byPhone = key === "onboarding" && tokenUser === "wa" && tokenPhone === msg.from.replace(/\D/g, "");
+    if (tokenUser !== user.id && !byPhone) {
       log.warn({ userId: user.id, tokenUser }, "flow token does not match the sender");
       return;
     }

@@ -76,7 +76,7 @@ export type TemplateName =
   | "client_quote"
   | "client_reminder"
   | "client_reminded"
-  | "launch_live";
+  | "launch_setup";
 
 export type TemplateSpec = {
   name: TemplateName;
@@ -93,6 +93,12 @@ export type TemplateSpec = {
    * `url` ends in `{{1}}`; `example` is a whole URL Meta can open to review.
    */
   button?: { text: string; url: string; example: string };
+  /**
+   * Or one button that opens one of our WhatsApp Flows, on `screen`. Meta
+   * needs the Flow's id at submission, so it is looked up by `flow` (the key
+   * in flows/definitions.ts) when the template is submitted.
+   */
+  flowButton?: { text: string; flow: string; screen: string };
   /**
    * A picture above the body. Meta wants a sample uploaded with the
    * submission and the real one by address on every send; `sample` is the
@@ -219,14 +225,14 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
    * $0.05 each in Nigeria, against a utility template's $0.007. The words
    * are in broadcast/launch.ts with the email, so the two cannot disagree.
    */
-  launch_live: {
-    name: "launch_live",
+  launch_setup: {
+    name: "launch_setup",
     category: "MARKETING",
     body: LAUNCH.whatsapp.body,
     params: [],
     example: [],
     footer: LAUNCH.whatsapp.footer,
-    button: LAUNCH.whatsapp.button,
+    flowButton: LAUNCH.whatsapp.button,
     header: { type: "image", sample: LAUNCH.image },
   },
 

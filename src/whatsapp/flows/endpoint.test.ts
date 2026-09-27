@@ -413,6 +413,33 @@ describe("setup, email code first", () => {
   const declared = (id: string) => Object.keys(screens.screens.find((s) => s.id === id)?.data ?? {}).sort();
   type Out = { screen: string; data: Record<string, unknown> };
 
+  it("makes the user from the number when the waitlist's form is used", async () => {
+    // The launch message's button carries `onboarding:wa:<number>`, because
+    // nobody on the waitlist has a user id yet.
+    const seen: string[] = [];
+    const started: string[] = [];
+    const out = (await answer(
+      { ...v3("BUSINESS", { business_name: "Danny Codes Ltd", email: "danny@x.ng" }), flow_token: "onboarding:wa:2348107408438" },
+      {
+        ...deps,
+        userByPhone: async (p: string) => (seen.push(p), { id: "user-new" }),
+        actions: { ...actions, startSetup: async (u: string) => (started.push(u), { ok: true as const }) },
+      },
+    )) as Out;
+    assert.equal(out.screen, "CODE");
+    assert.deepEqual(seen, ["2348107408438"]);
+    assert.deepEqual(started, ["user-new"], "the form went on as somebody other than the new user");
+  });
+
+  it("does not make anybody from a number on any other form", async () => {
+    const seen: string[] = [];
+    await answer(
+      { action: "data_exchange", screen: "PAYOUT", flow_token: "payout_change:wa:2348107408438", data: {} },
+      { ...deps, userByPhone: async (p: string) => (seen.push(p), { id: "x" }) },
+    );
+    assert.deepEqual(seen, []);
+  });
+
   it("asks for the code straight after the email", () => {
     assert.deepEqual(screens.routing_model.BUSINESS, ["CODE"]);
     assert.deepEqual(screens.routing_model.CODE, ["PAYOUT"]);

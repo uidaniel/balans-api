@@ -20,9 +20,13 @@ import type { FastifyBaseLogger } from "fastify";
 import { env } from "../config.ts";
 import { db } from "../db/pool.ts";
 import { sendEmail } from "../email/send.ts";
-import { sendCta, sendTemplate } from "../whatsapp/client.ts";
+import { sendFlow, sendTemplate } from "../whatsapp/client.ts";
+import { flowId } from "../whatsapp/flows/register.ts";
 import { recordTemplateStatuses } from "../whatsapp/register-templates.ts";
-import { LAUNCH, launchEmail } from "../broadcast/launch.ts";
+import { LAUNCH, LAUNCH_BANNER, launchEmail } from "../broadcast/launch.ts";
+import { MARK_CID } from "../email/layout.ts";
+
+const SITE = env.SITE_URL.replace(/\/$/, "");
 
 const TICK_MS = 15_000;
 const STATUS_EVERY_MS = 5 * 60_000;
@@ -39,8 +43,15 @@ let statusesAt = 0;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Where the button goes: the template's address with its end filled in. */
-export const launchLink = (): string => LAUNCH.whatsapp.button.url.replace("{{1}}", LAUNCH.whatsapp.suffix);
+/**
+ * The setup form's token for somebody who may not be a user yet.
+ *
+ * Most forms carry `<key>:<userId>`, but nobody on the waitlist has a user
+ * row until they sign up. So this one carries their number instead, and the
+ * form's endpoint makes the user the first time they press a button in it
+ * (flows/endpoint.ts). Nothing is created for people who never tap.
+ */
+export const setupToken = (phone: string): string => `onboarding:wa:${phone.replace(/\D/g, "")}`;
 
 /**
  * What the admin's preview draws, written where the admin can read it.
@@ -58,9 +69,16 @@ export async function publishCampaignForAdmin(): Promise<void> {
       body: LAUNCH.whatsapp.body,
       footer: LAUNCH.whatsapp.footer,
       button: LAUNCH.whatsapp.button.text,
-      link: launchLink(),
+      opens: "The Balans setup form, inside WhatsApp",
     },
-    email: { subject: email.subject, html: email.html },
+    // The email's pictures travel as attachments (`cid:`), which a preview
+    // in a browser cannot show; the site hosts public copies of the same files.
+    email: {
+      subject: email.subject,
+      html: email.html
+        .replaceAll(`cid:${MARK_CID}`, `${SITE}/broadcast/mark.png`)
+        .replaceAll(`cid:${LAUNCH_BANNER.cid}`, `${SITE}/broadcast/${LAUNCH_BANNER.file}`),
+    },
   };
   await db().query(
     `INSERT INTO config (key, value_json, updated_by) VALUES ($1, $2::jsonb, 'broadcast')
@@ -85,17 +103,21 @@ async function sendWhatsApp(b: Broadcast, r: Recipient, approved: boolean): Prom
     const sent = await sendTemplate(r.phone, LAUNCH.campaign, [], {
       language: "en",
       headerImage: LAUNCH.image,
-      urlSuffix: LAUNCH.whatsapp.suffix,
+      flowToken: setupToken(r.phone),
     });
     return sent.ok ? { status: "sent", via: "template" } : { status: "failed", via: "template", error: sent.reason };
   }
 
   // Before approval, only a test, and only as an ordinary message.
   if (b.kind !== "test") return { status: "skipped", error: "the template is not approved by Meta yet" };
-  const sent = await sendCta(r.phone, {
+  const form = await flowId(LAUNCH.whatsapp.button.flow);
+  if (!form) return { status: "failed", via: "preview", error: "the setup form has not been published yet" };
+  const sent = await sendFlow(r.phone, {
     body: LAUNCH.whatsapp.body,
-    label: LAUNCH.whatsapp.button.text,
-    url: launchLink(),
+    cta: LAUNCH.whatsapp.button.text,
+    flowId: form,
+    token: setupToken(r.phone),
+    screen: LAUNCH.whatsapp.button.screen,
     headerImage: LAUNCH.image,
     footer: LAUNCH.whatsapp.footer,
   });

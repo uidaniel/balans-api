@@ -12,6 +12,7 @@
 
 import { env, require_ } from "../config.ts";
 import { TEMPLATES, TEMPLATE_LANGUAGE, type TemplateSpec } from "./window.ts";
+import { flowId } from "./flows/register.ts";
 
 type Existing = { name: string; status: string; language: string; category?: string };
 
@@ -84,6 +85,19 @@ async function create(spec: TemplateSpec): Promise<{ ok: boolean; detail: string
     header = { type: "HEADER", format: "IMAGE", example: { header_handle: [sample.handle] } };
   }
 
+  let flowButton: Record<string, unknown> | null = null;
+  if (spec.flowButton) {
+    const id = await flowId(spec.flowButton.flow);
+    if (!id) return { ok: false, detail: `the ${spec.flowButton.flow} form has no id yet; it is published at boot` };
+    flowButton = {
+      type: "FLOW",
+      text: spec.flowButton.text,
+      flow_id: id,
+      navigate_screen: spec.flowButton.screen,
+      flow_action: "navigate",
+    };
+  }
+
   const res = await fetch(url(`${env.WA_BUSINESS_ACCOUNT_ID}/message_templates`), {
     method: "POST",
     headers: {
@@ -115,6 +129,7 @@ async function create(spec: TemplateSpec): Promise<{ ok: boolean; detail: string
               },
             ]
           : []),
+        ...(flowButton ? [{ type: "BUTTONS", buttons: [flowButton] }] : []),
       ],
     }),
   });
