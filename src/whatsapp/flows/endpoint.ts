@@ -163,6 +163,8 @@ export const FORM_ERRORS = {
   notAgreed: "Tick the box to agree to the terms.",
   noAccount: "Go back and tap Check account again.",
   codeLength: "The code is 6 digits.",
+  noName: "Enter the name your clients will see.",
+  badEmail: "That does not look like an email address.",
 } as const;
 
 type Remembered = { bankCode: string; bankName: string; accountNumber: string; accountName: string };
@@ -198,12 +200,41 @@ const when = (d: Date): string =>
   }).format(d);
 
 /**
+ * Whether a box was ticked.
+ *
+ * An OptIn reaches a `complete` payload as the string "true", but reaches this
+ * endpoint as the boolean `true`. Checking only for the string read every
+ * ticked box as unticked, answered with the same screen and an error an OptIn
+ * does not display — so on 27 September "Continue" sat there, disabled, and
+ * nothing happened. Either spelling counts.
+ */
+export const ticked = (v: unknown): boolean => v === true || v === "true";
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Which setup form this is, from what it sends.
+ *
+ *   v3  business, email code, bank, confirm. Current. Every step says "3".
+ *   v2  business, bank, confirm, email code. Live for a few hours on 27
+ *       September; says "2" on its PAYOUT step.
+ *   v1  business, bank, then the chat did the rest. Says nothing.
+ *
+ * Older ones can still be open on somebody's phone, and Meta refuses an
+ * answer whose keys do not match what that phone's screen declares, so each
+ * gets the answer it was built for.
+ */
+type Version = "v1" | "v2" | "v3";
+const versionOf = (d: Record<string, unknown>): Version =>
+  d.form_version === "3" ? "v3" : d.form_version === "2" ? "v2" : "v1";
+
+/**
  * One request in, one answer out, before encryption.
  *
  * Two forms ask this server anything: setup, and changing the bank later.
- * Both open on the same PAYOUT screen and both end on a code emailed to the
- * user, so the same three steps answer both, told apart by the token. The
- * token can be trusted: the route has already checked Meta's signature.
+ * They share their steps — which bank, whose account, prove it is you — and
+ * are told apart by the token, which can be trusted: the route has already
+ * checked Meta's signature.
  */
 export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<string, unknown>> {
   if (req.action === "ping") return { data: { status: "active" } };
@@ -224,51 +255,49 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
   const log = deps.log ?? quiet;
   const act = { ...actions, ...deps.actions };
   const recall = deps.recall ?? recallChecked;
-  const data = (req.data ?? {}) as Record<string, string | undefined>;
+  const data = (req.data ?? {}) as Record<string, unknown>;
+  const str = (k: string) => (typeof data[k] === "string" ? (data[k] as string) : "");
+  const setup = key === "onboarding";
+  const version = versionOf(data);
 
-  if (req.screen === "PAYOUT") return checkPayout(key!, userId, data as PayoutAsk, deps);
-
-  if (req.screen === "CONFIRM") {
-    const checked = await recall(userId);
-    const back = (field: string, message: string) => ({
-      screen: "CONFIRM",
-      data: { ...confirmData(key!, data), error_messages: { [field]: message } },
-    });
-    if (data.confirmed !== "true") return back("confirmed", FORM_ERRORS.notConfirmed);
-    if (!checked) return back("confirmed", FORM_ERRORS.noAccount);
-
-    if (key === "onboarding") {
-      if (data.agreed !== "true") return back("agreed", FORM_ERRORS.notAgreed);
-      const email = (data.email ?? "").trim().toLowerCase();
-      const started = await act.startOnboarding(
-        userId,
-        { businessName: (data.business_name ?? "").trim(), email, checked },
-        log,
-      );
-      return codeScreen({ email, masked: maskEmail(email) }, started.ok ? null : started.message);
+  /* -- Setup, first screen: the business and the address ----------------- */
+  if (setup && req.screen === "BUSINESS") {
+    const businessName = str("business_name").trim();
+    const email = str("email").trim().toLowerCase();
+    // BUSINESS declares no data (the form opens on it with none), so a
+    // problem here is said on the next screen rather than this one.
+    if (!businessName) return codeScreen({ email, masked: maskEmail(email) }, FORM_ERRORS.noName);
+    if (!EMAIL.test(email) || email.length > 254) {
+      return codeScreen({ email, masked: email || "no address" }, FORM_ERRORS.badEmail);
     }
-
-    const sent = await act.sendChangeCode(userId, log);
-    if (!sent.ok) return back("confirmed", sent.message);
-    return codeScreen({ email: sent.email, masked: maskEmail(sent.email) }, null);
+    const started = await act.startSetup(userId, { businessName, email }, log);
+    return codeScreen({ email, masked: maskEmail(email) }, started.ok ? null : started.message);
   }
 
+  /* -- The code from the email ------------------------------------------- */
   if (req.screen === "CODE") {
-    const email = (data.email ?? "").trim().toLowerCase();
+    const email = str("email").trim().toLowerCase();
     const shown = { email, masked: maskEmail(email) };
 
-    if (data.resend === "1") {
-      const again =
-        key === "onboarding" ? await act.resendOnboardingCode(userId, email, log) : await act.sendChangeCode(userId, log);
+    if (str("resend") === "1") {
+      const again = setup ? await act.resendOnboardingCode(userId, email, log) : await act.sendChangeCode(userId, log);
       return codeScreen(shown, again.ok ? null : again.message, again.ok ? "A new code is on its way." : null);
     }
 
-    const code = (data.code ?? "").replace(/\D/g, "");
+    const code = str("code").replace(/\D/g, "");
     if (code.length !== 6) return codeScreen(shown, FORM_ERRORS.codeLength);
+
+    // Setup, current order: the address proved, and on to the bank.
+    if (setup && version === "v3") {
+      const ok = await act.verifySetupEmail(userId, email, code, log);
+      if (!ok.ok) return codeScreen(shown, ok.message);
+      return { screen: "PAYOUT", data: { error_messages: {} } };
+    }
 
     const checked = await recall(userId);
 
-    if (key === "onboarding") {
+    // Setup, the v2 order: the code was the last step.
+    if (setup) {
       const done = await act.finishOnboarding(userId, email, code, log);
       if (!done.ok) return codeScreen(shown, done.message);
       return {
@@ -280,6 +309,7 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
       };
     }
 
+    // Changing the bank: the code is what lets it go ahead.
     if (!checked) return codeScreen(shown, FORM_ERRORS.noAccount);
     const made = await act.finishChange(userId, code, checked, log);
     if (!made.ok) return codeScreen(shown, made.message);
@@ -293,22 +323,71 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
     };
   }
 
+  /* -- The bank and the account ------------------------------------------ */
+  if (req.screen === "PAYOUT" || req.screen === "MFB") {
+    return checkPayout(key!, userId, req.screen, data as PayoutAsk, version, deps);
+  }
+
+  /* -- Is this you? -------------------------------------------------------- */
+  if (req.screen === "CONFIRM") {
+    const checked = await recall(userId);
+    // v2 marked only its PAYOUT step, so its CONFIRM arrives unmarked — and
+    // v1's CONFIRM never asks this server at all. Unmarked setup here is v2.
+    const shape: ConfirmShape = setup && version !== "v3" ? "with_business" : "plain";
+    const back = (field: string, message: string) => ({
+      screen: "CONFIRM",
+      data: { ...confirmData(shape, data), error_messages: { [field]: message } },
+    });
+    if (!ticked(data.confirmed)) return back("confirmed", FORM_ERRORS.notConfirmed);
+    if (!checked) return back("confirmed", FORM_ERRORS.noAccount);
+
+    if (setup) {
+      if (!ticked(data.agreed)) return back("agreed", FORM_ERRORS.notAgreed);
+
+      // Current order: this is the end. The account saved, the terms
+      // recorded, and the screen that says it worked.
+      if (version === "v3") {
+        const done = await act.completeSetup(userId, checked, log);
+        if (!done.ok) return back("confirmed", done.message);
+        return {
+          screen: "DONE",
+          data: { account_name: checked.accountName, account_line: `${checked.bankName} · ${checked.accountNumber}` },
+        };
+      }
+
+      // v2: the account saved and the code sent, for the screen after.
+      const email = str("email").trim().toLowerCase();
+      const started = await act.startOnboarding(userId, { businessName: str("business_name").trim(), email, checked }, log);
+      return codeScreen({ email, masked: maskEmail(email) }, started.ok ? null : started.message);
+    }
+
+    const sent = await act.sendChangeCode(userId, log);
+    if (!sent.ok) return back("confirmed", sent.message);
+    return codeScreen({ email: sent.email, masked: maskEmail(sent.email) }, null);
+  }
+
   log.warn({ key, screen: req.screen }, "flow endpoint asked about a screen it does not know");
   return { data: { acknowledged: true } };
 }
 
 /**
- * What CONFIRM shows, and nothing it does not declare.
+ * Which fields a CONFIRM screen declares.
  *
- * Meta checks an answer against the screen's `data` and refuses one that
- * carries a field the screen never mentioned, so the two forms' CONFIRM
- * screens get exactly their own fields back.
+ * Meta checks an answer against the screen's `data` and refuses one with a
+ * field the screen never mentioned, so each form's CONFIRM gets exactly its
+ * own. The v2 setup form carried the business and email through it; the
+ * current one saved them on the first screen and has no need to.
  */
-function confirmData(key: string, d: Record<string, string | undefined>): Record<string, string> {
+type ConfirmShape = "plain" | "with_business";
+const confirmShape = (key: string, version: Version): ConfirmShape =>
+  key === "onboarding" && version === "v2" ? "with_business" : "plain";
+
+function confirmData(shape: ConfirmShape, d: Record<string, unknown>): Record<string, string> {
+  const s = (k: string) => (typeof d[k] === "string" ? (d[k] as string) : "");
   return {
-    ...(key === "onboarding" ? { business_name: d.business_name ?? "", email: d.email ?? "" } : {}),
-    account_name: d.account_name ?? "",
-    account_line: d.account_line ?? "",
+    ...(shape === "with_business" ? { business_name: s("business_name"), email: s("email") } : {}),
+    account_name: s("account_name"),
+    account_line: s("account_line"),
   };
 }
 
@@ -329,27 +408,53 @@ function codeScreen(
   };
 }
 
+/**
+ * "Check account", from the bank screen or from the microfinance one.
+ *
+ * WhatsApp takes 200 options in a dropdown and Paystack lists 287 banks, 190
+ * of them microfinance. So the bank screen holds every commercial bank and
+ * fintech and the microfinance banks people know by name, and a last row,
+ * "Microfinance bank". Picking that row is the only way to reach a second
+ * screen with all 190 — everybody else sees one list and one box.
+ */
 async function checkPayout(
   key: string,
   userId: string,
+  screen: "PAYOUT" | "MFB",
   ask: PayoutAsk,
+  version: Version,
   deps: Deps,
 ): Promise<Record<string, unknown>> {
-  const carried =
-    key === "onboarding"
-      ? { business_name: ask.business_name ?? "", email: ask.email ?? "" }
-      : { current_line: ask.current_line ?? "" };
-  const again = (message: string) => ({
-    screen: "PAYOUT",
-    data: { ...carried, error_messages: { account_number: message } },
-  });
+  const setup = key === "onboarding";
+  // What a PAYOUT screen carries, so an error can send it back as it was.
+  const carried = setup
+    ? version === "v3"
+      ? {}
+      : { business_name: ask.business_name ?? "", email: ask.email ?? "" }
+    : { current_line: ask.current_line ?? "" };
 
   const accountNumber = (ask.account_number ?? "").replace(/\D/g, "");
+  const again = (message: string) =>
+    screen === "MFB"
+      ? { screen: "MFB", data: { account_number: accountNumber, error_messages: { mfb_bank: message } } }
+      : { screen: "PAYOUT", data: { ...carried, error_messages: { account_number: message } } };
+
   if (accountNumber.length !== 10) return again(ACCOUNT_ERRORS.length);
 
   const chosen = (ask.bank ?? "").trim();
-  const query = chosen === MFB_CHOICE ? (ask.mfb_bank ?? "").trim() : chosen;
-  if (!query) return again(chosen === MFB_CHOICE ? ACCOUNT_ERRORS.noMfb : ACCOUNT_ERRORS.noBank);
+
+  // The one list that does not fit: on to the screen that has it. Only the
+  // forms that have that screen — v1 and v2 carried a second dropdown on
+  // PAYOUT itself, and send their choice in `mfb_bank`.
+  // A form whose PAYOUT still carries the second dropdown sends `mfb_bank`,
+  // even empty; one with the separate screen never does.
+  const hasMfbScreen = (!setup || version === "v3") && !("mfb_bank" in ask);
+  if (screen === "PAYOUT" && chosen === MFB_CHOICE && hasMfbScreen && !(ask.mfb_bank ?? "").trim()) {
+    return { screen: "MFB", data: { account_number: accountNumber, error_messages: {} } };
+  }
+
+  const query = chosen === MFB_CHOICE || screen === "MFB" ? (ask.mfb_bank ?? "").trim() : chosen;
+  if (!query) return again(chosen === MFB_CHOICE || screen === "MFB" ? ACCOUNT_ERRORS.noMfb : ACCOUNT_ERRORS.noBank);
 
   const bank = await (deps.find ?? findBank)(query);
   if (!bank) return again(ACCOUNT_ERRORS.noBank);
@@ -367,15 +472,10 @@ async function checkPayout(
     accountName: checked.accountName,
   });
 
-  /*
-   * The older setup form, still open on somebody's phone or still the one
-   * Meta has live if the new JSON was refused at publish. Its CONFIRM is the
-   * last screen, closes the form itself, and declares a different set of
-   * fields — and Meta refuses an answer that does not match what the screen
-   * declares. So it gets the answer it was built for, and the chat finishes
-   * setup for it the way it always did.
-   */
-  if (key === "onboarding" && ask.form_version !== "2") {
+  const line = `${bank.name} · ${accountNumber}`;
+
+  // v1: its CONFIRM closed the form itself and declared its own set.
+  if (setup && version === "v1") {
     return {
       screen: "CONFIRM",
       data: {
@@ -385,7 +485,7 @@ async function checkPayout(
         mfb_bank: ask.mfb_bank ?? "",
         account_number: accountNumber,
         account_name: checked.accountName,
-        account_line: `${bank.name} · ${accountNumber}`,
+        account_line: line,
       },
     };
   }
@@ -393,9 +493,9 @@ async function checkPayout(
   return {
     screen: "CONFIRM",
     data: {
-      ...confirmData(key, { business_name: ask.business_name, email: ask.email }),
+      ...confirmData(confirmShape(key, version), { business_name: ask.business_name, email: ask.email }),
       account_name: checked.accountName,
-      account_line: `${bank.name} · ${accountNumber}`,
+      account_line: line,
       error_messages: {},
     },
   };
@@ -405,8 +505,7 @@ async function checkPayout(
  * The name the bank gave, kept for the steps after it.
  *
  * Nothing that comes back through the client is trusted, so every later step
- * — the chat's, and this endpoint's own CONFIRM and CODE — takes the account
- * from here, never from its own payload.
+ * takes the account from here, never from its own payload.
  */
 async function rememberChecked(userId: string, account: Remembered): Promise<void> {
   const { state, context } = await loadConversation(userId);

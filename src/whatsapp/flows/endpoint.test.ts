@@ -162,14 +162,21 @@ describe("what the setup form is told", () => {
     ]);
   });
 
-  it("gives each screen of the new form exactly the keys it declares", async () => {
+  it("answers the v2 form, open on phones for a few hours, in its own CONFIRM's shape", async () => {
+    const out = (await answer(ask({ form_version: "2" }), { check: bank({ ok: true, accountName: "A" }), remember, find })) as {
+      data: Record<string, unknown>;
+    };
+    assert.deepEqual(Object.keys(out.data).sort(), ["account_line", "account_name", "business_name", "email", "error_messages"]);
+  });
+
+  it("gives each screen of the current form exactly the keys it declares", async () => {
     const screens = (FLOWS.find((f) => f.key === "onboarding")!.json as {
       screens: { id: string; data?: Record<string, unknown> }[];
     }).screens;
-    const v2 = { form_version: "2" };
+    const current = { form_version: "3", business_name: undefined, email: undefined, mfb_bank: undefined };
     for (const r of [
-      await answer(ask(v2), { check: bank({ ok: false, why: "no_such_account" }), remember, find }),
-      await answer(ask(v2), { check: bank({ ok: true, accountName: "A" }), remember, find }),
+      await answer(ask(current), { check: bank({ ok: false, why: "no_such_account" }), remember, find }),
+      await answer(ask(current), { check: bank({ ok: true, accountName: "A" }), remember, find }),
     ] as { screen: string; data: Record<string, unknown> }[]) {
       const screen = screens.find((s) => s.id === r.screen)!;
       assert.deepEqual(Object.keys(r.data).sort(), Object.keys(screen.data ?? {}).sort(), r.screen);
@@ -281,9 +288,18 @@ describe("finishing setup inside the form", () => {
     assert.equal(out.data.account_name, "DANNY CODES LTD");
   });
 
-  it("gives every new screen exactly the keys it declares", async () => {
+  it("answers the v2 form in the shapes its own screens declared", async () => {
+    /*
+     * v2 is no longer what Meta has live, but it may still be open on a phone,
+     * and its CONFIRM carried the business and email. Its CODE and DONE are
+     * the same as today's, so those are checked against the current form.
+     */
+    const back = (await answer(onboarding("CONFIRM", { ...confirm, confirmed: "false" }), { recall, actions })) as {
+      data: Record<string, unknown>;
+    };
+    assert.deepEqual(Object.keys(back.data).sort(), ["account_line", "account_name", "business_name", "email", "error_messages"]);
+
     for (const r of [
-      await answer(onboarding("CONFIRM", { ...confirm, confirmed: "false" }), { recall, actions }),
       await answer(onboarding("CONFIRM", confirm), { recall, actions }),
       await answer(onboarding("CODE", { code: "123456", email: "d@x.ng" }), { recall, actions }),
     ] as { screen: string; data: Record<string, unknown> }[]) {
@@ -360,5 +376,120 @@ describe("changing the bank inside a form", () => {
     };
     assert.deepEqual(Object.keys(out.data).sort(), declared("CONFIRM"));
     assert.ok(!declared("CONFIRM").includes("email"), "a bank change carried the setup form's fields");
+  });
+});
+
+/*
+ * Setup in the order a person is ready for it (27 September 2026): the code
+ * straight after the email, then the bank, then the confirm screen with the
+ * terms. Every payload says form_version "3".
+ */
+describe("setup, email code first", () => {
+  const v3 = (screen: string, data: Record<string, unknown>) => ({
+    action: "data_exchange",
+    screen,
+    flow_token: "onboarding:user-1",
+    data: { ...data, form_version: "3" },
+  });
+  const account = { bankCode: "058", bankName: "GTBank", accountNumber: "0123456789", accountName: "DANNY CODES LTD" };
+  const calls: string[] = [];
+  const actions = {
+    startSetup: async () => (calls.push("start"), { ok: true as const }),
+    verifySetupEmail: async (_u: string, _e: string, code: string) =>
+      code === "123456" ? (calls.push("verified"), { ok: true as const }) : { ok: false as const, message: "That code is not right." },
+    completeSetup: async () => (calls.push("complete"), { ok: true as const }),
+  };
+  const deps = {
+    actions,
+    recall: async () => account,
+    remember: async () => {},
+    find: async (q: string) => (q === "058" ? { code: "058", name: "GTBank" } : q === "50515" ? { code: "50515", name: "Moniepoint MFB" } : null),
+    check: (async () => ({ ok: true, accountName: "DANNY CODES LTD" })) as Checked,
+  };
+  const screens = (FLOWS.find((f) => f.key === "onboarding")!.json as {
+    screens: { id: string; data?: Record<string, unknown> }[];
+    routing_model: Record<string, string[]>;
+  });
+  const declared = (id: string) => Object.keys(screens.screens.find((s) => s.id === id)?.data ?? {}).sort();
+  type Out = { screen: string; data: Record<string, unknown> };
+
+  it("asks for the code straight after the email", () => {
+    assert.deepEqual(screens.routing_model.BUSINESS, ["CODE"]);
+    assert.deepEqual(screens.routing_model.CODE, ["PAYOUT"]);
+  });
+
+  it("sends the code from the first screen and shows the box for it", async () => {
+    calls.length = 0;
+    const out = (await answer(v3("BUSINESS", { business_name: "Danny Codes Ltd", email: "Danny@X.ng" }), deps)) as Out;
+    assert.equal(out.screen, "CODE");
+    assert.deepEqual(calls, ["start"]);
+    assert.equal(out.data.email, "danny@x.ng");
+    assert.deepEqual(Object.keys(out.data).sort(), declared("CODE"));
+  });
+
+  it("says a bad address on the code screen instead of sending anything", async () => {
+    calls.length = 0;
+    const out = (await answer(v3("BUSINESS", { business_name: "Danny", email: "not-an-email" }), deps)) as Out;
+    assert.deepEqual(calls, []);
+    assert.match(String((out.data.error_messages as Record<string, string>).code), /email address/);
+  });
+
+  it("goes on to the bank once the code is right, and no further when it is wrong", async () => {
+    const wrong = (await answer(v3("CODE", { code: "000000", email: "danny@x.ng" }), deps)) as Out;
+    assert.equal(wrong.screen, "CODE");
+    const right = (await answer(v3("CODE", { code: "123456", email: "danny@x.ng" }), deps)) as Out;
+    assert.equal(right.screen, "PAYOUT");
+    assert.deepEqual(Object.keys(right.data).sort(), declared("PAYOUT"));
+  });
+
+  it("has one bank list and one account box, nothing else to fill in", () => {
+    const payout = screens.screens.find((s) => s.id === "PAYOUT") as unknown as {
+      layout: { children: { type: string; children?: { type: string; name?: string }[] }[] };
+    };
+    const form = payout.layout.children.find((c) => c.type === "Form")!;
+    const fields = form.children!.filter((c) => c.type !== "Footer").map((c) => c.name);
+    assert.deepEqual(fields, ["bank", "account_number"]);
+  });
+
+  it("opens the microfinance list only for somebody who picked it", async () => {
+    const out = (await answer(v3("PAYOUT", { bank: "mfb", account_number: "0123456789" }), deps)) as Out;
+    assert.equal(out.screen, "MFB");
+    assert.deepEqual(Object.keys(out.data).sort(), declared("MFB"));
+
+    const checked = (await answer(v3("MFB", { mfb_bank: "50515", account_number: "0123456789" }), deps)) as Out;
+    assert.equal(checked.screen, "CONFIRM");
+    assert.match(String(checked.data.account_line), /Moniepoint/);
+  });
+
+  it("goes straight to the confirm screen for any bank in the main list", async () => {
+    const out = (await answer(v3("PAYOUT", { bank: "058", account_number: "0123456789" }), deps)) as Out;
+    assert.equal(out.screen, "CONFIRM");
+    assert.deepEqual(Object.keys(out.data).sort(), declared("CONFIRM"));
+  });
+
+  it("finishes when both boxes are ticked, however WhatsApp spells a tick", async () => {
+    /*
+     * The bug that made "Continue" do nothing. An OptIn reaches this endpoint
+     * as the boolean true; only the string "true" was accepted, so every
+     * ticked box read as unticked and the same screen came back.
+     */
+    for (const yes of [true, "true"]) {
+      calls.length = 0;
+      const out = (await answer(
+        v3("CONFIRM", { account_name: "DANNY CODES LTD", account_line: "GTBank · 0123456789", confirmed: yes, agreed: yes }),
+        deps,
+      )) as Out;
+      assert.equal(out.screen, "DONE", `a tick sent as ${JSON.stringify(yes)} was read as no tick`);
+      assert.deepEqual(calls, ["complete"]);
+      assert.deepEqual(Object.keys(out.data).sort(), declared("DONE"));
+    }
+  });
+
+  it("stays put when a box really is not ticked, saving nothing", async () => {
+    calls.length = 0;
+    const out = (await answer(v3("CONFIRM", { confirmed: true, agreed: false }), deps)) as Out;
+    assert.equal(out.screen, "CONFIRM");
+    assert.deepEqual(calls, []);
+    assert.deepEqual(Object.keys(out.data).sort(), declared("CONFIRM"));
   });
 });

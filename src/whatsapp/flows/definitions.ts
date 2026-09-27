@@ -101,11 +101,24 @@ export type FlowDefinition = {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Two screens, four fields, one submit — against six back-and-forth messages.
+ * Setup, start to finish, inside one form.
  *
- * The bank lookup happens inside, since 26 September 2026: "Check account"
- * asks the bank, a wrong number is said under the box, and a right one comes
- * back as a last screen with the name on it.
+ * In the order a person is ready for each thing (since 27 September 2026):
+ *
+ *   BUSINESS  the name on the invoices, and an email
+ *   CODE      the code just sent to that email — asked while they are still
+ *             holding the address in their head, not after the bank
+ *   PAYOUT    the bank and the account, checked with the bank on the spot
+ *   MFB       only for somebody who picked "Other microfinance bank"
+ *   CONFIRM   the name the bank gave, "the details above are correct", and
+ *             the terms
+ *   DONE      it worked
+ *
+ * Every step asks the endpoint, so a wrong code or an account the bank does
+ * not know is said on the same screen, with everything still filled in. The
+ * chat sends one message when it closes. Every payload carries form_version
+ * "3", which is how the endpoint tells this form from older copies that may
+ * still be open on somebody's phone.
  */
 const onboarding: FlowDefinition = {
   key: "onboarding",
@@ -114,32 +127,27 @@ const onboarding: FlowDefinition = {
   endpoint: true,
   json: {
     version: VERSION,
-    /*
-     * The one Flow that calls this server, since 26 September 2026: Finish on
-     * PAYOUT asks the bank whose account it is before the form closes. See
-     * whatsapp/flows/endpoint.ts, and the note at the top of this file for
-     * why the others still do not.
-     */
     data_api_version: "3.0",
     routing_model: {
-      BUSINESS: ["PAYOUT"],
-      PAYOUT: ["CONFIRM"],
-      CONFIRM: ["CODE"],
-      CODE: ["DONE"],
+      BUSINESS: ["CODE"],
+      CODE: ["PAYOUT"],
+      PAYOUT: ["MFB", "CONFIRM"],
+      MFB: ["CONFIRM"],
+      CONFIRM: ["DONE"],
       DONE: [],
     },
     screens: [
       {
+        // No data: the form opens here with none, and a screen that declares
+        // data must be given it. A problem with what is typed here is said on
+        // the code screen, which can show it.
         id: "BUSINESS",
         title: "Your business",
         terminal: false,
         layout: {
           type: "SingleColumnLayout",
           children: [
-            {
-              type: "TextSubheading",
-              text: "This is what your clients will see on every invoice.",
-            },
+            { type: "TextSubheading", text: "This is what your clients will see on every invoice." },
             {
               type: "Form",
               name: "business_form",
@@ -157,109 +165,17 @@ const onboarding: FlowDefinition = {
                   type: "TextInput",
                   name: "email",
                   label: "Email",
-                  "helper-text": "Receipts and copies of your invoices go here.",
+                  "helper-text": "We will send a 6-digit code here to check it is yours.",
                   required: true,
                   "input-type": "email",
                   "max-chars": 120,
                 },
                 {
                   type: "Footer",
-                  label: "Next",
-                  "on-click-action": {
-                    name: "navigate",
-                    next: { type: "screen", name: "PAYOUT" },
-                    payload: {
-                      business_name: "${form.business_name}",
-                      email: "${form.email}",
-                      // Nothing wrong yet. Filled in by the endpoint when the
-                      // bank does not know the account.
-                      error_messages: {},
-                    },
-                  },
-                },
-              ],
-            },
-          ],
-        },
-      },
-      {
-        id: "PAYOUT",
-        title: "Where money lands",
-        // Carried through from the first screen so the submit holds all four.
-        data: {
-          business_name: { type: "string", __example__: "Kemi Adeyemi Studio" },
-          email: { type: "string", __example__: "kemi@studio.ng" },
-          /*
-           * Why the bank refused the account, said under the Account box.
-           * Empty until then. The Form's `error-messages`, keyed by field:
-           * [Probe, 26 Sep 2026] Meta refuses `error-message` on a TextInput
-           * at 7.1 ("Property 'error-message' is not allowed in 'TextInput'
-           * component") and accepts this, while refusing a made-up property
-           * in the same place.
-           */
-          error_messages: {
-            type: "object",
-            properties: { account_number: { type: "string" } },
-            __example__: {},
-          },
-        },
-        layout: {
-          type: "SingleColumnLayout",
-          children: [
-            {
-              type: "TextSubheading",
-              text: "Your clients pay straight into this account.",
-            },
-            {
-              type: "Form",
-              name: "payout_form",
-              "error-messages": "${data.error_messages}",
-              children: [
-                {
-                  // Paystack's list, in two because a dropdown holds 200 and
-                  // there are 287 banks. See banks.ts.
-                  type: "Dropdown",
-                  name: "bank",
-                  label: "Bank",
-                  required: true,
-                  "data-source": bankOptions(),
-                },
-                {
-                  type: "TextCaption",
-                  text: "Not in the list? Choose \u201cMicrofinance bank (below)\u201d, then pick yours here.",
-                },
-                {
-                  type: "Dropdown",
-                  name: "mfb_bank",
-                  label: "MFB",
-                  required: false,
-                  "data-source": mfbOptions(),
-                },
-                {
-                  type: "TextInput",
-                  name: "account_number",
-                  label: "Account",
-                  "helper-text": "The 10 digits on your account.",
-                  required: true,
-                  "input-type": "number",
-                  "max-chars": 10,
-                },
-                {
-                  type: "Footer",
-                  label: "Check account",
+                  label: "Send code",
                   "on-click-action": {
                     name: "data_exchange",
-                    payload: {
-                      business_name: "${data.business_name}",
-                      email: "${data.email}",
-                      bank: "${form.bank}",
-                      mfb_bank: "${form.mfb_bank}",
-                      account_number: "${form.account_number}",
-                      // Tells the endpoint this is the form that finishes
-                      // setup itself. One without it is the older form, and
-                      // its CONFIRM screen expects the older answer.
-                      form_version: "2",
-                    },
+                    payload: { business_name: "${form.business_name}", email: "${form.email}", form_version: "3" },
                   },
                 },
               ],
@@ -267,17 +183,17 @@ const onboarding: FlowDefinition = {
           ],
         },
       },
-      confirmScreen("onboarding"),
       codeScreen("onboarding"),
+      payoutScreen("onboarding"),
+      mfbScreen("onboarding"),
+      confirmScreen("onboarding"),
       {
         /*
-         * The screen that says it worked, before the form closes.
-         *
-         * Everything is already done by the time this shows: the account is
-         * saved, the email proved, the terms recorded. The button only closes
-         * the form, and the one message the chat sends after it is the way
-         * into a first invoice. Closing the form with the cross instead loses
-         * nothing but that message.
+         * Everything is already done by the time this shows: the email
+         * proved, the account saved, the terms recorded. The button only
+         * closes the form, and the one message the chat sends after it is the
+         * way into a first invoice. Closing with the cross loses nothing but
+         * that message.
          */
         id: "DONE",
         title: "You're set up",
@@ -291,10 +207,7 @@ const onboarding: FlowDefinition = {
           type: "SingleColumnLayout",
           children: [
             { type: "TextHeading", text: "You're all set" },
-            {
-              type: "TextBody",
-              text: "Your account is verified and ready to send invoices.",
-            },
+            { type: "TextBody", text: "Your account is verified and ready to send invoices." },
             { type: "TextSubheading", text: "Clients pay into" },
             { type: "TextBody", text: "${data.account_name}" },
             { type: "TextCaption", text: "${data.account_line}" },
@@ -311,13 +224,14 @@ const onboarding: FlowDefinition = {
 };
 
 /*
- * The three screens both account forms share.
+ * The screens both account forms share.
  *
- * Setup and a later bank change ask the same questions in the same order —
- * which bank, whose account, prove it is you — and a difference between the
- * two would be somebody learning one form and being surprised by the other.
- * What differs is what is carried through (a new user's name and email; an
- * existing user's current account) and whether the terms are on CONFIRM.
+ * Setup and a later bank change ask the same questions — which bank, whose
+ * account, prove it is you — and a difference between them would be somebody
+ * learning one form and being surprised by the other. What differs is what is
+ * carried (an existing user's current account), whether the terms are on
+ * CONFIRM, and where the code comes: first in setup, last in a change, where
+ * it is the thing that lets the money move.
  */
 
 type AccountForm = "onboarding" | "payout_change";
@@ -331,14 +245,130 @@ function errorsFor(...fields: string[]) {
   };
 }
 
+/** Marks every setup payload, so the endpoint answers this form and not an older one. */
+function v3(form: AccountForm): Record<string, string> {
+  return form === "onboarding" ? { form_version: "3" } : {};
+}
+
 /**
- * "Is this you?", with the answer given by ticking rather than by a button.
+ * The bank and the account. One list, one box.
+ *
+ * WhatsApp holds 200 options in a dropdown and Paystack lists 287 banks, 190
+ * of them microfinance. So this list has every commercial bank and fintech and
+ * the microfinance banks people know by name, and a last row, "Other
+ * microfinance bank", which is the only way to the screen that lists the rest.
+ */
+function payoutScreen(form: AccountForm): Record<string, unknown> {
+  const change = form === "payout_change";
+  return {
+    id: "PAYOUT",
+    title: change ? "Change payout account" : "Where money lands",
+    terminal: false,
+    data: {
+      ...(change ? { current_line: { type: "string", __example__: "Access Bank · ····4321 · KEMI ADEYEMI" } } : {}),
+      error_messages: errorsFor("account_number"),
+    },
+    layout: {
+      type: "SingleColumnLayout",
+      children: [
+        ...(change
+          ? [
+              { type: "TextSubheading", text: "Payments go to" },
+              { type: "TextBody", text: "${data.current_line}" },
+            ]
+          : [{ type: "TextSubheading", text: "Your clients pay straight into this account." }]),
+        {
+          type: "Form",
+          name: "payout_form",
+          "error-messages": "${data.error_messages}",
+          children: [
+            {
+              type: "Dropdown",
+              name: "bank",
+              label: change ? "New bank" : "Bank",
+              required: true,
+              "data-source": bankOptions(),
+            },
+            {
+              type: "TextInput",
+              name: "account_number",
+              label: "Account",
+              "helper-text": "Your 10-digit account number.",
+              required: true,
+              "input-type": "number",
+              "max-chars": 10,
+            },
+            {
+              type: "Footer",
+              label: "Check account",
+              "on-click-action": {
+                name: "data_exchange",
+                payload: {
+                  ...(change ? { current_line: "${data.current_line}" } : {}),
+                  bank: "${form.bank}",
+                  account_number: "${form.account_number}",
+                  ...v3(form),
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+/** For "Other microfinance bank" only: all 190, which fit in a list of their own. */
+function mfbScreen(form: AccountForm): Record<string, unknown> {
+  return {
+    id: "MFB",
+    title: "Your microfinance bank",
+    terminal: false,
+    data: {
+      account_number: { type: "string", __example__: "0123456789" },
+      error_messages: errorsFor("mfb_bank"),
+    },
+    layout: {
+      type: "SingleColumnLayout",
+      children: [
+        { type: "TextSubheading", text: "Which microfinance bank is it?" },
+        { type: "TextCaption", text: "For account number" },
+        { type: "TextBody", text: "${data.account_number}" },
+        {
+          type: "Form",
+          name: "mfb_form",
+          "error-messages": "${data.error_messages}",
+          children: [
+            {
+              type: "Dropdown",
+              name: "mfb_bank",
+              label: "Bank",
+              required: true,
+              "data-source": mfbOptions(),
+            },
+            {
+              type: "Footer",
+              label: "Check account",
+              "on-click-action": {
+                name: "data_exchange",
+                payload: { mfb_bank: "${form.mfb_bank}", account_number: "${data.account_number}", ...v3(form) },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * "Is this you?", answered by ticking.
  *
  * The chat used to ask this afterwards ("That account is ADA OKON at GTBank.
  * Is that you?"). Here it is asked where the answer can still be changed: the
- * back arrow is the "not me", and it returns to a form with everything still
- * in it. The tick is the same idea as a bank app's "the details above are
- * correct" — nobody moves money on a name they have not been made to look at.
+ * back arrow is the "not me", and it returns to the form with everything
+ * still in it. The tick is a bank app's "the details above are correct" —
+ * nobody moves money on a name they have not been made to look at.
  */
 function confirmScreen(form: AccountForm): Record<string, unknown> {
   const setup = form === "onboarding";
@@ -346,16 +376,7 @@ function confirmScreen(form: AccountForm): Record<string, unknown> {
     id: "CONFIRM",
     title: "Confirm account",
     terminal: false,
-    // Only what this screen shows or sends on. The account itself is not
-    // carried: the endpoint kept it when the bank named it, and takes it from
-    // there rather than from anything that comes back through the client.
     data: {
-      ...(setup
-        ? {
-            business_name: { type: "string", __example__: "Kemi Adeyemi Studio" },
-            email: { type: "string", __example__: "kemi@studio.ng" },
-          }
-        : {}),
       account_name: { type: "string", __example__: "KEMI ADEYEMI" },
       account_line: { type: "string", __example__: "GTBank · 0123456789" },
       error_messages: errorsFor(...(setup ? ["confirmed", "agreed"] : ["confirmed"])),
@@ -392,34 +413,21 @@ function confirmScreen(form: AccountForm): Record<string, unknown> {
           name: "confirm_form",
           "error-messages": "${data.error_messages}",
           children: [
-            {
-              type: "OptIn",
-              name: "confirmed",
-              label: "The details above are correct",
-              required: true,
-            },
+            { type: "OptIn", name: "confirmed", label: "The details above are correct", required: true },
             ...(setup
-              ? [
-                  {
-                    type: "OptIn",
-                    name: "agreed",
-                    label: "I agree to the Terms and the Privacy Notice",
-                    required: true,
-                  },
-                ]
+              ? [{ type: "OptIn", name: "agreed", label: "I agree to the Terms and the Privacy Notice", required: true }]
               : []),
             {
               type: "Footer",
-              label: setup ? "Continue" : "Send code",
+              label: setup ? "Finish setup" : "Send code",
               "on-click-action": {
                 name: "data_exchange",
                 payload: {
-                  ...(setup
-                    ? { business_name: "${data.business_name}", email: "${data.email}", agreed: "${form.agreed}" }
-                    : {}),
                   account_name: "${data.account_name}",
                   account_line: "${data.account_line}",
                   confirmed: "${form.confirmed}",
+                  ...(setup ? { agreed: "${form.agreed}" } : {}),
+                  ...v3(form),
                 },
               },
             },
@@ -431,13 +439,12 @@ function confirmScreen(form: AccountForm): Record<string, unknown> {
 }
 
 /**
- * The code from the email, typed on the form rather than into the chat.
+ * The code from the email, typed into a box rather than into the chat.
  *
- * The typed code was the step people got lost on: the chat asked for it,
- * they went to their inbox, came back, and the message they needed was three
- * bubbles up. Here the box is waiting for it, a wrong code is said under the
- * box, and "Send a new code" is on the same screen rather than a word to
- * remember to type.
+ * The typed code was where people got lost: the chat asked for it, they went
+ * to their inbox, came back, and the message they needed was three bubbles
+ * up. Here the box is waiting, a wrong code is said under it, and "Send a new
+ * code" is on the same screen rather than a word to remember to type.
  */
 function codeScreen(form: AccountForm): Record<string, unknown> {
   return {
@@ -473,10 +480,10 @@ function codeScreen(form: AccountForm): Record<string, unknown> {
             },
             {
               type: "Footer",
-              label: form === "onboarding" ? "Verify and finish" : "Confirm change",
+              label: form === "onboarding" ? "Verify email" : "Confirm change",
               "on-click-action": {
                 name: "data_exchange",
-                payload: { code: "${form.code}", email: "${data.email}" },
+                payload: { code: "${form.code}", email: "${data.email}", ...v3(form) },
               },
             },
           ],
@@ -486,7 +493,7 @@ function codeScreen(form: AccountForm): Record<string, unknown> {
           text: "Send a new code",
           "on-click-action": {
             name: "data_exchange",
-            payload: { resend: "1", email: "${data.email}" },
+            payload: { resend: "1", email: "${data.email}", ...v3(form) },
           },
         },
       ],
@@ -501,12 +508,9 @@ function codeScreen(form: AccountForm): Record<string, unknown> {
 /**
  * The payout account, changed inside a form rather than across a chat.
  *
- * The chat version asked for a code, then for the bank and number in a
- * sentence, then "move your payouts there?", each a message and each a place
- * to get stuck. F17's four protections are all still here, in the same order
- * the chat applied them: the account named by the bank before anything
- * moves, a code to the verified email, the alert to WhatsApp and email, and
- * the 24-hour delay.
+ * F17's four protections, in the order the chat applied them: the account
+ * named by the bank before anything moves, a code to the verified email, the
+ * alert to WhatsApp and email, and the 24-hour delay.
  */
 const payoutChange: FlowDefinition = {
   key: "payout_change",
@@ -517,74 +521,15 @@ const payoutChange: FlowDefinition = {
     version: VERSION,
     data_api_version: "3.0",
     routing_model: {
-      PAYOUT: ["CONFIRM"],
+      PAYOUT: ["MFB", "CONFIRM"],
+      MFB: ["CONFIRM"],
       CONFIRM: ["CODE"],
       CODE: ["DONE"],
       DONE: [],
     },
     screens: [
-      {
-        id: "PAYOUT",
-        title: "Change payout account",
-        data: {
-          current_line: { type: "string", __example__: "Access Bank · ····4321 · KEMI ADEYEMI" },
-          error_messages: errorsFor("account_number"),
-        },
-        layout: {
-          type: "SingleColumnLayout",
-          children: [
-            { type: "TextSubheading", text: "Payments go to" },
-            { type: "TextBody", text: "${data.current_line}" },
-            {
-              type: "Form",
-              name: "payout_form",
-              "error-messages": "${data.error_messages}",
-              children: [
-                {
-                  type: "Dropdown",
-                  name: "bank",
-                  label: "New bank",
-                  required: true,
-                  "data-source": bankOptions(),
-                },
-                {
-                  type: "TextCaption",
-                  text: "Not in the list? Choose “Microfinance bank (below)”, then pick yours here.",
-                },
-                {
-                  type: "Dropdown",
-                  name: "mfb_bank",
-                  label: "MFB",
-                  required: false,
-                  "data-source": mfbOptions(),
-                },
-                {
-                  type: "TextInput",
-                  name: "account_number",
-                  label: "Account",
-                  "helper-text": "The 10 digits on your account.",
-                  required: true,
-                  "input-type": "number",
-                  "max-chars": 10,
-                },
-                {
-                  type: "Footer",
-                  label: "Check account",
-                  "on-click-action": {
-                    name: "data_exchange",
-                    payload: {
-                      current_line: "${data.current_line}",
-                      bank: "${form.bank}",
-                      mfb_bank: "${form.mfb_bank}",
-                      account_number: "${form.account_number}",
-                    },
-                  },
-                },
-              ],
-            },
-          ],
-        },
-      },
+      payoutScreen("payout_change"),
+      mfbScreen("payout_change"),
       confirmScreen("payout_change"),
       codeScreen("payout_change"),
       {

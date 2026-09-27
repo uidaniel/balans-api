@@ -412,7 +412,7 @@ describe("the bank dropdowns", () => {
   });
 
   it("sends the rest to the second one, and says so last", () => {
-    assert.deepEqual(banks.at(-1), { id: MFB_CHOICE, title: "Microfinance bank (below)" });
+    assert.deepEqual(banks.at(-1), { id: MFB_CHOICE, title: "Other microfinance bank" });
     assert.ok(mfbs.every((r) => isMicrofinance(PAYSTACK_BANKS.find((b) => b.code === r.id)!.name)));
   });
 

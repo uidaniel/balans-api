@@ -105,7 +105,7 @@ function options(banks: readonly ListedBank[]): { id: string; title: string }[] 
 /** The first dropdown: banks, fintechs, the well-known MFBs, then the way to the rest. */
 export const bankOptions = (banks: readonly ListedBank[] = PAYSTACK_BANKS): { id: string; title: string }[] => [
   ...options(banks.filter((b) => !isMicrofinance(b.name) || KNOWN_MFB.has(b.code))),
-  { id: MFB_CHOICE, title: "Microfinance bank (below)" },
+  { id: MFB_CHOICE, title: "Other microfinance bank" },
 ];
 
 /** The second dropdown: every microfinance bank. */

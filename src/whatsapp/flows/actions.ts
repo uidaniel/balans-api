@@ -104,8 +104,86 @@ function codeRefusal(check: { reason?: string; left?: number }): string {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Setting up                                                                 */
+/* Setting up, in the order the form asks (since 27 September 2026)          */
 /* -------------------------------------------------------------------------- */
+
+/*
+ * Business and email, then the code from that email, then the bank, then the
+ * terms. The code comes straight after the address because that is when the
+ * person has just typed it and is ready to go and look; asking for it after
+ * the bank was asking them to leave the form at the moment they were nearly
+ * done.
+ */
+
+/** The first screen: the name on the invoices, and where the code goes. */
+export async function startSetup(
+  userId: string,
+  input: { businessName: string; email: string },
+  log: FastifyBaseLogger,
+): Promise<Done> {
+  await setBusinessName(userId, input.businessName);
+  await setEmail(userId, input.email);
+  log.info({ userId }, "setup form saved the business and asked for the code");
+  return emailCode(userId, "email_verify", input.email, input.businessName, log);
+}
+
+/** The second: the code checked and the address proved. Nothing else yet. */
+export async function verifySetupEmail(
+  userId: string,
+  email: string,
+  code: string,
+  log: FastifyBaseLogger,
+): Promise<Done> {
+  const check = await checkCode(userId, "email_verify", email, code);
+  if (!check.ok) return { ok: false, message: codeRefusal(check) };
+  await markEmailVerified(userId, email);
+  log.info({ userId }, "setup form verified the email");
+  return { ok: true };
+}
+
+/**
+ * The last: "the details above are correct" and "I agree", both ticked.
+ *
+ * The account is the one the endpoint kept when the bank named it, never one
+ * read back from the client. The terms are recorded here, at the end, so an
+ * agreement is never on file for somebody who could not finish. And the
+ * conversation goes to idle now rather than when the form closes: the last
+ * screen can be dismissed without its button, and somebody who does that is
+ * set up all the same.
+ */
+export async function completeSetup(userId: string, checked: Checked, log: FastifyBaseLogger): Promise<Done> {
+  const { rows } = await db().query<{ verified: boolean }>(
+    `SELECT email_verified_at IS NOT NULL AS verified FROM users WHERE id = $1`,
+    [userId],
+  );
+  if (!rows[0]?.verified) {
+    return { ok: false, message: "Your email is not verified yet. Go back to the code screen." };
+  }
+
+  await saveBankAccount(userId, {
+    bankCode: checked.bankCode,
+    bankName: checked.bankName,
+    accountNumber: checked.accountNumber,
+    accountName: checked.accountName,
+  });
+  await activateBankAccount(userId, null);
+  sendWelcome(userId, await recordConsent(userId, legalConsentVersion), log);
+
+  const { context } = await loadConversation(userId);
+  await saveConversation(userId, "idle", context.opener ? { opener: context.opener } : {});
+
+  log.info({ userId, version: legalConsentVersion }, "set up entirely inside the form");
+  return { ok: true };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Setting up, the order the 27 September morning form used                  */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Kept for a form that may still be open on somebody's phone: it asked for
+ * the bank before the code. Nothing new sends it.
+ */
 
 /**
  * "The details above are correct" and "I agree", both ticked.
