@@ -152,7 +152,7 @@ export async function emailDocumentToClient(
      the reader has to re-read to find it. */
   const body = [
     paragraph(`${esc(d.client_name)},`),
-    paragraph(`${esc(business)} has sent you ${label.toLowerCase()}.`),
+    paragraph(`${esc(business)} has sent you ${d.type === "quote" ? "a quote" : "an invoice"}.`),
     amount(
       d.type === "quote" ? "Quoted" : "Amount due",
       price,
@@ -205,7 +205,7 @@ export async function emailDocumentToClient(
       text: [
         `${d.client_name},`,
         "",
-        `${business} has sent you ${label.toLowerCase()}${d.number === null ? "" : ` #${d.number}`} for ${price}${
+        `${business} has sent you ${d.number === null ? (d.type === "quote" ? "a quote" : "an invoice") : `${label.toLowerCase()} #${d.number}`} for ${price}${
           when ? `, ${dateWord.toLowerCase()} ${formatFriendly(when)}` : ""
         }.`,
         "",
