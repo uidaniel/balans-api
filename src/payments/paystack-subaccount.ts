@@ -28,7 +28,7 @@ import type { FastifyBaseLogger } from "fastify";
 
 import { db } from "../db/pool.ts";
 import { decrypt } from "../lib/crypto.ts";
-import { cachedBanks, createSubAccount, matchByName } from "./paystack.ts";
+import { cachedBanks, createSubAccount, findSubAccount, matchByName } from "./paystack.ts";
 
 export type SubaccountResult =
   | { ok: true; code: string; created: boolean }
@@ -99,9 +99,24 @@ export async function paystackSubaccountFor(
     return { ok: false, why: "unknown_bank", message: `no Paystack code for ${bank.bank_name}` };
   }
 
+  const accountNumber = decrypt(bank.account_number_encrypted);
+
+  // One subaccount per bank account, ever: reuse what Paystack already has.
+  const existing = await findSubAccount({ accountNumber, bankName: match.name });
+  if (existing) {
+    await db().query(
+      `UPDATE bank_accounts
+          SET paystack_subaccount_code = $2, paystack_subaccount_status = 'active'
+        WHERE id = $1`,
+      [bank.id, existing],
+    );
+    log.info({ userId, subaccount: existing }, "paystack subaccount reused");
+    return { ok: true, code: existing, created: false };
+  }
+
   const made = await createSubAccount({
     businessName: bank.business_name ?? "Balans user",
-    accountNumber: decrypt(bank.account_number_encrypted),
+    accountNumber,
     bankCode: match.code,
     email: bank.email ?? `user-${userId}@receipts.balans.ng`,
   });

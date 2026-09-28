@@ -37,6 +37,7 @@ const {
   resolveAccountNumber,
   chargeByTransfer,
   createSubAccount,
+  findSubAccount,
   initTransaction,
   listBanks,
   matchByName,
@@ -529,5 +530,40 @@ describe("whose account a number is", () => {
     const { fetchImpl } = answering({ status: false, message: "Test mode daily limit exceeded" }, 429);
     const r = await resolveAccountNumber("0123456789", "058", fetchImpl);
     assert.ok(!r.ok && r.reason === "provider_error");
+  });
+});
+
+describe("findSubAccount", () => {
+  const list = (rows: unknown[]) => answering({ status: true, data: rows });
+
+  it("finds the one Paystack already has for this account, instead of making another", async () => {
+    const { fetchImpl, seen } = list([
+      { id: 1, subaccount_code: "ACCT_old", account_number: "1960725673", settlement_bank: "Access Bank", active: 1 },
+      { id: 2, subaccount_code: "ACCT_other", account_number: "0123456789", settlement_bank: "Access Bank", active: 1 },
+    ]);
+    assert.equal(await findSubAccount({ accountNumber: "1960725673", bankName: "Access Bank" }, fetchImpl), "ACCT_old");
+    assert.match(seen[0]!.url, /\/subaccount\?perPage=100&page=1$/);
+    assert.equal(seen[0]!.init.method, "GET");
+  });
+
+  it("prefers an active one, then the newest", async () => {
+    const { fetchImpl } = list([
+      { id: 5, subaccount_code: "ACCT_newest_inactive", account_number: "1960725673", settlement_bank: "Access Bank", active: 0 },
+      { id: 3, subaccount_code: "ACCT_active_old", account_number: "1960725673", settlement_bank: "Access Bank", active: 1 },
+      { id: 4, subaccount_code: "ACCT_active_new", account_number: "1960725673", settlement_bank: "access bank", active: 1 },
+    ]);
+    assert.equal(await findSubAccount({ accountNumber: "1960725673", bankName: "Access Bank" }, fetchImpl), "ACCT_active_new");
+  });
+
+  it("does not take the same number at a different bank", async () => {
+    const { fetchImpl } = list([
+      { id: 1, subaccount_code: "ACCT_gtb", account_number: "1960725673", settlement_bank: "Guaranty Trust Bank", active: 1 },
+    ]);
+    assert.equal(await findSubAccount({ accountNumber: "1960725673", bankName: "Access Bank" }, fetchImpl), null);
+  });
+
+  it("says none when the list cannot be read, so the caller creates one as before", async () => {
+    const { fetchImpl } = answering({ status: false, message: "nope" }, 500);
+    assert.equal(await findSubAccount({ accountNumber: "1960725673", bankName: "Access Bank" }, fetchImpl), null);
   });
 });

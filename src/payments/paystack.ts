@@ -180,6 +180,52 @@ export async function createSubAccount(
   };
 }
 
+/**
+ * A subaccount Paystack already holds for this bank account, if there is one.
+ *
+ * Paystack does not refuse a second subaccount for the same account number,
+ * and it keeps every one it has made, whatever happens on our side. So a
+ * user whose rows were reset, or whose code was never saved, got a fresh
+ * subaccount on their next card payment: seven existed for three bank
+ * accounts by 28 September 2026. In live mode that scatters one person's
+ * money across several subaccounts. Monnify's path already looks first
+ * (monnify.ts); this is the same for Paystack.
+ *
+ * Matched on the account number and on Paystack's own bank name, which is
+ * what `settlement_bank` holds and what `bankName` is when it comes from
+ * Paystack's list. An active one wins over an inactive one; the newest wins
+ * among equals. Null when there is none, or when the list cannot be read —
+ * the caller then creates one, which is what it did before.
+ */
+export async function findSubAccount(
+  input: { accountNumber: string; bankName: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
+  const want = input.bankName.trim().toLowerCase();
+  const found: { code: string; active: boolean; id: number }[] = [];
+
+  for (let page = 1; page <= 20; page++) {
+    const res = await call<
+      { subaccount_code?: string; account_number?: string; settlement_bank?: string; active?: number | boolean; id?: number }[]
+    >(`${SUBACCOUNT_PATH}?perPage=100&page=${page}`, { method: "GET" }, fetchImpl);
+    if (!res.ok) return null;
+    const rows = Array.isArray(res.body) ? res.body : [];
+    for (const r of rows) {
+      if (
+        r.subaccount_code &&
+        r.account_number === input.accountNumber &&
+        (r.settlement_bank ?? "").trim().toLowerCase() === want
+      ) {
+        found.push({ code: r.subaccount_code, active: r.active === true || r.active === 1, id: r.id ?? 0 });
+      }
+    }
+    if (rows.length < 100) break;
+  }
+
+  found.sort((a, b) => Number(b.active) - Number(a.active) || b.id - a.id);
+  return found[0]?.code ?? null;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Banks                                                                      */
 /* -------------------------------------------------------------------------- */
