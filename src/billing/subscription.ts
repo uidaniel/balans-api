@@ -120,6 +120,17 @@ export async function stateOf(userId: string): Promise<SubscriptionState> {
   };
 }
 
+/**
+ * Whether somebody on Pro may pay for the next month now: in its last three
+ * days, or in the grace week after it. Earlier than that a second payment
+ * would only be a mistake, so "upgrade" says they are on Pro and the checkout
+ * refuses it.
+ */
+export function renewalOpen(state: SubscriptionState, now = new Date()): boolean {
+  if (state.plan !== "pro" || !state.periodEnd) return false;
+  return state.inGrace || state.periodEnd.getTime() - now.getTime() <= 3 * 86_400_000;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Starting                                                                   */
 /* -------------------------------------------------------------------------- */
@@ -173,7 +184,21 @@ export async function openSubscription(
       return { id: open[0].id, priceKobo: open[0].price_kobo };
     }
 
-    const start = new Date();
+    /*
+     * The new month starts when the current one ends, not today.
+     *
+     * Renewing three days early used to start the month on the day of
+     * payment, and activation takes the later of the two end dates, so the
+     * three days already paid for were simply lost. Somebody who renews early
+     * because we reminded them should not be charged for it.
+     */
+    const { rows: current } = await c.query<{ plan_expires_at: Date | null }>(
+      `SELECT plan_expires_at FROM users WHERE id = $1 AND plan = 'pro'`,
+      [userId],
+    );
+    const now = new Date();
+    const paidUntil = current[0]?.plan_expires_at ?? null;
+    const start = paidUntil && paidUntil > now ? new Date(paidUntil.getTime()) : now;
     const end = new Date(start.getTime());
     end.setMonth(end.getMonth() + 1);
 
@@ -295,36 +320,82 @@ export async function expireLapsedSubscriptions(log: FastifyBaseLogger): Promise
   return rowCount ?? 0;
 }
 
-/** Who to remind, 3 days before expiry (F18, `pro_renewal`). */
-export async function renewalsDue(): Promise<
-  { userId: string; waPhone: string; expiresAt: Date; priceKobo: number }[]
-> {
-  const { rows } = await db().query<{
-    id: string;
-    wa_phone: string;
-    plan_expires_at: Date;
-  }>(
+/**
+ * The reminders around the end of a Pro month, in order.
+ *
+ * Pro does not renew by itself: somebody pays again or it ends. So there is
+ * one notice before, and then a few after, because the one before is easy to
+ * miss and losing Pro without a word is how people find out from a client.
+ *
+ *   ending_soon    3 days before it ends
+ *   ended          the day it ends: the grace week has started
+ *   grace_ending   the last day of the grace week
+ *   lapsed         the day they move to Free
+ *   win_back       a week after that, and then nothing more
+ *
+ * Each window is a day wide or more, so an hour the job missed does not lose
+ * a stage, and each closes before the next opens, so a job that was down for
+ * a week sends the one that is due now rather than every one it missed.
+ *
+ * Only an end date says a month ran out. Somebody an admin moved to Free has
+ * none (see the admin's plan control), so they are never told their Pro
+ * "ended"; neither is anybody who was never on Pro.
+ */
+export type ProStage = "ending_soon" | "ended" | "grace_ending" | "lapsed" | "win_back";
+
+const STAGE_WHERE: Record<ProStage, string> = {
+  ending_soon: `u.plan = 'pro' AND u.plan_expires_at > now() AND u.plan_expires_at <= now() + interval '3 days'`,
+  ended: `u.plan = 'pro' AND u.plan_expires_at <= now() AND u.plan_expires_at > now() - interval '6 days'`,
+  grace_ending: `u.plan = 'pro' AND u.plan_expires_at <= now() - interval '6 days'
+                 AND u.plan_expires_at > now() - (${GRACE_DAYS} || ' days')::interval`,
+  lapsed: `u.plan = 'free' AND u.plan_expires_at <= now() - (${GRACE_DAYS} || ' days')::interval
+           AND u.plan_expires_at > now() - interval '12 days'`,
+  win_back: `u.plan = 'free' AND u.plan_expires_at <= now() - interval '14 days'
+             AND u.plan_expires_at > now() - interval '21 days'`,
+};
+
+export async function proRemindersDue(
+  stage: ProStage,
+): Promise<{ userId: string; waPhone: string; expiresAt: Date; priceKobo: number }[]> {
+  const { rows } = await db().query<{ id: string; wa_phone: string; plan_expires_at: Date }>(
     `SELECT u.id, u.wa_phone, u.plan_expires_at
        FROM users u
-      WHERE u.plan = 'pro'
-        AND u.status = 'active'
-        AND u.plan_expires_at BETWEEN now() AND now() + interval '3 days'
-        -- Once per period: a renewal notice every hour would be its own reason
-        -- to cancel.
+      WHERE u.status = 'active'
+        AND u.plan_expires_at IS NOT NULL
+        AND ${STAGE_WHERE[stage]}
         AND NOT EXISTS (
-          SELECT 1 FROM messages m
-           WHERE m.user_id = u.id
-             AND m.template = 'pro_renewal'
-             AND m.created_at > u.plan_expires_at - interval '4 days'
+          SELECT 1 FROM pro_reminders r
+           WHERE r.user_id = u.id AND r.period_end = u.plan_expires_at AND r.stage = $1
         )`,
+    [stage],
   );
-
   return rows.map((r) => ({
     userId: r.id,
     waPhone: r.wa_phone,
     expiresAt: r.plan_expires_at,
     priceKobo: defaults.plans.pro.priceKobo,
   }));
+}
+
+/**
+ * Takes the right to send one reminder. False if it was already taken, by
+ * this run or another: the row is the lock, so two workers cannot both send.
+ */
+export async function claimProReminder(userId: string, periodEnd: Date, stage: ProStage): Promise<boolean> {
+  const { rowCount } = await db().query(
+    `INSERT INTO pro_reminders (user_id, period_end, stage) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+    [userId, periodEnd, stage],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Gives the claim back when the message did not go, so the next run tries again. */
+export async function releaseProReminder(userId: string, periodEnd: Date, stage: ProStage): Promise<void> {
+  await db().query(`DELETE FROM pro_reminders WHERE user_id = $1 AND period_end = $2 AND stage = $3`, [
+    userId,
+    periodEnd,
+    stage,
+  ]);
 }
 
 /* -------------------------------------------------------------------------- */

@@ -162,8 +162,8 @@ describe("the Pay button", () => {
     assert.match(branch, /proPayLink\(proPayPrompt\(\), proStartUrl\(userId\)\)/);
   });
 
-  it("does not offer a second month to somebody already on Pro", () => {
-    assert.match(branch, /planOf\(userId\)\) === "pro"/);
+  it("does not offer a second month to somebody already on Pro, until it is nearly up", () => {
+    assert.match(branch, /current\.plan === "pro" && !renewalOpen\(current\)/);
     assert.match(branch, /proActive\(/);
   });
 

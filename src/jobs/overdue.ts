@@ -24,7 +24,16 @@ import { send } from "../whatsapp/outbound.ts";
 import { sendMonthlySummaries } from "./monthly-summary.ts";
 import { sweepStaleDrafts } from "../documents/store.ts";
 import { retireSupersededAccounts } from "../settings/bank-change.ts";
-import { expireLapsedSubscriptions, renewalsDue } from "../billing/subscription.ts";
+import {
+  claimProReminder,
+  expireLapsedSubscriptions,
+  GRACE_DAYS,
+  proRemindersDue,
+  releaseProReminder,
+  type ProStage,
+} from "../billing/subscription.ts";
+import { proEnded, proEndingSoon, proGraceEnding, proLapsed, proWinBack } from "../billing/messages.ts";
+import type { TemplateName } from "../whatsapp/window.ts";
 import { payBy } from "../documents/summary.ts";
 import { bankDetailsOf, type BankDetails } from "../documents/bank-details.ts";
 import { emailReminderToClient } from "../email/client-reminder.ts";
@@ -406,44 +415,72 @@ export function promptMessage(x: {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Three days before expiry, once per period.
+ * The Pro reminders: one before the month ends, then after it (see
+ * `ProStage` in billing/subscription.ts for the schedule and why).
  *
- * Always as a template: somebody whose subscription is about to lapse is by
- * definition not mid-conversation, so free-form text would simply not arrive.
+ * Each is claimed in `pro_reminders` before it is sent and the claim given
+ * back if it fails, so it goes exactly once however it goes. Checking the
+ * messages table for a template name, as this used to, missed every one sent
+ * as ordinary text inside the 24-hour window, and those went every hour.
  */
-async function sendRenewalReminders(log: FastifyBaseLogger): Promise<number> {
-  if (withinQuietHours()) return 0;
-
-  const due = await renewalsDue();
+async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<number> {
+  const due = await proRemindersDue(stage);
+  const price = formatNaira(defaults.plans.pro.priceKobo);
+  const dayOf = (d: Date) =>
+    new Intl.DateTimeFormat("en-GB", { timeZone: defaults.behaviour.timezone, day: "numeric", month: "long" }).format(d);
   let sent = 0;
 
   for (const r of due) {
-    const when = new Intl.DateTimeFormat("en-GB", {
-      timeZone: defaults.behaviour.timezone,
-      day: "numeric",
-      month: "long",
-    }).format(r.expiresAt);
+    if (!(await claimProReminder(r.userId, r.expiresAt, stage))) continue;
 
-    const outcome = await send(
-      {
-        userId: r.userId,
-        phone: r.waPhone,
-        text: para(
-          `⭐ ${b("Your Balans Pro renews on " + when)}.`,
-          lines(
-            `${formatNaira(r.priceKobo)} for another month.`,
-            `Reply ${b("settings")} to change or cancel it.`,
-          ),
-        ),
-        fallback: { template: "pro_renewal", params: [when, formatNaira(r.priceKobo)] },
+    const graceEnds = new Date(r.expiresAt.getTime() + GRACE_DAYS * 86_400_000);
+    const words: { text: string; fallback: { template: TemplateName; params: string[] } } = {
+      ending_soon: {
+        text: proEndingSoon(r.expiresAt),
+        fallback: { template: "pro_renewal" as TemplateName, params: [dayOf(r.expiresAt), price] },
       },
-      log,
-    );
+      ended: {
+        text: proEnded(r.expiresAt),
+        fallback: { template: "pro_ended" as TemplateName, params: [dayOf(r.expiresAt), dayOf(graceEnds), price] },
+      },
+      grace_ending: {
+        text: proGraceEnding(r.expiresAt),
+        fallback: { template: "pro_grace_ending" as TemplateName, params: [dayOf(graceEnds), price] },
+      },
+      lapsed: {
+        text: proLapsed(),
+        fallback: {
+          template: "pro_lapsed" as TemplateName,
+          params: [String(defaults.plans.free.documentsPerMonth), price],
+        },
+      },
+      win_back: {
+        text: proWinBack(),
+        fallback: {
+          template: "pro_lapsed" as TemplateName,
+          params: [String(defaults.plans.free.documentsPerMonth), price],
+        },
+      },
+    }[stage];
+
+    const outcome = await send({ userId: r.userId, phone: r.waPhone, text: words.text, fallback: words.fallback }, log);
     if (outcome.kind === "sent") sent += 1;
+    else await releaseProReminder(r.userId, r.expiresAt, stage);
   }
 
-  if (sent) log.info({ count: sent }, "renewal reminders sent");
+  if (sent) log.info({ stage, count: sent }, "pro reminders sent");
   return sent;
+}
+
+async function sendProReminders(log: FastifyBaseLogger): Promise<void> {
+  if (withinQuietHours()) return;
+  for (const stage of ["ending_soon", "ended", "grace_ending"] as const) await sendProStage(stage, log);
+}
+
+/** After the move to Free, which has to have happened first. */
+async function sendLapsedReminders(log: FastifyBaseLogger): Promise<void> {
+  if (withinQuietHours()) return;
+  for (const stage of ["lapsed", "win_back"] as const) await sendProStage(stage, log);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -463,8 +500,9 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
     const retired = await retireSupersededAccounts();
     if (retired) log.info({ count: retired }, "superseded bank accounts retired");
 
-    await sendRenewalReminders(log);
+    await sendProReminders(log);
     await expireLapsedSubscriptions(log);
+    await sendLapsedReminders(log);
 
     // F15. Returns early on every day but the 1st.
     await sendMonthlySummaries(today, log);

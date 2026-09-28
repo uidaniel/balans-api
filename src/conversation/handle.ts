@@ -103,7 +103,9 @@ import {
   proPayPrompt,
   proActive,
   proOffer,
+  proRenewOffer,
 } from "../billing/messages.ts";
+import { renewalOpen } from "../billing/subscription.ts";
 import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
 import { sendCta, sendFlow, sendList } from "../whatsapp/client.ts";
 import { helpButtons } from "./menu.ts";
@@ -2026,6 +2028,14 @@ async function runEffects(
         }
         case "show_upgrade": {
           const state = await stateOf(userId);
+          // Nearly up, or in its grace week: "upgrade" is how the reminders
+          // say to renew, so it has to offer the button, not a status line.
+          if (renewalOpen(state)) {
+            if (!(await sendProButton(userId, ctx.phone, proRenewOffer(state), UPGRADE_CARD, log))) {
+              extra.push(proPayLink(proRenewOffer(state), proStartUrl(userId)));
+            }
+            break;
+          }
           if (state.plan === "pro") {
             extra.push(proActive(state));
             break;
@@ -2065,8 +2075,9 @@ async function runEffects(
            * The checkout itself is opened when the button is tapped, so a
            * button tapped tomorrow opens a fresh one rather than a stale one.
            */
-          if ((await planOf(userId)) === "pro") {
-            extra.push(proActive(await stateOf(userId)));
+          const current = await stateOf(userId);
+          if (current.plan === "pro" && !renewalOpen(current)) {
+            extra.push(proActive(current));
           } else if (!(await sendProButton(userId, ctx.phone, proPayPrompt(), undefined, log))) {
             extra.push(proPayLink(proPayPrompt(), proStartUrl(userId)));
           }

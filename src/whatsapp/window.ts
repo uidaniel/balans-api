@@ -76,7 +76,10 @@ export type TemplateName =
   | "client_quote"
   | "client_reminder"
   | "client_reminded"
-  | "launch_setup";
+  | "launch_setup"
+  | "pro_ended"
+  | "pro_grace_ending"
+  | "pro_lapsed";
 
 export type TemplateSpec = {
   name: TemplateName;
@@ -148,6 +151,35 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
     body: "Your Balans Pro renews on {{1}} at {{2}}. Reply here to change or cancel it.",
     params: ["date", "amount"],
     example: ["1 October", "₦4,000"],
+  },
+
+  /*
+   * After Pro ends (billing/subscription.ts, `ProStage`). Pro does not renew
+   * by itself, so these say what happens next and how to keep it. Each is
+   * sent once; outside the 24-hour window these are what arrive.
+   */
+  pro_ended: {
+    name: "pro_ended",
+    category: "UTILITY",
+    body: "Your Balans Pro ended on {{1}}. You keep every Pro feature until {{2}}. Reply upgrade to renew for {{3}} a month.",
+    params: ["date it ended", "grace end date", "price"],
+    example: ["28 September", "5 October", "₦3,000"],
+  },
+
+  pro_grace_ending: {
+    name: "pro_grace_ending",
+    category: "UTILITY",
+    body: "Your Balans Pro features stop on {{1}}, and your account moves to the Free plan. Reply upgrade to keep Pro for {{2}} a month.",
+    params: ["date", "price"],
+    example: ["5 October", "₦3,000"],
+  },
+
+  pro_lapsed: {
+    name: "pro_lapsed",
+    category: "UTILITY",
+    body: "Your Balans account is on the Free plan, with {{1}} invoices a month. Your logo and settings are saved. Reply upgrade to get Pro back for {{2}} a month.",
+    params: ["free invoices a month", "price"],
+    example: ["3", "₦3,000"],
   },
 
   /*

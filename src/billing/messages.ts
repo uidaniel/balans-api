@@ -10,7 +10,7 @@ import { formatNaira } from "../../core/totals.ts";
 import { defaults, env } from "../config.ts";
 import { availableTo } from "../pdf/templates.ts";
 import { b, i, lines, para } from "../whatsapp/format.ts";
-import type { SubscriptionState } from "./subscription.ts";
+import { GRACE_DAYS, type SubscriptionState } from "./subscription.ts";
 
 const free = defaults.plans.free;
 const pro = defaults.plans.pro;
@@ -135,5 +135,86 @@ export function proStarted(receipt?: { paidKobo: number; until: Date }): string 
       "Send me your logo as a picture and it goes on every invoice from the next one.",
       `Reply ${b("/design")} to pick how they look.`,
     ),
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Around the end of a Pro month                                              */
+/* -------------------------------------------------------------------------- */
+
+const day = (d: Date) =>
+  new Intl.DateTimeFormat("en-GB", { timeZone: defaults.behaviour.timezone, day: "numeric", month: "long" }).format(d);
+
+const graceEnd = (end: Date) => new Date(end.getTime() + GRACE_DAYS * 86_400_000);
+
+/** Three days before. It does not renew by itself, so this says how to. */
+export function proEndingSoon(end: Date): string {
+  return para(
+    `⭐ ${b(`Your Balans Pro ends on ${day(end)}.`)}`,
+    lines(
+      `Reply ${b("upgrade")} to renew: ${formatNaira(pro.priceKobo)} for another month.`,
+      "The new month starts when this one ends, so renewing early costs you nothing.",
+    ),
+  );
+}
+
+/** The day it ends. The grace week has started. */
+export function proEnded(end: Date): string {
+  return para(
+    `⏳ ${b("Your Balans Pro ended today.")}`,
+    lines(
+      `You keep every Pro feature until ${day(graceEnd(end))}.`,
+      `Reply ${b("upgrade")} to renew for ${formatNaira(pro.priceKobo)} a month.`,
+    ),
+  );
+}
+
+/** The last day of the grace week. */
+export function proGraceEnding(end: Date): string {
+  return para(
+    `⏳ ${b("Last day of Pro.")}`,
+    lines(
+      `Tomorrow your account moves to Free: ${free.documentsPerMonth} invoices a month, and no logo on them.`,
+      `Reply ${b("upgrade")} to keep Pro for ${formatNaira(pro.priceKobo)}.`,
+    ),
+  );
+}
+
+/** The day they move to Free. */
+export function proLapsed(): string {
+  return para(
+    `📋 ${b("You are on Free now.")}`,
+    lines(
+      `${free.documentsPerMonth} invoices a month. Your logo and settings are saved for when you come back.`,
+      `Reply ${b("upgrade")} to get Pro back for ${formatNaira(pro.priceKobo)} a month.`,
+    ),
+  );
+}
+
+/** A week later, once, and then nothing more. */
+export function proWinBack(): string {
+  return para(
+    `⭐ ${b("Still want Pro?")}`,
+    lines(
+      "Unlimited invoices, your logo on them, and reminders sent to your clients for you.",
+      `Reply ${b("upgrade")}: ${formatNaira(pro.priceKobo)} a month.`,
+    ),
+  );
+}
+
+/**
+ * What "upgrade" says to somebody still on Pro whose month is nearly up or
+ * already in its grace week: the renewal, with the button under it. Anybody
+ * else on Pro is told they are on Pro, as before.
+ */
+export function proRenewOffer(state: SubscriptionState): string {
+  const end = state.periodEnd;
+  return para(
+    `⭐ ${b("Renew Balans Pro")} — ${b(formatNaira(pro.priceKobo))} for another month.`,
+    end
+      ? state.inGrace
+        ? lines(`Your month ended on ${day(end)}. You keep Pro until ${day(graceEnd(end))}.`)
+        : lines(`Your month ends on ${day(end)}. The new one starts then, so nothing is lost.`)
+      : "",
   );
 }

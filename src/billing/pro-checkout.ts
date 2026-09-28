@@ -21,7 +21,7 @@ import { randomUUID } from "node:crypto";
 import { db } from "../db/pool.ts";
 import { env } from "../config.ts";
 import { initProCheckout } from "../payments/paystack.ts";
-import { attachPaymentReference, openSubscription } from "./subscription.ts";
+import { attachPaymentReference, openSubscription, renewalOpen, stateOf } from "./subscription.ts";
 
 export type ProCheckout =
   | { kind: "checkout"; url: string }
@@ -44,8 +44,9 @@ export async function openProCheckout(userId: string, log: FastifyBaseLogger): P
   );
   const user = rows[0];
   if (!user) return { kind: "failed", message: "no such user" };
-  // Already paid. A checkout now would take the money twice.
-  if (user.plan === "pro") return { kind: "already_pro" };
+  // Already paid. A checkout now would take the money twice — unless the
+  // month is nearly up or in its grace week, when this is the renewal.
+  if (user.plan === "pro" && !renewalOpen(await stateOf(userId))) return { kind: "already_pro" };
 
   const opened = await openSubscription(userId, "link", log);
   const reference = proReference(opened.id);
