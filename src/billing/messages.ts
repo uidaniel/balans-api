@@ -152,8 +152,8 @@ export function proEndingSoon(end: Date): string {
   return para(
     `⭐ ${b(`Your Balans Pro ends on ${day(end)}.`)}`,
     lines(
-      `Reply ${b("upgrade")} to renew: ${formatNaira(pro.priceKobo)} for another month.`,
-      "The new month starts when this one ends, so renewing early costs you nothing.",
+      "It does not renew by itself.",
+      `Tap below to pay ${formatNaira(pro.priceKobo)} for another month. It starts when this one ends, so renewing early costs you nothing.`,
     ),
   );
 }
@@ -164,7 +164,7 @@ export function proEnded(end: Date): string {
     `⏳ ${b("Your Balans Pro ended today.")}`,
     lines(
       `You keep every Pro feature until ${day(graceEnd(end))}.`,
-      `Reply ${b("upgrade")} to renew for ${formatNaira(pro.priceKobo)} a month.`,
+      `Tap below to renew for ${formatNaira(pro.priceKobo)} a month.`,
     ),
   );
 }
@@ -175,7 +175,7 @@ export function proGraceEnding(end: Date): string {
     `⏳ ${b("Last day of Pro.")}`,
     lines(
       `Tomorrow your account moves to Free: ${free.documentsPerMonth} invoices a month, and no logo on them.`,
-      `Reply ${b("upgrade")} to keep Pro for ${formatNaira(pro.priceKobo)}.`,
+      `Tap below to keep Pro for ${formatNaira(pro.priceKobo)}.`,
     ),
   );
 }
@@ -186,7 +186,7 @@ export function proLapsed(): string {
     `📋 ${b("You are on Free now.")}`,
     lines(
       `${free.documentsPerMonth} invoices a month. Your logo and settings are saved for when you come back.`,
-      `Reply ${b("upgrade")} to get Pro back for ${formatNaira(pro.priceKobo)} a month.`,
+      `Tap below to get Pro back for ${formatNaira(pro.priceKobo)} a month.`,
     ),
   );
 }
@@ -197,7 +197,7 @@ export function proWinBack(): string {
     `⭐ ${b("Still want Pro?")}`,
     lines(
       "Unlimited invoices, your logo on them, and reminders sent to your clients for you.",
-      `Reply ${b("upgrade")}: ${formatNaira(pro.priceKobo)} a month.`,
+      `Tap below: ${formatNaira(pro.priceKobo)} a month.`,
     ),
   );
 }

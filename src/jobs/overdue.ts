@@ -32,7 +32,8 @@ import {
   releaseProReminder,
   type ProStage,
 } from "../billing/subscription.ts";
-import { proEnded, proEndingSoon, proGraceEnding, proLapsed, proWinBack } from "../billing/messages.ts";
+import { PRO_PAY_FOOTER, proEnded, proEndingSoon, proGraceEnding, proLapsed, proWinBack } from "../billing/messages.ts";
+import { proStartToken, proStartUrl } from "../billing/pro-link.ts";
 import type { TemplateName } from "../whatsapp/window.ts";
 import { payBy } from "../documents/summary.ts";
 import { bankDetailsOf, type BankDetails } from "../documents/bank-details.ts";
@@ -434,36 +435,42 @@ async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<nu
     if (!(await claimProReminder(r.userId, r.expiresAt, stage))) continue;
 
     const graceEnds = new Date(r.expiresAt.getTime() + GRACE_DAYS * 86_400_000);
-    const words: { text: string; fallback: { template: TemplateName; params: string[] } } = {
+    const free = String(defaults.plans.free.documentsPerMonth);
+    const words: { text: string; label: string; template: TemplateName; params: string[] } = {
       ending_soon: {
         text: proEndingSoon(r.expiresAt),
-        fallback: { template: "pro_renewal" as TemplateName, params: [dayOf(r.expiresAt), price] },
+        label: "Renew Pro",
+        template: "pro_ending_pay" as TemplateName,
+        params: [dayOf(r.expiresAt), price],
       },
       ended: {
         text: proEnded(r.expiresAt),
-        fallback: { template: "pro_ended" as TemplateName, params: [dayOf(r.expiresAt), dayOf(graceEnds), price] },
+        label: "Renew Pro",
+        template: "pro_ended_pay" as TemplateName,
+        params: [dayOf(r.expiresAt), dayOf(graceEnds), price],
       },
       grace_ending: {
         text: proGraceEnding(r.expiresAt),
-        fallback: { template: "pro_grace_ending" as TemplateName, params: [dayOf(graceEnds), price] },
+        label: "Keep Pro",
+        template: "pro_last_day_pay" as TemplateName,
+        params: [dayOf(graceEnds), price],
       },
-      lapsed: {
-        text: proLapsed(),
-        fallback: {
-          template: "pro_lapsed" as TemplateName,
-          params: [String(defaults.plans.free.documentsPerMonth), price],
-        },
-      },
-      win_back: {
-        text: proWinBack(),
-        fallback: {
-          template: "pro_lapsed" as TemplateName,
-          params: [String(defaults.plans.free.documentsPerMonth), price],
-        },
-      },
+      lapsed: { text: proLapsed(), label: "Get Pro back", template: "pro_free_pay" as TemplateName, params: [free, price] },
+      win_back: { text: proWinBack(), label: "Get Pro back", template: "pro_free_pay" as TemplateName, params: [free, price] },
     }[stage];
 
-    const outcome = await send({ userId: r.userId, phone: r.waPhone, text: words.text, fallback: words.fallback }, log);
+    // The same signed link the chat's Pay button opens: a fresh Paystack
+    // checkout for this person, renewal included (see renewalOpen).
+    const outcome = await send(
+      {
+        userId: r.userId,
+        phone: r.waPhone,
+        text: words.text,
+        cta: { label: words.label, url: proStartUrl(r.userId), footer: PRO_PAY_FOOTER },
+        fallback: { template: words.template, params: words.params, urlSuffix: proStartToken(r.userId) },
+      },
+      log,
+    );
     if (outcome.kind === "sent") sent += 1;
     else await releaseProReminder(r.userId, r.expiresAt, stage);
   }

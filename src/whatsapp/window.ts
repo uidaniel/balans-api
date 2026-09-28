@@ -77,9 +77,10 @@ export type TemplateName =
   | "client_reminder"
   | "client_reminded"
   | "launch_setup"
-  | "pro_ended"
-  | "pro_grace_ending"
-  | "pro_lapsed";
+  | "pro_ending_pay"
+  | "pro_ended_pay"
+  | "pro_last_day_pay"
+  | "pro_free_pay";
 
 export type TemplateSpec = {
   name: TemplateName;
@@ -109,6 +110,9 @@ export type TemplateSpec = {
    */
   header?: { type: "image"; sample: string };
 };
+
+/** Where the Pro Pay button goes: billing/pro-link.ts builds the same address. */
+const PRO_START = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/pro/start`;
 
 export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
   payment_received: {
@@ -154,32 +158,46 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
   },
 
   /*
-   * After Pro ends (billing/subscription.ts, `ProStage`). Pro does not renew
-   * by itself, so these say what happens next and how to keep it. Each is
-   * sent once; outside the 24-hour window these are what arrive.
+   * Around the end of Pro (billing/subscription.ts, `ProStage`). Pro does not
+   * renew by itself, so each says what happens next and carries the button
+   * that pays: the same signed /pro/start link the chat's Pay button opens,
+   * its token filling `{{1}}`. Each is sent once; outside the 24-hour window
+   * these are what arrive.
    */
-  pro_ended: {
-    name: "pro_ended",
+  pro_ending_pay: {
+    name: "pro_ending_pay",
     category: "UTILITY",
-    body: "Your Balans Pro ended on {{1}}. You keep every Pro feature until {{2}}. Reply upgrade to renew for {{3}} a month.",
+    body: "Your Balans Pro ends on {{1}}. It does not renew by itself. Tap below to pay {{2}} for another month, starting when this one ends.",
+    params: ["date", "price"],
+    example: ["1 October", "₦3,000"],
+    button: { text: "Renew Pro", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
+  },
+
+  pro_ended_pay: {
+    name: "pro_ended_pay",
+    category: "UTILITY",
+    body: "Your Balans Pro ended on {{1}}. You keep every Pro feature until {{2}}. Tap below to renew for {{3}} a month.",
     params: ["date it ended", "grace end date", "price"],
     example: ["28 September", "5 October", "₦3,000"],
+    button: { text: "Renew Pro", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
   },
 
-  pro_grace_ending: {
-    name: "pro_grace_ending",
+  pro_last_day_pay: {
+    name: "pro_last_day_pay",
     category: "UTILITY",
-    body: "Your Balans Pro features stop on {{1}}, and your account moves to the Free plan. Reply upgrade to keep Pro for {{2}} a month.",
+    body: "Your Balans Pro features stop on {{1}}, and your account moves to the Free plan. Tap below to keep Pro for {{2}} a month.",
     params: ["date", "price"],
     example: ["5 October", "₦3,000"],
+    button: { text: "Keep Pro", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
   },
 
-  pro_lapsed: {
-    name: "pro_lapsed",
+  pro_free_pay: {
+    name: "pro_free_pay",
     category: "UTILITY",
-    body: "Your Balans account is on the Free plan, with {{1}} invoices a month. Your logo and settings are saved. Reply upgrade to get Pro back for {{2}} a month.",
+    body: "Your Balans account is on the Free plan, with {{1}} invoices a month. Your logo and settings are saved. Tap below to get Pro back for {{2}} a month.",
     params: ["free invoices a month", "price"],
     example: ["3", "₦3,000"],
+    button: { text: "Get Pro back", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
   },
 
   /*

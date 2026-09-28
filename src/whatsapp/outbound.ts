@@ -14,7 +14,7 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
-import { sendDocument, sendImage, sendTemplate, sendText, uploadDocument } from "./client.ts";
+import { sendCta, sendDocument, sendImage, sendTemplate, sendText, uploadDocument } from "./client.ts";
 
 /** On the receipt when a card carried the words already. */
 const RECEIPT_CAPTION = "Receipt, for your records.";
@@ -32,7 +32,18 @@ export type Outbound = {
    * rather than sent late or sent wrong. A reply to a question nobody asked
    * three days ago is noise.
    */
-  fallback?: { template: TemplateName; params: string[] };
+  fallback?: {
+    template: TemplateName;
+    params: string[];
+    /** The end of the template's link button, for a template that has one. */
+    urlSuffix?: string;
+  };
+  /**
+   * A button under the words that opens a link, inside the window. Words and
+   * a button are one message; if the button will not send, the link goes in
+   * the words instead, so there is always a way through.
+   */
+  cta?: { label: string; url: string; footer?: string };
   /** Attached inside the window only; templates cannot carry a file. */
   document?: { bytes: Buffer; filename: string };
   /**
@@ -90,6 +101,7 @@ export async function send(msg: Outbound, log: FastifyBaseLogger): Promise<SendO
 
     const res = await sendTemplate(msg.phone, spec.name, msg.fallback.params, {
       language: TEMPLATE_LANGUAGE,
+      ...(msg.fallback.urlSuffix ? { urlSuffix: msg.fallback.urlSuffix } : {}),
     });
 
     const outcome: SendOutcome = res.ok
@@ -158,6 +170,19 @@ async function sendInside(msg: Outbound, log: FastifyBaseLogger): Promise<SendOu
       log.error({ userId: msg.userId, reason: up.reason }, "document upload failed; falling back to text");
     }
     // The words matter more than the file.
+  }
+
+  if (msg.cta && !msg.document && !msg.image) {
+    const shown = await sendCta(msg.phone, {
+      body: msg.text,
+      label: msg.cta.label,
+      url: msg.cta.url,
+      ...(msg.cta.footer ? { footer: msg.cta.footer } : {}),
+    });
+    if (shown.ok) return { kind: "sent", inWindow: true };
+    log.warn({ userId: msg.userId, reason: shown.reason }, "button send failed; the link goes in the words");
+    const res = await sendText(msg.phone, `${msg.text}\n\n${msg.cta.label}: ${msg.cta.url}`);
+    return res.ok ? { kind: "sent", inWindow: true } : { kind: "failed", reason: res.reason };
   }
 
   const res = await sendText(msg.phone, msg.text);

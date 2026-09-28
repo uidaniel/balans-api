@@ -47,8 +47,8 @@ describe("the reminders around the end of a month", () => {
     proRenewOffer(pro(days(2))),
   ];
 
-  it("all say how to keep Pro", () => {
-    for (const m of all.slice(0, 5)) assert.match(m, /upgrade/, m);
+  it("all point at the Pay button under them", () => {
+    for (const m of all.slice(0, 5)) assert.match(m, /Tap below/, m);
   });
 
   it("names the day the grace week ends, a week after the month", () => {
