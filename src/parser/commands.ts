@@ -79,7 +79,7 @@ const EXACT: [RegExp, Intent][] = [
   [/^(who owes me|who owe me|who dey owe me|debtors|debtor|outstanding|unpaid|who never pay|owing)\??$/, "debtors"],
   [/^(status|my status|where we dey|any update)\??$/, "status"],
   [/^(summary|report|how much did i make|how far|my earnings|this month|total)\??$/, "summary"],
-  [/^(settings|setting|my details|change bank|change my bank|update bank|my bank|account details)$/, "settings"],
+  [/^(settings|setting|my details|change bank|change my bank|update bank|my bank|account details|brand|branding|my brand|brand colou?rs?|customi[sz]e( my)? (brand|invoices?))$/, "settings"],
   // Advertised on the landing page, so people will ask. Answered honestly
   // rather than steered into settings, which has nothing to do with it.
   [/^(templates?|invoice templates?|change (my )?(invoice |email )?templates?|design|invoice design)$/, "templates"],

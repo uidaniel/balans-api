@@ -62,19 +62,36 @@ export async function saveLogo(
     return { ok: false, why: tooBig ? "too_large" : "download_failed" };
   }
 
-  const contentType = sniff(got.bytes);
+  return saveLogoBytes(userId, got.bytes, log, got.contentType);
+}
+
+/**
+ * Keeps these bytes as the logo, after the same checks: a real PNG, JPEG or
+ * WebP by its magic numbers, and no bigger than a logo needs to be. Used by
+ * the chat (above) and by the settings page, which uploads the file itself.
+ */
+export async function saveLogoBytes(
+  userId: string,
+  bytes: Buffer,
+  log: FastifyBaseLogger,
+  claimed?: string,
+): Promise<SaveOutcome> {
+  if (bytes.length > MAX_BYTES) return { ok: false, why: "too_large" };
+  const contentType = sniff(bytes);
   if (!contentType) {
-    log.info({ userId, claimed: got.contentType }, "logo refused: not a raster image");
+    log.info({ userId, claimed }, "logo refused: not a raster image");
     return { ok: false, why: "not_an_image" };
   }
 
   const key = logoKey(userId);
-  await put(key, got.bytes, contentType, userId);
+  await put(key, bytes, contentType, userId);
   await db().query(`UPDATE users SET logo_url = $2 WHERE id = $1`, [userId, key]);
 
-  log.info({ userId, bytes: got.bytes.length, contentType }, "logo saved");
+  log.info({ userId, bytes: bytes.length, contentType }, "logo saved");
   return { ok: true };
 }
+
+export const MAX_LOGO_BYTES = MAX_BYTES;
 
 /** Forgets it, so the next invoice goes out without one. */
 export async function clearLogo(userId: string): Promise<void> {

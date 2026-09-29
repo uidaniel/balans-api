@@ -107,6 +107,7 @@ import {
 } from "../billing/messages.ts";
 import { renewalOpen } from "../billing/subscription.ts";
 import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from "../settings/messages.ts";
+import { settingsUrlFor } from "../settings/page-token.ts";
 import { sendCta, sendFlow, sendList } from "../whatsapp/client.ts";
 import { helpButtons } from "./menu.ts";
 import { TEMPLATES } from "../pdf/templates.ts";
@@ -1752,6 +1753,33 @@ async function runEffects(
 
           const p = prefs.rows[0];
           const design = TEMPLATES.find((t) => t.id === p?.template_id);
+
+          /*
+           * The settings page (http/routes/settings-page.ts): everything on one
+           * screen inside WhatsApp — business, brand, invoices, signature,
+           * design, payout account and plan — opened by one button. The list
+           * below is what it used to be, kept for when the button cannot send.
+           */
+          if (ctx.phone) {
+            const page = await sendCta(ctx.phone, {
+              body: para(
+                `⚙️ ${b(p?.business_name ?? businessName ?? "Your settings")}`,
+                lines(
+                  account ? `Paid into ${account.accountName}, ${account.bankName} ••${account.last4}` : "No payout account yet",
+                  `${design?.name ?? "Classic"} design · ${plan === "pro" ? "Pro" : "Free"} plan`,
+                ),
+                "Tap below to change your details, logo and colours, invoices, signature or payout account.",
+              ),
+              label: "Open settings",
+              url: await settingsUrlFor(userId),
+              footer: "The link works for 24 hours",
+            });
+            if (page.ok) {
+              await recordOutbound(userId, page.waMessageId, "sent", { kind: "interactive" });
+              break;
+            }
+            log.warn({ userId, reason: page.reason }, "settings button failed; sending the list");
+          }
 
           // A tappable list rather than "reply with a number". One tap cannot be
           // mistyped, and it shows what each option does without a wall of text.

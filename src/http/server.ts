@@ -16,6 +16,7 @@ import { monnifyRoutes } from "./routes/monnify.ts";
 import { paystackRoutes } from "./routes/paystack.ts";
 import { templateRoutes } from "./routes/templates.ts";
 import { signatureRoutes } from "./routes/signature.ts";
+import { settingsPageRoutes } from "./routes/settings-page.ts";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -125,6 +126,7 @@ export function buildServer(): FastifyInstance {
   app.register(templateRoutes);
   // Also unprefixed and opened from a phone: /signature/{token}.
   app.register(signatureRoutes);
+  app.register(settingsPageRoutes);
   app.register(monnifyRoutes, { prefix: "/webhooks/monnify" });
   // Naira goes to Monnify above; invoices priced abroad are cards, and cards
   // are Paystack. Two processors, one confirmation path — see
