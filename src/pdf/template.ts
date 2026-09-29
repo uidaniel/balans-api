@@ -31,6 +31,7 @@ import {
   kind,
   legal,
   madeWith,
+  signature,
   methodWords,
   money,
   INK,
@@ -165,6 +166,8 @@ font-variant-numeric:tabular-nums;color:${MARIGOLD_DEEP}}
 .dates{margin-top:.9em;display:flex;justify-content:space-between;gap:1em;
 border-top:1px solid ${ink(0.12)};padding-top:.9em}
 .work{margin-top:1.3em}
+.signrow{margin-top:auto;display:flex;justify-content:flex-end;padding-top:1.2em}
+.signrow + .terms{margin-top:.8em}
 .terms{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:1em;padding-top:1.2em}
 .terms .thanks{font-size:.62em;font-weight:600}
 .terms .where{margin-top:.3em;font-size:.58em;color:${ink(0.45)};
@@ -239,6 +242,11 @@ export function renderDocumentHtml(d: DocumentData, opts: RenderOptions = {}): s
 
   ${d.notes ? `<p class="notes">${esc(d.notes)}</p>` : ""}
 
+  ${
+    // Classic printed no signature at all, and it is the design every account
+    // starts on: somebody who signed straight after signing up saw nothing.
+    signature(d) ? `<div class="signrow">${signature(d)}</div>` : ""
+  }
   <div class="terms">
     <div class="min0">
       <p class="thanks">${receipt ? "Thank you for the payment." : "Thanks for the business."}</p>

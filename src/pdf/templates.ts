@@ -180,6 +180,8 @@ function wordmark(d: DocumentData, opts: RenderOptions): string {
 .rail{width:6em;flex:none}
 .rail>div+div{margin-top:.85em}
 .work{min-width:0;flex:1;border-left:1px solid ${ink(0.12)};padding-left:1.3em}
+.signrow{margin-top:auto;display:flex;justify-content:flex-end;padding-top:1.2em}
+.signrow + .tail{margin-top:.8em}
 .tail{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:1em;
 border-top:1px solid ${ink(0.12)};padding-top:.9em;font-size:.58em;color:${ink(0.45)}}
 .tail b{font-weight:600;color:${INK}}
@@ -214,6 +216,7 @@ border-top:1px solid ${ink(0.12)};padding-top:.9em;font-size:.58em;color:${ink(0
     </div>
   </div>
 
+  ${signature(d) ? `<div class="signrow">${signature(d)}</div>` : ""}
   <div class="tail">
     <span>${
       payWhere(d)
