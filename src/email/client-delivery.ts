@@ -15,6 +15,7 @@
  *     the person who can answer it rather than our support inbox.
  */
 
+import { clientBrandFor, sentAs } from "./client-brand.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
 import { env } from "../config.ts";
@@ -183,11 +184,18 @@ export async function emailDocumentToClient(
         )
       : null;
 
+  // Pro: from the business alone, in its colours (email/client-brand.ts).
+  const brand = await clientBrandFor(d.user_id);
+  const as = sentAs(business, brand);
+
   const sent = await sendEmail(
     {
       to: d.client_email,
-      // F21: the user's business name, "via Balans". The client hired them.
-      fromName: `${business} via Balans`,
+      // F21: the user's business name, "via Balans" on Free. The client hired
+      // them; on Pro there is nothing of ours in it at all.
+      fromName: as.fromName,
+      noMark: as.noMark,
+      images: as.images,
       // And a question about the invoice should reach the person who sent it.
       replyTo: d.business_email ?? undefined,
       subject:
@@ -201,6 +209,7 @@ export async function emailDocumentToClient(
         eyebrow: business,
         heading: `${label}${d.number === null ? "" : ` #${d.number}`}`,
         body,
+        ...(brand ? { brand } : {}),
       }),
       text: [
         `${d.client_name},`,

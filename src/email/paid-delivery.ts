@@ -18,6 +18,7 @@
  * cost a copy of the paperwork, never the payment.
  */
 
+import { clientBrandFor, sentAs } from "./client-brand.ts";
 import { clientNumber } from "../documents/client-number.ts";
 import type { FastifyBaseLogger } from "fastify";
 
@@ -172,12 +173,16 @@ export async function emailPaidToClient(
       ...(receipt ? [{ filename: receipt.filename, content: receipt.bytes }] : []),
     ];
 
+    const brand = await clientBrandFor(d.user_id);
+    const as = sentAs(business, brand);
+
     const sent = await sendEmail(
       {
         to: d.client_email,
         // The business they paid, not us. A receipt from a company the client
-        // has never heard of is a receipt they query.
-        fromName: `${business} via Balans`,
+        // has never heard of is a receipt they query. On Pro, them alone.
+        fromName: as.fromName,
+        noMark: as.noMark,
         replyTo: d.business_email ?? undefined,
         // "Receipt", not "Paid". This is the word somebody searches their
         // inbox for in March, and the word their accounts department asks
@@ -187,10 +192,11 @@ export async function emailPaidToClient(
           preheader: `${formatNaira(d.total_kobo)} received${when ? ` on ${formatFriendly(when)}` : ""}.`,
           eyebrow: business,
           heading: "Payment received",
-          banner: RECEIPT_BANNER,
+          // Our drawn banner is ours: a Pro receipt goes without it.
+          ...(brand ? { brand } : { banner: RECEIPT_BANNER }),
           body,
         }),
-        images: [RECEIPT_BANNER],
+        images: brand ? as.images : [RECEIPT_BANNER],
         text: [
           `Dear ${d.client_name},`,
           "",

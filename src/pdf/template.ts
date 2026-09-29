@@ -131,6 +131,11 @@ export type DocumentData = {
   legalLines: [string, string];
   /** Free plan (F9). */
   showMadeWith: boolean;
+  /**
+   * A Pro user's accent, #RRGGBB, used in place of marigold on every layout.
+   * Null or absent for Free, or for Pro without one.
+   */
+  brandColor?: string | null;
 };
 
 /* -------------------------------------------------------------------------- */

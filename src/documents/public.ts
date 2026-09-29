@@ -9,6 +9,7 @@
  * that renders more than it meant to.
  */
 
+import { logoDataUri } from "../brand/user-logo.ts";
 import { db } from "../db/pool.ts";
 import type { Civil } from "../../core/dates.ts";
 import { partsFor, nextPayable, type Part } from "./parts.ts";
@@ -79,6 +80,13 @@ export type PublicDocument = {
   /** "BL-0019": what the client reads as the number (see client-number.ts). */
   ref?: string | null;
   plan: "free" | "pro";
+  /**
+   * Pro only: the business's own logo, inlined, and its accent colour. On a
+   * Pro page the client sees the business and nothing of ours; see
+   * `renderDocument`. Absent on Free, and on Pro without them.
+   */
+  logoDataUri?: string | null;
+  brandColor?: string | null;
   /** F7: empty for an ordinary invoice, two or more for a deposit. */
   parts: Part[];
   /**
@@ -125,6 +133,8 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     notes: string | null;
     business_name: string | null;
     plan: "free" | "pro";
+    logo_url: string | null;
+    brand_color: string | null;
     currency: Foreign | "NGN";
     original_amount_minor: number | null;
     fx_rate: string | null;
@@ -145,7 +155,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
             d.currency, d.original_amount_minor, d.fx_rate,
             d.delivery_type, d.bank_details_bank_name, d.bank_details_account_name,
             d.bank_details_account_last4, d.bank_details_account_number_encrypted,
-            u.business_name, u.plan,
+            u.business_name, u.plan, u.logo_url, u.brand_color,
             c.name AS client_name,
             -- Whether there is one, never what it is: this page is public.
             (c.email IS NOT NULL AND c.email <> '') AS client_has_email,
@@ -213,6 +223,8 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     subAccountCode: r.sub_account_code,
     hasPayoutAccount: r.has_payout_account,
     plan: r.plan,
+    logoDataUri: r.plan === "pro" ? await logoDataUri(r.user_id, r.plan, r.logo_url) : null,
+    brandColor: r.plan === "pro" ? r.brand_color : null,
     // The account stamped on it when it was sent — never the live one, so a
     // bank change cannot redirect money a client is about to send.
     bank:

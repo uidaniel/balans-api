@@ -14,6 +14,8 @@
  * except the sender.
  */
 
+import { clientBrandFor, sentAs } from "./client-brand.ts";
+import type { ClientBrand, InlineImage } from "./layout.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
 import { formatFriendly, type Civil } from "../../core/dates.ts";
@@ -26,7 +28,16 @@ import { amount, button, layout, paragraph } from "./layout.ts";
 const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-export type ReminderEmail = { to: string; fromName: string; replyTo?: string; subject: string; html: string; text: string };
+export type ReminderEmail = {
+  to: string;
+  fromName: string;
+  replyTo?: string;
+  subject: string;
+  html: string;
+  text: string;
+  noMark?: boolean;
+  images?: InlineImage[];
+};
 
 /** The email itself, from the facts. Exported so it can be read in a test. */
 export function reminderEmail(x: {
@@ -43,6 +54,8 @@ export function reminderEmail(x: {
   today: Civil;
   link: string;
   bankTransfer: boolean;
+  /** The sender's own brand. Reminders are Pro, so this is nearly always set. */
+  brand?: ClientBrand | null;
 }): ReminderEmail {
   const which = x.number === null ? "the invoice" : `invoice #${x.number}`;
   const owed = x.owedAgreed ?? formatNaira(x.owedKobo);
@@ -65,7 +78,7 @@ export function reminderEmail(x: {
 
   return {
     to: x.to,
-    fromName: `${x.business} via Balans`,
+    ...sentAs(x.business, x.brand ?? null),
     replyTo: x.businessEmail ?? undefined,
     subject: `Reminder: ${which} from ${x.business} — ${owed}`,
     html: layout({
@@ -73,6 +86,7 @@ export function reminderEmail(x: {
       eyebrow: x.business,
       heading: "A quick reminder",
       body,
+      ...(x.brand ? { brand: x.brand } : {}),
     }),
     text: [
       `${x.clientName},`,
@@ -96,6 +110,7 @@ export async function emailReminderToClient(
   log: FastifyBaseLogger,
 ): Promise<boolean> {
   const { rows } = await db().query<{
+    user_id: string;
     number: string | null;
     type: string;
     total_kobo: number;
@@ -114,7 +129,7 @@ export async function emailReminderToClient(
     currency: string;
     original_amount_minor: number | null;
   }>(
-    `SELECT COALESCE(substring(d.ref from 4), d.number::text) AS number, d.type, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token, d.delivery_type,
+    `SELECT d.user_id, COALESCE(substring(d.ref from 4), d.number::text) AS number, d.type, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token, d.delivery_type,
             d.subtotal_kobo, d.vat_kobo, d.currency, d.original_amount_minor,
             c.name AS client_name, c.email AS client_email, c.email_status,
             u.business_name, u.email AS business_email, u.plan
@@ -144,6 +159,7 @@ export async function emailReminderToClient(
     today,
     link: documentLink(d.type, d.public_token),
     bankTransfer: d.delivery_type === "bank_details",
+    brand: await clientBrandFor(d.user_id),
   });
 
   const sent = await sendEmail(mail, log);

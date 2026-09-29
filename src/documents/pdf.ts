@@ -27,10 +27,18 @@ import { documentLink } from "./links.ts";
 import { signatureDataUri } from "../brand/signature.ts";
 import { bankDetailsOf } from "./bank-details.ts";
 
-/** Section 12: both lines appear on everything a client sees. */
-export function legalLines(): [string, string] {
+/**
+ * Section 12: both lines appear on everything a client sees.
+ *
+ * On Pro the document is the business's own, with nothing of ours on it, so
+ * the first line names them instead of us. The second stays: it is the fact
+ * a client most needs, and it names no one.
+ */
+export function legalLines(pro?: { businessName: string }): [string, string] {
   return [
-    `Balans is a product of ${env.LEGAL_ENTITY_NAME}. Balans is not a bank and does not hold customer funds.`,
+    pro
+      ? `Issued by ${pro.businessName}.`
+      : `Balans is a product of ${env.LEGAL_ENTITY_NAME}. Balans is not a bank and does not hold customer funds.`,
     "Payments go directly to the merchant's own bank account.",
   ];
 }
@@ -212,6 +220,7 @@ async function loadForRender(
     signature_url: string | null;
     plan: "free" | "pro";
     template_id: string | null;
+    brand_color: string | null;
     client_name: string;
     client_email: string | null;
   }>(
@@ -220,7 +229,7 @@ async function loadForRender(
             d.public_token, d.current_version,
             d.currency, d.original_amount_minor,
             u.business_name, u.email AS business_email, u.address, u.tin, u.logo_url,
-            u.signature_url, u.plan, u.template_id,
+            u.signature_url, u.plan, u.template_id, u.brand_color,
             c.name AS client_name, c.email AS client_email
        FROM documents d
        JOIN users u   ON u.id = d.user_id
@@ -290,9 +299,10 @@ async function loadForRender(
       publicUrl: r.public_token
         ? documentLink(r.type, r.public_token)
         : null,
-      legalLines: legalLines(),
+      legalLines: legalLines(r.plan === "pro" ? { businessName: r.business_name ?? "the sender" } : undefined),
       // F9: the Free plan carries the line. Pro does not.
       showMadeWith: r.plan !== "pro",
+      brandColor: r.plan === "pro" ? r.brand_color : null,
     },
   };
 }

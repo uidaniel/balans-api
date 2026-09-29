@@ -71,6 +71,9 @@ export type Email = {
    * Each must be the same object passed to `layout`, so the ids agree.
    */
   images?: InlineImage[];
+
+  /** A Pro business's email to its client: our coin is neither shown nor attached. */
+  noMark?: boolean;
 };
 
 /**
@@ -134,17 +137,21 @@ export async function sendEmail(
               // Only attached when there is HTML to show it in, so a plain-text
               // message does not arrive carrying a mystery file.
               attachments: [
-                {
-                  filename: "balans.png",
-                  content: attachmentContent("mark.png"),
-                  content_id: MARK_CID,
-                  content_type: "image/png",
-                },
+                ...(email.noMark
+                  ? []
+                  : [
+                      {
+                        filename: "balans.png",
+                        content: attachmentContent("mark.png"),
+                        content_id: MARK_CID,
+                        content_type: "image/png",
+                      },
+                    ]),
                 ...(email.images ?? []).map((i) => ({
                   filename: i.file,
-                  content: attachmentContent(i.file),
+                  content: i.bytes ? i.bytes.toString("base64") : attachmentContent(i.file),
                   content_id: i.cid,
-                  content_type: "image/png",
+                  content_type: i.contentType ?? "image/png",
                 })),
                 ...(email.attachments ?? []).map((a) => ({
                   filename: a.filename,

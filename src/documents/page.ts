@@ -11,6 +11,7 @@
  * user input is rendered into markup a third party sees.
  */
 
+import { applyBrand } from "../brand/colour.ts";
 import { clientNumber } from "./client-number.ts";
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
@@ -51,6 +52,8 @@ box-shadow:0 0 0 1px var(--ink-6),0 1px 2px var(--ink-6);overflow:hidden}
 .brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;
 letter-spacing:-.03em;font-size:20px}
 .dot{width:22px;height:22px;border-radius:50%;background:var(--marigold);flex:none}
+.own-logo{display:block;max-height:52px;max-width:220px;width:auto;height:auto;object-fit:contain}
+.own-name{font-size:22px}
 /* The site's .label: small, spaced capitals that say what a figure is. */
 .kind,th,.teyebrow,.part.phead .who{font-size:11.5px;font-weight:600;letter-spacing:.06em;
 text-transform:uppercase}
@@ -454,7 +457,7 @@ function agreedTotals(doc: PublicDocument): { subtotal: string; vat: string; tot
   };
 }
 
-export function renderDocument(
+function renderDocumentPage(
   doc: PublicDocument,
   today: Civil,
   opts: {
@@ -513,7 +516,7 @@ export function renderDocument(
       // Larger than it was. This is the only thing on the page that says who
       // is asking, above an amount and a card button, and at 28px it read as
       // a footnote on the surface that has to carry the most trust.
-      logoAvailable() ? logoSvg("40px") : `<span class="dot"></span>balans`
+      whose(doc)
     }</div>
     <div class="kind">${label} ${clientNumber(doc.ref, doc.number) ?? ""}</div>
     <h1>${doc.foreign ? formatMoney(agreedTotalMinor(doc.foreign.amountMinor, doc.subtotalKobo, doc.vatKobo), doc.foreign.currency) : formatNaira(doc.totalKobo)}</h1>
@@ -568,9 +571,32 @@ export function renderDocument(
     }
   </div>
 </div>
-${footer(doc)}
+${doc.plan === "pro" ? "" : footer(doc)}
 ${opts.transfer ? `<script>${TRANSFER_JS}</script>` : doc.bank && can.ok === false ? `<script>${COPY_JS}</script>` : ""}
 </body></html>`;
+}
+
+/** The page, in the business's colour when they are on Pro and have one. */
+export function renderDocument(...args: Parameters<typeof renderDocumentPage>): string {
+  const html = renderDocumentPage(...args);
+  const doc = args[0];
+  return doc.plan === "pro" ? applyBrand(html, doc.brandColor) : html;
+}
+
+/**
+ * Whose page this is, at the top.
+ *
+ * Free: ours, the Balans wordmark. Pro: theirs — their logo if they have one,
+ * their name in our display face if not — because on Pro the invoice is the
+ * business's own and the client should see nothing of the tool behind it.
+ */
+function whose(doc: PublicDocument): string {
+  if (doc.plan === "pro") {
+    return doc.logoDataUri
+      ? `<img class="own-logo" src="${doc.logoDataUri}" alt="${esc(doc.businessName)}">`
+      : `<span class="own-name">${esc(doc.businessName)}</span>`;
+  }
+  return logoAvailable() ? logoSvg("40px") : `<span class="dot"></span>balans`;
 }
 
 function statusPill(doc: PublicDocument, today: Civil, overdue: boolean): string {
@@ -933,7 +959,7 @@ function trustBlock(doc: PublicDocument): string {
    */
   if (doc.bank && doc.type !== "quote") {
     return `<div class="trust">
-    <p class="tsmall">Balans is not a bank and does not hold your money. This invoice is paid straight
+    <p class="tsmall">${doc.plan === "pro" ? "" : "Balans is not a bank and does not hold your money. "}This invoice is paid straight
       to the bank account of <b>${esc(doc.businessName)}</b>.</p>
   </div>`;
   }
@@ -962,7 +988,7 @@ function trustBlock(doc: PublicDocument): string {
       }
     </span>
     <p class="tsmall">
-      Balans is not a bank and does not hold your money.${
+      ${doc.plan === "pro" ? "" : "Balans is not a bank and does not hold your money."}${
         open
           ? ` If you accept this quote, payment settles directly to the bank account of <b>${esc(doc.businessName)}</b>.`
           : quote

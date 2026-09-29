@@ -27,6 +27,7 @@
  * where they cannot be forgotten.
  */
 
+import { normaliseHex, onColour } from "../brand/colour.ts";
 import { env } from "../config.ts";
 
 /**
@@ -90,8 +91,11 @@ const MARK = 26;
 /** An image attached to the message and shown inline. */
 export type InlineImage = {
   cid: string;
-  /** A file in assets/email. */
+  /** A file in assets/email, or the name to attach `bytes` under. */
   file: string;
+  /** The picture itself, for one that is not a file in assets/email: a user's logo. */
+  bytes?: Buffer;
+  contentType?: string;
   alt: string;
   width: number;
   height: number;
@@ -107,6 +111,21 @@ export type LayoutOptions = {
   banner?: InlineImage;
   /** Already-escaped HTML for the body. */
   body: string;
+  /**
+   * A Pro business's own email to its client: their logo (or name) where ours
+   * goes, their colour on the button, and a footer that names them and not
+   * us. Absent, the email is Balans's as before.
+   */
+  brand?: ClientBrand;
+};
+
+/** What a Pro email to a client carries instead of Balans. */
+export type ClientBrand = {
+  name: string;
+  /** Attached by the sender under this cid; see `clientBrandFor`. */
+  logo: InlineImage | null;
+  /** #RRGGBB, or null to keep marigold. */
+  colour: string | null;
 };
 
 /**
@@ -175,7 +194,31 @@ function logoHtml(): string {
 const row = (inner: string, padTop: number) =>
   `<tr><td class="bl-pad" style="padding:${padTop}px ${GUTTER}px 0 ${GUTTER}px;">${inner}</td></tr>`;
 
-export function layout({ preheader, heading, eyebrow, banner, body }: LayoutOptions): string {
+/** Their logo, or their name set like ours, at the top of a Pro email. */
+function brandHeader(brand: ClientBrand): string {
+  return brand.logo
+    ? `<img src="cid:${brand.logo.cid}" alt="${esc(brand.name)}"
+           style="display:block;max-height:44px;max-width:220px;height:auto;border:0;outline:none;text-decoration:none;">`
+    : `<p style="${P}font-size:21px;line-height:26px;font-weight:700;letter-spacing:-0.02em;color:${LIGHT.ink};" class="bl-ink">${esc(brand.name)}</p>`;
+}
+
+export function layout(opts: LayoutOptions): string {
+  const html = layoutHtml(opts);
+  const colour = normaliseHex(opts.brand?.colour);
+  if (!colour) return html;
+  // The button carries its label colour inline, so the swap names it: ink on
+  // marigold becomes whatever reads on theirs. Then marigold everywhere else.
+  const on = onColour(colour);
+  return html
+    .split(`background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};`)
+    .join(`background:${colour};border-radius:999px;color:${on};`)
+    .split(`fillcolor="${LIGHT.marigold}">\n<w:anchorlock/><center style="color:${LIGHT.ink};`)
+    .join(`fillcolor="${colour}">\n<w:anchorlock/><center style="color:${on};`)
+    .split(LIGHT.marigold)
+    .join(colour);
+}
+
+function layoutHtml({ preheader, heading, eyebrow, banner, body, brand }: LayoutOptions): string {
   const year = new Date().getUTCFullYear();
 
   return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -206,7 +249,7 @@ export function layout({ preheader, heading, eyebrow, banner, body }: LayoutOpti
      so it gets the fixed table above instead. -->
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;max-width:${WIDTH}px;background:${LIGHT.paper};border:1px solid ${LIGHT.line};border-radius:14px;" class="bl-card bl-rule">
 
-  <tr><td class="bl-pad" style="padding:32px ${GUTTER}px 4px ${GUTTER}px;">${logoHtml()}</td></tr>
+  <tr><td class="bl-pad" style="padding:32px ${GUTTER}px 4px ${GUTTER}px;">${brand ? brandHeader(brand) : logoHtml()}</td></tr>
 
   ${
     banner
@@ -237,15 +280,20 @@ export function layout({ preheader, heading, eyebrow, banner, body }: LayoutOpti
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="border-top:1px solid ${LIGHT.line};font-size:0;line-height:0;" class="bl-rule">&nbsp;</td></tr></table>
   </td></tr>
 
-  <!-- Footer. Section 12 requires both lines on every email. -->
+  <!-- Footer. Section 12 requires both lines on every email; a Pro
+       business's email to its own client names the business instead. -->
   <tr><td class="bl-pad" style="padding:16px ${GUTTER}px 28px ${GUTTER}px;font-family:${FONT};">
-    <p style="${P}font-size:12px;line-height:18px;color:${LIGHT.faint};" class="bl-faint">
+    ${
+      brand
+        ? `<p style="${P}font-size:12px;line-height:18px;color:${LIGHT.faint};" class="bl-faint">Sent by ${esc(brand.name)}.</p>`
+        : `<p style="${P}font-size:12px;line-height:18px;color:${LIGHT.faint};" class="bl-faint">
       Balans is a product of ${esc(env.LEGAL_ENTITY_NAME)}. Card payments are processed by Paystack.<br />
       <a href="${esc(env.SITE_URL)}/terms" style="color:${LIGHT.faint};text-decoration:underline;">Terms</a>
       &middot; <a href="${esc(env.SITE_URL)}/privacy" style="color:${LIGHT.faint};text-decoration:underline;">Privacy</a>
       &middot; <a href="mailto:${esc(env.SUPPORT_EMAIL)}" style="color:${LIGHT.faint};text-decoration:underline;">${esc(env.SUPPORT_EMAIL)}</a><br />
       &copy; ${year} Balans
-    </p>
+    </p>`
+    }
   </td></tr>
 
 </table>

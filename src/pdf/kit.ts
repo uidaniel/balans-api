@@ -19,6 +19,7 @@
  *     signature on somebody's invoice is not a design decision.
  */
 
+import { applyBrand } from "../brand/colour.ts";
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { formatMoney, type Currency } from "../../core/currency.ts";
@@ -260,14 +261,19 @@ export function sheet(d: DocumentData, opts: RenderOptions, parts: SheetParts): 
   const link =
     opts.fonts === "link" ? `<link rel="stylesheet" href="/designs/fonts.css">` : "";
 
-  return `<!doctype html>
+  // Every layout ends here, so a Pro brand colour is applied once for all of
+  // them: marigold becomes theirs (see brand/colour.ts).
+  return applyBrand(
+    `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">${link}
 <style>${fontFaces(fonts, opts.fonts ?? "embed")}${BASE}${css}</style></head>
 <body><div class="sheet" style="font-size:${sheetFontSize(d, rowEm)}">
 ${d.variant === "sample" ? `<div class="mark">SAMPLE</div>` : ""}
 ${body}
 ${d.ref ? `<div class="ref">${esc(d.ref)}</div>` : ""}
-</div></body></html>`;
+</div></body></html>`,
+    d.brandColor,
+  );
 }
 
 /* -------------------------------------------------------------------------- */

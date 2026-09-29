@@ -164,7 +164,8 @@ describe("the emails a payment sends", () => {
 
     assert.ok(!client.includes("PAID_BANNER"), "the client is getting the freelancer's banner");
     assert.ok(!/balans you/i.test(client), "the phrase reached the client's copy");
-    assert.match(client, /images: \[RECEIPT_BANNER\]/);
+    // Free: the receipt banner. Pro: no banner of ours at all, only their logo.
+    assert.match(client, /images: brand \? as\.images : \[RECEIPT_BANNER\]/);
 
     // And the freelancer keeps it: it is their moment, and only theirs.
     assert.match(user, /images: \[PAID_BANNER\]/);
