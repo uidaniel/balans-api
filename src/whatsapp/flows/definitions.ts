@@ -707,14 +707,17 @@ const businessDetails: FlowDefinition = {
  * It is short on purpose. An unusual split — 35% up front, seven stages — is
  * exactly what a sentence is better at, and the sentence still works.
  */
+// Everything but one payment is Pro (29 September 2026), and says so on the
+// option: a Free user who picks one gets a one-payment draft and a note why.
+// Titles stay within the 30 characters a Flow dropdown shows.
 export const PLANS = [
   { id: "one", title: "One payment" },
-  { id: "deposit_25", title: "25% deposit, then the balance" },
-  { id: "deposit_50", title: "50% deposit, then the balance" },
-  { id: "split_2", title: "2 equal payments" },
-  { id: "split_3", title: "3 equal payments" },
-  { id: "split_4", title: "4 equal payments" },
-  { id: "split_6", title: "6 equal payments" },
+  { id: "deposit_25", title: "25% deposit + balance (Pro)" },
+  { id: "deposit_50", title: "50% deposit + balance (Pro)" },
+  { id: "split_2", title: "2 equal payments (Pro)" },
+  { id: "split_3", title: "3 equal payments (Pro)" },
+  { id: "split_4", title: "4 equal payments (Pro)" },
+  { id: "split_6", title: "6 equal payments (Pro)" },
 ] as const;
 
 export type PlanId = (typeof PLANS)[number]["id"];

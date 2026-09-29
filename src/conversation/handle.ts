@@ -1337,6 +1337,23 @@ async function runEffects(
           const phoneAllowed = !doc.clientPhone || gate.plan === "pro";
           if (!phoneAllowed) extra.push(clientWhatsAppIsPro());
 
+          /*
+           * Deposits and milestones are Pro (29 September 2026). On Free the
+           * draft is made as one payment and says so, the same way as the
+           * client's number above: refusing the whole invoice over how it is
+           * split would throw away everything else they just told us. Cleared
+           * from the draft in progress too, so a correction does not ask again.
+           */
+          const splitAsked = Boolean(doc.depositPercent || doc.instalments || doc.stageDueDates?.length);
+          const splitAllowed = !splitAsked || gate.plan === "pro";
+          if (!splitAllowed) {
+            extra.push(splitIsPro());
+            doc.depositPercent = null;
+            doc.instalments = null;
+            doc.stageDueDates = null;
+            log.info({ userId }, "payment plan left off: free plan");
+          }
+
           const draft = await createDraft(userId, {
             type: doc.type,
             clientName: doc.clientName ?? "",
@@ -3076,6 +3093,13 @@ async function tellIfClientWhatsAppFailed(
 }
 
 /** A client number from somebody on Free: said once, and left off the draft. */
+function splitIsPro(): string {
+  return para(
+    `⭐ ${b("Deposits and milestone payments are a Pro feature.")}`,
+    `The draft below is one payment for the full amount. Reply ${b("upgrade")} to split it.`,
+  );
+}
+
 function clientWhatsAppIsPro(): string {
   return para(
     `⭐ ${b("Sending to your client's WhatsApp is a Pro feature.")}`,
