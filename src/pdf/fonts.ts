@@ -136,3 +136,12 @@ export function fontStylesheet(base = "/designs/fonts"): string {
 export function fontFacesForPage(sets: FontSet[], base = "/designs/fonts"): string {
   return sets.flatMap((set) => FACES[set].map((f) => face(f, `${base}/${f.file}`, "swap"))).join("");
 }
+
+/**
+ * Every embedded font, keyed by the data URI a sheet carries it as, to the
+ * file it came from. The renderer uses this to load the same bytes from a
+ * cache instead of decoding half a megabyte of base64 on every render.
+ */
+export function embeddedFonts(): Map<string, string> {
+  return new Map(Object.keys(FONT_FILES).map((file) => [dataUri(file), file]));
+}

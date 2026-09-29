@@ -73,6 +73,33 @@ export async function renderDocumentPdf(
 
   const { doc, userId, version, templateId } = data;
 
+  /*
+   * One render per version, however many ask.
+   *
+   * "Send it" asks for the same PDF twice at once — the chat attaches it and
+   * the email to the client attaches it — and each used to draw it from
+   * scratch. The first request draws it; any other for the same version in
+   * the next minute gets that same file.
+   */
+  const key = `${documentId}:${version}`;
+  const shared = recent.get(key);
+  if (shared) return shared;
+  const job = drawDocument(documentId, doc, userId, version, templateId, log);
+  recent.set(key, job);
+  setTimeout(() => recent.delete(key), 60_000).unref?.();
+  return job;
+}
+
+const recent = new Map<string, Promise<Rendered | null>>();
+
+async function drawDocument(
+  documentId: string,
+  doc: DocumentData,
+  userId: string,
+  version: number,
+  templateId: string | null,
+  log: FastifyBaseLogger,
+): Promise<Rendered | null> {
   try {
     const started = Date.now();
     // The user's chosen layout, or the one the product shipped with. A

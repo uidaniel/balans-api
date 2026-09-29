@@ -11,15 +11,15 @@
  * most of a second; doing it per invoice would blow F20's budget on process
  * startup alone.
  *
- * Renders are serialised. A queue is the simple correct thing at this volume —
- * a render is well under a second and a beta does not have two people
- * confirming an invoice in the same breath. The alternative, a tab per render,
- * is the change to make when that stops being true.
+ * Renders run on a small pool of tabs in that one browser (PDF_TABS, three
+ * by default), so several people sending invoices at once are drawn side by
+ * side rather than queued behind each other.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { env } from "../config.ts";
+import { embeddedFonts, FONT_FILES } from "./fonts.ts";
 
 const CANDIDATES = [
   process.env.CHROME_PATH,
@@ -39,18 +39,40 @@ export const rendererAvailable = (): boolean => chromePath() !== null;
 
 /* -------------------------------------------------------------------------- */
 
-type Browser = {
-  process: ChildProcess;
+/**
+ * A tab: one page in the browser, with its own connection.
+ *
+ * Renders used to share one page and run one at a time. That was right for a
+ * beta, and wrong the moment two people pressed "Send it" together: each
+ * invoice is a card and a PDF, and ten people meant the tenth waited for
+ * nineteen renders. Now there is a small pool of tabs in the one browser, and
+ * a render waits only when every tab is busy.
+ */
+type Tab = {
   ws: WebSocket;
   frameId: string;
   send: (method: string, params?: unknown) => Promise<any>;
+  dead: boolean;
+};
+
+type Browser = {
+  process: ChildProcess;
+  port: number;
+  tabs: Set<Tab>;
+  idle: Tab[];
 };
 
 let browser: Browser | null = null;
 let starting: Promise<Browser> | null = null;
 
-/** Renders run one at a time; this is the tail of that chain. */
-let queue: Promise<unknown> = Promise.resolve();
+/** Renders waiting for a tab, first come first served. */
+const waiting: ((t: Tab) => void)[] = [];
+
+/**
+ * How many renders at once. Three on the 2GB box: each tab holds tens of
+ * megabytes while it draws, and more than this buys little on two cores.
+ */
+const TABS = Math.max(1, Math.min(8, Number(process.env.PDF_TABS ?? 3) || 3));
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -86,23 +108,37 @@ async function launch(): Promise<Browser> {
     { stdio: "ignore" },
   );
 
-  let target: { webSocketDebuggerUrl: string } | undefined;
-  for (let i = 0; i < 60 && !target; i++) {
+  let up = false;
+  for (let i = 0; i < 60 && !up; i++) {
     try {
-      const list = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as {
-        type: string;
-        webSocketDebuggerUrl: string;
-      }[];
-      target = list.find((t) => t.type === "page");
+      up = (await fetch(`http://127.0.0.1:${port}/json/version`)).ok;
     } catch {
       /* not up yet */
     }
-    if (!target) await sleep(100);
+    if (!up) await sleep(100);
   }
-  if (!target) {
+  if (!up) {
     child.kill();
     throw new Error("Chrome did not open a debugging port");
   }
+
+  const b: Browser = { process: child, port, tabs: new Set(), idle: [] };
+
+  // If it dies, forget it: the next render launches a fresh one rather than
+  // failing forever against a corpse.
+  child.once("exit", () => {
+    if (browser === b) browser = null;
+    for (const t of b.tabs) t.dead = true;
+  });
+
+  return b;
+}
+
+async function openTab(b: Browser): Promise<Tab> {
+  // A new page for this tab. PUT on current Chrome; GET on older builds.
+  let res = await fetch(`http://127.0.0.1:${b.port}/json/new?about:blank`, { method: "PUT" });
+  if (!res.ok) res = await fetch(`http://127.0.0.1:${b.port}/json/new?about:blank`);
+  const target = (await res.json()) as { webSocketDebuggerUrl: string };
 
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise<void>((resolve, reject) => {
@@ -137,19 +173,11 @@ async function launch(): Promise<Browser> {
 
   await send("Page.enable");
   const tree = await send("Page.getFrameTree");
-  const frameId: string = tree.result.frameTree.frame.id;
-
-  const b: Browser = { process: child, ws, frameId, send };
-
-  // If it dies, forget it: the next render launches a fresh one rather than
-  // failing forever against a corpse.
-  const forget = () => {
-    if (browser === b) browser = null;
-  };
-  child.once("exit", forget);
-  ws.addEventListener("close", forget);
-
-  return b;
+  const tab: Tab = { ws, frameId: tree.result.frameTree.frame.id, send, dead: false };
+  ws.addEventListener("close", () => {
+    tab.dead = true;
+  });
+  return tab;
 }
 
 async function ready(): Promise<Browser> {
@@ -165,7 +193,151 @@ async function ready(): Promise<Browser> {
   return starting;
 }
 
+/** A free tab: an idle one, a new one while there is room, or the next to come free. */
+async function acquire(): Promise<Tab> {
+  const b = await ready();
+  while (b.idle.length) {
+    const t = b.idle.pop()!;
+    if (!t.dead) return t;
+    b.tabs.delete(t);
+  }
+  if (b.tabs.size < TABS) {
+    const t = await openTab(b);
+    b.tabs.add(t);
+    return t;
+  }
+  return new Promise((resolve) => waiting.push(resolve));
+}
+
+/** Hands a tab to whoever is waiting, or back to the pool; a broken one is closed. */
+function release(t: Tab, broken = false): void {
+  const b = browser;
+  if (broken || t.dead || !b || !b.tabs.has(t)) {
+    t.dead = true;
+    b?.tabs.delete(t);
+    try {
+      t.ws.close();
+    } catch {
+      /* already gone */
+    }
+    // Somebody waiting still needs a tab: open one for them.
+    const next = waiting.shift();
+    if (next) void acquire().then(next, () => waiting.unshift(next));
+    return;
+  }
+  const next = waiting.shift();
+  if (next) next(t);
+  else b.idle.push(t);
+}
+
+/**
+ * Waits until the page is ready to capture: its typefaces decoded and its
+ * images (a logo, a signature) decoded.
+ *
+ * This was a flat 300ms on every render. The faces are data URIs, so the
+ * real wait is decode time, usually a few milliseconds; waiting on the
+ * document itself is both faster and never too early. Capped, so a page that
+ * never settles still renders.
+ */
+async function settled(t: Tab): Promise<void> {
+  await t.send("Runtime.evaluate", {
+    expression: `Promise.race([
+      Promise.all([
+        document.fonts.ready,
+        ...[...document.images].map((i) => (i.decode ? i.decode().catch(() => 0) : 0)),
+      ]).then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))),
+      new Promise((r) => setTimeout(r, 1500)),
+    ]).then(() => 1)`,
+    awaitPromise: true,
+    returnByValue: true,
+  });
+}
+
+/** One render on a pooled tab, with one retry on a fresh tab if it breaks. */
+async function onTab<T>(work: (t: Tab) => Promise<T>): Promise<T> {
+  let t = await acquire();
+  try {
+    const out = await work(t);
+    release(t);
+    return out;
+  } catch (first) {
+    // A browser or tab that died between renders is the ordinary failure
+    // here, and it looks like any other protocol error. One fresh tab (and a
+    // fresh browser if it is the browser that went), then give up.
+    release(t, true);
+    if (browser?.process.exitCode !== null && browser?.process.exitCode !== undefined) browser = null;
+    t = await acquire();
+    try {
+      const out = await work(t);
+      release(t);
+      return out;
+    } catch {
+      release(t, true);
+      throw first;
+    }
+  }
+}
+
 /* -------------------------------------------------------------------------- */
+
+/**
+ * The typefaces, served to Chrome from inside this process.
+ *
+ * Every sheet carries its fonts as data URIs — about 500KB of base64 — so the
+ * stored document never depends on anything outside it. But Chrome decodes
+ * those afresh on every render, and that was most of each render's time.
+ * Here the renderer swaps each embedded font for the same file served on
+ * 127.0.0.1, which Chrome fetches once per tab and then keeps. Same bytes,
+ * so the same PDF; nothing leaves the machine, and the port is not exposed.
+ * If the little server cannot start, renders go out with the fonts embedded
+ * exactly as before.
+ */
+let fontBase: Promise<string | null> | null = null;
+let fontMap: Map<string, string> | null = null;
+
+function localFonts(): Promise<string | null> {
+  fontBase ??= (async () => {
+    try {
+      const { createServer } = await import("node:http");
+      const { readFile } = await import("node:fs/promises");
+      const server = createServer(async (req, res) => {
+        const file = decodeURIComponent((req.url ?? "").replace(/^\/f\//, ""));
+        const where = FONT_FILES[file];
+        if (!where) {
+          res.writeHead(404).end();
+          return;
+        }
+        res.writeHead(200, {
+          "content-type": "font/ttf",
+          "access-control-allow-origin": "*",
+          "cache-control": "public, max-age=31536000, immutable",
+        });
+        res.end(await readFile(where));
+      });
+      await new Promise<void>((ok, fail) => {
+        server.once("error", fail);
+        server.listen(0, "127.0.0.1", () => ok());
+      });
+      server.unref();
+      const addr = server.address();
+      return typeof addr === "object" && addr ? `http://127.0.0.1:${addr.port}/f/` : null;
+    } catch {
+      return null;
+    }
+  })();
+  return fontBase;
+}
+
+async function withLocalFonts(html: string): Promise<string> {
+  const base = await localFonts();
+  if (!base) return html;
+  fontMap ??= embeddedFonts();
+  let out = html;
+  for (const [uri, file] of fontMap) {
+    if (out.includes(uri)) out = out.split(uri).join(base + encodeURIComponent(file));
+  }
+  return out;
+}
 
 export type PageSize = { widthInches: number; heightInches: number };
 /** A4, which is what a Nigerian printer and a Nigerian accountant expect. */
@@ -179,102 +351,67 @@ export const A4: PageSize = { widthInches: 8.27, heightInches: 11.69 };
  * which invoices are being made by requesting a font.
  */
 export async function renderPdf(html: string, size: PageSize = A4): Promise<Buffer> {
-  const run = async (): Promise<Buffer> => {
-    let b = await ready();
-
-    const attempt = async (): Promise<Buffer> => {
-      await b.send("Page.setDocumentContent", { frameId: b.frameId, html });
-      /*
-       * Long enough for layout and for the typefaces to decode.
-       *
-       * The sheets declare `font-display:block`, so text is invisible until
-       * its face is ready rather than being drawn in the fallback and
-       * swapped — a PDF is captured once and cannot be repainted. The faces
-       * are data URIs, so nothing is fetched and this is decode time alone,
-       * but it is the one thing between a correct document and a blank one.
-       */
-      await sleep(300);
-      const res = await b.send("Page.printToPDF", {
-        printBackground: true,
-        paperWidth: size.widthInches,
-        paperHeight: size.heightInches,
-        marginTop: 0,
-        marginBottom: 0,
-        marginLeft: 0,
-        marginRight: 0,
-        preferCSSPageSize: false,
-      });
-      return Buffer.from(res.result.data, "base64");
-    };
-
-    try {
-      return await attempt();
-    } catch (first) {
-      // A browser that died between renders is the ordinary failure here, and
-      // it looks like any other protocol error. One fresh start, then give up.
-      browser = null;
-      b = await ready();
-      try {
-        return await attempt();
-      } catch {
-        throw first;
-      }
-    }
-  };
-
-  const mine = queue.then(run, run);
-  // The queue must survive a failed render, or one bad document stops them all.
-  queue = mine.catch(() => undefined);
-  return mine;
+  return onTab(async (t) => {
+    // A tab that last drew a card has that card's viewport; a PDF wants none.
+    await t.send("Emulation.clearDeviceMetricsOverride");
+    await t.send("Page.setDocumentContent", { frameId: t.frameId, html: await withLocalFonts(html) });
+    await settled(t);
+    const res = await t.send("Page.printToPDF", {
+      printBackground: true,
+      paperWidth: size.widthInches,
+      paperHeight: size.heightInches,
+      marginTop: 0,
+      marginBottom: 0,
+      marginLeft: 0,
+      marginRight: 0,
+      preferCSSPageSize: false,
+      generateTaggedPDF: false,
+      generateDocumentOutline: false,
+    });
+    return Buffer.from(res.result.data, "base64");
+  });
 }
 
 /**
  * Renders HTML to a PNG, at exactly the size asked for.
  *
  * Same browser and same rules as `renderPdf`: the HTML is self-contained, so
- * a render cannot hang on somebody else's CDN. This exists for the one image
- * in the product that has to say something different to each person — the Pro
- * card, which carries the month they joined.
+ * a render cannot hang on somebody else's CDN.
  */
 export async function renderPng(html: string, width: number, height: number): Promise<Buffer> {
-  const run = async (): Promise<Buffer> => {
-    let b = await ready();
+  return onTab(async (t) => {
+    // The viewport has to match, or the capture is padded or cropped.
+    await t.send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await t.send("Page.setDocumentContent", { frameId: t.frameId, html: await withLocalFonts(html) });
+    await settled(t);
+    const res = await t.send("Page.captureScreenshot", {
+      format: "png",
+      clip: { x: 0, y: 0, width, height, scale: 1 },
+      captureBeyondViewport: true,
+    });
+    return Buffer.from(res.result.data, "base64");
+  });
+}
 
-    const attempt = async (): Promise<Buffer> => {
-      // The viewport has to match, or the capture is padded or cropped.
-      await b.send("Emulation.setDeviceMetricsOverride", {
-        width,
-        height,
-        deviceScaleFactor: 1,
-        mobile: false,
-      });
-      await b.send("Page.setDocumentContent", { frameId: b.frameId, html });
-      await sleep(300);
-      const res = await b.send("Page.captureScreenshot", {
-        format: "png",
-        clip: { x: 0, y: 0, width, height, scale: 1 },
-        captureBeyondViewport: true,
-      });
-      return Buffer.from(res.result.data, "base64");
-    };
-
-    try {
-      return await attempt();
-    } catch (first) {
-      browser = null;
-      b = await ready();
-      try {
-        return await attempt();
-      } catch {
-        throw first;
-      }
-    }
-  };
-
-  // Same queue as the PDFs: one browser, one render at a time.
-  const mine = queue.then(run, run);
-  queue = mine.catch(() => undefined);
-  return mine;
+/**
+ * Starts Chrome and opens the tabs before anybody needs them.
+ *
+ * Called at boot. Launching costs about two seconds, and it used to land on
+ * whoever sent the first invoice after each deploy.
+ */
+export async function warmRenderer(): Promise<void> {
+  if (!chromePath()) return;
+  const b = await ready();
+  while (b.tabs.size < TABS) {
+    const t = await openTab(b);
+    b.tabs.add(t);
+    release(t);
+  }
 }
 
 /** Closes the browser. Called on shutdown so no process is left behind. */
@@ -282,10 +419,12 @@ export async function closeRenderer(): Promise<void> {
   const b = browser;
   browser = null;
   if (!b) return;
-  try {
-    b.ws.close();
-  } catch {
-    /* already gone */
+  for (const t of b.tabs) {
+    try {
+      t.ws.close();
+    } catch {
+      /* already gone */
+    }
   }
   b.process.kill();
 }

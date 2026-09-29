@@ -26,7 +26,7 @@ setGlobalDispatcher(new Agent({ connect: { family: 4 } }));
 
 import { env } from "./config.ts";
 import { closeDb } from "./db/pool.ts";
-import { closeRenderer } from "./pdf/chrome.ts";
+import { closeRenderer, warmRenderer } from "./pdf/chrome.ts";
 import { buildServer } from "./http/server.ts";
 import { emailTransport } from "./conversation/handle.ts";
 import { modelConfigured } from "./parser/model.ts";
@@ -88,6 +88,9 @@ app.log.info(
 );
 
 startScheduler(app.log);
+
+// Chrome up and its tabs open now, not on the first invoice after a deploy.
+void warmRenderer().catch((e) => app.log.warn({ err: (e as Error).message }, "could not warm the renderer"));
 
 // Anything the last restart cut off mid-reply, answered now. See whatsapp.ts.
 void replayUnanswered(app.log)
