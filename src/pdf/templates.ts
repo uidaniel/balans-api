@@ -480,7 +480,7 @@ line-height:1;font-variant-numeric:tabular-nums}
         <span class="fill"></span>
         <span class="amt">${money(l.amountKobo)}</span>
       </div>
-      ${l.qty > 1 ? `<p class="note">${l.qty} at ${money(l.unitAmountKobo)}</p>` : ""}
+      <p class="note">${l.qty} at ${money(l.unitAmountKobo)}</p>
     </div>`,
     )
     .join("");

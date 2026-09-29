@@ -91,6 +91,34 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
   const stages = planLines(draft, today).slice(1).map((s) => s.replace(/^\s*[-·]\s*/, ""));
 
   /*
+   * The items, each with its quantity — 1 included, because a card that says
+   * "× 2" on one line and nothing on the next reads as a field left blank.
+   * In what was agreed: dollars on a dollar invoice, as the client will see.
+   *
+   * Three at most, two on a busy card. The card is a fixed square read on a phone, and a fourth
+   * row pushes the total and the settlement line off it; the rest are named
+   * as a count, and the PDF carries every one.
+   */
+  // Fewer when the card already carries more: the dollar pair and fee rows,
+  // a VAT line, a payment plan. Measured: dollars with VAT and two items
+  // left three pixels to spare on the 1400px square.
+  const busy = [Boolean(draft.foreign), draft.vatKobo > 0, stages.length > 0].filter(Boolean).length;
+  const SHOWN = busy >= 2 ? 1 : busy === 1 ? 2 : 3;
+  const itemAmount = (l: Draft["lines"][number]) =>
+    draft.foreign && l.originalUnitAmountMinor !== undefined
+      ? formatMoney(l.originalUnitAmountMinor * l.qty, draft.foreign.currency)
+      : formatNaira(l.unitAmountKobo * l.qty);
+  const itemRows = draft.lines.length
+    ? `<div class="rows items">
+      ${draft.lines
+        .slice(0, SHOWN)
+        .map((l) => row(`${l.description} × ${l.qty}`, itemAmount(l)))
+        .join("")}
+      ${draft.lines.length > SHOWN ? `<div class="more">+ ${draft.lines.length - SHOWN} more on the invoice</div>` : ""}
+    </div>`
+    : "";
+
+  /*
    * Only when the client is paying the processor's cut, because only then is
    * it a different number from the invoice. Showing "Client pays ₦20,000"
    * above "Invoice amount ₦20,000" is the same figure twice.
@@ -212,6 +240,10 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
   .row.strong { margin-top:0; font-size:40px; font-weight:800; }
 
   .total { margin-top:26px; padding-top:24px; border-top:4px solid var(--ink); }
+  .items { margin-top:26px; font-size:30px; }
+  .items .row { margin-top:10px; }
+  .items .l { max-width:70%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .items .more { margin-top:10px; font-size:25px; color:rgb(16 35 28 / 0.55); }
   .note { margin-top:20px; font-size:26px; line-height:1.5; color:rgb(16 35 28 / 0.5); }
   /*
    * The settlement line is the footer of the card, not a footnote on it.
@@ -269,6 +301,8 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
       }
       ${stages.length ? `<div class="stages">${stages.map((s) => `<div>${esc(s)}</div>`).join("")}</div>` : ""}
     </div>
+
+    ${itemRows}
 
     ${feeRows}
 

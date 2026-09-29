@@ -251,14 +251,17 @@ export function draftSummary(
   // it was asked in reads like a different field.
   if (draft.lines.length === 1) {
     const only = draft.lines[0]!;
-    sections.push([row("Item", `${only.description}${only.qty === 1 ? "" : ` x${only.qty}`}`)]);
+    // The quantity always, 1 included: "how many?" is the first thing a
+    // client checks against what they agreed, and a missing "× 1" reads as
+    // a missing field rather than as one.
+    sections.push([row("Item", `${only.description} × ${only.qty}`)]);
   } else {
     // The items stay together as one group: they are a list, and a blank line
     // between two things being billed for would read as two invoices.
     sections.push([
       "Items:",
       ...draft.lines.map((line) => {
-        const each = line.qty === 1 ? "" : ` x${line.qty}`;
+        const each = ` × ${line.qty}`;
         // Priced in the currency it was agreed in. A dollar invoice that
         // itemises in naira is asking the freelancer to check arithmetic they
         // never did.
