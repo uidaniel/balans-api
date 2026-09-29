@@ -34,9 +34,9 @@ describe("an email sent as the business (Pro)", () => {
     assert.doesNotMatch(html, /#F5B82E/i);
   });
 
-  it("comes from the business alone, without our coin attached", () => {
+  it("comes from the business via Balans, as on every plan, without our coin attached", () => {
     assert.deepEqual(sentAs("Adebayo Designs", { name: "Adebayo Designs", logo, colour: null }), {
-      fromName: "Adebayo Designs",
+      fromName: "Adebayo Designs via Balans",
       noMark: true,
       images: [logo],
     });

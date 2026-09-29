@@ -3,10 +3,10 @@
  *
  * Pro is sold as invoices that are the business's own. So everything a Pro
  * user's client receives by email carries their name, their logo and their
- * colour, comes from "Their Business" rather than "Their Business via
- * Balans", and has no Balans coin or footer. The address it is sent from
- * stays on our domain, because that is the domain that holds the SPF and DKIM
- * records; a reply goes to the business.
+ * colour, and has no Balans coin or footer. The sender still reads "Their
+ * Business via Balans" on every plan (decided 29 September 2026): the client
+ * sees who it is from and how it reached them. The address stays on our
+ * domain, which holds the SPF and DKIM records; a reply goes to the business.
  */
 
 import { db } from "../db/pool.ts";
@@ -45,7 +45,8 @@ export async function clientBrandFor(userId: string): Promise<ClientBrand | null
 
 /** The pieces of an `Email` that change when it is sent as the business. */
 export function sentAs(business: string, brand: ClientBrand | null) {
+  const fromName = `${business} via Balans`;
   return brand
-    ? { fromName: business, noMark: true, images: brand.logo ? [brand.logo] : [] }
-    : { fromName: `${business} via Balans`, noMark: false, images: [] as InlineImage[] };
+    ? { fromName, noMark: true, images: brand.logo ? [brand.logo] : [] }
+    : { fromName, noMark: false, images: [] as InlineImage[] };
 }

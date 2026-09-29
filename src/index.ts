@@ -36,6 +36,7 @@ import { migrate } from "./db/migrate.ts";
 import { publishChangedFlows } from "./whatsapp/flows/register.ts";
 import { submitMissingTemplates } from "./whatsapp/register-templates.ts";
 import { startBroadcasts, stopBroadcasts } from "./jobs/broadcast.ts";
+import { drainInbound, replayUnanswered } from "./http/routes/whatsapp.ts";
 
 const app = buildServer();
 
@@ -88,6 +89,11 @@ app.log.info(
 
 startScheduler(app.log);
 
+// Anything the last restart cut off mid-reply, answered now. See whatsapp.ts.
+void replayUnanswered(app.log)
+  .then((n) => n && app.log.warn({ count: n }, "answered messages a restart cut off"))
+  .catch((e) => app.log.error({ err: (e as Error).message }, "could not replay cut-off messages"));
+
 // The forms' screens live at Meta, not in this image. Publishing the ones that
 // changed is what makes a push deploy a form as well as the code behind it.
 // Not awaited: nothing about serving requests waits on Meta.
@@ -108,6 +114,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     app.log.info(`${signal} received, closing`);
     stopScheduler();
     stopBroadcasts();
+    // Replies already under way get a few seconds to finish before we go.
+    const waited = await drainInbound(7_000);
+    if (waited) app.log.info({ waited }, "let in-flight replies finish");
     await app.close();
     await closeRenderer();
     await closeDb();

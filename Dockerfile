@@ -52,4 +52,7 @@ USER node
 ENV PORT=4000
 EXPOSE 4000
 
-CMD ["npm", "start"]
+# Node itself, not `npm start`: as the container's first process npm does not
+# reliably pass SIGTERM on, so on a deploy the app never heard it was stopping
+# and replies under way were cut off. Same command as the `start` script.
+CMD ["node", "--experimental-strip-types", "src/index.ts"]

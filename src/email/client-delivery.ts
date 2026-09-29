@@ -192,7 +192,7 @@ export async function emailDocumentToClient(
     {
       to: d.client_email,
       // F21: the user's business name, "via Balans" on Free. The client hired
-      // them; on Pro there is nothing of ours in it at all.
+      // them; "via Balans" on every plan, Pro included (29 September 2026).
       fromName: as.fromName,
       noMark: as.noMark,
       images: as.images,

@@ -18,6 +18,10 @@ services:
       dockerfile: Dockerfile
     restart: always
 
+    # Time to finish replies already under way before the old container is
+    # killed on a deploy (src/index.ts drains for up to 7 seconds).
+    stop_grace_period: 15s
+
     # Outside the repository, so a `git pull` can never touch it and a stray
     # `git add -A` can never stage it.
     env_file:

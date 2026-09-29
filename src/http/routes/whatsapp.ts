@@ -14,7 +14,7 @@ import type { FastifyInstance } from "fastify";
 import { env, require_ } from "../../config.ts";
 import { db } from "../../db/pool.ts";
 import { safeEqual, verifyMetaSignature } from "../../lib/crypto.ts";
-import { parseInbound } from "../../whatsapp/inbound.ts";
+import { parseInbound, type Inbound } from "../../whatsapp/inbound.ts";
 import { handleInbound } from "../../conversation/handle.ts";
 
 type VerifyQuery = {
@@ -99,15 +99,12 @@ export async function whatsappRoutes(app: FastifyInstance): Promise<void> {
     // handler turns one message into several. Replying to the person takes a
     // round trip to the Graph API, which is far too long to hold this open.
     //
-    // PRD-GAP: section 3 wants a Postgres-backed queue so a crash mid-handler
-    // is picked up again. Until that exists the work happens here, detached,
-    // and a failure is logged rather than retried.
+    // The work happens here, detached, and is tracked: a shutdown waits for
+    // it (`drainInbound`), and anything a restart still cut off is picked up
+    // again at boot (`replayUnanswered`). Every deploy restarts this process,
+    // and a message that landed in that minute used to get no reply at all.
     const { messages } = parseInbound(body);
-    for (const m of messages) {
-      void handleInbound(m, req.log).catch((err: unknown) => {
-        req.log.error({ err, waMessageId: m.waMessageId }, "failed to handle message");
-      });
-    }
+    for (const m of messages) track(m, req.log);
 
     req.log.info({ events: events.length, messages: messages.length }, "webhook accepted");
     return reply.status(200).send({ received: true });
@@ -151,4 +148,86 @@ function hash(v: unknown): string {
   const s = JSON.stringify(v);
   for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
   return (h >>> 0).toString(36);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Surviving a restart                                                        */
+/* -------------------------------------------------------------------------- */
+
+type Log = { info: (o: object, m: string) => void; warn: (o: object, m: string) => void; error: (o: object, m: string) => void };
+
+const inflight = new Set<Promise<void>>();
+
+/** Handles one message, remembering it is in progress and marking it done. */
+function track(m: Inbound, log: Log): void {
+  const job: Promise<void> = handleInbound(m, log as never)
+    .catch((err: unknown) => log.error({ err, waMessageId: m.waMessageId }, "failed to handle message"))
+    .then(() =>
+      db()
+        .query(`UPDATE webhook_events SET processed_at = now() WHERE provider = 'whatsapp' AND event_id = $1`, [
+          m.waMessageId,
+        ])
+        .then(() => undefined)
+        .catch(() => undefined),
+    )
+    .finally(() => inflight.delete(job));
+  inflight.add(job);
+}
+
+/**
+ * On shutdown: let the replies already under way finish, up to `ms`.
+ *
+ * A deploy stops this process with a few seconds' grace. A reply takes one
+ * to three — a card to draw, a call to Meta — so most finish inside it.
+ */
+export async function drainInbound(ms: number): Promise<number> {
+  const waiting = inflight.size;
+  if (waiting === 0) return 0;
+  await Promise.race([Promise.allSettled([...inflight]), new Promise((r) => setTimeout(r, ms))]);
+  return waiting;
+}
+
+/**
+ * At boot: answer what a restart cut off.
+ *
+ * A message is picked up again only if all of these hold, so nobody is ever
+ * answered twice:
+ *   - it arrived in the last ten minutes (older, and a reply is just noise);
+ *   - its handling never finished (`processed_at` is still empty);
+ *   - nothing has been sent to that person since it arrived.
+ *
+ * It is handled as a replay, because its id is already stored and would
+ * otherwise be taken for a redelivery and ignored.
+ */
+export async function replayUnanswered(log: Log): Promise<number> {
+  const { rows } = await db().query<{ event_id: string; payload_json: { change?: { value?: Record<string, unknown> }; message?: unknown } }>(
+    `SELECT e.event_id, e.payload_json
+       FROM webhook_events e
+       JOIN messages i ON i.wa_message_id = e.event_id AND i.direction = 'in'
+      WHERE e.provider = 'whatsapp'
+        AND e.event_type LIKE 'message.%'
+        AND e.processed_at IS NULL
+        AND e.received_at > now() - interval '10 minutes'
+        AND NOT EXISTS (
+          SELECT 1 FROM messages o
+           WHERE o.user_id = i.user_id AND o.direction = 'out' AND o.created_at > i.created_at
+        )
+      ORDER BY e.received_at`,
+  );
+
+  let replayed = 0;
+  for (const r of rows) {
+    const change = r.payload_json?.change;
+    if (!change?.value || !r.payload_json?.message) continue;
+    // Back into the envelope Meta sent, with only this one message in it.
+    const { messages } = parseInbound({
+      entry: [{ changes: [{ ...change, value: { ...change.value, messages: [r.payload_json.message], statuses: [] } }] }],
+    });
+    const m = messages.find((x) => x.waMessageId === r.event_id);
+    if (!m) continue;
+    log.warn({ waMessageId: m.waMessageId }, "answering a message a restart cut off");
+    track({ ...m, replay: true }, log);
+    replayed += 1;
+  }
+  return replayed;
 }

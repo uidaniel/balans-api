@@ -180,7 +180,7 @@ export async function emailPaidToClient(
       {
         to: d.client_email,
         // The business they paid, not us. A receipt from a company the client
-        // has never heard of is a receipt they query. On Pro, them alone.
+        // has never heard of is a receipt they query. "via Balans" on every plan.
         fromName: as.fromName,
         noMark: as.noMark,
         replyTo: d.business_email ?? undefined,
