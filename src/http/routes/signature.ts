@@ -11,6 +11,7 @@
  * one is a 404 that says how to get a new link, not which of the two it was.
  */
 
+import { liveSettingsPath } from "../../settings/page-token.ts";
 import type { FastifyInstance } from "fastify";
 import { env } from "../../config.ts";
 import { logoAvailable, markSvg } from "../../brand/logo.ts";
@@ -49,6 +50,9 @@ const CSS = `
 body{background:var(--cream);color:var(--ink);font-family:"Instrument Sans","Geist",system-ui,sans-serif;
   -webkit-font-smoothing:antialiased;min-height:100dvh;padding:28px 18px 40px}
 .wrap{max-width:560px;margin:0 auto}
+.back{margin-bottom:14px}
+.back a{display:inline-flex;align-items:center;height:40px;padding:0 16px;border-radius:999px;background:#fff;
+border:1px solid rgba(16,35,28,.14);color:#10231c;font-weight:600;font-size:14px;text-decoration:none}
 .brand{display:flex;align-items:center;gap:8px;font-family:"Geist",sans-serif;font-weight:700;letter-spacing:-.02em}
 .brand svg{width:22px;height:22px}
 h1{margin-top:26px;font-family:"Geist",sans-serif;font-weight:800;font-size:34px;line-height:1.05;letter-spacing:-.04em}
@@ -216,18 +220,19 @@ save.addEventListener("click", async () => {
     });
     if (!res.ok) throw new Error(String(res.status));
     say("Saved. It goes on your invoices and quotes from now on.", "ok");
-    setTimeout(() => location.reload(), 1200);
+    // Opened from settings: back there, which says it saved.
+    setTimeout(() => (BACK ? location.assign(BACK + "?saved=signature") : location.reload()), 1200);
   } catch (e) { say("That did not save. Try again in a moment.", "err"); ready(); }
 });
 
 const rm = $("#remove");
 if (rm) rm.addEventListener("click", async () => {
   const res = await fetch(location.pathname, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ remove: true }) });
-  if (res.ok) location.reload();
+  if (res.ok) BACK ? location.assign(BACK + "?saved=signature") : location.reload();
 });
 `;
 
-export function signaturePage(current: string | null): string {
+export function signaturePage(current: string | null, back: string | null = null): string {
   const fonts = STYLES.map((f) => `family=${f.replace(/ /g, "+")}`).join("&");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -239,6 +244,7 @@ export function signaturePage(current: string | null): string {
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?${fonts}&display=swap">
 <style>${CSS}</style></head>
 <body><div class="wrap">
+  ${back ? `<p class="back"><a href="${back}">&lsaquo; Back to settings</a></p>` : ""}
   <div class="brand">${logoAvailable() ? markSvg("22px") : ""}balans</div>
   <h1>Your signature</h1>
   <p class="lead">It goes above your business name on your invoices and quotes. Documents without one simply leave the line off.</p>
@@ -265,7 +271,7 @@ export function signaturePage(current: string | null): string {
     <button class="save" id="save" type="button" disabled>Save signature</button>
     <p class="msg" id="msg" role="status"></p>
   </div>
-</div><script>${JS}</script></body></html>`;
+</div><script>const BACK = ${JSON.stringify(back)};${JS}</script></body></html>`;
 }
 
 const gone = (): string => `<!doctype html>
@@ -276,7 +282,7 @@ const gone = (): string => `<!doctype html>
 <p class="lead">This link has expired. Reply <b>signature</b> on WhatsApp for a new one.</p></div></body></html>`;
 
 export async function signatureRoutes(app: FastifyInstance): Promise<void> {
-  app.get<{ Params: { token: string } }>("/signature/:token", async (req, reply) => {
+  app.get<{ Params: { token: string }; Querystring: { from?: string } }>("/signature/:token", async (req, reply) => {
     const owner = await ownerOfSignatureToken(req.params.token);
     if (!owner) return reply.status(404).type(HTML).send(gone());
     return reply
@@ -284,7 +290,12 @@ export async function signatureRoutes(app: FastifyInstance): Promise<void> {
       .header("cache-control", "no-store, private")
       .header("referrer-policy", "no-referrer")
       .header("x-robots-tag", "noindex, nofollow")
-      .send(signaturePage(await signatureDataUri(owner.signatureUrl)));
+      .send(
+        signaturePage(
+          await signatureDataUri(owner.signatureUrl),
+          req.query?.from === "settings" ? await liveSettingsPath(owner.id) : null,
+        ),
+      );
   });
 
   app.post<{ Params: { token: string }; Body: { png?: string; remove?: boolean } }>(

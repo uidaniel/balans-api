@@ -257,7 +257,13 @@ export function renderDocumentHtml(d: DocumentData, opts: RenderOptions = {}): s
 </div>`;
 
   // Classic lists the work in the wider Free table, whose rows are taller.
-  return sheet(d, opts, { css: CSS, body, rowEm: 1.6 });
+  return sheet(d, opts, {
+    css: CSS,
+    body,
+    rowEm: 1.6,
+    // The rule across the head, heavier, and the rules under it in the colour.
+    brand: (k) => `.brand-rule{height:.6em;background:${k.c}}.band,.dates{border-top-color:${k.c}}.band .amt{color:${k.deep}}`,
+  });
 }
 
 /** The stable identity of a rendered document, for the snapshot (F20). */

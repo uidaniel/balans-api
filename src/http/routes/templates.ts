@@ -15,6 +15,7 @@
  * restyle the invoices of the business billing them.
  */
 
+import { liveSettingsPath } from "../../settings/page-token.ts";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { FastifyInstance } from "fastify";
@@ -55,6 +56,7 @@ type Owner = {
   plan: "free" | "pro";
   templateId: string | null;
   logoUrl: string | null;
+  brandColor: string | null;
 };
 
 async function ownerOf(token: string): Promise<Owner | null> {
@@ -68,8 +70,9 @@ async function ownerOf(token: string): Promise<Owner | null> {
     plan: "free" | "pro";
     template_id: string | null;
     logo_url: string | null;
+    brand_color: string | null;
   }>(
-    `SELECT id, business_name, email, address, tin, plan, template_id, logo_url
+    `SELECT id, business_name, email, address, tin, plan, template_id, logo_url, brand_color
        FROM users WHERE picker_token = $1 AND status <> 'closed'`,
     [token],
   );
@@ -84,6 +87,7 @@ async function ownerOf(token: string): Promise<Owner | null> {
         plan: r.plan,
         templateId: r.template_id,
         logoUrl: r.logo_url,
+        brandColor: r.brand_color,
       }
     : null;
 }
@@ -146,8 +150,10 @@ async function sampleFor(owner: Owner): Promise<DocumentData> {
     dueDate: addDays(today, 14),
     notes: null,
     publicUrl: "https://payment.balans.ng/i/…",
-    legalLines: legalLines(),
+    legalLines: legalLines(owner.plan === "pro" ? { businessName: owner.businessName ?? "Your business" } : undefined),
     showMadeWith: owner.plan !== "pro",
+    // Their colour on every preview, so the choice is made in it.
+    brandColor: owner.plan === "pro" ? owner.brandColor : null,
   };
 }
 
@@ -198,6 +204,9 @@ button:disabled{background:var(--sand);color:#7d8d85;cursor:default}
 .done{max-width:1000px;margin:0 auto 20px;padding:13px 16px;border-radius:12px;
 background:#e4f2e9;color:#256b41;font-weight:600;font-size:14.5px}
 .foot{max-width:1000px;margin:32px auto 0;text-align:center;font-size:13px;color:#8a9a92}
+.back{max-width:1000px;margin:0 auto 14px}
+.back a{display:inline-flex;align-items:center;height:40px;padding:0 16px;border-radius:999px;background:#fff;
+border:1px solid var(--sand2);color:var(--ink);font-weight:600;font-size:14px;text-decoration:none}
 /*
  * On a phone, one design at a time, as big as the screen allows.
  *
@@ -286,6 +295,8 @@ export function pickerPage(opts: {
   chosenId: string | null;
   sample: DocumentData;
   savedId?: string | null;
+  /** The settings page this was opened from, to go back to. */
+  back?: string | null;
 }): string {
   const chosen = templateById(opts.chosenId);
   const mine = new Set(availableTo(opts.plan).map((t) => t.id));
@@ -324,7 +335,7 @@ export function pickerPage(opts: {
         ${
           locked
             ? `<div class="locked">Reply <b>upgrade</b> on WhatsApp<br>to use this one</div>`
-            : `<form method="post" action="/designs/${esc(opts.token)}">
+            : `<form method="post" action="/designs/${esc(opts.token)}${opts.back ? "?from=settings" : ""}">
                  <input type="hidden" name="id" value="${esc(t.id)}">
                  <button type="submit"${on ? " disabled" : ""}>${on ? "Using this" : "Use this"}</button>
                </form>`
@@ -343,6 +354,7 @@ export function pickerPage(opts: {
 <link rel="stylesheet" href="/designs/fonts.css">
 <style>${CSS}</style></head><body>
 ${saved ? `<div class="done">Saved. Your invoices now go out as ${esc(saved.name)}.</div>` : ""}
+${opts.back ? `<p class="back"><a href="${esc(opts.back)}">&lsaquo; Back to settings</a></p>` : ""}
 <div class="head">
   <h1>Your invoice design</h1>
   <p>Every one below is filled with your own details. Pick one and your next invoice
@@ -383,7 +395,7 @@ export async function templateRoutes(app: FastifyInstance): Promise<void> {
       .send(await readFile(file));
   });
 
-  app.get<{ Params: { token: string }; Querystring: { saved?: string } }>(
+  app.get<{ Params: { token: string }; Querystring: { saved?: string; from?: string } }>(
     "/designs/:token",
     async (req, reply) => {
       const owner = await ownerOf(req.params.token);
@@ -402,12 +414,13 @@ export async function templateRoutes(app: FastifyInstance): Promise<void> {
             chosenId: owner.templateId,
             sample: await sampleFor(owner),
             savedId: req.query.saved ?? null,
+            back: req.query.from === "settings" ? await liveSettingsPath(owner.id) : null,
           }),
         );
     },
   );
 
-  app.post<{ Params: { token: string }; Body: Record<string, string> }>(
+  app.post<{ Params: { token: string }; Body: Record<string, string>; Querystring: { from?: string } }>(
     "/designs/:token",
     async (req, reply) => {
       const owner = await ownerOf(req.params.token);
@@ -425,6 +438,10 @@ export async function templateRoutes(app: FastifyInstance): Promise<void> {
 
       await db().query(`UPDATE users SET template_id = $2 WHERE id = $1`, [owner.id, spec.id]);
       req.log.info({ userId: owner.id, template: spec.id }, "invoice design chosen");
+
+      // Opened from settings: straight back there, which says it saved.
+      const back = req.query?.from === "settings" ? await liveSettingsPath(owner.id) : null;
+      if (back) return reply.redirect(`${back}?saved=design`, 303);
 
       // Redirect after the post, so a refresh does not send it again.
       return reply.redirect(`/designs/${req.params.token}?saved=${spec.id}`, 303);

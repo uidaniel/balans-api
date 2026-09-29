@@ -229,7 +229,7 @@ border-top:1px solid ${ink(0.12)};padding-top:.9em;font-size:.58em;color:${ink(0
 </div>`;
 
   // The Free items table sets a taller row than the numbered Pro one.
-  return sheet(d, opts, { css, body, rowEm: 1.6 });
+  return sheet(d, opts, { css, body, rowEm: 1.6, brand: (k) => `.kind{color:${k.deep}}.work{border-left-color:${k.c}}.tail{border-top-color:${k.c}}` });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -261,8 +261,8 @@ letter-spacing:.22em;opacity:.55}
 .brand{min-width:0;text-align:right}
 .brand .biz{font-size:.9em;line-height:1.1;font-weight:800;letter-spacing:.06em;
 text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.brand img{display:block;margin-left:auto;margin-bottom:.4em;width:auto;max-width:8em;
-height:1.6em;object-fit:contain}
+.brand img{display:block;margin-left:auto;margin-bottom:.5em;width:auto;max-width:13em;
+height:2.8em;object-fit:contain;object-position:right center}
 .brand .meta{margin-top:.6em;font-size:.54em;line-height:1.5;color:${ink(0.5)}}
 .facts{margin-top:1.6em;display:flex;gap:1.4em;border-top:1px solid ${ink(0.12)};padding-top:1em}
 .work{margin-top:1.3em}
@@ -327,7 +327,7 @@ gap:1.2em;padding-top:1.4em}
   </div>
 </div>`;
 
-  return sheet(d, opts, { css, body });
+  return sheet(d, opts, { css, body, brand: (k) => `.spine{background:${k.c};color:${k.on}}.facts{border-top-color:${k.c}}` });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -345,7 +345,7 @@ function editorial(d: DocumentData, opts: RenderOptions): string {
 .wrap{flex:1;display:flex;flex-direction:column;padding:1.8em 1.9em 1.4em}
 .top{display:flex;align-items:flex-start;justify-content:space-between;gap:1em}
 .brand{display:flex;align-items:center;gap:.55em;min-width:0}
-.brand img{display:block;width:auto;max-width:7em;height:1.5em;object-fit:contain;flex:none}
+.brand img{display:block;width:auto;max-width:12em;height:2.6em;object-fit:contain;flex:none}
 .brand .biz{font-size:.72em;line-height:1.15;font-weight:700;letter-spacing:.08em;
 text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .brand .meta{font-size:.48em;line-height:1.5;color:${ink(0.45)}}
@@ -412,7 +412,7 @@ gap:1.2em;padding-top:1em}
   ${d.showMadeWith ? `<div style="margin-top:.5em">${madeWith(d)}</div>` : ""}
 </div>`;
 
-  return sheet(d, opts, { css, body });
+  return sheet(d, opts, { css, body, brand: (k) => `.kindwrap .k{color:${k.deep}}.strip{border-top-color:${k.c};border-bottom-color:${k.c}}.lede h1 span{color:${k.deep}}` });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -434,7 +434,7 @@ function atelier(d: DocumentData, opts: RenderOptions): string {
 .mono{margin:0 auto;width:2.2em;height:2.2em;border-radius:50%;
 box-shadow:inset 0 0 0 .06em ${ink(0.5)};display:flex;align-items:center;justify-content:center;
 font-family:"Instrument Serif",Georgia,serif;font-size:.9em;line-height:1}
-.wrap>img{display:block;margin:0 auto;width:auto;max-width:9em;height:2.2em;object-fit:contain}
+.wrap>img{display:block;margin:0 auto;width:auto;max-width:14em;height:3.4em;object-fit:contain}
 .biz{margin-top:.7em;font-size:.56em;font-weight:600;letter-spacing:.42em;text-transform:uppercase}
 .addr{margin-top:.3em;font-size:.5em;line-height:1.5;color:${ink(0.45)}}
 .rules{margin-top:1em;border-top:1px solid ${ink(0.2)};border-bottom:1px solid ${ink(0.2)};padding:.2em 0}
@@ -544,7 +544,7 @@ line-height:1;font-variant-numeric:tabular-nums}
 
   // The serif leaders and the quantity under them make a row cost more here
   // than the numbered rows elsewhere; the sheet has to know before it fits.
-  return sheet(d, opts, { css, body, fonts: ["sans", "display", "serif"], rowEm: 2.8 });
+  return sheet(d, opts, { css, body, fonts: ["sans", "display", "serif"], rowEm: 2.8, brand: (k) => `.mono{box-shadow:inset 0 0 0 .08em ${k.c};color:${k.deep}}.rules,.rules .inner{border-color:${k.c}}.rules .k,.owed .amt{color:${k.deep}}.biz{color:${k.deep}}` });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -564,7 +564,7 @@ function statement(d: DocumentData, opts: RenderOptions): string {
 .card{flex:none;background:${INK};color:${CREAM};padding:1.6em 1.8em 1.3em}
 .card .top{display:flex;align-items:center;justify-content:space-between;gap:1em}
 .card .logo{min-width:0}
-.card .logo img{height:1.5em;max-width:7em}
+.card .logo img{height:2.5em;max-width:12em}
 .card .logo .biz{font-size:.72em;font-weight:700}
 .card .k{flex:none;font-size:.54em;letter-spacing:.3em;text-transform:uppercase;color:rgba(246,241,231,.55)}
 .card .lbl{margin-top:2em;font-size:.56em;letter-spacing:.14em;text-transform:uppercase;color:rgba(246,241,231,.5)}
@@ -642,7 +642,7 @@ gap:1.2em;padding-top:1.2em}
   ${d.showMadeWith ? `<div style="margin-top:.5em">${madeWith(d)}</div>` : ""}
 </div>`;
 
-  return sheet(d, opts, { css, body });
+  return sheet(d, opts, { css, body, brand: (k) => `.card{background:${k.c};color:${k.on}}.card .k,.card .lbl,.card .when p,.card .facts .k2{color:${k.on};opacity:.72}.card .facts{border-top-color:${k.on === "#FFFFFF" ? "rgba(255,255,255,.22)" : "rgba(16,35,28,.18)"}}.card .pill{background:${k.on};color:${k.c}!important}` });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -658,6 +658,7 @@ gap:1.2em;padding-top:1.2em}
 function ledger(d: DocumentData, opts: RenderOptions): string {
   const css = `
 .wrap{flex:1;display:flex;flex-direction:column;padding:1.7em 1.8em 1.4em}
+.lg{display:block;width:auto;max-width:13em;height:2.8em;object-fit:contain;object-position:left center;margin-bottom:1em}
 .mast{display:flex;align-items:flex-end;justify-content:space-between;gap:1em;padding-bottom:.8em}
 .mast h1{font-family:${DISPLAY};font-size:2.1em;line-height:.85;font-weight:800;letter-spacing:-.05em}
 .mast .right{flex:none;text-align:right;font-size:.56em;line-height:1.55}
@@ -687,6 +688,7 @@ border-top:.14em solid ${INK};padding-top:.8em}
   const line = (text: string, cls = "") => `<p class="line ${cls}">${text}</p>`;
 
   const body = `<div class="wrap">
+  ${d.logoDataUri ? `<img class="lg" src="${d.logoDataUri}" alt="">` : ""}
   <div class="mast">
     <h1>${kind(d)}</h1>
     <div class="right">
@@ -727,7 +729,7 @@ border-top:.14em solid ${INK};padding-top:.8em}
   ${d.showMadeWith ? `<div style="margin-top:.5em">${madeWith(d)}</div>` : ""}
 </div>`;
 
-  return sheet(d, opts, { css, body });
+  return sheet(d, opts, { css, body, brand: (k) => `.mast h1{color:${k.deep}}.sec .k span{color:${k.deep}}.foot{border-top-color:${k.c}}.mast{border-bottom:.14em solid ${k.c}}` });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -745,7 +747,7 @@ function folio(d: DocumentData, opts: RenderOptions): string {
 .row{flex:1;display:flex;min-height:0}
 .margin{width:9em;flex:none;background:rgba(233,225,208,.7);display:flex;flex-direction:column;
 padding:1.7em 1.2em 1.4em}
-.margin img{display:block;width:auto;max-width:6.4em;height:1.7em;object-fit:contain}
+.margin img{display:block;width:auto;max-width:100%;height:3em;object-fit:contain;object-position:left center}
 .margin .biz{margin-top:.8em;font-size:.74em;line-height:1.15;font-weight:700}
 .margin .meta{margin-top:.4em;font-size:.5em;line-height:1.5;color:${ink(0.5)}}
 .margin .facts{margin-top:1.6em}
@@ -810,7 +812,7 @@ gap:1em;padding-top:1.2em}
   </div>
 </div>`;
 
-  return sheet(d, opts, { css, body });
+  return sheet(d, opts, { css, body, brand: (k) => `.margin{background:${k.wash}}.main h1{color:${k.deep}}.bar{background:${k.c};color:${k.on}}` });
 }
 
 /* -------------------------------------------------------------------------- */

@@ -405,6 +405,7 @@ transform-origin:top left}
 .bank span{color:var(--muted);font-size:13.5px}
 .found{margin-top:12px;padding:12px 14px;border-radius:12px;background:#e6f2ea;color:var(--moss);font-weight:600}
 .hidden{display:none}
+.saved{margin-top:4px;padding:12px 14px;border-radius:12px;background:#e6f2ea;color:var(--moss);font-weight:600;font-size:14.5px}
 .foot{margin-top:22px;text-align:center;color:var(--faint);font-size:12.5px}
 `;
 
@@ -433,8 +434,8 @@ function fill() {
   $('b-email').value = S.business.email ? S.business.email + (S.business.emailVerified ? '' : ' (not verified)') : 'None';
   $('i-days').value = S.invoices.dueDays; $('i-next').value = S.invoices.nextNumber;
   $('l-design').querySelector('small').textContent = S.invoices.design;
-  $('l-design').href = S.links.designs;
-  $('l-sign').href = S.links.signature;
+  $('l-design').href = S.links.designs + '?from=settings';
+  $('l-sign').href = S.links.signature + '?from=settings';
   $('l-sign').querySelector('small').textContent = S.signature ? 'On your invoices' : 'None yet';
   $('bank-now').innerHTML = S.bank
     ? '<b></b><span></span>'
@@ -455,7 +456,37 @@ function fill() {
   $('plan-btn').href = S.links.pro;
   $('plan-btn').textContent = pro ? 'Renew Pro' : 'Upgrade to Pro';
   if (pro) { showLogo(); pickColour(S.brand.colour || '', false); }
+  snapshot();
 }
+
+/*
+ * A Save button is live only while its section differs from what is saved.
+ * Nothing to save looks like nothing to save, and a tap cannot send the same
+ * values twice.
+ */
+let saved = {};
+const val = (id) => $(id).value.trim();
+function snapshot() {
+  saved = {
+    b: [val('b-name'), val('b-address'), val('b-tin')].join('\u0000'),
+    i: [val('i-days'), val('i-next')].join('\u0000'),
+  };
+  dirty();
+}
+function dirty() {
+  $('b-save').disabled = !val('b-name') || [val('b-name'), val('b-address'), val('b-tin')].join('\u0000') === saved.b;
+  $('i-save').disabled = val('i-days') === '' || val('i-next') === '' || [val('i-days'), val('i-next')].join('\u0000') === saved.i;
+  if (S && S.plan === 'pro') {
+    $('c-save').disabled = colour === (S.brand.colour || '');
+    $('c-reset').disabled = !S.brand.colour && !colour;
+  }
+  const bank = $('k-bank').value, num = $('k-number').value.replace(/\D/g, '');
+  $('k-check').disabled = !bank || num.length !== 10;
+  $('k-confirm').disabled = !checked || $('k-code').value.replace(/\D/g, '').length !== 6;
+}
+['b-name', 'b-address', 'b-tin', 'i-days', 'i-next', 'k-number', 'k-code'].forEach((id) => $(id).addEventListener('input', dirty));
+$('k-bank').addEventListener('change', () => { checked = null; $('k-found').classList.add('hidden'); $('k-verify').classList.add('hidden'); dirty(); });
+$('k-number').addEventListener('input', () => { if (checked) { checked = null; $('k-found').classList.add('hidden'); $('k-verify').classList.add('hidden'); } });
 
 /* Business */
 $('b-save').onclick = async (e) => {
@@ -464,8 +495,8 @@ $('b-save').onclick = async (e) => {
     await api('/business', { name: $('b-name').value, address: $('b-address').value, tin: $('b-tin').value });
     S.business.name = $('b-name').value.trim(); $('title').textContent = S.business.name;
     say('b-msg', 'Saved.', true); refreshPreview();
-  } catch (err) { say('b-msg', err.message); }
-  busy(e.target, false, 'Save details');
+    busy(e.target, false, 'Save details'); snapshot();
+  } catch (err) { say('b-msg', err.message); busy(e.target, false, 'Save details'); dirty(); }
 };
 
 /* Invoices */
@@ -474,8 +505,8 @@ $('i-save').onclick = async (e) => {
   try {
     const r = await api('/invoices', { dueDays: Number($('i-days').value), nextNumber: Number($('i-next').value) });
     $('i-next').value = r.nextNumber; say('i-msg', r.note || 'Saved.', true);
-  } catch (err) { say('i-msg', err.message); }
-  busy(e.target, false, 'Save');
+    busy(e.target, false, 'Save'); snapshot();
+  } catch (err) { say('i-msg', err.message); busy(e.target, false, 'Save'); dirty(); }
 };
 
 /* Brand: logo */
@@ -566,6 +597,7 @@ function pickColour(h, touched) {
   document.querySelectorAll('.sw').forEach((s) => s.classList.toggle('on', s.title === h));
   if (touched) say('c-msg', '');
   refreshPreview();
+  dirty();
 }
 $('c-input').oninput = () => pickColour($('c-input').value.toUpperCase(), true);
 $('c-hex').onchange = () => { const v = $('c-hex').value.trim(); if (/^#?[0-9a-f]{6}$/i.test(v)) pickColour(('#' + v.replace('#', '')).toUpperCase(), true); };
@@ -573,7 +605,7 @@ $('c-save').onclick = async (e) => {
   busy(e.target, true, 'Saving\\u2026');
   try { const r = await api('/brand', { colour: colour || null }); S.brand.colour = r.colour; say('c-msg', 'Saved. Your next invoices use it.', true); }
   catch (err) { say('c-msg', err.message); }
-  busy(e.target, false, 'Save colour');
+  busy(e.target, false, 'Save colour'); dirty();
 };
 $('c-reset').onclick = async () => {
   try { await api('/brand', { colour: null }); S.brand.colour = null; pickColour('', true); say('c-msg', 'Back to the standard colour.', true); }
@@ -613,7 +645,7 @@ $('k-check').onclick = async (e) => {
     $('k-found').textContent = r.accountName + ' \\u00b7 ' + r.bankName;
     $('k-found').classList.remove('hidden'); $('k-verify').classList.remove('hidden'); say('k-msg', '');
   } catch (err) { say('k-msg', err.message); }
-  busy(e.target, false, 'Check account');
+  busy(e.target, false, 'Check account'); dirty();
 };
 $('k-send').onclick = async (e) => {
   busy(e.target, true, 'Sending\\u2026');
@@ -630,11 +662,21 @@ $('k-confirm').onclick = async (e) => {
     S = await api('/state'); fill();
     $('bank-form').classList.add('hidden'); $('bank-change').classList.remove('hidden');
   } catch (err) { say('k-msg', err.message); }
-  busy(e.target, false, 'Confirm change');
+  busy(e.target, false, 'Confirm change'); dirty();
 };
 
 (async () => {
-  try { S = await api('/state'); fill(); fit(); }
+  try {
+    S = await api('/state'); fill(); fit();
+    const back = new URLSearchParams(location.search).get('saved');
+    if (back === 'design' || back === 'signature') {
+      const el = $('saved');
+      el.textContent = back === 'design' ? 'Design saved: ' + S.invoices.design + '.' : 'Signature saved.';
+      el.classList.remove('hidden');
+      history.replaceState(null, '', location.pathname);
+      $(back === 'design' ? 'l-design' : 'l-sign').closest('.card').scrollIntoView({ block: 'center' });
+    }
+  }
   catch (err) { document.body.innerHTML = '<div class="wrap"><h1>Nothing here</h1><p class="sub">' + err.message + '</p></div>'; }
 })();
 `;
@@ -649,6 +691,7 @@ export function settingsPage(token: string): string {
 <body data-t="${esc(token)}"><div class="wrap">
   <div class="top"><h1 id="title">Settings</h1><span id="plan" class="pill">&nbsp;</span></div>
   <p class="sub">Changes save section by section. Close this page when you are done.</p>
+  <p class="saved hidden" id="saved" role="status"></p>
 
   <section class="card">
     <h2>Business</h2>
@@ -657,7 +700,7 @@ export function settingsPage(token: string): string {
     <label for="b-address">Address <span style="font-weight:400">(optional)</span></label><input id="b-address" maxlength="200">
     <label for="b-tin">TIN <span style="font-weight:400">(optional)</span></label><input id="b-tin" maxlength="30">
     <label for="b-email">Email</label><input id="b-email" readonly>
-    <button class="btn" id="b-save" type="button">Save details</button>
+    <button class="btn" id="b-save" type="button" disabled>Save details</button>
     <p class="msg" id="b-msg" role="status"></p>
   </section>
 
@@ -683,7 +726,7 @@ export function settingsPage(token: string): string {
       <p class="hint hidden" id="swatch-hint">From your logo:</p>
       <div class="swatches" id="swatches"></div>
       <div class="pick"><input type="color" id="c-input" aria-label="Pick a colour"><input id="c-hex" placeholder="#1A73E8" maxlength="7" aria-label="Colour code"></div>
-      <div class="row"><button class="btn" id="c-save" type="button">Save colour</button><button class="btn ghost" id="c-reset" type="button">Use standard</button></div>
+      <div class="row"><button class="btn" id="c-save" type="button" disabled>Save colour</button><button class="btn ghost" id="c-reset" type="button">Use standard</button></div>
       <p class="msg" id="c-msg" role="status"></p>
       <label>How your invoice looks</label>
       <div class="frame" id="frame"><iframe id="preview" title="Invoice preview" sandbox="allow-same-origin"></iframe></div>
@@ -696,7 +739,7 @@ export function settingsPage(token: string): string {
       <div><label for="i-days">Days to pay</label><input id="i-days" type="number" min="0" max="180" inputmode="numeric"></div>
       <div><label for="i-next">Next invoice #</label><input id="i-next" type="number" min="1" inputmode="numeric"></div>
     </div>
-    <button class="btn" id="i-save" type="button">Save</button>
+    <button class="btn" id="i-save" type="button" disabled>Save</button>
     <p class="msg" id="i-msg" role="status"></p>
     <div style="margin-top:10px">
       <a class="link" id="l-design" href="#">Invoice design<small></small><span class="go">&rsaquo;</span></a>
@@ -712,14 +755,14 @@ export function settingsPage(token: string): string {
     <div id="bank-form" class="hidden">
       <label for="k-bank">Bank</label><select id="k-bank"><option>Loading banks…</option></select>
       <label for="k-number">Account number</label><input id="k-number" inputmode="numeric" maxlength="10" autocomplete="off">
-      <button class="btn" id="k-check" type="button">Check account</button>
+      <button class="btn" id="k-check" type="button" disabled>Check account</button>
       <div class="found hidden" id="k-found"></div>
       <div id="k-verify" class="hidden">
         <p class="hint" style="margin-top:12px">To keep your money safe, we email you a code before changing where you are paid.</p>
         <button class="btn gold" id="k-send" type="button">Email me a code</button>
         <div id="k-code-row" class="hidden">
           <label for="k-code">Code from the email</label><input id="k-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
-          <button class="btn" id="k-confirm" type="button">Confirm change</button>
+          <button class="btn" id="k-confirm" type="button" disabled>Confirm change</button>
         </div>
       </div>
       <p class="msg" id="k-msg" role="status"></p>

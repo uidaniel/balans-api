@@ -72,6 +72,29 @@ export function deepen(hex: string): string {
   return out;
 }
 
+/** The colour mixed toward white: `amount` 0 is the colour, 1 is white. */
+export function tint(hex: string, amount: number): string {
+  const [r, g, b] = rgb(hex);
+  return toHex(r + (255 - r) * amount, g + (255 - g) * amount, b + (255 - b) * amount);
+}
+
+/** Everything a layout needs to wear a brand colour. */
+export type BrandTokens = {
+  /** The colour itself, for fills and rules. */
+  c: string;
+  /** Text on a fill of it: ink or white. */
+  on: string;
+  /** The colour as text on white paper, darkened if it has to be. */
+  deep: string;
+  /** A pale wash of it, for a large area behind ink text. */
+  wash: string;
+};
+
+export function brandTokens(hex: string | null | undefined): BrandTokens | null {
+  const c = normaliseHex(hex);
+  return c ? { c, on: onColour(c), deep: deepen(c), wash: tint(c, 0.86) } : null;
+}
+
 /**
  * A rendered page or document, recoloured.
  *
@@ -91,8 +114,8 @@ export function applyBrand(html: string, brand: string | null | undefined): stri
     .replace(new RegExp(MARIGOLD_DEEP, "gi"), deep)
     // The pay page's lighter hover shade.
     .replace(/#ffc848/gi, colour);
-  // Every place text sits on the accent: the Statement design's pay pill and
-  // the pay page's buttons. Nothing else puts words on marigold.
-  const rule = `<style>.card .pill,button.pay-btn,a.pay-btn,button.tcopy{color:${on}!important}</style>`;
+  // The pay page's buttons: the one place outside a layout's own brand rules
+  // (pdf/kit.ts `brand`) where words sit on the accent.
+  const rule = `<style>button.pay-btn,a.pay-btn,button.tcopy{color:${on}!important}</style>`;
   return swapped.includes("</head>") ? swapped.replace("</head>", `${rule}</head>`) : swapped + rule;
 }

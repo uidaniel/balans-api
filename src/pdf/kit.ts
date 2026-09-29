@@ -19,7 +19,7 @@
  *     signature on somebody's invoice is not a design decision.
  */
 
-import { applyBrand } from "../brand/colour.ts";
+import { applyBrand, brandTokens, type BrandTokens } from "../brand/colour.ts";
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { formatMoney, type Currency } from "../../core/currency.ts";
@@ -130,7 +130,7 @@ body{background:#fff;color:${INK};-webkit-print-color-adjust:exact;print-color-a
 .fv{margin-top:.35em;font-size:.68em;font-weight:600}
 .fv .sub{display:block;font-weight:400;overflow-wrap:anywhere;color:${ink(0.5)}}
 .logo{display:flex;align-items:center;gap:.55em}
-.logo img{display:block;width:auto;max-width:9em;height:1.9em;object-fit:contain}
+.logo img{display:block;width:auto;max-width:14em;height:3em;object-fit:contain;object-position:left center}
 .logo .biz{font-size:1.05em;line-height:1.2;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meta{font-size:.6em;line-height:1.55;color:${ink(0.5)}}
 
@@ -249,6 +249,14 @@ export type RenderOptions = {
 type SheetParts = {
   css: string;
   body: string;
+  /**
+   * Where this layout wears a Pro brand colour, beyond the marigold swap:
+   * each layout is mostly ink, so swapping marigold alone left several of
+   * them with the colour on one link underline. Each names its own signature
+   * surface — Monolith's spine, Statement's card — so the colour reads as
+   * part of the design rather than a tint over it.
+   */
+  brand?: (k: BrandTokens) => string;
   /** Only the typefaces this layout sets anything in. */
   fonts?: FontSet[];
   /** What one line item costs this layout, for `sheetFontSize`. */
@@ -258,6 +266,8 @@ type SheetParts = {
 /** Wraps a layout's markup in a sheet, with only the typefaces it uses. */
 export function sheet(d: DocumentData, opts: RenderOptions, parts: SheetParts): string {
   const { css, body, fonts = ["sans", "display"], rowEm } = parts;
+  const tokens = brandTokens(d.brandColor);
+  const brandCss = tokens && parts.brand ? parts.brand(tokens) : "";
   const link =
     opts.fonts === "link" ? `<link rel="stylesheet" href="/designs/fonts.css">` : "";
 
@@ -266,7 +276,7 @@ export function sheet(d: DocumentData, opts: RenderOptions, parts: SheetParts): 
   return applyBrand(
     `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">${link}
-<style>${fontFaces(fonts, opts.fonts ?? "embed")}${BASE}${css}</style></head>
+<style>${fontFaces(fonts, opts.fonts ?? "embed")}${BASE}${css}${brandCss}</style></head>
 <body><div class="sheet" style="font-size:${sheetFontSize(d, rowEm)}">
 ${d.variant === "sample" ? `<div class="mark">SAMPLE</div>` : ""}
 ${body}

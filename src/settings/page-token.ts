@@ -39,3 +39,17 @@ export async function ownerOfSettingsToken(token: string): Promise<{ id: string 
   );
   return rows[0] ?? null;
 }
+
+/**
+ * The settings page this person has open, to send them back to after the
+ * design picker or the signature pad. Only a live link, and never a new one:
+ * a page opened from settings returns to that page, and anything else stays
+ * where it was.
+ */
+export async function liveSettingsPath(userId: string): Promise<string | null> {
+  const { rows } = await db().query<{ settings_token: string | null }>(
+    `SELECT settings_token FROM users WHERE id = $1 AND settings_token_expires_at > now()`,
+    [userId],
+  );
+  return rows[0]?.settings_token ? `/settings/${rows[0].settings_token}` : null;
+}
