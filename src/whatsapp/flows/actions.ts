@@ -16,7 +16,9 @@
 
 import type { FastifyBaseLogger } from "fastify";
 
-import { legalConsentVersion } from "../../config.ts";
+import { env, legalConsentVersion } from "../../config.ts";
+import { sendContactCard, sendText } from "../client.ts";
+import { recordOutbound } from "../../conversation/store.ts";
 import { db } from "../../db/pool.ts";
 import { checkCode, issueCode } from "../../lib/codes.ts";
 import { sendEmail, verificationEmail, welcomeEmail } from "../../email/send.ts";
@@ -54,7 +56,9 @@ export function sendWelcome(
   consent: Awaited<ReturnType<typeof recordConsent>>,
   log: FastifyBaseLogger,
 ): void {
-  if (!consent.first || !consent.email) return;
+  if (!consent.first) return;
+  void sendSaveUs(userId, log);
+  if (!consent.email) return;
   const to = consent.email;
 
   void (async () => {
@@ -65,6 +69,47 @@ export function sendWelcome(
     if (sent.ok) log.info({ userId, delivered: sent.delivered }, "welcome email sent");
     else log.warn({ userId, reason: sent.reason }, "welcome email not sent");
   })().catch((e) => log.error({ userId, err: (e as Error).message }, "welcome email failed"));
+}
+
+/**
+ * "Save Balans", once, straight after setup: one line and our contact card.
+ *
+ * Until Meta grants a verified badge (it will not consider one before the
+ * business is 30 days old), WhatsApp heads an unsaved business chat with the
+ * number and shows "~Balans" small underneath. Saved, it says "Balans". This
+ * is the only way to get there before the badge, and it is one tap.
+ *
+ * After the setup messages rather than among them: a short pause, so it
+ * arrives last and reads as the aside it is. Never allowed to fail setup.
+ */
+async function sendSaveUs(userId: string, log: FastifyBaseLogger): Promise<void> {
+  try {
+    const [ours, { rows }] = await Promise.all([
+      displayNumber(),
+      db().query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [userId]),
+    ]);
+    const phone = rows[0]?.wa_phone;
+    if (!ours || !phone) return;
+
+    await new Promise((r) => setTimeout(r, 2500));
+    const said = await sendText(phone, "📇 Save Balans to your contacts so we show up by name in your chats. Tap the card below, then *Add contact*.");
+    if (said.ok) await recordOutbound(userId, said.waMessageId, "sent", { kind: "text" });
+
+    const card = await sendContactCard(phone, {
+      name: "Balans",
+      waNumber: ours,
+      email: env.SUPPORT_EMAIL,
+      url: env.SITE_URL,
+    });
+    if (card.ok) {
+      await recordOutbound(userId, card.waMessageId, "sent", { kind: "contacts" });
+      log.info({ userId }, "contact card sent");
+    } else {
+      log.warn({ userId, reason: card.reason }, "contact card not sent");
+    }
+  } catch (e) {
+    log.warn({ userId, err: (e as Error).message }, "contact card failed");
+  }
 }
 
 async function emailCode(
