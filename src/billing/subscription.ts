@@ -478,6 +478,18 @@ export async function activateByReference(
     [sub.user_id, sub.period_end],
   );
 
+  /*
+   * F18: subscription revenue is recorded separately from transaction fees,
+   * as the deduction path does. This path did not, so a Pro month paid by
+   * card or transfer switched Pro on and showed in MRR but never reached
+   * "What Balans earns" — ₦0 beside a paying customer, found on 29 September
+   * 2026. Once per payment: a redelivered webhook stops at the update above.
+   */
+  await db().query(
+    `INSERT INTO fee_ledger (user_id, payment_id, type, amount_kobo) VALUES ($1, NULL, 'subscription', $2)`,
+    [sub.user_id, paidKobo],
+  );
+
   log.warn(
     { userId: sub.user_id, subscriptionId: sub.id, paidKobo, until: sub.period_end },
     "pro activated by payment",
