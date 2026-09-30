@@ -12,6 +12,7 @@
  * language model.
  */
 
+import { plainly } from "./corrections.ts";
 import { env } from "../config.ts";
 import { todayIn, type Civil } from "../../core/dates.ts";
 import { readCurrency, type CurrencyRead } from "../../core/currency.ts";
@@ -76,6 +77,9 @@ export async function parseMessage(
    * expect one is a mark that goes missing on the paths that do not — and
    * the cost of it going missing is "£500" becoming an invoice for ₦500.
    */
+  // "40 percent", "50/50", "half upfront", "make am": one spelling for every
+  // reader below, as for corrections (see `plainly`).
+  text = plainly(text);
   const money = readCurrency(text);
   const correctionMoney = opts.correctionMoney ?? money;
   const priced = (parsed: Parsed): Parsed => (parsed.money === money ? parsed : { ...parsed, money });

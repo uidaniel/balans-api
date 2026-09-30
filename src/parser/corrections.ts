@@ -233,6 +233,13 @@ const STAGE =
 
 /** The words that come before a date in "... be due on Friday". */
 const STAGE_DUE = /\b(?:be\s+)?due\s*(?:on|by)?\s*:?\s*(.+)$/i;
+/**
+ * The same, without the word "due": "deposit tomorrow", "the balance should
+ * be paid on Friday". Only ever tried against what directly follows a named
+ * part, and only kept when what is left is a date.
+ */
+const STAGE_WHEN =
+  /^\s*(?:(?:should|will|must|to|is|na)\s+)?(?:be\s+)?(?:due|paid|payable|pay|settled)?\s*(?:on|by|before)?\s*:?\s*(.+)$/i;
 
 const ORDINALS = ["first", "second", "third", "fourth", "fifth"];
 
@@ -298,8 +305,11 @@ const NO_PHONE =
 const NO_EMAIL =
   /\b(?:no|remove|without|drop|take off|forget|cancel)\s+(?:the\s+)?e-?mail\b|\bdo\s?n(?:o|')?t\s+e-?mail\b/i;
 
-const DUE = /\b(?:due|deadline|payable|pay(?:able)? by)\s*:?\s*(.+)$/i;
-const DUE_CHANGE = new RegExp(String.raw`\b(?:${CHANGE})\s*due\s*:?\s*(.+)$`, "i");
+const DUE = /\b(?:due(?:\s*date)?|deadline|payable|pay(?:able)? by)\s*(?:is|to|should be|:)?\s*:?\s*(.+)$/i;
+const DUE_CHANGE = new RegExp(
+  String.raw`\b(?:${CHANGE}|move|shift|push|extend)\s*(?:the\s+)?(?:due\s*date|due|deadline|date)\s*(?:to|till|until|for)?\s*:?\s*(.+)$`,
+  "i",
+);
 
 /**
  * Changing who the document is for.
@@ -344,9 +354,11 @@ const DESCRIPTION_LABELLED = new RegExp(String.raw`^(?:the\s+)?${WORK_FIELD}\s*[
 /** The old shape, kept because "for" and "it's for" are not field names. */
 const DESCRIPTION_FOR = /\b(?:for|it(?:'|’)?s for)\s+(?:should be|is)\s+(.+)$/i;
 
-const ADD_VAT = /\b(?:add|include|with|plus)\s+vat(?:\s*(?:at\s*)?(\d{1,2}(?:\.\d)?)\s*%)?/i;
+const ADD_VAT =
+  /\b(?:add|include|with|plus|charge)\s+(?:(\d{1,2}(?:\.\d)?)\s*%\s*)?vat(?:\s*(?:at\s*)?(\d{1,2}(?:\.\d)?)\s*%)?/i;
 const NO_VAT = /\b(?:no|remove|without|drop|take off)\s+(?:the\s+)?vat\b/i;
-const DEPOSIT = /\b(?:(\d{1,3})\s*%\s*(?:deposit|upfront|down)|(?:deposit|upfront)\s*(?:of\s*)?(\d{1,3})\s*%)\b/i;
+const DEPOSIT =
+  /\b(?:(\d{1,3})\s*%\s*(?:deposit|upfront|up front|down(?:\s*payment)?|first)|(?:deposit|upfront)\s*(?:of|is|to|at|should be|=|:)?\s*(\d{1,3})\s*%)/i;
 const NO_DEPOSIT = /\b(?:no|remove|without|drop)\s+(?:the\s+)?deposit\b/i;
 const NO_INSTALMENTS =
   /\b(?:no|remove|without|drop|forget|cancel)\s+(?:the\s+)?(?:instal|install|milestone|payment plan)\w*\b|\b(?:one|1|single|full)\s+payments?\b/i;
@@ -407,8 +419,13 @@ function readOneCorrection(
    */
   const stage = STAGE.exec(rest);
   if (stage) {
-    const when = STAGE_DUE.exec(rest.slice(stage.index + stage[0]!.length));
-    const resolved = when ? resolveDueDate(when[1]!, today) : null;
+    const after = rest.slice(stage.index + stage[0]!.length);
+    let when = STAGE_DUE.exec(after);
+    let resolved = when ? resolveDueDate(when[1]!, today) : null;
+    if (!resolved) {
+      when = STAGE_WHEN.exec(after);
+      resolved = when ? resolveDueDate(when[1]!, today) : null;
+    }
     if (resolved) {
       const ordinal = stage[4] ? ORDINALS.indexOf(stage[4].toLowerCase()) + 1 : 0;
       out.stageDue = {
@@ -424,7 +441,8 @@ function readOneCorrection(
       };
       // "50% deposit due Friday" sets the deposit as well as its date. The
       // percentage was inside the part's name, so nothing below would see it.
-      const pct = /(\d{1,3})\s*%/.exec(stage[0]!);
+      const said = stage[0]! + after.slice(0, when!.index + when![0].length - when![1]!.length);
+      const pct = /(\d{1,3})\s*%/.exec(said);
       if (stage[1] && pct) {
         const n = Number(pct[1]);
         if (n > 0 && n < 100) out.depositPercent = n;
@@ -452,7 +470,8 @@ function readOneCorrection(
   } else {
     const vat = ADD_VAT.exec(rest);
     if (vat) {
-      out.vatPercent = vat[1] ? Number(vat[1]) : VAT_DEFAULT;
+      const rate = vat[1] ?? vat[2];
+      out.vatPercent = rate ? Number(rate) : VAT_DEFAULT;
       rest = rest.replace(ADD_VAT, "").trim();
     }
   }
@@ -691,7 +710,11 @@ function readOneCorrection(
     if (renaming) {
       const from = clean(renaming[1]!);
       const to = clean(renaming[2]!);
-      if (from && to && from.toLowerCase() !== to.toLowerCase()) {
+      // "change due date to friday" is not a line called "due date". A field
+      // name that got this far is a change nothing above could read, and is
+      // better asked about than turned into a rename of a line that is not there.
+      const field = /^(?:the\s+)?(?:due\s*date|due|date|deadline|deposit|balance|vat|tax|total|amount|price|client|customer|name|email|phone|number|it|am)$/i;
+      if (from && to && from.toLowerCase() !== to.toLowerCase() && !field.test(from)) {
         out.renameLine = { match: from, to };
         rest = "";
       }
@@ -755,17 +778,46 @@ const clean = (s: string): string | null => {
  * read, is also read clause by clause — split at commas, semicolons, "and"
  * and "then" — and taken that way when every clause reads as a change.
  */
+/**
+ * The same words said the ways people actually say them, before any rule.
+ *
+ * Pidgin "make am 400k" is "make it 400k"; "40 percent" is "40%"; "half
+ * upfront" and "50/50" are a 50% deposit; "the rest" and "second half" are
+ * the balance. Rewritten here once so every rule below reads one spelling.
+ */
+export function plainly(text: string): string {
+  return text
+    .replace(/\b(make|change|put|set|move|shift|push)\s+am\b/gi, "$1 it")
+    .replace(/\b(deposit|balance|amount|total|price|it)\s+na\b/gi, "$1 is")
+    .replace(/(\d)\s*(?:percent|per cent|pct)\b/gi, "$1%")
+    // "balance on delivery" is when a balance falls due anyway: nothing to set.
+    .replace(
+      /[,;]?\s*(?:and\s+)?(?:the\s+)?(?:balance|rest)\s+(?:on|upon|after|at)\s+(?:delivery|completion|completing|finishing|the end)\b/gi,
+      "",
+    )
+    .replace(/\b50\s*\/\s*50\b/gi, "50% deposit")
+    .replace(/\bhalf\s+(?:upfront|up front|now|first|as (?:a )?deposit|deposit)\b/gi, "50% deposit")
+    .replace(/([,;]|\band\b|\bthen\b)\s*(?:the\s+)?(?:other\s+)?half\b/gi, "$1 balance")
+    .replace(/\bfirst half\b/gi, "50% deposit")
+    .replace(/\b(?:second|other|last) half\b/gi, "balance")
+    .replace(/\b(?:the\s+)?rest(?:\s+of\s+(?:it|the money))?\b(?=\s+(?:due|on|by|should|will|next|tomorrow|in|\d))/gi, "balance");
+}
+
 export function readCorrection(
-  text: string,
+  raw: string,
   today: Civil,
   money: CurrencyRead = { kind: "naira" },
 ): Correction | null {
+  const text = plainly(raw);
   const whole = readOneCorrection(text, today, money);
   const s = text.replace(/\s+/g, " ").trim();
   const dues = (s.match(/\bdue\b/gi) ?? []).length;
   if (whole && dues < 2) return whole;
 
-  const clauses = s.split(/\s*(?:[,;]|\band\b|\bthen\b)\s*/i).map((c) => c.trim()).filter(Boolean);
+  const clauses = s
+    .split(/\s*(?:[,;&]|\.\s+|\band\b|\bthen\b)\s*/i)
+    .map((c) => c.trim())
+    .filter(Boolean);
   if (clauses.length < 2) return whole;
 
   const reads = clauses.map((c) => readOneCorrection(c, today, money));
@@ -782,4 +834,35 @@ export function readCorrection(
   if (stages.length === 1) merged.stageDue = stages[0];
   else if (stages.length > 1) merged.stageDues = stages;
   return Object.keys(merged).length ? merged : whole;
+}
+
+/**
+ * Dates for parts of a payment plan, out of a message that makes a new
+ * invoice: "invoice Tunde 800k, 50% deposit due Friday and balance due
+ * Tuesday". The invoice reader has no place for them — it read that as an
+ * invoice due Friday and lost Tuesday. Only clauses that name a part are
+ * looked at, so the rest of the sentence is never taken as a change.
+ */
+export function stageDatesIn(
+  raw: string,
+  today: Civil,
+): { stages: NonNullable<Correction["stageDues"]>; depositPercent?: number } {
+  const stages: NonNullable<Correction["stageDues"]> = [];
+  let depositPercent: number | undefined;
+  const clauses = plainly(raw)
+    .split(/\s*(?:[,;&]|\.\s+|\band\b|\bthen\b)\s*/i)
+    .map((c) => c.trim())
+    .filter(Boolean);
+  for (const clause of clauses) {
+    const named = STAGE.exec(clause);
+    if (!named) continue;
+    // From the part's name on, so "invoice Tunde 800k website, 30% deposit
+    // due tomorrow" is read as the part and not as the whole invoice.
+    const pct = clause.search(/\d{1,3}\s*%/);
+    const from = pct > -1 && pct < named.index ? pct : named.index;
+    const c = readOneCorrection(clause.slice(from), today);
+    if (c?.stageDue) stages.push(c.stageDue);
+    if (c?.depositPercent) depositPercent = c.depositPercent;
+  }
+  return depositPercent !== undefined ? { stages, depositPercent } : { stages };
 }

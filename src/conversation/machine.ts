@@ -12,6 +12,7 @@
  * question repeated at them.
  */
 
+import { stageDatesIn } from "../parser/corrections.ts";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { normalisePhone, type ReplyButton } from "../whatsapp/client.ts";
@@ -674,6 +675,15 @@ export const VOICE = {
    * something and then refusing to send it is worse than refusing now,
    * because by then they have read it and agreed with it.
    */
+  /** A correction that, applied, left the draft exactly as it was. */
+  nothingChanged: para(
+    `\u{1F914} ${b("That did not change anything on the draft.")}`,
+    lines(
+      "Try saying it another way, like *make it 400k*, *due Friday*,",
+      "*50% deposit due Friday and the balance due Tuesday*, or tap Change it.",
+    ),
+  ),
+
   foreignIsPro: para(
     `\u{1F30D} ${b("Invoicing in dollars and pounds is a Pro feature.")}`,
     lines("Reply *upgrade* to unlock it.", "Naira invoices work on any plan."),
@@ -1995,7 +2005,7 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
     case "create_invoice":
     case "create_quote":
     case "payment_request":
-      return startDocument(p, ctx, now, msg.quote);
+      return startDocument(p, ctx, now, msg.quote, msg.text);
 
     case "help":
       return {
@@ -2124,7 +2134,7 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
 const DRAFT_BUTTONS = new Set(draftButtons().map((b) => b.id));
 
 /** Turns a parse into a document under construction, then asks or drafts. */
-function startDocument(p: Parsed, ctx: Context, now: Civil, quote?: Quote): Step {
+function startDocument(p: Parsed, ctx: Context, now: Civil, quote?: Quote, said?: string): Step {
   const doc: PendingDoc = {
     type:
       p.intent === "create_quote"
@@ -2155,7 +2165,23 @@ function startDocument(p: Parsed, ctx: Context, now: Civil, quote?: Quote): Step
   // they did say something and quietly defaulting would ignore them.
   const unreadableDate = Boolean(p.dueDatePhrase) && !p.dueDate;
   const priced = p.money.kind === "foreign" && quote ? repriced(doc, quote) : doc;
-  return buildOrAsk(priced, ctx, now, unreadableDate);
+
+  /*
+   * Dates for the parts, said with the invoice: "50% deposit due Friday and
+   * balance due Tuesday". Applied the way a correction is, after the plan, so
+   * the balance's date is the invoice's due date and the deposit's is not.
+   */
+  const parts = said ? stageDatesIn(said, now) : { stages: [] };
+  const planned =
+    parts.stages.length || (parts.depositPercent && !priced.depositPercent && !priced.instalments)
+      ? applyCorrection(priced, {
+          ...(parts.depositPercent && !priced.depositPercent && !priced.instalments
+            ? { depositPercent: parts.depositPercent, instalments: null }
+            : {}),
+          stageDues: parts.stages,
+        })
+      : priced;
+  return buildOrAsk(planned, ctx, now, unreadableDate);
 }
 
 /**
@@ -2537,7 +2563,7 @@ function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound
    * restarting on that would throw away the answer somebody just gave.
    */
   if (msg.parsed && isDocumentIntent(msg.parsed.intent) && msg.parsed.source === "command") {
-    return startDocument(msg.parsed, forget(ctx), now);
+    return startDocument(msg.parsed, forget(ctx), now, undefined, msg.text);
   }
 
   const answer = text.trim();
@@ -2571,7 +2597,7 @@ function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound
       // The form comes back filled in, or as a plain name. A parse arrives
       // when the caller recognised the first; otherwise it is the second.
       if (msg.parsed && isDocumentIntent(msg.parsed.intent) && msg.parsed.clientName) {
-        return startDocument(msg.parsed, ctx, now);
+        return startDocument(msg.parsed, ctx, now, undefined, msg.text);
       }
 
       const name = answer.replace(/^(?:for|to)\s+/i, "").replace(/\s+/g, " ").trim();
@@ -2708,7 +2734,22 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
       };
     }
 
-    return buildOrAsk(applyCorrection(doc, msg.correction, msg.quote), ctx, now);
+    const changed = applyCorrection(doc, msg.correction, msg.quote);
+    /*
+     * A change that changed nothing — a date for a part the plan does not
+     * have, a line that is not there — used to redraw the same draft as if it
+     * had worked. Said plainly instead, so they know to say it another way.
+     */
+    if (JSON.stringify(changed) === JSON.stringify(doc)) {
+      return {
+        replies: [VOICE.nothingChanged],
+        buttons: draftButtons(),
+        next: "awaiting_confirm",
+        context: ctx,
+        effects: [],
+      };
+    }
+    return buildOrAsk(changed, ctx, now);
   }
 
   /*
@@ -2893,6 +2934,13 @@ function applyIn(doc: PendingDoc, c: Correction): PendingDoc {
    */
   for (const stage of [...(c.stageDue ? [c.stageDue] : []), ...(c.stageDues ?? [])]) {
     const count = shapeFor(next, totalOf(next))?.length ?? 0;
+    // One payment has no parts, but "the balance due Friday" still means the
+    // day the money is due. Any other part of a plan that is not there is
+    // left alone, and the draft says nothing changed.
+    if (count <= 1 && stage.which === "last") {
+      next.dueDate = stage.date;
+      continue;
+    }
     const at = stage.which === "first" ? 0 : stage.which === "last" ? count - 1 : stage.which - 1;
 
     if (count > 0 && at >= 0 && at < count) {
