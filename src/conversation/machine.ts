@@ -2798,7 +2798,7 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
  * invoice into one for ₦600. The mark is not what says this is dollars — the
  * invoice is.
  */
-function applyCorrection(doc: PendingDoc, c: Correction, quote?: Quote): PendingDoc {
+export function applyCorrection(doc: PendingDoc, c: Correction, quote?: Quote): PendingDoc {
   if (!doc.foreign) return applyIn(doc, c);
 
   /*
@@ -2881,28 +2881,30 @@ function applyIn(doc: PendingDoc, c: Correction): PendingDoc {
    * five of five instalments. A date set for a part that does not exist —
    * "part 4" of a two-part plan — is left alone rather than guessed at.
    */
-  if (c.stageDue) {
+  if (c.vatPercent !== undefined) next.vatPercent = c.vatPercent;
+  if (c.depositPercent !== undefined) next.depositPercent = c.depositPercent;
+  if (c.instalments !== undefined) next.instalments = c.instalments;
+
+  /*
+   * Dates for parts of the payment plan — after the plan itself is set, so
+   * "50% deposit due Friday and the balance due Tuesday" counts its parts
+   * against the new plan, not the one-payment draft it started as. Several
+   * are allowed in one message.
+   */
+  for (const stage of [...(c.stageDue ? [c.stageDue] : []), ...(c.stageDues ?? [])]) {
     const count = shapeFor(next, totalOf(next))?.length ?? 0;
-    const at =
-      c.stageDue.which === "first"
-        ? 0
-        : c.stageDue.which === "last"
-          ? count - 1
-          : c.stageDue.which - 1;
+    const at = stage.which === "first" ? 0 : stage.which === "last" ? count - 1 : stage.which - 1;
 
     if (count > 0 && at >= 0 && at < count) {
       const dates = [...(next.stageDueDates ?? [])];
-      dates[at] = c.stageDue.date;
+      dates[at] = stage.date;
       next.stageDueDates = dates;
 
       // The last part IS the document's due date; they are one fact with two
       // names, and letting them drift apart puts two dates on one card.
-      if (at === count - 1) next.dueDate = c.stageDue.date;
+      if (at === count - 1) next.dueDate = stage.date;
     }
   }
-  if (c.vatPercent !== undefined) next.vatPercent = c.vatPercent;
-  if (c.depositPercent !== undefined) next.depositPercent = c.depositPercent;
-  if (c.instalments !== undefined) next.instalments = c.instalments;
   if (c.passFeesToClient !== undefined) next.passFeesToClient = c.passFeesToClient;
 
   if (c.description) {

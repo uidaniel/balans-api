@@ -92,6 +92,12 @@ export type Correction = {
    * five of five instalments.
    */
   stageDue?: { which: "first" | "last" | number; date: Civil; phrase: string };
+  /**
+   * More than one part dated in one message: "50% deposit due Friday and the
+   * balance due Tuesday". Each is one `stageDue`, applied in order after any
+   * change to the plan itself.
+   */
+  stageDues?: { which: "first" | "last" | number; date: Civil; phrase: string }[];
   clientName?: string;
   /**
    * Where the client's copy goes. Null takes the address off entirely.
@@ -355,7 +361,7 @@ const VAT_DEFAULT = 7.5;
  * Several things can change at once — "make it 400k, due next Friday" is one
  * message — so every rule is tried and the result is whatever they matched.
  */
-export function readCorrection(
+function readOneCorrection(
   text: string,
   today: Civil,
   /**
@@ -416,6 +422,13 @@ export function readCorrection(
         date: resolved.date,
         phrase: when![1]!.trim(),
       };
+      // "50% deposit due Friday" sets the deposit as well as its date. The
+      // percentage was inside the part's name, so nothing below would see it.
+      const pct = /(\d{1,3})\s*%/.exec(stage[0]!);
+      if (stage[1] && pct) {
+        const n = Number(pct[1]);
+        if (n > 0 && n < 100) out.depositPercent = n;
+      }
       rest = tidy(rest.slice(0, stage.index));
     }
   }
@@ -728,3 +741,45 @@ const clean = (s: string): string | null => {
   const t = s.trim().replace(/^["'“]|["'”]$/g, "").replace(/[,;:]+$/, "").trim();
   return t && t.length <= 200 ? t : null;
 };
+
+/**
+ * Reads a message as a change to the draft, or returns null.
+ *
+ * Mostly one pass over the whole message, which is how "make it 400k, due
+ * next Friday" becomes two changes. But one pass can date only one part of a
+ * payment plan, and "50% deposit due on Friday and the balance should be due
+ * on Tuesday" dates two — which read as nothing at all, and the user was told
+ * "I did not catch that" twice (30 September 2026).
+ *
+ * So a message that names "due" more than once, or that one pass cannot
+ * read, is also read clause by clause — split at commas, semicolons, "and"
+ * and "then" — and taken that way when every clause reads as a change.
+ */
+export function readCorrection(
+  text: string,
+  today: Civil,
+  money: CurrencyRead = { kind: "naira" },
+): Correction | null {
+  const whole = readOneCorrection(text, today, money);
+  const s = text.replace(/\s+/g, " ").trim();
+  const dues = (s.match(/\bdue\b/gi) ?? []).length;
+  if (whole && dues < 2) return whole;
+
+  const clauses = s.split(/\s*(?:[,;]|\band\b|\bthen\b)\s*/i).map((c) => c.trim()).filter(Boolean);
+  if (clauses.length < 2) return whole;
+
+  const reads = clauses.map((c) => readOneCorrection(c, today, money));
+  if (reads.some((r) => r === null)) return whole;
+
+  const merged: Correction = {};
+  const stages: NonNullable<Correction["stageDues"]> = [];
+  for (const r of reads as Correction[]) {
+    const { stageDue, stageDues, ...rest } = r;
+    if (stageDue) stages.push(stageDue);
+    if (stageDues) stages.push(...stageDues);
+    Object.assign(merged, rest);
+  }
+  if (stages.length === 1) merged.stageDue = stages[0];
+  else if (stages.length > 1) merged.stageDues = stages;
+  return Object.keys(merged).length ? merged : whole;
+}
