@@ -374,8 +374,10 @@ export type InitResult =
  *   `transaction_charge: 0` — Balans takes nothing. Pro carries no fee and
  *   international invoicing is Pro only.
  *
- *   `channels: ["card"]` — v1 is cards. Offering bank transfer to a client
- *   abroad offers something their bank cannot do.
+ *   `channels: ["card", "apple_pay"]` — cards, and Apple Pay (switched on
+ *   for the live account, 30 September 2026), which is a card underneath and
+ *   what many clients abroad reach for first. Offering bank transfer to a
+ *   client abroad offers something their bank cannot do.
  */
 export async function initTransaction(
   input: {
@@ -406,7 +408,7 @@ export async function initTransaction(
         subaccount: input.subaccountCode,
         bearer: "subaccount",
         transaction_charge: 0,
-        channels: ["card"],
+        channels: ["card", "apple_pay"],
         callback_url: input.callbackUrl,
         metadata: input.metadata,
       }),

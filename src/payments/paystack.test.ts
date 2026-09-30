@@ -241,11 +241,11 @@ describe("starting a card payment", () => {
     assert.equal(sent.amount, 663_500_00);
   });
 
-  it("offers cards and nothing else", async () => {
+  it("offers cards and Apple Pay, and nothing else", async () => {
     // Offering bank transfer to a client in London offers something their
-    // bank cannot do.
+    // bank cannot do. Apple Pay is a card underneath.
     const { sent } = await start();
-    assert.deepEqual(sent.channels, ["card"]);
+    assert.deepEqual(sent.channels, ["card", "apple_pay"]);
   });
 
   it("carries the invoice's own figures through the payment", async () => {
