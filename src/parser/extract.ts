@@ -115,6 +115,14 @@ export function countOf(raw: string | undefined): number | null {
 /** Nigeria's rate. Named rather than inlined so there is one place to change it. */
 export const VAT_PERCENT = 7.5;
 
+/**
+ * An email address in an invoice message, with the words and marks people
+ * put around one: "ed@x.com", "(ed@x.com)", "<ed@x.com>", ", email: ed@x.com",
+ * "send to ed@x.com", "her email is ed@x.com". Group 1 is the address.
+ */
+const EMAIL_IN_MESSAGE =
+  /[,;]?\s*(?:(?:and\s+)?(?:(?:his|her|their|the\s+client'?s?|client)\s+)?e-?mail(?:\s+address)?(?:\s+is)?\s*:?\s*|(?:send|email)\s+(?:it\s+)?to\s+)?[(<\[]?\s*([a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,})\s*[)>\]]?[,;]?/i;
+
 export function extractDocument(
   text: string,
   today: Civil,
@@ -164,6 +172,19 @@ export function extractDocument(
     rest = rest.slice(0, m.index) + rest.slice(m.index + m[0].length);
     restLower = rest.toLowerCase();
   };
+
+  /*
+   * The client's email, before anything else is read.
+   *
+   * This reader never looked for one, so "invoice Edidiong Uwak ed@x.com $1
+   * for web" made a client called "Edidiong Uwak ed@x.com", and ", email
+   * ed@x.com" at the end became part of the work (30 September 2026). Taken
+   * with whatever labels and brackets it arrived in, wherever it sits.
+   */
+  let clientEmail: string | null = null;
+  cut(EMAIL_IN_MESSAGE, (m) => {
+    clientEmail = m[1]!.toLowerCase();
+  });
 
   cut(DEPOSIT, (m) => {
     depositPercent = Number(m[1] ?? m[2]);
@@ -229,7 +250,7 @@ export function extractDocument(
     intent,
     correction: null,
     client_name: clientName,
-    client_email: null,
+    client_email: clientEmail,
     line_items: description ? [{ description, qty: 1, unit_amount: amount.raw }] : [],
     total_amount: description ? null : amount.raw,
     due_date: duePhrase,
