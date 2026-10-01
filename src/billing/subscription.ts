@@ -15,6 +15,7 @@
  * the user would quite reasonably never trust us again.
  */
 
+import { ensureSubaccountEarly } from "../payments/subaccount-verification.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { db, tx } from "../db/pool.ts";
 import { defaults } from "../config.ts";
@@ -494,6 +495,9 @@ export async function activateByReference(
     { userId: sub.user_id, subscriptionId: sub.id, paidKobo, until: sub.period_end },
     "pro activated by payment",
   );
+  // Cards are Pro: make their Paystack subaccount now, so it can be verified
+  // before a client pays (Paystack holds payouts to unverified ones).
+  ensureSubaccountEarly(sub.user_id, log);
 
   return {
     userId: sub.user_id,

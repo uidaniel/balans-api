@@ -13,6 +13,7 @@
  * the `reminders` row is claimed before the message goes out.
  */
 
+import { checkSubaccounts, emailUnverifiedDigest } from "../payments/subaccount-verification.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
 import { refreshAll } from "../fx/rate.ts";
@@ -526,6 +527,14 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
      * rate nobody can use must not stand in front of the reminders.
      */
     if (env.INTL_ENABLED) await refreshAll(log);
+
+    // Paystack holds payouts to unverified subaccounts indefinitely. Keep
+    // their status current for the admin, and tell the admins daily while
+    // any are waiting (payments/subaccount-verification.ts).
+    if (env.PAYSTACK_SECRET_KEY) {
+      await checkSubaccounts(log);
+      await emailUnverifiedDigest(log);
+    }
   } catch (err) {
     // A failed run must not stop the next one.
     log.error({ err }, "daily jobs failed");

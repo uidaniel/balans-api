@@ -106,7 +106,7 @@ export async function paystackSubaccountFor(
   if (existing) {
     await db().query(
       `UPDATE bank_accounts
-          SET paystack_subaccount_code = $2, paystack_subaccount_status = 'active'
+          SET paystack_subaccount_code = $2, paystack_subaccount_status = NULL
         WHERE id = $1`,
       [bank.id, existing],
     );
@@ -133,7 +133,7 @@ export async function paystackSubaccountFor(
    */
   await db().query(
     `UPDATE bank_accounts
-        SET paystack_subaccount_code = $2, paystack_subaccount_status = 'active'
+        SET paystack_subaccount_code = $2, paystack_subaccount_status = 'unverified'
       WHERE id = $1`,
     [bank.id, made.account.subaccountCode],
   );
