@@ -329,7 +329,7 @@ import { periodCard } from "../documents/period-card.ts";
 import { invoiceableKobo } from "../../core/amount.ts";
 import { totalsFor } from "../../core/totals.ts";
 import { MFB_CHOICE } from "../whatsapp/flows/banks.ts";
-import { currentAccountLine, sendWelcome } from "../whatsapp/flows/actions.ts";
+import { sendSaveUs, currentAccountLine, sendWelcome } from "../whatsapp/flows/actions.ts";
 import { sendDocument, uploadDocument } from "../whatsapp/client.ts";
 import {
   loadConversation,
@@ -2590,6 +2590,7 @@ async function finishSetupFromForm(userId: string, phone: string, log: FastifyBa
   if (had.opener) {
     await reply(userId, phone, [VOICE.doneNowThat], log);
     await replayOpener(userId, phone, had.opener, log);
+    await sendSaveUs(userId, log);
     return;
   }
 
@@ -2612,6 +2613,7 @@ async function finishSetupFromForm(userId: string, phone: string, log: FastifyBa
   if (outcome.lines.length) {
     await reply(userId, phone, outcome.lines, log, outcome.buttons, outcome.buttonsImage);
   }
+  await sendSaveUs(userId, log);
 }
 
 async function handleConsentForm(
@@ -2650,6 +2652,7 @@ async function handleConsentForm(
   if (had.opener) {
     await reply(userId, phone, [VOICE.doneNowThat], log);
     await replayOpener(userId, phone, had.opener, log);
+    await sendSaveUs(userId, log);
     return;
   }
 
@@ -2674,6 +2677,7 @@ async function handleConsentForm(
   if (outcome.lines.length) {
     await reply(userId, phone, outcome.lines, log, outcome.buttons, outcome.buttonsImage);
   }
+  await sendSaveUs(userId, log);
 }
 
 /**

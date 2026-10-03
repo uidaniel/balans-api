@@ -56,9 +56,7 @@ export function sendWelcome(
   consent: Awaited<ReturnType<typeof recordConsent>>,
   log: FastifyBaseLogger,
 ): void {
-  if (!consent.first) return;
-  void sendSaveUs(userId, log);
-  if (!consent.email) return;
+  if (!consent.first || !consent.email) return;
   const to = consent.email;
 
   void (async () => {
@@ -79,11 +77,19 @@ export function sendWelcome(
  * number and shows "~Balans" small underneath. Saved, it says "Balans". This
  * is the only way to get there before the badge, and it is one tap.
  *
- * After the setup messages rather than among them: a short pause, so it
- * arrives last and reads as the aside it is. Never allowed to fail setup.
+ * Sent by the chat after "You are set up" and whatever follows it, so it
+ * arrives last and reads as the aside it is. It used to go from the welcome,
+ * which runs while the form is still closing, and so landed before the
+ * confirmation (3 October 2026). Never allowed to fail setup.
  */
-async function sendSaveUs(userId: string, log: FastifyBaseLogger): Promise<void> {
+export async function sendSaveUs(userId: string, log: FastifyBaseLogger): Promise<void> {
   try {
+    // Once per person: setup can finish down more than one path.
+    const { rows: had } = await db().query(
+      `SELECT 1 FROM messages WHERE user_id = $1 AND direction = 'out' AND kind = 'contacts' LIMIT 1`,
+      [userId],
+    );
+    if (had.length) return;
     const [ours, { rows }] = await Promise.all([
       displayNumber(),
       db().query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [userId]),
@@ -91,7 +97,6 @@ async function sendSaveUs(userId: string, log: FastifyBaseLogger): Promise<void>
     const phone = rows[0]?.wa_phone;
     if (!ours || !phone) return;
 
-    await new Promise((r) => setTimeout(r, 2500));
     const said = await sendText(phone, "📇 Save Balans to your contacts so we show up by name in your chats. Tap the card below, then *Add contact*.");
     if (said.ok) await recordOutbound(userId, said.waMessageId, "sent", { kind: "text" });
 

@@ -12,6 +12,7 @@
  * question repeated at them.
  */
 
+import { extractDocument } from "../parser/extract.ts";
 import { stageDatesIn } from "../parser/corrections.ts";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -1494,7 +1495,20 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
        */
       const faq = faqKind(text);
       const asking = faq !== null || HELP.test(text);
-      const starting = SETUP_ME.test(text.trim()) || GREETING.test(text);
+      /*
+       * An instruction is a message that reads as a document: "invoice Tunde
+       * 20k". Anything else that is not a greeting — "new", "yo", "ok" — used
+       * to count as one, so the bot promised "then I can do that", replayed
+       * it after setup under "Now, the one you asked for", and had nothing to
+       * do with it (30 September 2026). Those now get the plain invitation.
+       */
+      // New numbers are not sent to the parser (the model costs money and a
+      // first message is usually "hi"), so the free reader decides: it knows
+      // "invoice Tunde 20k" and nothing it does not.
+      const instruction =
+        !asking &&
+        (Boolean(msg.parsed && isDocumentIntent(msg.parsed.intent)) || extractDocument(text, today(msg)) !== null);
+      const starting = !instruction || SETUP_ME.test(text.trim()) || GREETING.test(text);
 
       const body = faq
         ? para(faqAnswer(faq), SETUP_NUDGE)

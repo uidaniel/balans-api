@@ -271,3 +271,21 @@ describe("the same questions, asked later", () => {
     assert.ok(say("idle", "how does this work").effects.some((e) => e.type === "show_help"));
   });
 });
+
+describe("a first message that is neither a greeting nor an instruction", () => {
+  it("is not kept, promised or replayed (3 October 2026)", () => {
+    // "new" got "then I can do that", and after setup "Now, the one you asked
+    // for" followed by "I only do quotes, invoices and payments".
+    for (const text of ["new", "yo", "ok", "start", "hello there boss"]) {
+      const out = say("new", text);
+      assert.equal(out.context.opener, undefined, `${text} was kept`);
+      assert.equal(flowBody(out), VOICE.setupInvite, `${text} was promised a reply`);
+    }
+  });
+
+  it("still keeps a real instruction", () => {
+    const out = say("new", "invoice Tunde 20k for logo design");
+    assert.equal(out.context.opener, "invoice Tunde 20k for logo design");
+    assert.equal(flowBody(out), VOICE.setupFirst);
+  });
+});
