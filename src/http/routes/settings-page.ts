@@ -390,6 +390,14 @@ h1{font-family:${FONT.display};font-size:26px;font-weight:800;letter-spacing:-.0
 background:var(--sand);color:var(--muted);white-space:nowrap}
 .pill.pro{background:var(--ink);color:var(--marigold)}
 .card{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:18px;margin-top:14px}
+.card.off{display:none}
+/* One section at a time, chosen from a row of tabs that stays in reach. */
+.tabs{position:sticky;top:0;z-index:5;display:flex;gap:6px;overflow-x:auto;margin:0 -14px;padding:10px 14px;
+background:var(--cream);scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;border:1px solid var(--line);background:var(--paper);color:var(--muted);font:inherit;font-size:14px;
+font-weight:600;padding:8px 14px;border-radius:99px;cursor:pointer;white-space:nowrap}
+.tab[aria-selected="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
 .card h2{font-family:${FONT.display};font-size:17px;font-weight:700;letter-spacing:-.02em}
 .card .hint{color:var(--muted);font-size:13.5px;margin-top:2px}
 label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-top:14px}
@@ -714,16 +722,32 @@ $('k-confirm').onclick = async (e) => {
   busy(e.target, false, 'Confirm change'); dirty();
 };
 
+/* Tabs: one section at a time. The open one is kept in the address, so a
+   reload, or coming back from the design or signature page, lands on it. */
+const TABS = [...document.querySelectorAll('.tab')].map((b) => b.dataset.tab);
+function showTab(name) {
+  if (!TABS.includes(name)) name = TABS[0];
+  document.querySelectorAll('.tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+  document.querySelectorAll('section.card[data-tab]').forEach((s) => s.classList.toggle('off', s.dataset.tab !== name));
+  const btn = document.querySelector('.tab[data-tab="' + name + '"]');
+  if (btn) btn.scrollIntoView({ block: 'nearest', inline: 'center' });
+  history.replaceState(null, '', location.pathname + location.search + '#' + name);
+  $('saved').classList.add('hidden');
+  if (name === 'brand') fit();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
 (async () => {
   try {
-    S = await api('/state'); fill(); fit();
+    S = await api('/state'); fill();
     const back = new URLSearchParams(location.search).get('saved');
+    showTab(back === 'design' || back === 'signature' ? 'invoices' : location.hash.slice(1));
     if (back === 'design' || back === 'signature') {
       const el = $('saved');
       el.textContent = back === 'design' ? 'Design saved: ' + S.invoices.design + '.' : 'Signature saved.';
       el.classList.remove('hidden');
-      history.replaceState(null, '', location.pathname);
-      $(back === 'design' ? 'l-design' : 'l-sign').closest('.card').scrollIntoView({ block: 'center' });
+      history.replaceState(null, '', location.pathname + '#invoices');
     }
   }
   catch (err) { document.body.innerHTML = '<div class="wrap"><h1>Nothing here</h1><p class="sub">' + err.message + '</p></div>'; }
@@ -739,10 +763,18 @@ export function settingsPage(token: string): string {
 <link rel="stylesheet" href="/designs/fonts.css"><style>${CSS}</style></head>
 <body data-t="${esc(token)}"><div class="wrap">
   <div class="top"><h1 id="title">Settings</h1><span id="plan" class="pill">&nbsp;</span></div>
-  <p class="sub">Changes save section by section. Close this page when you are done.</p>
+  <p class="sub">Each tab saves on its own. Close this page when you are done.</p>
+  <nav class="tabs" role="tablist" aria-label="Settings sections">
+    <button class="tab" type="button" role="tab" data-tab="business" aria-selected="false">Business</button>
+    <button class="tab" type="button" role="tab" data-tab="brand" aria-selected="false">Brand</button>
+    <button class="tab" type="button" role="tab" data-tab="invoices" aria-selected="false">Invoices</button>
+    <button class="tab" type="button" role="tab" data-tab="abroad" aria-selected="false">Clients abroad</button>
+    <button class="tab" type="button" role="tab" data-tab="payout" aria-selected="false">Payout account</button>
+    <button class="tab" type="button" role="tab" data-tab="plan" aria-selected="false">Plan</button>
+  </nav>
   <p class="saved hidden" id="saved" role="status"></p>
 
-  <section class="card">
+  <section class="card" data-tab="business">
     <h2>Business</h2>
     <p class="hint">What your clients see on every invoice.</p>
     <label for="b-name">Business name</label><input id="b-name" maxlength="80" autocomplete="organization">
@@ -753,7 +785,7 @@ export function settingsPage(token: string): string {
     <p class="msg" id="b-msg" role="status"></p>
   </section>
 
-  <section class="card">
+  <section class="card" data-tab="brand">
     <h2>Brand</h2>
     <p class="hint">Your logo and colour on your invoices, pay page and emails, with nothing of Balans on them.</p>
     <div id="brand-free" class="hidden">
@@ -782,7 +814,7 @@ export function settingsPage(token: string): string {
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" data-tab="invoices">
     <h2>Invoices</h2>
     <div class="row">
       <div><label for="i-days">Days to pay</label><input id="i-days" type="number" min="0" max="180" inputmode="numeric"></div>
@@ -796,7 +828,7 @@ export function settingsPage(token: string): string {
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" data-tab="abroad">
     <h2>Clients abroad</h2>
     <p class="hint">For invoices in dollars, pounds and other currencies. Clients can pay by card through a Balans link, or straight to you by PayPal, Wise or a bank abroad.</p>
     <label for="a-details">Your payment details</label>
@@ -808,7 +840,7 @@ export function settingsPage(token: string): string {
     <p class="msg" id="a-msg" role="status"></p>
   </section>
 
-  <section class="card">
+  <section class="card" data-tab="payout">
     <h2>Payout account</h2>
     <p class="hint">Where your clients pay. It is printed on your invoices.</p>
     <div class="bank" id="bank-now"></div>
@@ -830,7 +862,7 @@ export function settingsPage(token: string): string {
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" data-tab="plan">
     <h2>Plan</h2>
     <p class="hint" id="plan-text"></p>
     <a class="btn gold hidden" id="plan-btn" style="display:grid;place-items:center;text-decoration:none"></a>

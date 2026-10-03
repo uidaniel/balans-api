@@ -442,7 +442,7 @@ describe("the number a client reads", () => {
   });
 
   it("falls back to the reference when there is no number", () => {
-    assert.match(render(doc({ number: null, ref: "BL-0019" })), /Invoice 0019/);
+    assert.match(render(doc({ number: null as unknown as number, ref: "BL-0019" })), /Invoice 0019/);
   });
 });
 
