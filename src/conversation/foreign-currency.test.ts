@@ -134,8 +134,8 @@ describe("every way a price gets in", () => {
 describe("currencies Balans will never take", () => {
   it("names them, because the answer will still be no tomorrow", () => {
     // "I did not understand that" would be a lie. It was understood exactly.
-    assert.match(String(say("invoice Acme EUR 500 for the rebrand").replies[0]), /euros/i);
-    assert.match(String(say("invoice Acme ZAR 5000 for the rebrand").replies[0]), /rand/i);
+    assert.match(String(say("invoice Acme ¥50000 for the rebrand").replies[0]), /yen/i);
+    assert.match(String(say("invoice Acme ₹50000 for the rebrand").replies[0]), /rupees/i);
   });
 });
 

@@ -252,13 +252,23 @@ export const defaults = {
     /** Zero until Paystack confirms VAT applies to the card fee. Then 7.5. */
     feeVatPercent: 0,
     /**
-     * Per-invoice and per-user-per-day ceilings, in the foreign currency's
-     * minor units: $1,000 and $2,000. A cap is not a judgement about the
+     * Per-invoice ceilings, in each currency's minor units, about $1,000
+     * each; a day's ceiling is twice that. A cap is not a judgement about the
      * work — it is the blast radius of a chargeback on a payment method we
-     * have never yet taken, held small until we have.
+     * have never yet taken, held small until we have. Round figures, fixed,
+     * so the number a user is told does not move with the naira.
      */
-    invoiceCapMinor: 1_000_00,
-    dailyCapMinor: 2_000_00,
+    invoiceCapMinor: {
+      USD: 1_000_00,
+      GBP: 800_00,
+      EUR: 900_00,
+      CAD: 1_400_00,
+      AUD: 1_500_00,
+      GHS: 12_000_00,
+      KES: 130_000_00,
+      ZAR: 18_000_00,
+      AED: 3_700_00,
+    } as Record<"USD" | "GBP" | "EUR" | "CAD" | "AUD" | "GHS" | "KES" | "ZAR" | "AED", number>,
     /**
      * What a user is told about when the money arrives.
      *

@@ -33,7 +33,9 @@ export type Rate = number;
  * bounds are deliberately wide: they are there to catch a broken response,
  * not to have an opinion about the naira.
  */
-const MIN_RATE = 50;
+// A Kenyan shilling is about eleven naira, the cheapest currency taken; a
+// rate quoted the wrong way round is a small fraction of one.
+const MIN_RATE = 2;
 const MAX_RATE = 100_000;
 
 export const isSaneRate = (rate: unknown): rate is Rate =>

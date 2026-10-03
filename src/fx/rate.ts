@@ -27,7 +27,7 @@
 
 import type { FastifyBaseLogger } from "fastify";
 
-import type { Foreign } from "../../core/currency.ts";
+import { FOREIGN, type Foreign } from "../../core/currency.ts";
 import { isSaneRate } from "../../core/exchange.ts";
 import { env } from "../config.ts";
 import { db } from "../db/pool.ts";
@@ -54,7 +54,10 @@ const settings = () => ({
   provider: env.FX_PROVIDER,
   cacheMs: env.FX_CACHE_MINUTES * MINUTE,
   staleMs: env.FX_STALE_MAX_HOURS * 60 * MINUTE,
-  fixed: { USD: env.FX_FIXED_USDNGN, GBP: env.FX_FIXED_GBPNGN },
+  // FX_FIXED_USDNGN, FX_FIXED_EURNGN, …: one per currency, any of them.
+  fixed: Object.fromEntries(
+    FOREIGN.map((c) => [c, Number(process.env[`FX_FIXED_${c}NGN`]) || undefined]),
+  ) as Partial<Record<Foreign, number>>,
 });
 
 /** The newest rate we hold for this pair, however old. */
@@ -166,7 +169,7 @@ function usable(
  * freelancer being told they cannot send an invoice.
  */
 export async function refreshAll(log: FastifyBaseLogger): Promise<void> {
-  for (const currency of ["USD", "GBP"] as const) {
+  for (const currency of FOREIGN) {
     const quote = await current(currency, { log });
     if (!quote) log.error({ currency }, "fx: no rate available");
   }

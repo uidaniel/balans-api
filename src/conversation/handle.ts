@@ -7,6 +7,7 @@
  * which is why the interesting logic stays testable without a database.
  */
 
+import { homeCurrencyFor } from "../../core/home-currency.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { legalConsentVersion } from "../config.ts";
 import { db, tx } from "../db/pool.ts";
@@ -37,7 +38,7 @@ import { forLog, type Parsed } from "../parser/schema.ts";
 import { b, i, lines, para, row } from "../whatsapp/format.ts";
 import { parseMessage } from "../parser/parse.ts";
 import { readCorrection } from "../parser/corrections.ts";
-import { formatMoney, INFO, type CurrencyRead, type Foreign } from "../../core/currency.ts";
+import { formatMoney, FOREIGN, INFO, type CurrencyRead, type Foreign } from "../../core/currency.ts";
 import { current as currentRate, type Quote } from "../fx/rate.ts";
 import { asCommand } from "../parser/commands.ts";
 import { resolveDueDate, todayIn, type Civil } from "../../core/dates.ts";
@@ -3050,13 +3051,14 @@ async function formCurrency(
   chosen: string | undefined,
   log: FastifyBaseLogger,
 ): Promise<{ stop: true; words: string } | { stop: false; quote?: Quote }> {
-  const code = (chosen ?? "").trim().toUpperCase();
-  if (!code || code === "NGN") return { stop: false };
+  const said = (chosen ?? "").trim().toUpperCase();
+  if (!said || said === "NGN") return { stop: false };
 
-  if (code !== "USD" && code !== "GBP") {
-    log.warn({ userId, code }, "invoice form sent a currency that is not on it");
-    return { stop: true, words: VOICE.currencyNotTaken(code) };
+  if (!(FOREIGN as readonly string[]).includes(said)) {
+    log.warn({ userId, code: said }, "invoice form sent a currency that is not on it");
+    return { stop: true, words: VOICE.currencyNotTaken(said) };
   }
+  const code = said as Foreign;
 
   if (!env.INTL_ENABLED) {
     log.warn({ userId, code }, "invoice form sent a currency while the feature is off");
@@ -3142,6 +3144,12 @@ function clientWhatsAppIsPro(): string {
  * Only the document forms carry these keys. Onboarding and the rest do not
  * declare them, and a Flow handed one key too many dies at the first tap.
  */
+/** The sender's WhatsApp number, for putting their own currency first. */
+async function phoneOf(userId: string): Promise<string | null> {
+  const { rows } = await db().query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [userId]);
+  return rows[0]?.wa_phone ?? null;
+}
+
 async function openedForPlan(
   userId: string,
   data: FlowData | undefined,
@@ -3159,7 +3167,7 @@ async function openedForPlan(
     env.INTL_ENABLED && "can_bill_abroad" in data
       ? {
           show_currency: true,
-          currencies: currencyOptions(pro),
+          currencies: currencyOptions(pro, homeCurrencyFor(await phoneOf(userId))),
           ...(pro ? { can_bill_abroad: true, amount_help: ABROAD_HELP } : {}),
         }
       : {};
@@ -3184,7 +3192,8 @@ async function overForeignCap(
   foreign: { currency: Foreign; amountMinor: number },
   today: Civil,
 ): Promise<string | null> {
-  const { invoiceCapMinor, dailyCapMinor } = defaults.international;
+  const invoiceCapMinor = defaults.international.invoiceCapMinor[foreign.currency];
+  const dailyCapMinor = invoiceCapMinor * 2;
   const priced = formatMoney(foreign.amountMinor, foreign.currency);
 
   if (foreign.amountMinor > invoiceCapMinor) {

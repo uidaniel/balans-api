@@ -15,7 +15,7 @@ import { applyBrand } from "../brand/colour.ts";
 import { clientNumber } from "./client-number.ts";
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { formatMoney } from "../../core/currency.ts";
+import { formatMoney, INFO } from "../../core/currency.ts";
 import { agreedTotalMinor } from "../../core/exchange.ts";
 import { outstandingKobo, payable, payableLabel, payableNowKobo, type PublicDocument } from "./public.ts";
 import { logoAvailable, logoSvg, markSvg, processorLogo, type Processor } from "../brand/logo.ts";
@@ -737,7 +737,7 @@ function payBlock(
          */
         const agreed = formatMoney(agreedTotalMinor(doc.foreign!.amountMinor, doc.subtotalKobo, doc.vatKobo), doc.foreign!.currency);
         return `Your card is charged in naira. Your bank converts it, or the payment page can charge it in ${esc(
-          doc.foreign!.currency === "GBP" ? "pounds" : "dollars",
+          INFO[doc.foreign!.currency].many,
         )} at its own rate, so your statement may show a little more than ${esc(agreed)}, usually by a few percent.`;
       })()}</p>
       ${conversionStep(doc, amount)}

@@ -71,6 +71,7 @@
 import { bankOptions, mfbOptions } from "./banks.ts";
 import { defaults, env } from "../../config.ts";
 import { formatNaira } from "../../../core/totals.ts";
+import { CURRENCIES, INFO, type Currency } from "../../../core/currency.ts";
 
 /** The marketing site, which owns the legal documents. */
 const site = env.SITE_URL.replace(/[/]$/, "");
@@ -991,24 +992,44 @@ const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<str
 });
 
 /**
- * What the currency box lists, by plan.
+ * What the currency box lists, by plan, with the sender's own money first.
  *
- * Pro can choose all three. Free sees all three and can choose naira, with
- * the other two greyed out and a line under each saying what turns them on:
- * the list is where somebody discovers they could be paid in dollars, so it
- * is where the upgrade is mentioned. `enabled` on a data-source item is Flow
- * JSON's own greying-out, so nothing unchoosable can come back from the form.
+ * Pro can choose any. Free sees them all and can choose naira, with the rest
+ * greyed out and a line under each saying what turns them on: the list is
+ * where somebody discovers they could be paid in euros, so it is where the
+ * upgrade is mentioned. `enabled` on a data-source item is Flow JSON's own
+ * greying-out, so nothing unchoosable can come back from the form.
+ *
+ * `home` is the currency their WhatsApp number suggests (core/home-currency.ts):
+ * it goes to the top, then naira, then the rest in a fixed order.
  */
 export type CurrencyOption = { id: string; title: string; description?: string; enabled?: boolean };
 
-export function currencyOptions(pro: boolean): CurrencyOption[] {
-  const locked = (what: string): Partial<CurrencyOption> =>
-    pro ? {} : { enabled: false, description: `Upgrade to Pro to get paid in ${what}.` };
-  return [
-    { id: "NGN", title: "Naira (₦)" },
-    { id: "USD", title: "US Dollar ($)", ...locked("dollars") },
-    { id: "GBP", title: "Pound (£)", ...locked("pounds") },
-  ];
+const CURRENCY_TITLES: Record<Currency, string> = {
+  NGN: "Naira (₦)",
+  USD: "US Dollar ($)",
+  GBP: "Pound (£)",
+  EUR: "Euro (€)",
+  CAD: "Canadian Dollar (CA$)",
+  AUD: "Australian Dollar (A$)",
+  GHS: "Ghana Cedi (GH₵)",
+  KES: "Kenyan Shilling (KSh)",
+  ZAR: "SA Rand (R)",
+  AED: "UAE Dirham (AED)",
+};
+
+export function currencyOptions(pro: boolean, home: Currency = "NGN"): CurrencyOption[] {
+  const order: Currency[] = [...new Set<Currency>([home, "NGN", ...CURRENCIES])];
+  return order.map((c) =>
+    c === "NGN" || pro
+      ? { id: c, title: CURRENCY_TITLES[c] }
+      : {
+          id: c,
+          title: CURRENCY_TITLES[c],
+          enabled: false,
+          description: `Upgrade to Pro to get paid in ${INFO[c].many}.`,
+        },
+  );
 }
 
 /** Some number of extra items, declared. Always strings: a form returns strings. */

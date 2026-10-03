@@ -138,12 +138,25 @@ describe("where the currency box is, and who sees it", () => {
     assert.match(machine, /currency: doc\.foreign\?\.currency \?\? "NGN"/);
   });
 
-  it("offers the two currencies Balans takes, and naira", () => {
+  it("offers every currency Balans takes, naira first for a Nigerian number", () => {
     const box = boxesOn(work[0]!).find((c) => c.name === "currency")!;
     assert.equal(box["data-source"], "${data.currencies}");
     for (const pro of [true, false]) {
-      assert.deepEqual(currencyOptions(pro).map((o) => o.id), ["NGN", "USD", "GBP"]);
+      assert.deepEqual(
+        currencyOptions(pro).map((o) => o.id),
+        ["NGN", "USD", "GBP", "EUR", "CAD", "AUD", "GHS", "KES", "ZAR", "AED"],
+      );
     }
+  });
+
+  it("puts the sender's own currency at the top, then naira", () => {
+    assert.deepEqual(currencyOptions(true, "GBP").map((o) => o.id).slice(0, 3), ["GBP", "NGN", "USD"]);
+    assert.deepEqual(currencyOptions(true, "KES").map((o) => o.id).slice(0, 2), ["KES", "NGN"]);
+    assert.equal(currencyOptions(true, "KES").length, 10);
+  });
+
+  it("keeps every title inside Meta's 30 characters", () => {
+    for (const o of currencyOptions(true)) assert.ok(o.title.length <= 30, o.title);
   });
 
   it("greys out dollars and pounds on Free, and says what turns them on", () => {
@@ -211,7 +224,7 @@ describe("what the form path does with it", () => {
   it("refuses a currency the box could not have sent", () => {
     // It can only arrive from a replayed payload. Reading it as naira would
     // turn somebody's $2,000 into ₦2,000 for them.
-    assert.match(body, /code !== "USD" && code !== "GBP"/);
+    assert.match(body, /FOREIGN as readonly string\[\]\)\.includes\(said\)/);
     assert.match(body, /currencyNotTaken/);
   });
 

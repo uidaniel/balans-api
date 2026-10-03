@@ -640,7 +640,7 @@ export const VOICE = {
   notInThatCurrency: (named: string): string =>
     para(
       `\u{1F30D} ${b(`I cannot invoice in ${named} yet.`)}`,
-      lines("Naira for now.", "Dollars and pounds are coming soon — I will tell you when."),
+      lines("Naira for now.", "Other currencies are coming soon — I will tell you when."),
     ),
 
   /**
@@ -653,7 +653,7 @@ export const VOICE = {
   currencyNotTaken: (named: string): string =>
     para(
       `\u{1F30D} ${b(`Balans does not do ${named}.`)}`,
-      "Naira only for now, with dollars and pounds on the way.",
+      "I can invoice in naira, dollars, pounds, euros, Canadian and Australian dollars, cedis, Kenyan shillings, rand and dirhams.",
     ),
 
   /**
@@ -689,7 +689,7 @@ export const VOICE = {
   ),
 
   foreignIsPro: para(
-    `\u{1F30D} ${b("Invoicing in dollars and pounds is a Pro feature.")}`,
+    `\u{1F30D} ${b("Invoicing in other currencies is a Pro feature.")}`,
     lines("Reply *upgrade* to unlock it.", "Naira invoices work on any plan."),
   ),
 

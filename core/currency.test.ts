@@ -147,6 +147,43 @@ describe("what it refuses to decide", () => {
   });
 });
 
+describe("the currencies added in October 2026", () => {
+  const cases: [string, string][] = [
+    ["invoice Acme EUR 500 for the rebrand", "EUR 50000"],
+    ["invoice Acme €500 for the rebrand", "EUR 50000"],
+    ["invoice Acme 500 euros for the rebrand", "EUR 50000"],
+    ["invoice Acme ZAR 5000 for the rebrand", "ZAR 500000"],
+    ["invoice Acme 5000 rand for the rebrand", "ZAR 500000"],
+    ["invoice Acme GHS 5000 for the rebrand", "GHS 500000"],
+    ["invoice Acme GH₵5000 for the rebrand", "GHS 500000"],
+    ["invoice Acme 5000 cedis for the rebrand", "GHS 500000"],
+    ["invoice Acme KES 50k for the rebrand", "KES 5000000"],
+    ["invoice Acme KSh 50,000 for the rebrand", "KES 5000000"],
+    ["invoice Acme CAD 500 for the rebrand", "CAD 50000"],
+    ["invoice Acme CA$500 for the rebrand", "CAD 50000"],
+    ["invoice Acme 500 canadian dollars for the rebrand", "CAD 50000"],
+    ["invoice Acme AUD 500 for the rebrand", "AUD 50000"],
+    ["invoice Acme A$500 for the rebrand", "AUD 50000"],
+    ["invoice Acme 500 australian dollars for the rebrand", "AUD 50000"],
+    ["invoice Acme AED 2000 for the rebrand", "AED 200000"],
+    ["invoice Acme 2000 dirhams for the rebrand", "AED 200000"],
+  ];
+  for (const [text, want] of cases) {
+    it(text, () => assert.equal(read(text), want));
+  }
+
+  it("does not find a currency inside a word", () => {
+    // "makes" ends in "kes", "width" in "dh", "arcade" holds "cad".
+    assert.equal(read("invoice Tunde, it makes 5000 for the flyer"), "NGN");
+    assert.equal(read("invoice Tunde width 5000 banner"), "NGN");
+    assert.equal(read("invoice Arcade 5000 for the sign"), "NGN");
+  });
+
+  it("still reads a bare dollar sign as US dollars", () => {
+    assert.equal(read("invoice Acme $500 for the rebrand"), "USD 50000");
+  });
+});
+
 describe("currencies it knows and will not take", () => {
   /*
    * The quiet disaster this prevents. A reader that knows only $ and £ sees
@@ -155,15 +192,8 @@ describe("currencies it knows and will not take", () => {
    * than we accept is the whole point.
    */
   const cases: [string, string][] = [
-    ["invoice Acme EUR 500 for the rebrand", "no:euros"],
-    ["invoice Acme €500 for the rebrand", "no:euros"],
-    ["invoice Acme 500 euros for the rebrand", "no:euros"],
-    ["invoice Acme ZAR 5000 for the rebrand", "no:rand"],
-    ["invoice Acme 5000 rand for the rebrand", "no:rand"],
-    ["invoice Acme GHS 5000 for the rebrand", "no:cedis"],
-    ["invoice Acme CAD 500 for the rebrand", "no:Canadian dollars"],
-    ["invoice Acme AUD 500 for the rebrand", "no:Australian dollars"],
-    ["invoice Acme AED 2000 for the rebrand", "no:dirhams"],
+    ["invoice Acme NZD 500 for the rebrand", "no:New Zealand dollars"],
+    ["invoice Acme CHF 500 for the rebrand", "no:francs"],
     ["invoice Acme ¥50000 for the rebrand", "no:yen"],
     ["invoice Acme ₹50000 for the rebrand", "no:rupees"],
   ];

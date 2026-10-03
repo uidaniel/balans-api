@@ -37,7 +37,7 @@ export function proOffer(used: number): string {
       `✅ Reminders to your clients by email, so you stop chasing`,
       `✅ Deposits and milestone payments`,
       // Only while it is switched on: an offer is a promise.
-      ...(env.INTL_ENABLED ? [`✅ Invoices in dollars and pounds, paid by card`] : []),
+      ...(env.INTL_ENABLED ? [`✅ Invoices in dollars, pounds, euros and 6 more currencies`] : []),
       `✅ Your logo on every invoice`,
       // Counted from the registry, so the claim cannot outlive the designs.
       `✅ All ${availableTo("pro").length} invoice designs`,
@@ -131,7 +131,7 @@ export function proStarted(receipt?: { paidKobo: number; until: Date }): string 
       : []),
     lines(
       env.INTL_ENABLED
-        ? "Unlimited invoices, reminders that go out on their own, and invoices in dollars and pounds."
+        ? "Unlimited invoices, reminders that go out on their own, and invoices in dollars, pounds, euros and more."
         : "Unlimited invoices, and reminders that go out on their own.",
       "Send me your logo as a picture and it goes on every invoice from the next one.",
       `Reply ${b("/design")} to pick how they look.`,

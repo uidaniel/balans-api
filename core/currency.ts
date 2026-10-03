@@ -30,14 +30,19 @@
 import { parseMagnitudeToMinor } from "./amount.ts";
 
 /** What Balans can invoice in. Everything else is refused by name. */
-export const CURRENCIES = ["NGN", "USD", "GBP"] as const;
+export const CURRENCIES = ["NGN", "USD", "GBP", "EUR", "CAD", "AUD", "GHS", "KES", "ZAR", "AED"] as const;
 export type Currency = (typeof CURRENCIES)[number];
 
-/** The two that go through Paystack rather than Monnify. */
-export const FOREIGN = ["USD", "GBP"] as const;
+/**
+ * Everything but naira. Each is a label on the invoice: the card is charged
+ * the naira it converts to, through Paystack, or the client pays the sender's
+ * own details directly.
+ */
+export const FOREIGN = ["USD", "GBP", "EUR", "CAD", "AUD", "GHS", "KES", "ZAR", "AED"] as const;
 export type Foreign = (typeof FOREIGN)[number];
 
 export const isForeign = (c: Currency): c is Foreign => c !== "NGN";
+export const isCurrency = (c: string): c is Currency => (CURRENCIES as readonly string[]).includes(c);
 
 export type CurrencyInfo = {
   code: Currency;
@@ -51,6 +56,13 @@ export const INFO: Record<Currency, CurrencyInfo> = {
   NGN: { code: "NGN", symbol: "₦", one: "naira", many: "naira" },
   USD: { code: "USD", symbol: "$", one: "dollar", many: "dollars" },
   GBP: { code: "GBP", symbol: "£", one: "pound", many: "pounds" },
+  EUR: { code: "EUR", symbol: "€", one: "euro", many: "euros" },
+  CAD: { code: "CAD", symbol: "CA$", one: "Canadian dollar", many: "Canadian dollars" },
+  AUD: { code: "AUD", symbol: "A$", one: "Australian dollar", many: "Australian dollars" },
+  GHS: { code: "GHS", symbol: "GH₵", one: "cedi", many: "cedis" },
+  KES: { code: "KES", symbol: "KSh ", one: "Kenyan shilling", many: "Kenyan shillings" },
+  ZAR: { code: "ZAR", symbol: "R ", one: "rand", many: "rand" },
+  AED: { code: "AED", symbol: "AED ", one: "dirham", many: "dirhams" },
 };
 
 /* -------------------------------------------------------------------------- */
@@ -69,14 +81,6 @@ export const INFO: Record<Currency, CurrencyInfo> = {
  * payable.
  */
 const UNSUPPORTED_CODES: Record<string, string> = {
-  EUR: "euros",
-  "€": "euros",
-  ZAR: "rand",
-  GHS: "cedis",
-  KES: "shillings",
-  AED: "dirhams",
-  CAD: "Canadian dollars",
-  AUD: "Australian dollars",
   NZD: "New Zealand dollars",
   CHF: "francs",
   JPY: "yen",
@@ -96,12 +100,6 @@ const UNSUPPORTED_CODES: Record<string, string> = {
  * nobody is called EUR; words are not, so they only count behind it.
  */
 const UNSUPPORTED_WORDS: Record<string, string> = {
-  euros: "euros",
-  euro: "euros",
-  rand: "rand",
-  cedis: "cedis",
-  shillings: "shillings",
-  dirhams: "dirhams",
   francs: "francs",
   yen: "yen",
   rupees: "rupees",
@@ -126,7 +124,19 @@ const nameOf = (key: string): string =>
 const MARKS: { re: string; currency: Currency }[] = [
   { re: String.raw`us\s?\$`, currency: "USD" },
   { re: String.raw`usd`, currency: "USD" },
+  // The other dollars before the bare sign, so "CA$500" is never $500.
+  { re: String.raw`(?<![a-z])ca?\$`, currency: "CAD" },
+  { re: String.raw`(?<![a-z])(?:cad)`, currency: "CAD" },
+  { re: String.raw`(?<![a-z])au?\$`, currency: "AUD" },
+  { re: String.raw`(?<![a-z])(?:aud)`, currency: "AUD" },
   { re: String.raw`\$`, currency: "USD" },
+  { re: String.raw`(?<![a-z])(?:euros?|eur)`, currency: "EUR" },
+  { re: String.raw`€`, currency: "EUR" },
+  { re: String.raw`(?<![a-z])(?:gh[₵¢]|ghs|ghc|₵)`, currency: "GHS" },
+  { re: String.raw`(?<![a-z])(?:kshs?|kes)`, currency: "KES" },
+  // Not a bare "R": "R2" is too often not money. "ZAR 500", "500 rand".
+  { re: String.raw`(?<![a-z])(?:zar)`, currency: "ZAR" },
+  { re: String.raw`(?<![a-z])(?:aed|dhs?)`, currency: "AED" },
   { re: String.raw`gbp`, currency: "GBP" },
   { re: String.raw`£`, currency: "GBP" },
   { re: String.raw`ngn`, currency: "NGN" },
@@ -141,7 +151,21 @@ const MARKS: { re: string; currency: Currency }[] = [
  * which makes it the opposite of evidence.
  */
 const TRAILING: { re: string; currency: Currency }[] = [
+  { re: String.raw`canadian\s+dollars?`, currency: "CAD" },
+  { re: String.raw`australian\s+dollars?`, currency: "AUD" },
   { re: String.raw`dollars?`, currency: "USD" },
+  { re: String.raw`euros?`, currency: "EUR" },
+  { re: String.raw`eur`, currency: "EUR" },
+  { re: String.raw`cad`, currency: "CAD" },
+  { re: String.raw`aud`, currency: "AUD" },
+  { re: String.raw`cedis?`, currency: "GHS" },
+  { re: String.raw`ghs`, currency: "GHS" },
+  { re: String.raw`(?:kenyan\s+)?shillings?`, currency: "KES" },
+  { re: String.raw`kes|kshs?`, currency: "KES" },
+  { re: String.raw`rands?`, currency: "ZAR" },
+  { re: String.raw`zar`, currency: "ZAR" },
+  { re: String.raw`dirhams?`, currency: "AED" },
+  { re: String.raw`aed`, currency: "AED" },
   { re: String.raw`usd`, currency: "USD" },
   { re: String.raw`pounds?`, currency: "GBP" },
   { re: String.raw`quid`, currency: "GBP" },
@@ -335,6 +359,13 @@ const LEADING: Record<Currency, RegExp> = {
   NGN: /^(?:₦|ngn|n)\s*/,
   USD: /^(?:us\s?\$|usd|\$)\s*/,
   GBP: /^(?:gbp|£)\s*/,
+  EUR: /^(?:euros?|eur|€)\s*/,
+  CAD: /^(?:ca?\$|cad)\s*/,
+  AUD: /^(?:au?\$|aud)\s*/,
+  GHS: /^(?:gh[₵¢]|ghs|ghc|₵)\s*/,
+  KES: /^(?:kshs?|kes)\s*/,
+  ZAR: /^(?:zar)\s*/,
+  AED: /^(?:aed|dhs?)\s*/,
 };
 
 /** And off the back: "500 dollars", "20k quid". */
@@ -342,6 +373,13 @@ const FOLLOWING: Record<Currency, RegExp> = {
   NGN: /\s*(?:naira|ngn)$/,
   USD: /\s*(?:dollars?|usd)$/,
   GBP: /\s*(?:pounds?|quid|gbp)$/,
+  EUR: /\s*(?:euros?|eur)$/,
+  CAD: /\s*(?:canadian\s+dollars?|cad)$/,
+  AUD: /\s*(?:australian\s+dollars?|aud)$/,
+  GHS: /\s*(?:cedis?|ghs)$/,
+  KES: /\s*(?:(?:kenyan\s+)?shillings?|kes|kshs?)$/,
+  ZAR: /\s*(?:rands?|zar)$/,
+  AED: /\s*(?:dirhams?|aed)$/,
 };
 
 /**
@@ -364,7 +402,7 @@ export function parseAmountToMinor(raw: string, currency: Currency): number | nu
   const bare = s.replace(LEADING[currency], "").replace(FOLLOWING[currency], "");
   // Any mark left on it after its own has been taken off belongs to somebody
   // else's money.
-  if (/[₦$£]|\b(?:ngn|usd|gbp|naira|dollars?|pounds?|quid)\b/.test(bare)) return null;
+  if (/[₦$£€₵¢]|\b(?:ngn|usd|gbp|eur|cad|aud|ghs|ghc|kes|kshs?|zar|aed|dhs?|naira|dollars?|pounds?|quid|euros?|cedis?|shillings?|rands?|dirhams?)\b/.test(bare)) return null;
   return parseMagnitudeToMinor(bare);
 }
 
