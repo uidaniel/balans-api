@@ -187,7 +187,7 @@ describe("the price on the page", () => {
     );
     assert.match(naira, /<h1>₦350,000<\/h1>/);
     assert.ok(!naira.includes("Charged in Naira"), "a naira invoice explained its own currency");
-    assert.match(naira, /Pay ₦350,000/);
+    assert.match(naira, /Ask pysav for their bank details/);
     assert.ok(!naira.includes("by card"), "naira is paid by transfer");
     // Including its badge: Monnify is still who collects a transfer.
     assert.match(naira, /Payments processed by[\s\S]*?Monnify/);

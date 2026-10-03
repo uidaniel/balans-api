@@ -19,7 +19,7 @@ import { describe, it } from "node:test";
 import { FLOWS, PLANS, planIdFor, splitForPlan } from "./definitions.ts";
 import { MFB_CHOICE, PAYSTACK_BANKS, DROPDOWN_MAX, bankOptions, bankTitle, isMicrofinance, mfbOptions } from "./banks.ts";
 import { shapeFor } from "../../documents/parts.ts";
-import { matchBank } from "../../payments/monnify.ts";
+import { matchBank } from "../../payments/bank-match.ts";
 
 type Node = Record<string, unknown>;
 

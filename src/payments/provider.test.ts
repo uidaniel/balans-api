@@ -50,11 +50,8 @@ const paid = {
 };
 
 describe("which processor collects", () => {
-  it("sends naira to Monnify and everything else to Paystack", () => {
-    // Section 8's routing table, and the reason both exist: Monnify does not
-    // charge international cards at all, and Paystack is not how a Nigerian
-    // client pays by bank transfer.
-    assert.equal(providerFor("NGN"), "monnify");
+  it("sends everything to Paystack, since Monnify was retired", () => {
+    assert.equal(providerFor("NGN"), "paystack");
     assert.equal(providerFor("USD"), "paystack");
     assert.equal(providerFor("GBP"), "paystack");
   });
@@ -205,10 +202,8 @@ describe("asking the right provider", () => {
     assert.match(handler, /provider: p\.provider/, "and says so, so the wording is right");
   });
 
-  it("treats anything that is not Paystack as Monnify", () => {
-    // Including every row written before the column meant anything. Naira is
-    // the overwhelming default and Monnify is the only thing that takes it.
-    assert.equal(providerFor("NGN"), "monnify");
-    assert.notEqual(verifierFor("monnify"), verifyWithPaystack);
+  it("answers old Monnify rows without calling anybody", async () => {
+    const res = await verifierFor("monnify")("bal_old");
+    assert.equal(res.ok, false);
   });
 });

@@ -6,7 +6,7 @@ import { createHmac, randomBytes } from "node:crypto";
 // enough — no need for a separate environment file.
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { encrypt, decrypt, safeEqual, verifyMetaSignature, verifyMonnifySignature, publicToken } =
+const { encrypt, decrypt, safeEqual, verifyMetaSignature, publicToken } =
   await import("./crypto.ts");
 
 describe("encryption at rest", () => {
@@ -63,21 +63,6 @@ describe("Meta webhook signature", () => {
   it("rejects a missing or unprefixed header", () => {
     assert.ok(!verifyMetaSignature(raw, undefined, secret));
     assert.ok(!verifyMetaSignature(raw, good.slice("sha256=".length), secret));
-  });
-});
-
-describe("Monnify webhook signature", () => {
-  const secret = "client-secret";
-  const raw = Buffer.from('{"eventType":"SUCCESSFUL_TRANSACTION"}');
-  const good = createHmac("sha512", secret).update(raw).digest("hex");
-
-  it("accepts a correct signature", () => {
-    assert.ok(verifyMonnifySignature(raw, good, secret));
-  });
-
-  it("rejects a wrong one", () => {
-    assert.ok(!verifyMonnifySignature(raw, "deadbeef", secret));
-    assert.ok(!verifyMonnifySignature(raw, undefined, secret));
   });
 });
 

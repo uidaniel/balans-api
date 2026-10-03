@@ -19,7 +19,7 @@ const HAS_DB = Boolean(process.env.DATABASE_URL);
 const { db, closeDb } = await import("../db/pool.ts");
 const { confirmPayment } = await import("./confirm.ts");
 const { recordInitialisedPayment } = await import("../documents/payments.ts");
-import type { VerifyResult } from "./monnify.ts";
+import type { VerifyResult } from "./verified.ts";
 
 /** A logger that satisfies the signature and says nothing. */
 const quiet = {

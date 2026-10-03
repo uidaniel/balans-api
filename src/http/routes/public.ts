@@ -26,7 +26,6 @@ import {
   DEFAULT_INTL_PROCESSOR,
   type BalansRates,
 } from "../../../core/fees.ts";
-import { initBankTransfer, initTransaction } from "../../payments/monnify.ts";
 import {
   findByToken,
   markViewed,
@@ -35,7 +34,7 @@ import {
   payableNowKobo,
   type PublicDocument,
 } from "../../documents/public.ts";
-import { renderDocument, renderNotFound, type TransferPanel } from "../../documents/page.ts";
+import { renderDocument, renderNotFound } from "../../documents/page.ts";
 import { documentLink } from "../../documents/links.ts";
 import { icsFor } from "../../documents/calendar.ts";
 import {
@@ -97,22 +96,6 @@ function tooMany(token: string): boolean {
 }
 
 
-/**
- * A stored transfer, as the page wants it.
- *
- * The expiry is handed over as a duration rather than a timestamp: the client's
- * phone clock is frequently wrong, and a countdown driven by their clock
- * against our timestamp is a countdown that can start already finished.
- */
-const panelFor = (t: LiveTransfer): TransferPanel => ({
-  bankName: t.bankName,
-  accountNumber: t.accountNumber,
-  accountName: t.accountName,
-  amountKobo: t.amountKobo,
-  ussd: t.ussd,
-  expiresInMs: Math.max(0, t.expiresAt.getTime() - Date.now()),
-});
-
 export async function publicRoutes(app: FastifyInstance): Promise<void> {
   /* -- The page ----------------------------------------------------------- */
 
@@ -138,7 +121,6 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     busy: { text: "Too many attempts just now. Wait a moment and try again." },
     unpayable: { text: "This invoice cannot be paid right now." },
     provider: { text: "We could not reach the payment provider. Please try again in a moment." },
-    account: { text: "We could not get the account details just now. Please try again in a moment." },
     card_unavailable: {
       text: "Card payment is not available on this invoice yet. Please contact the sender.",
     },
@@ -157,11 +139,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       req.log.error({ err: e, documentId: doc.id }, "could not mark viewed"),
     );
 
-    // If details were already issued and are still good, show those rather
-    // than a Pay button. Somebody returning from their banking app is the
-    // common case, and they must find the same account they copied.
     const canPay = payable(doc).ok;
-    const live = canPay ? await liveTransferFor(doc.id, payableNowKobo(doc)) : null;
 
     /*
      * Asked before the button is drawn, and only where it can matter. A naira
@@ -179,7 +157,6 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       .send(
         renderDocument(doc, todayIn(defaults.behaviour.timezone), {
           token: req.params.token,
-          transfer: live ? panelFor(live) : null,
           cardReady,
           // Only one we wrote. Anything else in the query string is somebody
           // playing, and gets no words of ours on a page about their money.
@@ -575,10 +552,10 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     /*
      * An invoice priced abroad is a card payment, and cards are Paystack.
      *
-     * Everything below this branch is the naira path: a Monnify reserved
-     * account the client transfers into, matched on the account *and* the
-     * amount. A client in London has no way to make a NIP transfer, so
-     * offering them one is offering nothing.
+     * There is no naira path below it any more. A naira invoice carries the
+     * sender's own bank account and is paid straight into it; the Monnify
+     * transfer accounts that used to be minted here were retired on
+     * 3 October 2026.
      *
      * The charge is the naira figure on the document. It is not recomputed
      * from the foreign price here and must never be: the rate was locked when
@@ -623,127 +600,9 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       return payByCard(req, reply, doc, outstanding, back, again, payerEmail);
     }
 
-    // Pressing Pay twice must not mint a second account. Monnify matches a
-    // transfer on the account *and* the amount, so two live accounts for the
-    // same balance is a way to lose somebody's money.
-    const existing = await liveTransferFor(doc.id, outstanding);
-    if (existing) {
-      req.log.info({ documentId: doc.id, reference: existing.reference }, "reusing live transfer account");
-      return back();
-    }
-
-    /*
-     * The fee is worked out here, from the row, and never from the request.
-     *
-     * `paidBeforeKobo` is what makes our cap a cap on the invoice rather than
-     * on each payment of it. Charged per payment, a ₦200,000 invoice on Free
-     * cost ₦1,000 paid in one go and ₦1,400 paid as a deposit and a balance —
-     * over a cap we advertise, taken out of the user's share, and only ever
-     * in our favour. Monnify's cut stays per payment: theirs is a charge for
-     * moving money, and two transfers are two transfers.
-     */
-    const split = settle(outstanding, ratesFor(doc.plan), {
-      passToClient: doc.passFeesToClient,
-      paidBeforeKobo: doc.amountPaidKobo,
-    });
-
-    // Our own reference, so the webhook can find this document again without
-    // trusting anything the processor echoes back.
-    const reference = `bal_${doc.id.replace(/-/g, "").slice(0, 16)}_${randomUUID().slice(0, 8)}`;
-
-    const init = await initTransaction({
-      amountKobo: split.clientPaysKobo,
-      customerName: doc.clientName,
-      // Monnify requires an email. The client's is often unknown, so a
-      // per-document address on our own domain stands in rather than a
-      // placeholder that might belong to somebody real.
-      customerEmail: `${reference}@receipts.balans.ng`,
-      paymentReference: reference,
-      description: `${doc.type === "quote" ? "Quote" : "Invoice"} ${clientNumber(doc.ref, doc.number)} from ${doc.businessName}`,
-      redirectUrl: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/pay/callback?ref=${reference}`,
-      // Everything but our fee goes straight to the user's subaccount. This is
-      // the line that keeps Balans out of the money.
-      splits: [
-        {
-          subAccountCode: doc.subAccountCode!,
-          amountKobo: split.clientPaysKobo - split.balansFeeKobo,
-          bearsFee: true,
-        },
-      ],
-    });
-
-    if (!init.ok) {
-      req.log.error({ documentId: doc.id, message: init.message }, "could not start payment");
-      return again("provider");
-    }
-
-    await recordInitialisedPayment({
-      documentId: doc.id,
-      userId: doc.userId,
-      reference,
-      providerReference: init.transactionReference,
-      amountKobo: split.clientPaysKobo,
-      // What the invoice is credited with when this lands. `outstanding` is
-      // the figure the plan and the page both quote; `clientPaysKobo` is that
-      // plus the surcharge, when the client is the one carrying the fees.
-      invoiceAmountKobo: outstanding,
-      balansFeeKobo: split.balansFeeKobo,
-      expectedProcessorFeeKobo: split.processorFeeKobo,
-    });
-
-    req.log.info(
-      {
-        documentId: doc.id,
-        reference,
-        chargedKobo: split.clientPaysKobo,
-        balansFeeKobo: split.balansFeeKobo,
-        toUserKobo: split.clientPaysKobo - split.balansFeeKobo,
-      },
-      "payment initialised",
-    );
-
-    /*
-     * The account to pay into, for this transaction.
-     *
-     * This is the step that replaces the hosted checkout: the client stays on
-     * the invoice, reads an account number, and pays from the bank app they
-     * already trust. The split set on the transaction above still decides
-     * where the money goes, so nothing about rule 1 changes — we simply stop
-     * handing the payer to somebody else's page to do it.
-     */
-    const transfer = await initBankTransfer(init.transactionReference);
-
-    if (!transfer.ok) {
-      // The payment row stays: it is initialised, unpaid, and harmless. If a
-      // transfer somehow still arrives against it, the webhook will find it.
-      req.log.error(
-        { documentId: doc.id, reference, message: transfer.message },
-        "could not get transfer details",
-      );
-      return again("account");
-    }
-
-    await recordTransferAccount(reference, transfer.account);
-
-    req.log.info(
-      {
-        documentId: doc.id,
-        reference,
-        bank: transfer.account.bankName,
-        expiresAt: transfer.account.expiresAt,
-      },
-      "transfer account issued",
-    );
-
-    /*
-     * Back to the invoice, which draws the panel from what was just stored.
-     *
-     * The details are not carried over in the response: `recordTransferAccount`
-     * has written them, and GET /i/:token reads them back through
-     * `liveTransferFor`. One place builds that panel, so a reload, a return
-     * from a banking app, and this redirect cannot show three different things.
-     */
-    return back();
+    // A naira invoice with no account on it: nothing of ours to pay through.
+    req.log.info({ documentId: doc.id }, "pay refused: naira invoice without bank details");
+    return again("unpayable");
   });
 
   /* -- Has it landed yet? --------------------------------------------------- */
@@ -753,7 +612,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
    *
    * Answers from our own database, which only the verified-webhook path ever
    * writes to. When the webhook is late — and it sometimes is — this asks
-   * Monnify directly, but it does so through exactly the same confirmation
+   * Paystack directly, but it does so through exactly the same confirmation
    * code the webhook uses, so a payment is still only ever marked paid after a
    * status check against the provider. There is no second way to become paid.
    */

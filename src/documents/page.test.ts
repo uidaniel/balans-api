@@ -61,11 +61,11 @@ describe("what the page says", () => {
     assert.match(html, /Invoice 7/);
   });
 
-  it("offers a Pay button for the amount owed", () => {
+  it("sends the client to the sender when a naira invoice has no account on it", () => {
+    // Monnify, which used to take these, was retired on 3 October 2026.
     const html = render(doc());
-    assert.match(html, /Pay ₦350,000/);
-    assert.match(html, /action="\/i\/a{32}\/pay"/);
-    assert.match(html, /method="post"/);
+    assert.doesNotMatch(html, /<button/);
+    assert.match(html, /for their bank details/);
   });
 
   it("shows VAT only when there is some", () => {
@@ -79,7 +79,6 @@ describe("what the page says", () => {
     const html = render(doc({ amountPaidKobo: 100_000_00, status: "part_paid" }));
     assert.match(html, /Still owed/);
     assert.match(html, /₦250,000/);
-    assert.match(html, /Pay ₦250,000/, "the button pays the balance, not the total");
   });
 
   it("says when an invoice is late", () => {
@@ -118,7 +117,7 @@ describe("what the page refuses to do", () => {
     // the one thing this product must never do.
     const html = render(doc({ subAccountCode: null }));
     assert.doesNotMatch(html, /<button/);
-    assert.match(html, /not set up/i);
+    assert.match(html, /for their bank details/i);
   });
 
   it("never states an amount the document does not hold", () => {
@@ -229,10 +228,11 @@ describe("a token that leads nowhere", () => {
 describe("payable, as a rule rather than a rendering", () => {
   it("agrees with what the page shows", () => {
     const cases: [Partial<PublicDocument>, boolean][] = [
-      [{}, true],
-      [{ status: "viewed" }, true],
-      [{ status: "overdue" }, true],
-      [{ status: "part_paid", amountPaidKobo: 100_000_00 }, true],
+      // Naira with no account on it: nothing to pay through.
+      [{}, false],
+      [{ status: "viewed" }, false],
+      [{ status: "overdue" }, false],
+      [{ status: "part_paid", amountPaidKobo: 100_000_00 }, false],
       [{ status: "paid", amountPaidKobo: 350_000_00 }, false],
       [{ status: "cancelled" }, false],
       [{ type: "quote" }, false],
@@ -419,11 +419,11 @@ describe("a card that cannot be taken at all", () => {
   });
 
   it("leaves a naira invoice alone, since no card is involved", () => {
-    // `cardReady` is only ever consulted on a foreign invoice. A transfer has
-    // nothing to do with Paystack.
-    assert.match(
+    // `cardReady` is only ever consulted on a foreign invoice: a naira page
+    // reads the same either way.
+    assert.equal(
       renderDocument(doc(), TODAY, { token: "a".repeat(32), cardReady: false }),
-      BUTTON,
+      renderDocument(doc(), TODAY, { token: "a".repeat(32), cardReady: true }),
     );
   });
 });

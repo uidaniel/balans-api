@@ -75,24 +75,6 @@ export function verifyMetaSignature(raw: Buffer, header: string | undefined, sec
   return safeEqual(header.slice("sha256=".length), expected);
 }
 
-/**
- * Verifies Monnify's `monnify-signature` header: SHA-512 HMAC of the raw body
- * keyed with the client secret.
- *
- * PRD-GAP: confirm the header name and digest against Monnify's current docs in
- * sandbox before going live. Section 11 says reject anything unsigned, so a
- * mistake here fails closed rather than open.
- */
-export function verifyMonnifySignature(
-  raw: Buffer,
-  header: string | undefined,
-  secret: string,
-): boolean {
-  if (!header) return false;
-  const expected = createHmac("sha512", secret).update(raw).digest("hex");
-  return safeEqual(header, expected);
-}
-
 /** URL-safe token for public document links (section 11: CSPRNG, unguessable). */
 export function publicToken(bytes = 16): string {
   return randomBytes(bytes).toString("base64url");

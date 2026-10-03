@@ -73,17 +73,11 @@ const schema = z.object({
   WA_APP_SECRET: z.string().optional(),
   WA_GRAPH_VERSION: z.string().default("v21.0"),
 
-  /* -- Payments: Monnify --------------------------------------------------- */
-  MONNIFY_BASE_URL: z.string().url().default("https://sandbox.monnify.com"),
-  MONNIFY_API_KEY: z.string().optional(),
-  MONNIFY_SECRET_KEY: z.string().optional(),
-  /** Wallet the platform's own fee share settles into. */
-  MONNIFY_CONTRACT_CODE: z.string().optional(),
-
   /* -- Payments: Paystack, for invoices priced abroad ---------------------- */
   /*
-   * A second processor, not a replacement. Naira invoices go to Monnify and
-   * always will; Paystack is here because it charges international cards, and
+   * The only processor since Monnify was retired on 3 October 2026. Naira
+   * invoices are paid straight to the sender's own bank; Paystack is here
+   * because it charges cards (invoices abroad, and Pro), and
    * for nothing else. See the International PRD, section 8.
    *
    * Absent is a supported state and means exactly one thing: no international

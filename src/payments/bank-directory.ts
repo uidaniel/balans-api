@@ -15,7 +15,7 @@
  */
 
 import { cachedBanks, resolveAccountNumber, type AccountCheck, type PaystackBank } from "./paystack.ts";
-import { listBanks as monnifyBanks, matchBank, resolveAccount as monnifyResolve } from "./monnify.ts";
+import { matchBank } from "./bank-match.ts";
 
 export type { PaystackBank as DirectoryBank };
 
@@ -36,23 +36,10 @@ export async function findBank(query: string): Promise<PaystackBank | null> {
 /**
  * Whose account this is, by the bank's own records.
  *
- * Paystack first. When Paystack cannot answer — as opposed to answering "no
- * such account" — Monnify is asked for the same account, found by name, so a
- * provider having a bad minute (or a test key over its daily allowance) does
- * not stop somebody finishing setup. A "no such account" is never second-
- * guessed: one bank saying the number is wrong is enough to ask again.
+ * Paystack's answer, alone. Monnify used to be asked when Paystack could not
+ * answer; it was retired on 3 October 2026, and a second opinion from a
+ * sandbox was no opinion at all.
  */
 export async function checkAccount(accountNumber: string, bank: PaystackBank): Promise<AccountCheck> {
-  const first = await resolveAccountNumber(accountNumber, bank.code);
-  if (first.ok || first.reason === "invalid_details") return first;
-
-  const theirs = matchBank(bank.name, await monnifyBanks().catch(() => []));
-  if (!theirs) return first;
-  const second = await monnifyResolve(accountNumber, theirs.code).catch(() => null);
-  if (!second) return first;
-  return second.ok
-    ? { ok: true, account: { accountNumber, accountName: second.account.accountName, bankCode: bank.code } }
-    : second.reason === "invalid_details"
-      ? { ok: false, reason: "invalid_details", message: second.message }
-      : first;
+  return resolveAccountNumber(accountNumber, bank.code);
 }

@@ -137,7 +137,6 @@ if [ ! -f "$ROOT/.env" ]; then
       NODE_ENV=production
       LOG_LEVEL=info
       WA_FLOWS_DRAFT=false
-      MONNIFY_BASE_URL=<the production one, not sandbox>
 
   Leave PORT and CHROME_PATH out entirely. The Dockerfile sets both, and
   setting PORT here would make it disagree with what Caddy proxies to.

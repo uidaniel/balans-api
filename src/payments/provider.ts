@@ -21,15 +21,13 @@
  * Monnify's, which is a small cost against rewriting the confirmation path.
  */
 
-import type { VerifiedTransaction, VerifyResult, PaymentStatus } from "./monnify.ts";
-import { verifyTransaction as verifyMonnify } from "./monnify.ts";
+import type { VerifiedTransaction, VerifyResult, PaymentStatus } from "./verified.ts";
 import { verifyTransaction as verifyPaystack } from "./paystack.ts";
 
 export type Provider = "monnify" | "paystack";
 
 /** Which processor collects for an invoice in this currency (section 8). */
-export const providerFor = (currency: string): Provider =>
-  currency === "NGN" ? "monnify" : "paystack";
+export const providerFor = (_currency: string): Provider => "paystack";
 
 /**
  * Paystack's statuses in Monnify's vocabulary.
@@ -102,7 +100,15 @@ export async function verifyWithPaystack(
   return { ok: true, transaction, raw: t.raw };
 }
 
+/**
+ * Monnify, retired on 3 October 2026. Its old rows still say "monnify", and
+ * there is nobody left to ask about them, so they stay as they are.
+ */
+async function monnifyRetired(): Promise<VerifyResult> {
+  return { ok: false, message: "Monnify is no longer used" };
+}
+
 /** The verifier for a provider, for `confirmPayment`'s third argument. */
 export function verifierFor(provider: Provider): (reference: string) => Promise<VerifyResult> {
-  return provider === "paystack" ? verifyWithPaystack : verifyMonnify;
+  return provider === "paystack" ? verifyWithPaystack : monnifyRetired;
 }

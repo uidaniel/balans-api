@@ -292,100 +292,12 @@ document.addEventListener('click', function (e) {
 });
 `;
 
-const TRANSFER_JS = `
-(function () {
-  var box = document.querySelector('.transfer');
-  if (!box) return;
-
-  document.addEventListener('click', function (e) {
-    var b = e.target.closest('button.copy');
-    if (!b) return;
-    var text = b.getAttribute('data-copy') || '';
-    var done = function () {
-      // An icon button says so by swapping its picture, which CSS does from
-      // the class. Rewriting textContent would throw the icon away and leave
-      // the word "Copied" where a 34px square used to be.
-      if (b.classList.contains('icopy')) {
-        b.classList.add('done');
-        setTimeout(function () { b.classList.remove('done'); }, 1600);
-        return;
-      }
-      var was = b.textContent;
-      b.textContent = 'Copied';
-      b.classList.add('done');
-      setTimeout(function () { b.textContent = was; b.classList.remove('done'); }, 1600);
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done, function () {});
-    } else {
-      var t = document.createElement('textarea');
-      t.value = text; document.body.appendChild(t); t.select();
-      try { document.execCommand('copy'); done(); } catch (err) {}
-      document.body.removeChild(t);
-    }
-  });
-
-  var left = box.querySelector('.tleft');
-  var ends = Date.now() + Number(box.getAttribute('data-expires') || 0);
-  function tick() {
-    var ms = ends - Date.now();
-    if (!left) return;
-    if (ms <= 0) {
-      left.hidden = false;
-      left.textContent = ' \u2014 these details have expired, refresh for new ones';
-      return;
-    }
-    var mins = Math.floor(ms / 60000), secs = Math.floor((ms % 60000) / 1000);
-    left.hidden = false;
-    left.textContent = ' \u2014 ' + mins + ':' + (secs < 10 ? '0' : '') + secs + ' left';
-    setTimeout(tick, 1000);
-  }
-  tick();
-
-  // Backs off as it goes, so a page left open all afternoon is not a
-  // request every three seconds all afternoon.
-  var token = box.getAttribute('data-token');
-  // What this page was drawn with. The reload happens when the server's
-  // figure stops matching it, which is once per payment — asking "has
-  // anything been paid" instead reloaded for ever on a part-paid invoice,
-  // because the answer was yes before the page was even drawn.
-  var drawnWith = box.getAttribute('data-paid') || '0';
-  var wait = 3000;
-  function poll() {
-    fetch('/i/' + token + '/status', { headers: { accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) {
-        if (d && String(d.paidKobo) !== drawnWith) { location.reload(); return; }
-        wait = Math.min(wait * 1.25, 20000);
-        setTimeout(poll, wait);
-      })
-      .catch(function () { setTimeout(poll, 10000); });
-  }
-  setTimeout(poll, wait);
-})();
-`;
 
 const LABEL: Record<PublicDocument["type"], string> = {
   invoice: "Invoice",
   quote: "Quote",
   payment_request: "Payment request",
   sample: "Sample",
-};
-
-/**
- * The one-time account a client transfers into.
- *
- * Structurally typed rather than imported from the store, because everything
- * in this file is pure and tested by calling it with a fixture.
- */
-export type TransferPanel = {
-  bankName: string;
-  accountNumber: string;
-  accountName: string;
-  amountKobo: number;
-  ussd: string | null;
-  /** Milliseconds from render until the account stops accepting the transfer. */
-  expiresInMs: number;
 };
 
 /**
@@ -466,7 +378,6 @@ function renderDocumentPage(
   opts: {
     token: string;
     error?: PayError;
-    transfer?: TransferPanel | null;
     /** Whether a card can actually be taken. Only consulted on a foreign invoice. */
     cardReady?: boolean;
     /**
@@ -575,7 +486,7 @@ function renderDocumentPage(
   </div>
 </div>
 ${doc.plan === "pro" ? "" : footer(doc)}
-${opts.transfer ? `<script>${TRANSFER_JS}</script>` : doc.bank && can.ok === false ? `<script>${COPY_JS}</script>` : ""}
+${doc.bank && can.ok === false ? `<script>${COPY_JS}</script>` : ""}
 </body></html>`;
 }
 
@@ -676,7 +587,6 @@ function payBlock(
   opts: {
     token: string;
     error?: PayError;
-    transfer?: TransferPanel | null;
     cardReady?: boolean;
   },
   partLabel: string | null,
@@ -684,10 +594,6 @@ function payBlock(
   if (can.ok) {
     // Paid to the sender's own details: those, and no button of ours.
     if (doc.paymentDetails) return ownDetailsBlock(doc, amount, partLabel);
-
-    // Details already issued: show them instead of asking again. A client who
-    // has gone to their banking app and come back must meet the same account.
-    if (opts.transfer) return transferBlock(doc, opts.transfer, opts.token);
 
     /*
      * No button when a card cannot be taken at all.
@@ -768,14 +674,11 @@ function payBlock(
   </div>`;
     }
 
-    // A plain form post, so the button works with no JavaScript at all.
-    return `<div class="pay">
-    ${opts.error ? `<p class="banner cancelled" style="margin:0 0 14px">${esc(opts.error.text)}</p>` : ""}
-    <form method="post" action="/i/${esc(opts.token)}/pay">
-      <button class="pay-btn" type="submit">Pay ${formatNaira(amount)}${partLabel ? ` &middot; ${esc(partLabel)}` : ""}</button>
-    </form>
-    <p class="secure">Pay by bank transfer to ${esc(doc.businessName)}. Takes about a minute.</p>
-  </div>`;
+    // Unreachable: `payable` sends a naira invoice with no account to the
+    // default below. Said the same way, in case that ever changes.
+    return `<div class="banner cancelled">Ask ${esc(doc.businessName)} for their bank details to pay this ${LABEL[
+      doc.type
+    ].toLowerCase()}.</div>`;
   }
 
   switch (can.why) {
@@ -798,92 +701,12 @@ function payBlock(
     case "sample":
       return `<div class="banner quote">A sample, to show what a Balans invoice looks like.</div>`;
     default:
-      // No settlement account: say something true without explaining our
+      // No account to pay into: say something true without explaining our
       // plumbing to the client.
-      return `<div class="banner cancelled">Online payment is not set up for this ${LABEL[doc.type].toLowerCase()} yet. Contact ${esc(doc.businessName)} to arrange payment.</div>`;
+      return doc.foreign
+        ? `<div class="banner cancelled">Online payment is not set up for this ${LABEL[doc.type].toLowerCase()} yet. Contact ${esc(doc.businessName)} to arrange payment.</div>`
+        : `<div class="banner cancelled">Ask ${esc(doc.businessName)} for their bank details to pay this ${LABEL[doc.type].toLowerCase()}.</div>`;
   }
-}
-
-
-/**
- * The account to transfer into.
- *
- * Everything needed to complete the payment is rendered here by the server,
- * so the panel works with JavaScript switched off: the client can read the
- * account, send the money, and refresh to see it land. The countdown, the copy
- * button and the polling are enhancements on top, never the mechanism.
- *
- * Two things on this panel are load-bearing and easy to get wrong.
- *
- * The account name is Monnify's, not the freelancer's, because that is whose
- * collection account it is. A client who reads an unfamiliar name on a payment
- * screen is right to hesitate, so it is labelled and explained rather than
- * quietly displayed and hoped over.
- *
- * And the amount has to be exact. These accounts are matched on the amount as
- * well as the number, so "about right" does not settle; the figure is given
- * once, in full, with nothing else competing for the same attention.
- */
-function transferBlock(doc: PublicDocument, t: TransferPanel, token: string): string {
-  const amount = formatNaira(t.amountKobo);
-
-  /*
-   * The figure as a banking app wants it typed: digits, a dot, and nothing
-   * else. No naira sign, no thousands separators, and no trailing ".00" —
-   * every one of those is something to delete before the transfer can be
-   * sent, and this exists to save exactly that.
-   */
-  const typed =
-    t.amountKobo % 100 === 0
-      ? String(t.amountKobo / 100)
-      : (t.amountKobo / 100).toFixed(2);
-
-  /*
-   * Two sheets of paper, and a tick. Both are in the button and CSS shows
-   * whichever applies, because the copy handler swaps a class and cannot
-   * rebuild an icon.
-   */
-  const copyIcon = (what: string, value: string) =>
-    `<button class="icopy copy" type="button" data-copy="${esc(value)}" aria-label="Copy the ${what}">` +
-    `<svg class="i-no" viewBox="0 0 24 24" aria-hidden="true">` +
-    `<rect x="9" y="9" width="11" height="11" rx="2.5"/>` +
-    `<path d="M5 15V5.5A2.5 2.5 0 0 1 7.5 3H15"/></svg>` +
-    `<svg class="i-yes" viewBox="0 0 24 24" aria-hidden="true">` +
-    `<path d="M4.5 12.5 9.5 17.5 19.5 6.5"/></svg>` +
-    `</button>`;
-
-  const row = (k: string, v: string, cls = "") =>
-    `<div class="trow${cls ? ` ${cls}` : ""}"><span class="tk">${k}</span><span class="tv">${v}</span></div>`;
-
-  return `<div class="pay transfer" data-token="${esc(token)}" data-expires="${t.expiresInMs}"
-  data-paid="${doc.amountPaidKobo}">
-  <div class="tcard">
-    <p class="teyebrow">Pay by bank transfer</p>
-
-    <div class="tbox">
-      ${row("Bank", esc(t.bankName))}
-      ${row("Account number", `<span class="acct">${esc(t.accountNumber)}</span>`)}
-      ${t.accountName ? row("Account name", esc(t.accountName)) : ""}
-      ${row("Amount", `<span class="tamt">${amount}</span>${copyIcon("amount", typed)}`)}
-    </div>
-
-    <button class="tcopy copy" type="button" data-copy="${esc(t.accountNumber)}">Copy account number</button>
-
-    <p class="twait" role="status">
-      <span class="dot"></span>Waiting for your transfer<span class="tleft" hidden></span>
-    </p>
-  </div>
-
-  <p class="tfine">
-    Send <strong>exactly ${amount}</strong>. This account is for this ${LABEL[doc.type].toLowerCase()} alone${
-      t.accountName ? `, which is why it reads <strong>${esc(t.accountName)}</strong>` : ""
-    } &mdash; no reference needed.
-  </p>
-
-  ${t.ussd ? `<p class="tfine">On your phone: <strong>${esc(t.ussd)}</strong></p>` : ""}
-
-  <noscript><p class="tfine">Refresh this page after sending, to see it confirmed.</p></noscript>
-</div>`;
 }
 
 

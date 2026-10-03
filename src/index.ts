@@ -81,7 +81,7 @@ app.log.info(
     pdf: chromePath() ?? "no renderer found",
     jobs: env.JOBS_ENABLED ? `every ${Math.round(env.JOBS_INTERVAL_MS / 60000)}m` : "disabled",
     whatsapp: env.WA_PHONE_NUMBER_ID ? "configured" : "not configured",
-    payments: env.MONNIFY_API_KEY ? env.MONNIFY_BASE_URL : "not configured",
+    payments: env.PAYSTACK_SECRET_KEY ? (env.PAYSTACK_SECRET_KEY.startsWith("sk_live_") ? "paystack live" : "paystack test") : "not configured",
     publicBaseUrl: env.PUBLIC_BASE_URL,
   },
   "ready",

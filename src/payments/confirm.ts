@@ -20,7 +20,8 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import { db, tx } from "../db/pool.ts";
-import { verifyTransaction, type VerifiedTransaction } from "./monnify.ts";
+import type { VerifiedTransaction, VerifyResult } from "./verified.ts";
+import { verifyWithPaystack } from "./provider.ts";
 import { activateByReference, attachPaymentReference, collect, deductionFor, stateOf } from "../billing/subscription.ts";
 import { subscriptionPrefixOf } from "../billing/pro-checkout.ts";
 import { settleParts } from "../documents/parts.ts";
@@ -71,7 +72,7 @@ const PAID_STATES = new Set(["PAID", "OVERPAID"]);
 async function confirmSubscription(
   reference: string,
   transactionReference: string,
-  verify: typeof verifyTransaction,
+  verify: (reference: string) => Promise<VerifyResult>,
   log: FastifyBaseLogger,
 ): Promise<ConfirmOutcome | null> {
   const { rows } = await db().query<{ id: string; price_kobo: string; status: string }>(
@@ -166,7 +167,7 @@ const DEAD_STATES = new Set(["ABANDONED", "CANCELLED", "FAILED", "EXPIRED", "REV
 export async function confirmPayment(
   input: { paymentReference: string; transactionReference: string },
   log: FastifyBaseLogger,
-  verify = verifyTransaction,
+  verify: (reference: string) => Promise<VerifyResult> = verifyWithPaystack,
 ): Promise<ConfirmOutcome> {
   const reference = input.paymentReference;
 

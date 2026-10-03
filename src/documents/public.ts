@@ -337,8 +337,8 @@ export function payable(d: PublicDocument): { ok: true } | { ok: false; why: str
   if (d.foreign) {
     return d.hasPayoutAccount || d.subAccountCode ? { ok: true } : { ok: false, why: "no_account" };
   }
-  // Without a subaccount the money has nowhere to settle but our own wallet,
-  // which is the one thing Balans must never do.
-  if (!d.subAccountCode) return { ok: false, why: "no_account" };
-  return { ok: true };
+  // A naira invoice with no account on it. Balans has nothing of its own to
+  // take naira through since Monnify was retired, so the client is sent to
+  // the sender.
+  return { ok: false, why: "no_account" };
 }

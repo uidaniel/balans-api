@@ -12,7 +12,6 @@ import { whatsappRoutes } from "./routes/whatsapp.ts";
 import { publicRoutes } from "./routes/public.ts";
 import { flowRoutes } from "./routes/flows.ts";
 import { proRoutes } from "./routes/pro.ts";
-import { monnifyRoutes } from "./routes/monnify.ts";
 import { paystackRoutes } from "./routes/paystack.ts";
 import { templateRoutes } from "./routes/templates.ts";
 import { signatureRoutes } from "./routes/signature.ts";
@@ -33,7 +32,6 @@ const REDACT = [
   "req.headers.authorization",
   "req.headers.cookie",
   'req.headers["x-hub-signature-256"]',
-  'req.headers["monnify-signature"]',
   "*.account_number",
   "*.accountNumber",
   "*.access_token",
@@ -127,10 +125,8 @@ export function buildServer(): FastifyInstance {
   // Also unprefixed and opened from a phone: /signature/{token}.
   app.register(signatureRoutes);
   app.register(settingsPageRoutes);
-  app.register(monnifyRoutes, { prefix: "/webhooks/monnify" });
-  // Naira goes to Monnify above; invoices priced abroad are cards, and cards
-  // are Paystack. Two processors, one confirmation path — see
-  // `payments/provider.ts`.
+  // Cards — invoices priced abroad, and Pro — are Paystack. Naira invoices
+  // are paid straight to the sender's own bank and need no webhook.
   app.register(paystackRoutes, { prefix: "/webhooks/paystack" });
 
   return app;
