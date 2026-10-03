@@ -156,7 +156,6 @@ export async function emailPaidToClient(
       ),
       amount("Amount paid", formatNaira(d.total_kobo), when ? formatFriendly(when) : undefined),
       link ? button("View the invoice", link) : "",
-      d.ref ? paragraph(`Reference: ${esc(d.ref)}`, true) : "",
       paragraph(
         receipt
           ? "Your receipt and the paid invoice are attached for your records."
@@ -205,7 +204,6 @@ export async function emailPaidToClient(
           }.`,
           "",
           link ? `View the invoice: ${link}` : "",
-          d.ref ? `Reference: ${d.ref}` : "",
           "",
           "Thank you for your business.",
         ]
@@ -263,7 +261,6 @@ export async function emailPaidToUser(
       paragraph(`${esc(d.client_name)} has paid ${esc(label)}.`),
       amount("Paid to you", formatNaira(d.total_kobo), when ? formatFriendly(when) : undefined),
       link ? button("See the invoice", link) : "",
-      d.ref ? paragraph(`Reference ${esc(d.ref)}`, true) : "",
       paragraph(
         receipt
           ? "The paid invoice and the receipt are attached. Your client has been sent the same."
@@ -300,7 +297,6 @@ export async function emailPaidToUser(
           }.`,
           "",
           link ? `See the invoice: ${link}` : "",
-          d.ref ? `Reference: ${d.ref}` : "",
         ]
           .filter(Boolean)
           .join("\n"),

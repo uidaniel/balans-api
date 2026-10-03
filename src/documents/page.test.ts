@@ -58,7 +58,7 @@ describe("what the page says", () => {
     assert.match(html, /Kemi Adeyemi Studio/);
     assert.match(html, /Zenith Homes/);
     assert.match(html, /duplex 3D render/);
-    assert.match(html, /Invoice 7/);
+    assert.match(html, /Invoice 0007/);
   });
 
   it("sends the client to the sender when a naira invoice has no account on it", () => {
@@ -429,14 +429,20 @@ describe("a card that cannot be taken at all", () => {
 });
 
 describe("the number a client reads", () => {
-  it("is the reference's four digits, not the sender's own count", () => {
+  it("is the sender's own number, padded to four digits", () => {
+    // Since 3 October 2026. The platform reference counted every invoice on
+    // Balans, which is not a number the sender or their client knows.
     const html = render(doc({ number: 2, ref: "BL-0019" }));
-    assert.match(html, /Invoice 0019/);
-    assert.doesNotMatch(html, /Invoice 2\b/);
+    assert.match(html, /Invoice 0002/);
+    assert.doesNotMatch(html, /Invoice 0019/);
   });
 
-  it("falls back to the count on a document from before references", () => {
-    assert.match(render(doc({ number: 7, ref: null })), /Invoice 7/);
+  it("does not cut a number longer than four digits", () => {
+    assert.match(render(doc({ number: 12345, ref: null })), /Invoice 12345/);
+  });
+
+  it("falls back to the reference when there is no number", () => {
+    assert.match(render(doc({ number: null, ref: "BL-0019" })), /Invoice 0019/);
   });
 });
 

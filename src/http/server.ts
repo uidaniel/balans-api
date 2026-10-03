@@ -125,6 +125,22 @@ export function buildServer(): FastifyInstance {
   // Also unprefixed and opened from a phone: /signature/{token}.
   app.register(signatureRoutes);
   app.register(settingsPageRoutes);
+
+  /*
+   * Cloudflare's Email Obfuscation rewrites every address in our HTML to
+   * "[email protected]" and decodes it with a script — which never runs in a
+   * sandboxed preview, an in-app browser that blocks it, or a PDF render. On
+   * 3 October 2026 the settings preview showed a business's email as
+   * "[email protected]", linking to Cloudflare. Our pages show addresses on
+   * purpose, so every HTML response opts out.
+   */
+  app.addHook("onSend", async (_req, reply, payload) => {
+    const type = String(reply.getHeader("content-type") ?? "");
+    if (typeof payload !== "string" || !type.startsWith("text/html")) return payload;
+    return payload
+      .replace(/<body([^>]*)>/i, "<body$1><!--email_off-->")
+      .replace(/<\/body>/i, "<!--/email_off--></body>");
+  });
   // Cards — invoices priced abroad, and Pro — are Paystack. Naira invoices
   // are paid straight to the sender's own bank and need no webhook.
   app.register(paystackRoutes, { prefix: "/webhooks/paystack" });

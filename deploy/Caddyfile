@@ -44,6 +44,16 @@ api.balans.ng, payment.balans.ng {
 		# Fastify runs with trustProxy, so it reads these for the real client
 		# IP rather than seeing Caddy's address on every request.
 		header_up X-Real-IP {remote_host}
+
+		# Every deploy replaces the API container, and for those seconds there
+		# is nothing at api:4000. Without these, each request in the gap came
+		# back as Cloudflare's "Bad gateway" page — on 3 October 2026 inside the
+		# settings page's invoice preview. With them Caddy keeps trying the
+		# upstream for up to a minute, so a request made mid-deploy is slow
+		# rather than broken. Only failures to connect are retried: a request
+		# the API has started on is never sent twice.
+		lb_try_duration 60s
+		lb_try_interval 250ms
 	}
 
 	encode gzip

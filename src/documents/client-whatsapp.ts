@@ -100,7 +100,7 @@ export async function whatsappDocumentToClient(
     client_phone: string | null;
     business_name: string | null;
   }>(
-    `SELECT d.user_id, d.type, COALESCE(substring(d.ref from 4), d.number::text) AS number, d.total_kobo, d.subtotal_kobo, d.vat_kobo, d.currency,
+    `SELECT d.user_id, d.type, COALESCE(LPAD(d.number::text, GREATEST(4, length(d.number::text)), '0'), substring(d.ref from 4)) AS number, d.total_kobo, d.subtotal_kobo, d.vat_kobo, d.currency,
             d.original_amount_minor, d.public_token,
             c.name AS client_name, c.phone AS client_phone, u.business_name
        FROM documents d

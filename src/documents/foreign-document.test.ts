@@ -189,8 +189,9 @@ describe("the price on the page", () => {
     assert.ok(!naira.includes("Charged in Naira"), "a naira invoice explained its own currency");
     assert.match(naira, /Ask pysav for their bank details/);
     assert.ok(!naira.includes("by card"), "naira is paid by transfer");
-    // Including its badge: Monnify is still who collects a transfer.
-    assert.match(naira, /Payments processed by[\s\S]*?Monnify/);
+    // No processor badge at all: Monnify, which once collected these, was
+    // retired on 3 October 2026, and a transfer to the sender has none.
+    assert.ok(!naira.includes("Monnify"), "a retired processor named");
     assert.ok(!naira.includes("Paystack"), "a naira transfer credited to the card processor");
   });
 });

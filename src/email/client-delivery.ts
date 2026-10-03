@@ -115,7 +115,7 @@ export async function emailDocumentToClient(
     vat_kobo: number;
     delivery_type: string;
   }>(
-    `SELECT d.user_id, COALESCE(substring(d.ref from 4), d.number::text) AS number, d.type, d.total_kobo, d.due_date, d.valid_until,
+    `SELECT d.user_id, COALESCE(LPAD(d.number::text, GREATEST(4, length(d.number::text)), '0'), substring(d.ref from 4)) AS number, d.type, d.total_kobo, d.due_date, d.valid_until,
             d.public_token, d.notes,
             c.name AS client_name, c.email AS client_email,
             u.business_name, u.email AS business_email, u.plan,

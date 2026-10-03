@@ -823,7 +823,15 @@ function trustBlock(doc: PublicDocument): string {
    * name: the money goes from the client's bank to theirs, and saying
    * "processed by Monnify" beside an account number would be untrue.
    */
-  if (doc.bank && doc.type !== "quote") {
+  // Naira is never a card of ours: paid straight to the sender's bank, or a
+  // quote that becomes such an invoice. Monnify was retired on 3 October 2026.
+  if (!doc.foreign) {
+    if (doc.type === "quote") {
+      return `<div class="trust">
+    <p class="tsmall">${doc.plan === "pro" ? "" : "Balans is not a bank and does not hold your money. "}If you accept, the invoice is paid straight
+      to the bank account of <b>${esc(doc.businessName)}</b>.</p>
+  </div>`;
+    }
     return `<div class="trust">
     <p class="tsmall">${doc.plan === "pro" ? "" : "Balans is not a bank and does not hold your money. "}This invoice is paid straight
       to the bank account of <b>${esc(doc.businessName)}</b>.</p>

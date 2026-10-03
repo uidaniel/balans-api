@@ -143,7 +143,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
    * company next to a correct number is worse than saying nothing: it is the
    * line somebody checks their bank statement against.
    */
-  const processor = draft.foreign ? "Paystack" : "Monnify";
+  const processor = "Paystack";
   const processorLabel =
     stages.length > 1 ? `${processor} fee (${stages.length} payments)` : `${processor} fee`;
 

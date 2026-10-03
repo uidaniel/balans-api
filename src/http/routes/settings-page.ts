@@ -113,7 +113,7 @@ async function state(userId: string) {
 
 /** A sample invoice in their design, name, logo and colour, for the preview. */
 async function preview(userId: string, overrides: { colour?: string | null; name?: string }): Promise<string> {
-  const u = await load(userId);
+  const [u, account] = await Promise.all([load(userId), accountInForce(userId)]);
   const pro = u.plan === "pro";
   const today = todayIn(defaults.behaviour.timezone);
   const name = (overrides.name ?? u.business_name ?? "").trim() || "Your business";
@@ -143,6 +143,11 @@ async function preview(userId: string, overrides: { colour?: string | null; name
     legalLines: legalLines(pro ? { businessName: name } : undefined),
     showMadeWith: !pro,
     brandColor: pro ? (overrides.colour !== undefined ? overrides.colour : u.brand_color) : null,
+    // Their own account, as a naira invoice carries it; the number masked,
+    // since a preview is not the place to print it whole.
+    bankDetails: account
+      ? { bankName: account.bankName, accountName: account.accountName, accountNumber: `••••••${account.last4}` }
+      : null,
   } as DocumentData;
   const template = pro || !TEMPLATES.find((t) => t.id === u.template_id)?.pro ? u.template_id : null;
   return renderTemplate(template, d, { fonts: "link" }) ?? renderDocumentHtml(d, { fonts: "link" });
@@ -423,6 +428,8 @@ place-items:center;overflow:hidden;flex:none}
 .pick input[type=color]{width:56px;height:46px;padding:4px;flex:none}
 .frame{margin-top:14px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;position:relative;
 height:calc(1122.5px * var(--sc));--sc:.42}
+.frame::before{content:"Loading preview…";position:absolute;top:45%;left:0;right:0;text-align:center;
+color:var(--faint);font-size:14px}
 .frame iframe{position:absolute;top:0;left:0;width:793.7px;height:1122.5px;border:0;transform:scale(var(--sc));
 transform-origin:top left}
 .locked{margin-top:10px;padding:14px;border-radius:14px;background:var(--cream);font-size:14px;color:var(--muted)}

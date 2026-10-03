@@ -129,7 +129,7 @@ export async function emailReminderToClient(
     currency: string;
     original_amount_minor: number | null;
   }>(
-    `SELECT d.user_id, COALESCE(substring(d.ref from 4), d.number::text) AS number, d.type, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token, d.delivery_type,
+    `SELECT d.user_id, COALESCE(LPAD(d.number::text, GREATEST(4, length(d.number::text)), '0'), substring(d.ref from 4)) AS number, d.type, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token, d.delivery_type,
             d.subtotal_kobo, d.vat_kobo, d.currency, d.original_amount_minor,
             c.name AS client_name, c.email AS client_email, c.email_status,
             u.business_name, u.email AS business_email, u.plan

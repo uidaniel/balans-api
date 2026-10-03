@@ -280,7 +280,6 @@ export function sheet(d: DocumentData, opts: RenderOptions, parts: SheetParts): 
 <body><div class="sheet" style="font-size:${sheetFontSize(d, rowEm)}">
 ${d.variant === "sample" ? `<div class="mark">SAMPLE</div>` : ""}
 ${body}
-${d.ref ? `<div class="ref">${esc(d.ref)}</div>` : ""}
 </div></body></html>`,
     d.brandColor,
   );
@@ -633,7 +632,9 @@ export function payInfo(d: DocumentData, opts: { label?: boolean; className?: st
         ? `<p class="how">The quote, online</p>`
         : d.bankDetails
           ? `<p class="how">Bank transfer to ${esc(d.bankDetails.accountName)}<br>Account details at the link</p>`
-          : `<p class="how">Card, bank transfer or USSD<br>Protected by ${d.foreign ? "Paystack" : "Monnify"}</p>`
+          : d.foreign
+            ? `<p class="how">Card or Apple Pay<br>Protected by Paystack</p>`
+            : `<p class="how">Bank transfer to ${esc(d.businessName)}<br>Account details at the link</p>`
     }
   </div>`;
 }

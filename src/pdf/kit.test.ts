@@ -44,13 +44,10 @@ describe("the reference printed on a document", () => {
 
   const render = (d: DocumentData) => sheet(d, {}, { css: "", body: "<p>body</p>" });
 
-  it("appears on the sheet every layout is built from", () => {
-    /*
-     * In `sheet` rather than in each of the eight templates: a reference
-     * that is only on some of them is worse than none, because the one
-     * invoice somebody rings up about would be the one without it.
-     */
-    assert.match(render(base), /class="ref">BL-0042</);
+  it("is not printed, since it counts every invoice on Balans", () => {
+    // Taken off on 3 October 2026: the sender's own number is the one on
+    // the sheet, and a second, platform-wide number beside it read as theirs.
+    assert.ok(!render(base).includes("BL-0042"));
   });
 
   it("says nothing at all when there is none", () => {

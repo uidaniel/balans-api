@@ -4,8 +4,10 @@
 #
 #   ssh ubuntu@<elastic-ip> '/opt/balans/app/deploy/deploy.sh'
 #
-# Caddy is deliberately left alone. Only the API is rebuilt and replaced, so
-# the certificates and the listening sockets are never disturbed by a deploy.
+# Caddy is left alone unless its Caddyfile changed. Only the API is rebuilt
+# and replaced, so the certificates and the listening sockets are not
+# disturbed by an ordinary deploy, and Caddy holds requests while the API
+# restarts (see lb_try_duration in the Caddyfile).
 
 set -euo pipefail
 
@@ -41,6 +43,20 @@ cd "$APP/deploy"
 
 say "Building"
 sudo docker compose build api
+
+# The Caddyfile is bind-mounted as a single file, and `git reset` replaces the
+# file rather than rewriting it, so a running Caddy keeps reading the old one.
+# Compared with what Caddy actually has, not with git, so a change is picked
+# up even by the deploy after the one that shipped it. Validated in a
+# throwaway container first: a bad Caddyfile must never replace a working one.
+if ! sudo docker compose exec -T caddy cat /etc/caddy/Caddyfile 2>/dev/null | cmp -s - "$APP/deploy/Caddyfile"; then
+  if sudo docker compose run --rm --no-deps -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+    say "Caddyfile changed — recreating Caddy"
+    sudo docker compose up -d --no-deps --force-recreate caddy
+  else
+    printf '\n\033[1;31mNew Caddyfile does not validate; keeping the running one.\033[0m\n'
+  fi
+fi
 
 say "Replacing the API"
 sudo docker compose up -d --no-deps api
