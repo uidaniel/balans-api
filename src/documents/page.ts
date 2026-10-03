@@ -721,7 +721,19 @@ function payBlock(
   <div class="modal" id="confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
     <div class="msheet">
       <h2 id="confirm-title">You pay in naira</h2>
-      <p>Your card is charged in naira. Your bank converts it and may add its own exchange rate or fees.</p>
+      <p>${(() => {
+        /*
+         * Both ways the amount on their statement can differ from the price,
+         * said before they pay: their bank converting the naira, or the
+         * checkout offering to charge in their currency at its own rate
+         * (a $1 test on 3 October 2026 came to $1.03 that way). Named in the
+         * invoice's own money, because that is the number they agreed to.
+         */
+        const agreed = formatMoney(agreedTotalMinor(doc.foreign!.amountMinor, doc.subtotalKobo, doc.vatKobo), doc.foreign!.currency);
+        return `Your card is charged in naira. Your bank converts it, or the payment page can charge it in ${esc(
+          doc.foreign!.currency === "GBP" ? "pounds" : "dollars",
+        )} at its own rate, so your statement may show a little more than ${esc(agreed)}, usually by a few percent.`;
+      })()}</p>
       ${conversionStep(doc, amount)}
       <form method="post" action="/i/${esc(opts.token)}/pay">
         ${

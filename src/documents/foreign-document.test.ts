@@ -108,7 +108,10 @@ describe("the price on the page", () => {
      */
     const out = html();
     const step = out.slice(out.indexOf('id="confirm"'));
-    assert.match(step, /Your card is charged in naira\. Your bank converts it and may add its own exchange rate or fees/);
+    assert.match(step, /Your card is charged in naira\. Your bank converts it, or the payment page can charge it in dollars at its own rate/);
+    // Both conversions can move the statement a little off the agreed price;
+    // saying so in that price's own currency is what stops the "overcharged" call.
+    assert.match(step, /may show a little more than \$500\.00, usually by a few percent/);
     assert.match(step, /You pay<\/span><b>₦663,500<\/b>/);
     assert.match(step, /Rate<\/span><b>\$1 = ₦1,327\.00<\/b>/);
     assert.ok(out.indexOf('href="#confirm"') < out.indexOf('id="confirm"'), "the step opens from the button");
