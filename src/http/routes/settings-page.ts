@@ -53,13 +53,15 @@ type Row = {
   invoice_number_start: number;
   template_id: string | null;
   next_number: number;
+  payment_details: string | null;
+  abroad_pay_by: "link" | "own";
 };
 
 async function load(userId: string): Promise<Row> {
   const { rows } = await db().query<Row>(
     `SELECT u.business_name, u.email, u.email_verified_at IS NOT NULL AS email_verified, u.address, u.tin,
             u.plan, u.logo_url, u.brand_color, u.signature_url, u.default_due_days,
-            u.invoice_number_start, u.template_id,
+            u.invoice_number_start, u.template_id, u.payment_details, u.abroad_pay_by,
             GREATEST(
               COALESCE((SELECT MAX(d.number) FROM documents d WHERE d.user_id = u.id AND d.type <> 'sample'), 0) + 1,
               u.invoice_number_start
@@ -99,6 +101,7 @@ async function state(userId: string) {
       nextNumber: u.next_number,
       design: design.name,
     },
+    abroad: { details: u.payment_details ?? "", payBy: u.abroad_pay_by },
     bank: account ? { bankName: account.bankName, last4: account.last4, accountName: account.accountName } : null,
     links: {
       designs,
@@ -185,6 +188,26 @@ export async function settingsPageRoutes(app: FastifyInstance): Promise<void> {
         tin,
       ]);
       req.log.info({ userId: owner.id }, "settings page: business details saved");
+      return { ok: true };
+    },
+  );
+
+  /* -- Clients abroad ----------------------------------------------------- */
+  app.post<{ Params: { token: string }; Body: { details?: string; payBy?: string } }>(
+    "/settings/:token/abroad",
+    async (req, reply) => {
+      const owner = await who(req.params.token);
+      if (!owner) return nope(reply, "This link has expired.", 404);
+      const details = String(req.body?.details ?? "").replace(/\r\n?/g, "\n").trim();
+      const payBy = req.body?.payBy === "own" ? "own" : "link";
+      if (details.length > 600) return nope(reply, "Keep your payment details under 600 characters.");
+      if (payBy === "own" && !details) return nope(reply, "Add your payment details first, or keep the payment link.");
+      await db().query(`UPDATE users SET payment_details = NULLIF($2, ''), abroad_pay_by = $3 WHERE id = $1`, [
+        owner.id,
+        details,
+        payBy,
+      ]);
+      req.log.info({ userId: owner.id, payBy }, "settings page: payment details saved");
       return { ok: true };
     },
   );
@@ -369,6 +392,9 @@ input,select{width:100%;margin-top:5px;height:46px;border:1px solid var(--line);
 padding:0 13px;font:inherit;font-size:16px;color:var(--ink);outline:none}
 input:focus,select:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(16,35,28,.08)}
 input[readonly]{background:var(--cream);color:var(--muted)}
+textarea{width:100%;margin-top:5px;min-height:110px;border:1px solid var(--line);border-radius:12px;background:#fff;
+padding:11px 13px;font:inherit;font-size:16px;line-height:1.45;color:var(--ink);outline:none;resize:vertical}
+textarea:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(16,35,28,.08)}
 .row{display:flex;gap:10px}.row>*{flex:1}
 button{cursor:pointer;font:inherit}
 .btn{margin-top:16px;width:100%;height:48px;border:0;border-radius:999px;background:var(--ink);color:var(--cream);
@@ -433,6 +459,7 @@ function fill() {
   $('b-name').value = S.business.name; $('b-address').value = S.business.address; $('b-tin').value = S.business.tin;
   $('b-email').value = S.business.email ? S.business.email + (S.business.emailVerified ? '' : ' (not verified)') : 'None';
   $('i-days').value = S.invoices.dueDays; $('i-next').value = S.invoices.nextNumber;
+  $('a-details').value = S.abroad.details; $('a-payby').value = S.abroad.payBy;
   $('l-design').querySelector('small').textContent = S.invoices.design;
   $('l-design').href = S.links.designs + '?from=settings';
   $('l-sign').href = S.links.signature + '?from=settings';
@@ -470,11 +497,14 @@ function snapshot() {
   saved = {
     b: [val('b-name'), val('b-address'), val('b-tin')].join('\u0000'),
     i: [val('i-days'), val('i-next')].join('\u0000'),
+    a: [val('a-details'), $('a-payby').value].join('\u0000'),
   };
   dirty();
 }
 function dirty() {
   $('b-save').disabled = !val('b-name') || [val('b-name'), val('b-address'), val('b-tin')].join('\u0000') === saved.b;
+  $('a-save').disabled = [val('a-details'), $('a-payby').value].join('\u0000') === saved.a
+    || ($('a-payby').value === 'own' && !val('a-details'));
   $('i-save').disabled = val('i-days') === '' || val('i-next') === '' || [val('i-days'), val('i-next')].join('\u0000') === saved.i;
   if (S && S.plan === 'pro') {
     $('c-save').disabled = colour === (S.brand.colour || '');
@@ -484,7 +514,8 @@ function dirty() {
   $('k-check').disabled = !bank || num.length !== 10;
   $('k-confirm').disabled = !checked || $('k-code').value.replace(/\D/g, '').length !== 6;
 }
-['b-name', 'b-address', 'b-tin', 'i-days', 'i-next', 'k-number', 'k-code'].forEach((id) => $(id).addEventListener('input', dirty));
+['b-name', 'b-address', 'b-tin', 'i-days', 'i-next', 'a-details', 'k-number', 'k-code'].forEach((id) => $(id).addEventListener('input', dirty));
+$('a-payby').addEventListener('change', dirty);
 $('k-bank').addEventListener('change', () => { checked = null; $('k-found').classList.add('hidden'); $('k-verify').classList.add('hidden'); dirty(); });
 $('k-number').addEventListener('input', () => { if (checked) { checked = null; $('k-found').classList.add('hidden'); $('k-verify').classList.add('hidden'); } });
 
@@ -507,6 +538,17 @@ $('i-save').onclick = async (e) => {
     $('i-next').value = r.nextNumber; say('i-msg', r.note || 'Saved.', true);
     busy(e.target, false, 'Save'); snapshot();
   } catch (err) { say('i-msg', err.message); busy(e.target, false, 'Save'); dirty(); }
+};
+
+/* Clients abroad */
+$('a-save').onclick = async (e) => {
+  busy(e.target, true, 'Saving\u2026');
+  try {
+    await api('/abroad', { details: $('a-details').value, payBy: $('a-payby').value });
+    S.abroad = { details: val('a-details'), payBy: $('a-payby').value };
+    say('a-msg', 'Saved. Your next invoices abroad use it.', true);
+    busy(e.target, false, 'Save'); snapshot();
+  } catch (err) { say('a-msg', err.message); busy(e.target, false, 'Save'); dirty(); }
 };
 
 /* Brand: logo */
@@ -745,6 +787,18 @@ export function settingsPage(token: string): string {
       <a class="link" id="l-design" href="#">Invoice design<small></small><span class="go">&rsaquo;</span></a>
       <a class="link" id="l-sign" href="#">Signature<small></small><span class="go">&rsaquo;</span></a>
     </div>
+  </section>
+
+  <section class="card">
+    <h2>Clients abroad</h2>
+    <p class="hint">For invoices in dollars, pounds and other currencies. Clients can pay by card through a Balans link, or straight to you by PayPal, Wise or a bank abroad.</p>
+    <label for="a-details">Your payment details</label>
+    <textarea id="a-details" maxlength="600" placeholder="PayPal: you@example.com&#10;or Wise: IBAN GB00 0000 0000 0000 00"></textarea>
+    <label for="a-payby">Invoices abroad go out with</label>
+    <select id="a-payby"><option value="link">A Balans payment link</option><option value="own">My payment details</option></select>
+    <p class="hint" style="margin-top:8px">You can choose per invoice too: say <b>pay by my paypal</b> or <b>use payment link</b>. Payments to your own details are not seen by Balans, so mark them paid when they arrive.</p>
+    <button class="btn" id="a-save" type="button" disabled>Save</button>
+    <p class="msg" id="a-msg" role="status"></p>
   </section>
 
   <section class="card">

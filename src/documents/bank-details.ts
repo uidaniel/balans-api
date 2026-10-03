@@ -119,3 +119,33 @@ function fromRow(r: {
 /** The note every bank-details document carries, for the client's sake too. */
 export const untrackedNote = (business: string): string =>
   `Payments made directly to this account are not tracked automatically. Ask ${business} for confirmation.`;
+
+/**
+ * Sends an invoice abroad with the sender's own payment details instead of a
+ * Balans link, when that is what they chose — for this document, or as their
+ * default — and they have details saved. Returns the details stamped, or null
+ * when the document keeps its link.
+ *
+ * Only abroad: a naira invoice already carries the sender's own account. A
+ * copy goes on the document, so editing the details later never rewrites an
+ * invoice already sent.
+ */
+export async function attachOwnDetails(
+  c: pg.PoolClient,
+  documentId: string,
+  userId: string,
+): Promise<string | null> {
+  const { rows } = await c.query<{ details: string | null; choice: string | null; currency: string; type: string }>(
+    `SELECT u.payment_details AS details, COALESCE(d.pay_by, u.abroad_pay_by) AS choice, d.currency, d.type
+       FROM documents d JOIN users u ON u.id = d.user_id
+      WHERE d.id = $1 AND d.user_id = $2`,
+    [documentId, userId],
+  );
+  const r = rows[0];
+  if (!r || r.type === "quote" || r.currency === "NGN" || r.choice !== "own" || !r.details?.trim()) return null;
+  await c.query(
+    `UPDATE documents SET delivery_type = 'own_details', payment_details = $2 WHERE id = $1`,
+    [documentId, r.details.trim()],
+  );
+  return r.details.trim();
+}

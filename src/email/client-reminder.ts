@@ -158,7 +158,8 @@ export async function emailReminderToClient(
     due: { y: d.due_date.getFullYear(), m: d.due_date.getMonth() + 1, d: d.due_date.getDate() },
     today,
     link: documentLink(d.type, d.public_token),
-    bankTransfer: d.delivery_type === "bank_details",
+    // Paid by transfer to the sender, here or abroad: the page says how.
+    bankTransfer: d.delivery_type === "bank_details" || d.delivery_type === "own_details",
     brand: await clientBrandFor(d.user_id),
   });
 

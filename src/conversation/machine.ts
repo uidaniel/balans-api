@@ -12,6 +12,7 @@
  * question repeated at them.
  */
 
+import { payByIn } from "../parser/corrections.ts";
 import { extractDocument } from "../parser/extract.ts";
 import { stageDatesIn } from "../parser/corrections.ts";
 import { readFileSync } from "node:fs";
@@ -204,6 +205,8 @@ export type PendingDoc = {
   stageDueDates?: (Civil | null)[] | null;
   passFeesToClient?: boolean;
   notes?: string | null;
+  /** Abroad: "link" for a Balans card link, "own" for the sender's own details. Unset is their default. */
+  payBy?: "link" | "own" | null;
 };
 
 /**
@@ -2173,6 +2176,8 @@ function startDocument(p: Parsed, ctx: Context, now: Civil, quote?: Quote, said?
     instalments: p.options.depositPercent == null ? p.options.instalments : null,
     passFeesToClient: p.options.passFeesToClient ?? false,
     notes: p.options.notes,
+    // "…pay by my paypal", "…use my details": the sender's own details, not a link.
+    payBy: payByIn(said ?? ""),
   };
 
   // They named a date we could not read. That is worth one question, because
@@ -2968,6 +2973,7 @@ function applyIn(doc: PendingDoc, c: Correction): PendingDoc {
     }
   }
   if (c.passFeesToClient !== undefined) next.passFeesToClient = c.passFeesToClient;
+  if (c.payBy !== undefined) next.payBy = c.payBy;
 
   if (c.description) {
     next.lines = next.lines.length

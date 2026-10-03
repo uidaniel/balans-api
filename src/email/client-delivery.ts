@@ -113,12 +113,13 @@ export async function emailDocumentToClient(
     original_amount_minor: number | null;
     subtotal_kobo: number;
     vat_kobo: number;
+    delivery_type: string;
   }>(
     `SELECT d.user_id, COALESCE(substring(d.ref from 4), d.number::text) AS number, d.type, d.total_kobo, d.due_date, d.valid_until,
             d.public_token, d.notes,
             c.name AS client_name, c.email AS client_email,
             u.business_name, u.email AS business_email, u.plan,
-            d.currency, d.original_amount_minor, d.subtotal_kobo, d.vat_kobo
+            d.currency, d.original_amount_minor, d.subtotal_kobo, d.vat_kobo, d.delivery_type
        FROM documents d
        JOIN clients c ON c.id = d.client_id
        JOIN users u   ON u.id = d.user_id
@@ -137,6 +138,7 @@ export async function emailDocumentToClient(
    * land on says what that comes to before they pay.
    */
   const price = amountFor(d);
+  const own = d.delivery_type === "own_details";
   const business = d.business_name ?? "A Balans user";
   const link = d.public_token
     ? documentLink(d.type, d.public_token)
@@ -160,7 +162,8 @@ export async function emailDocumentToClient(
       when ? `${dateWord} ${formatFriendly(when)}` : undefined,
     ),
     d.notes ? paragraph(esc(d.notes), true) : "",
-    link && d.type !== "quote" ? button(`Pay ${price}`, link) : "",
+    // Paid to the sender's own details: no card to pay by, only how to pay.
+    link && d.type !== "quote" ? button(own ? "See how to pay" : `Pay ${price}`, link) : "",
     link && d.type === "quote" ? button("View quote", link) : "",
     paragraph(closingLine(d.type, label, link), true),
   ]
@@ -218,7 +221,7 @@ export async function emailDocumentToClient(
           when ? `, ${dateWord.toLowerCase()} ${formatFriendly(when)}` : ""
         }.`,
         "",
-        link ? (d.type === "quote" ? `View it here: ${link}` : `Pay here: ${link}`) : "",
+        link ? (d.type === "quote" ? `View it here: ${link}` : `${own ? "How to pay" : "Pay here"}: ${link}`) : "",
         "",
         d.notes ?? "",
       ]

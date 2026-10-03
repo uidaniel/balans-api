@@ -248,6 +248,8 @@ async function loadForRender(
     plan: "free" | "pro";
     template_id: string | null;
     brand_color: string | null;
+    delivery_type: string;
+    payment_details: string | null;
     client_name: string;
     client_email: string | null;
   }>(
@@ -257,6 +259,7 @@ async function loadForRender(
             d.currency, d.original_amount_minor,
             u.business_name, u.email AS business_email, u.address, u.tin, u.logo_url,
             u.signature_url, u.plan, u.template_id, u.brand_color,
+            d.delivery_type, d.payment_details,
             c.name AS client_name, c.email AS client_email
        FROM documents d
        JOIN users u   ON u.id = d.user_id
@@ -301,6 +304,7 @@ async function loadForRender(
       logoDataUri: await logoDataUri(r.user_id, r.plan, r.logo_url),
       signatureDataUri: await signatureDataUri(r.signature_url),
       bankDetails: await bankDetailsOf(documentId),
+      paymentDetails: r.delivery_type === "own_details" ? r.payment_details : null,
       clientName: r.client_name,
       clientEmail: r.client_email,
       lines: items.map((i) => ({

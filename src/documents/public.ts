@@ -87,6 +87,11 @@ export type PublicDocument = {
    */
   logoDataUri?: string | null;
   brandColor?: string | null;
+  /**
+   * The sender's own payment details, on an invoice abroad they chose to send
+   * without a Balans link. The page shows these and no Pay button.
+   */
+  paymentDetails?: string | null;
   /** F7: empty for an ordinary invoice, two or more for a deposit. */
   parts: Part[];
   /**
@@ -143,7 +148,8 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     sub_account_code: string | null;
     has_payout_account: boolean;
     ref: string | null;
-    delivery_type: "payment_link" | "bank_details";
+    delivery_type: "payment_link" | "bank_details" | "own_details";
+    payment_details: string | null;
     bank_details_bank_name: string | null;
     bank_details_account_name: string | null;
     bank_details_account_last4: string | null;
@@ -153,7 +159,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
             d.subtotal_kobo, d.vat_kobo, d.total_kobo, d.amount_paid_kobo,
             d.pass_fees_to_client, d.due_date, d.valid_until, d.issue_date, d.notes,
             d.currency, d.original_amount_minor, d.fx_rate,
-            d.delivery_type, d.bank_details_bank_name, d.bank_details_account_name,
+            d.delivery_type, d.payment_details, d.bank_details_bank_name, d.bank_details_account_name,
             d.bank_details_account_last4, d.bank_details_account_number_encrypted,
             u.business_name, u.plan, u.logo_url, u.brand_color,
             c.name AS client_name,
@@ -225,6 +231,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     plan: r.plan,
     logoDataUri: r.plan === "pro" ? await logoDataUri(r.user_id, r.plan, r.logo_url) : null,
     brandColor: r.plan === "pro" ? r.brand_color : null,
+    paymentDetails: r.delivery_type === "own_details" ? r.payment_details : null,
     // The account stamped on it when it was sent — never the live one, so a
     // bank change cannot redirect money a client is about to send.
     bank:

@@ -81,6 +81,12 @@ export type DocumentData = {
    * it takes the place of the payment link everywhere a layout prints one.
    */
   bankDetails?: { bankName: string; accountName: string; accountNumber: string } | null;
+  /**
+   * The sender's own payment details (PayPal, Wise, a bank abroad…), on an
+   * invoice they chose to send without a Balans link. Shown in place of "Pay
+   * online at"; the page link still prints so the client can read it online.
+   */
+  paymentDetails?: string | null;
   clientName: string;
   clientEmail: string | null;
   lines: { description: string; qty: number; unitAmountKobo: number; amountKobo: number }[];

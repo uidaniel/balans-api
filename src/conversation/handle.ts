@@ -1354,7 +1354,25 @@ async function runEffects(
             log.info({ userId }, "payment plan left off: free plan");
           }
 
+          /*
+           * Their own payment details instead of a link, for an invoice abroad.
+           * Asked for with nothing saved, it falls back to the link and says
+           * where to add them, rather than sending an invoice with no way to pay.
+           */
+          let payBy = doc.payBy ?? null;
+          if (payBy === "own" && doc.foreign) {
+            const { rows: own } = await db().query<{ d: string | null }>(
+              `SELECT payment_details AS d FROM users WHERE id = $1`,
+              [userId],
+            );
+            if (!own[0]?.d?.trim()) {
+              payBy = "link";
+              extra.push(noOwnDetailsYet());
+            }
+          }
+
           const draft = await createDraft(userId, {
+            payBy,
             type: doc.type,
             clientName: doc.clientName ?? "",
             clientEmail: doc.clientEmail ?? null,
@@ -3097,6 +3115,13 @@ async function tellIfClientWhatsAppFailed(
 }
 
 /** A client number from somebody on Free: said once, and left off the draft. */
+function noOwnDetailsYet(): string {
+  return para(
+    `💳 ${b("You have not added your payment details yet.")}`,
+    `This one goes out with a payment link. Reply ${b("settings")} to add your PayPal, Wise or bank details for clients abroad.`,
+  );
+}
+
 function splitIsPro(): string {
   return para(
     `⭐ ${b("Deposits and milestone payments are a Pro feature.")}`,

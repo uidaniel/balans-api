@@ -52,6 +52,9 @@ box-shadow:0 0 0 1px var(--ink-6),0 1px 2px var(--ink-6);overflow:hidden}
 .brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;
 letter-spacing:-.03em;font-size:20px}
 .dot{width:22px;height:22px;border-radius:50%;background:var(--marigold);flex:none}
+.pay.own .own-amt{margin-top:6px;font-family:var(--display);font-size:22px;font-weight:800;letter-spacing:-.03em}
+.pay.own .own-details{margin-top:12px;padding:14px 16px;border-radius:16px;background:var(--cream);
+font-size:15.5px;line-height:1.55;white-space:normal;overflow-wrap:anywhere;user-select:all}
 .own-logo{display:block;max-height:52px;max-width:220px;width:auto;height:auto;object-fit:contain}
 .own-name{font-size:22px}
 /* The site's .label: small, spaced capitals that say what a figure is. */
@@ -679,6 +682,9 @@ function payBlock(
   partLabel: string | null,
 ): string {
   if (can.ok) {
+    // Paid to the sender's own details: those, and no button of ours.
+    if (doc.paymentDetails) return ownDetailsBlock(doc, amount, partLabel);
+
     // Details already issued: show them instead of asking again. A client who
     // has gone to their banking app and come back must meet the same account.
     if (opts.transfer) return transferBlock(doc, opts.transfer, opts.token);
@@ -932,7 +938,32 @@ function bankBlock(doc: PublicDocument, amountKobo: number, partLabel: string | 
  * sees. They were on the PDF and missing here, which was the wrong way round
  * — this is the page where somebody decides whether to part with the money.
  */
+/**
+ * How to pay, when the sender gave their own details (PayPal, Wise, a bank
+ * abroad). Balans takes no part in this payment and cannot see it, so the
+ * page says so, and that the sender confirms it.
+ */
+function ownDetailsBlock(doc: PublicDocument, amount: number, partLabel: string | null): string {
+  const agreed = doc.foreign
+    ? formatMoney(
+        doc.amountPaidKobo === 0 && amount === doc.totalKobo
+          ? agreedTotalMinor(doc.foreign.amountMinor, doc.subtotalKobo, doc.vatKobo)
+          : Math.round(amount / (doc.foreign.rate || 1)),
+        doc.foreign.currency,
+      )
+    : formatNaira(amount);
+  return `<div class="pay own">
+    <p class="teyebrow">How to pay${partLabel ? ` · ${esc(partLabel)}` : ""}</p>
+    <p class="own-amt">${esc(agreed)} to ${esc(doc.businessName)}</p>
+    <div class="own-details">${esc(doc.paymentDetails ?? "").replace(/\n/g, "<br>")}</div>
+    <p class="tsmall">Pay ${esc(doc.businessName)} directly using the details above, and put
+      ${esc(clientNumber(doc.ref, doc.number) ? `invoice ${clientNumber(doc.ref, doc.number)}` : "the invoice number")} in the reference.
+      ${esc(doc.businessName)} will confirm when it arrives.</p>
+  </div>`;
+}
+
 function trustBlock(doc: PublicDocument): string {
+  if (doc.paymentDetails) return "";
   /*
    * Whoever is actually going to take the money.
    *

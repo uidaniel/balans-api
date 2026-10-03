@@ -98,6 +98,8 @@ export type Correction = {
    * change to the plan itself.
    */
   stageDues?: { which: "first" | "last" | number; date: Civil; phrase: string }[];
+  /** How a client abroad pays: a Balans link, or the sender's own details. */
+  payBy?: "link" | "own";
   clientName?: string;
   /**
    * Where the client's copy goes. Null takes the address off entirely.
@@ -809,7 +811,11 @@ export function readCorrection(
   money: CurrencyRead = { kind: "naira" },
 ): Correction | null {
   const text = plainly(raw);
-  const whole = readOneCorrection(text, today, money);
+  // How they pay, said on its own ("use my paypal details") or with other
+  // changes; it is a whole-message reading, so it is taken before the rest.
+  const payBy = payByIn(text);
+  const whole0 = readOneCorrection(text, today, money);
+  const whole = payBy && (!whole0 || Object.keys(whole0).length === 0) ? { payBy } : whole0 && payBy ? { ...whole0, payBy } : whole0;
   const s = text.replace(/\s+/g, " ").trim();
   const dues = (s.match(/\bdue\b/gi) ?? []).length;
   if (whole && dues < 2) return whole;
@@ -865,4 +871,27 @@ export function stageDatesIn(
     if (c?.depositPercent) depositPercent = c.depositPercent;
   }
   return depositPercent !== undefined ? { stages, depositPercent } : { stages };
+}
+
+/**
+ * Whether a message asks for the sender's own payment details, or a Balans
+ * link, on an invoice abroad. Null when it says neither.
+ *
+ * "pay by my paypal", "use my details", "they'll pay with wise", "use my
+ * payment details" → own. "use the payment link", "pay by card", "send a
+ * link" → link.
+ */
+export function payByIn(text: string): "link" | "own" | null {
+  const t = text.toLowerCase().replace(/[’‘]/g, "'");
+  // "don't send a link" holds "send a link": the refusal is read first.
+  if (/\b(?:no|without|don'?t\s+(?:send|use|generate|need))\s+(?:a\s+|the\s+|any\s+)?(?:payment\s+|pay\s+)?link\b/.test(t)) return "own";
+  if (/\b(?:use|with|by|via|through|send)\s+(?:the\s+|a\s+)?(?:payment\s+|pay\s+|card\s+)?link\b|\bpay(?:s|ing)?\s+(?:by|with|via)\s+card\b/.test(t)) return "link";
+  if (
+    /\b(?:my|our)\s+(?:own\s+)?(?:payment\s+)?(?:details|info|information|paypal|wise|payoneer|cash\s*app|venmo|zelle|revolut|iban|account\s+details)\b/.test(t) ||
+    /\bpay(?:s|ing)?\s+(?:me\s+)?(?:by|with|via|on|through|into)\s+(?:paypal|wise|payoneer|cash\s*app|venmo|zelle|revolut|bank\s+transfer)\b/.test(t) ||
+    /\b(?:no|without|don'?t\s+(?:send|use|generate))\s+(?:a\s+|the\s+)?(?:payment\s+)?link\b/.test(t)
+  ) {
+    return "own";
+  }
+  return null;
 }

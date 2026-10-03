@@ -611,6 +611,14 @@ export function due(d: DocumentData, opts: { size?: string; label?: string; clas
  */
 export function payInfo(d: DocumentData, opts: { label?: boolean; className?: string } = {}): string {
   if (isReceipt(d) || owedKobo(d) <= 0) return "";
+  // Paid to the sender's own details: those, in full, and nothing of ours.
+  if (d.paymentDetails && d.variant !== "quote") {
+    const label = opts.label !== false;
+    return `<div class="pay ${opts.className ?? ""}">
+    ${label ? `<p class="cap lbl">How to pay</p>` : ""}
+    <p class="how own">${esc(d.paymentDetails).replace(/\n/g, "<br>")}</p>
+  </div>`;
+  }
   if (!d.publicUrl) return "";
   const label = opts.label !== false;
   const quote = d.variant === "quote";
@@ -644,6 +652,9 @@ export const onlineSection = (d: DocumentData): string => (d.variant === "quote"
  */
 export function payWhere(d: DocumentData): string {
   if (isReceipt(d) || owedKobo(d) <= 0) return "";
+  if (d.paymentDetails && d.variant !== "quote") {
+    return `How to pay: <b>${esc(d.paymentDetails).replace(/\n/g, "<br>")}</b>`;
+  }
   return d.publicUrl ? `${onlineAt(d)} <b>${esc(shortUrl(d.publicUrl))}</b>` : "";
 }
 

@@ -17,7 +17,7 @@
 import { randomBytes } from "node:crypto";
 import { db, tx } from "../db/pool.ts";
 import type { Civil } from "../../core/dates.ts";
-import { attachBankDetails, deliveryFor, type BankDetails } from "./bank-details.ts";
+import { attachBankDetails, attachOwnDetails, deliveryFor, type BankDetails } from "./bank-details.ts";
 
 export type ActionResult<T> = { ok: true; value: T } | { ok: false; why: string };
 
@@ -313,6 +313,7 @@ export async function convertQuote(
       deliveryFor("invoice", quote.currency) === "bank_details"
         ? await attachBankDetails(c, invoiceId, userId)
         : null;
+    if (!bank) await attachOwnDetails(c, invoiceId, userId);
 
     return {
       ok: true as const,

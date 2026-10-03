@@ -14,7 +14,7 @@ import { createParts, partsFor, stagesFor, type Part } from "./parts.ts";
 import { formatISO, type Civil } from "../../core/dates.ts";
 import { totalsFor, type Line } from "../../core/totals.ts";
 import type { Foreign } from "../../core/currency.ts";
-import { attachBankDetails, deliveryFor, type BankDetails } from "./bank-details.ts";
+import { attachBankDetails, attachOwnDetails, deliveryFor, type BankDetails } from "./bank-details.ts";
 
 export type DocumentType = "invoice" | "quote" | "payment_request" | "sample";
 
@@ -23,6 +23,8 @@ export type DraftLine = Line & { originalUnitAmountMinor?: number };
 
 export type DraftInput = {
   type: DocumentType;
+  /** For an invoice abroad: a Balans link, or the sender's own details. Null is their default. */
+  payBy?: "link" | "own" | null;
   clientName: string;
   clientEmail: string | null;
   /** WhatsApp digits. Set, it is where the document goes when it is sent. */
@@ -215,9 +217,9 @@ export async function createDraft(
       `INSERT INTO documents
          (user_id, client_id, type, status, subtotal_kobo, vat_kobo, total_kobo,
           pass_fees_to_client, due_date, valid_until, notes,
-          currency, original_amount_minor, fx_rate, fx_source, fx_fetched_at)
+          currency, original_amount_minor, fx_rate, fx_source, fx_fetched_at, pay_by)
        VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, $9, $10,
-               $11, $12, $13, $14, $15)
+               $11, $12, $13, $14, $15, $16)
        RETURNING id`,
       [
         userId,
@@ -242,6 +244,7 @@ export async function createDraft(
         input.foreign?.rate ?? null,
         input.foreign?.source ?? null,
         input.foreign?.fetchedAt ?? null,
+        input.payBy ?? null,
       ],
     );
     const id = rows[0]!.id;
@@ -495,8 +498,10 @@ export async function confirmDraft(userId: string, draftId: string): Promise<Con
       deliveryFor(draft.type, draft.currency) === "bank_details"
         ? await attachBankDetails(c, draft.id, userId)
         : null;
+    // Abroad, the sender may have chosen their own details over a link.
+    const ownDetails = bank ? null : await attachOwnDetails(c, draft.id, userId);
 
-    return { id: draft.id, number, ref, publicToken, type: draft.type, bank };
+    return { id: draft.id, number, ref, publicToken, type: draft.type, bank, ownDetails };
   });
 }
 
