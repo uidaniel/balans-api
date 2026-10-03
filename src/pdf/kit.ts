@@ -136,15 +136,15 @@ body{background:#fff;color:${INK};-webkit-print-color-adjust:exact;print-color-a
 
 /* The work, as the two Free layouts set it ------------------------------- */
 .items{font-size:.66em}
-.items .hd{display:flex;gap:1em;border-bottom:1px solid ${ink(0.15)};padding-bottom:.5em;
+.items .hd{display:flex;gap:1.8em;border-bottom:1px solid ${ink(0.15)};padding-bottom:.5em;
 letter-spacing:.06em;text-transform:uppercase;color:${ink(0.4)}}
 .items .hd span>span{font-size:.88em}
-.items .it{display:flex;gap:1em;border-bottom:1px solid ${ink(0.08)};padding:.6em 0}
+.items .it{display:flex;gap:1.8em;border-bottom:1px solid ${ink(0.08)};padding:.6em 0}
 .items .nm{min-width:0;flex:1}
 .items .nm b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
-.items .q{width:2em;text-align:right}
-.items .u{width:4.4em;text-align:right}
-.items .a{width:4.8em;text-align:right;font-weight:600}
+.items .q{width:2.6em;flex:none;text-align:right}
+.items .u{width:7em;flex:none;text-align:right;white-space:nowrap}
+.items .a{width:7.4em;flex:none;text-align:right;font-weight:600;white-space:nowrap}
 
 /* Totals, as the two Free layouts set them ------------------------------- */
 .totals{margin-left:auto;margin-top:.9em;width:12.6em;font-size:.66em}

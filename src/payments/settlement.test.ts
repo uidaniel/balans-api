@@ -80,7 +80,7 @@ describe("a card, which is somebody else's schedule entirely", () => {
     // question. Not computed from anything, because inventing precision here
     // would be inventing it about the reader's own money.
     assert.equal(arrivalLine(lagos(15), "paystack"), defaults.international.settlementText);
-    assert.match(defaults.international.settlementText, /business days/i);
+    assert.match(defaults.international.settlementText, /24–48 hours/);
   });
 
   it("leaves a transfer exactly as it was", () => {

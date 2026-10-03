@@ -267,7 +267,7 @@ export const defaults = {
      * for these: it is computed from a payout run at 22:00 Lagos that has
      * nothing to do with Paystack.
      */
-    settlementText: "Usually in your bank within 1 to 2 business days.",
+    settlementText: "Usually in your bank within 24–48 hours.",
   },
   limits: {
     minInvoiceKobo: 1_000_00,
