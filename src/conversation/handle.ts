@@ -7,6 +7,7 @@
  * which is why the interesting logic stays testable without a database.
  */
 
+import { NAIRA_PRICE, proPriceFor, type ProPrice } from "../billing/price.ts";
 import { abroadCurrencyFor, homeCurrencyFor } from "../../core/home-currency.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { legalConsentVersion } from "../config.ts";
@@ -226,13 +227,15 @@ async function sendProButton(
   body: string,
   headerImage: string | undefined,
   log: FastifyBaseLogger,
+  price: ProPrice = NAIRA_PRICE,
 ): Promise<boolean> {
   if (!phone) return false;
   const sent = await sendCta(phone, {
     body,
-    label: proPayLabel(),
+    label: proPayLabel(price),
     url: proStartUrl(userId),
-    ...(headerImage ? { headerImage } : {}),
+    // The card has the naira price painted on it: not for a price abroad.
+    ...(headerImage && !price.abroad ? { headerImage } : {}),
     footer: PRO_PAY_FOOTER,
   });
   if (sent.ok) {
@@ -2099,11 +2102,13 @@ async function runEffects(
         }
         case "show_upgrade": {
           const state = await stateOf(userId);
+          // Their own price outside Nigeria (billing/price.ts).
+          const price = await proPriceFor(userId, log);
           // Nearly up, or in its grace week: "upgrade" is how the reminders
           // say to renew, so it has to offer the button, not a status line.
           if (renewalOpen(state)) {
-            if (!(await sendProButton(userId, ctx.phone, proRenewOffer(state), UPGRADE_CARD, log))) {
-              extra.push(proPayLink(proRenewOffer(state), proStartUrl(userId)));
+            if (!(await sendProButton(userId, ctx.phone, proRenewOffer(state, price), UPGRADE_CARD, log, price))) {
+              extra.push(proPayLink(proRenewOffer(state, price), proStartUrl(userId)));
             }
             break;
           }
@@ -2128,8 +2133,8 @@ async function runEffects(
            * billing/pro-checkout.ts). Card, transfer, USSD, all on one page
            * people already know, instead of an account number to copy.
            */
-          if (!(await sendProButton(userId, ctx.phone, proOffer(used), UPGRADE_CARD, log))) {
-            extra.push(proPayLink(proOffer(used), proStartUrl(userId)));
+          if (!(await sendProButton(userId, ctx.phone, proOffer(used, price), UPGRADE_CARD, log, price))) {
+            extra.push(proPayLink(proOffer(used, price), proStartUrl(userId)));
           }
           break;
         }
@@ -2147,10 +2152,11 @@ async function runEffects(
            * button tapped tomorrow opens a fresh one rather than a stale one.
            */
           const current = await stateOf(userId);
+          const price = await proPriceFor(userId, log);
           if (current.plan === "pro" && !renewalOpen(current)) {
             extra.push(proActive(current));
-          } else if (!(await sendProButton(userId, ctx.phone, proPayPrompt(), undefined, log))) {
-            extra.push(proPayLink(proPayPrompt(), proStartUrl(userId)));
+          } else if (!(await sendProButton(userId, ctx.phone, proPayPrompt(price), undefined, log, price))) {
+            extra.push(proPayLink(proPayPrompt(price), proStartUrl(userId)));
           }
           break;
         }

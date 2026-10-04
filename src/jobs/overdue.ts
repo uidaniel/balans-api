@@ -13,6 +13,7 @@
  * the `reminders` row is claimed before the message goes out.
  */
 
+import { proPriceForPhone } from "../billing/price.ts";
 import { checkSubaccounts, emailUnverifiedDigest } from "../payments/subaccount-verification.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
@@ -427,7 +428,6 @@ export function promptMessage(x: {
  */
 async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<number> {
   const due = await proRemindersDue(stage);
-  const price = formatNaira(defaults.plans.pro.priceKobo);
   const dayOf = (d: Date) =>
     new Intl.DateTimeFormat("en-GB", { timeZone: defaults.behaviour.timezone, day: "numeric", month: "long" }).format(d);
   let sent = 0;
@@ -436,28 +436,31 @@ async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<nu
     if (!(await claimProReminder(r.userId, r.expiresAt, stage))) continue;
 
     const graceEnds = new Date(r.expiresAt.getTime() + GRACE_DAYS * 86_400_000);
+    // Their own price outside Nigeria (billing/price.ts).
+    const p = await proPriceForPhone(r.waPhone, log);
+    const price = p.label;
     const free = String(defaults.plans.free.documentsPerMonth);
     const words: { text: string; label: string; template: TemplateName; params: string[] } = {
       ending_soon: {
-        text: proEndingSoon(r.expiresAt),
+        text: proEndingSoon(r.expiresAt, p),
         label: "Renew Pro",
         template: "pro_ending_pay" as TemplateName,
         params: [dayOf(r.expiresAt), price],
       },
       ended: {
-        text: proEnded(r.expiresAt),
+        text: proEnded(r.expiresAt, p),
         label: "Renew Pro",
         template: "pro_ended_pay" as TemplateName,
         params: [dayOf(r.expiresAt), dayOf(graceEnds), price],
       },
       grace_ending: {
-        text: proGraceEnding(r.expiresAt),
+        text: proGraceEnding(r.expiresAt, p),
         label: "Keep Pro",
         template: "pro_last_day_pay" as TemplateName,
         params: [dayOf(graceEnds), price],
       },
-      lapsed: { text: proLapsed(), label: "Get Pro back", template: "pro_free_pay" as TemplateName, params: [free, price] },
-      win_back: { text: proWinBack(), label: "Get Pro back", template: "pro_free_pay" as TemplateName, params: [free, price] },
+      lapsed: { text: proLapsed(p), label: "Get Pro back", template: "pro_free_pay" as TemplateName, params: [free, price] },
+      win_back: { text: proWinBack(p), label: "Get Pro back", template: "pro_free_pay" as TemplateName, params: [free, price] },
     }[stage];
 
     // The same signed link the chat's Pay button opens: a fresh Paystack

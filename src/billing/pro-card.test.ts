@@ -154,12 +154,12 @@ describe("the Pay button", () => {
   const branch = start.slice(0, start.indexOf('case "save_logo"'));
 
   it("is a checkout button under the upgrade card", () => {
-    assert.match(offer, /sendProButton\(userId, ctx\.phone, proOffer\(used\), UPGRADE_CARD, log\)/);
+    assert.match(offer, /sendProButton\(userId, ctx\.phone, proOffer\(used, price\), UPGRADE_CARD, log, price\)/);
   });
 
   it("falls back to the link in words, never to nothing", () => {
-    assert.match(offer, /proPayLink\(proOffer\(used\), proStartUrl\(userId\)\)/);
-    assert.match(branch, /proPayLink\(proPayPrompt\(\), proStartUrl\(userId\)\)/);
+    assert.match(offer, /proPayLink\(proOffer\(used, price\), proStartUrl\(userId\)\)/);
+    assert.match(branch, /proPayLink\(proPayPrompt\(price\), proStartUrl\(userId\)\)/);
   });
 
   it("does not offer a second month to somebody already on Pro, until it is nearly up", () => {

@@ -147,8 +147,9 @@ export async function openSubscription(
   userId: string,
   method: CollectionMethod,
   log: FastifyBaseLogger,
+  /** Outside Nigeria, their local price in naira at today's rate (billing/price.ts). */
+  priceKobo: number = defaults.plans.pro.priceKobo,
 ): Promise<{ id: string; priceKobo: number }> {
-  const priceKobo = defaults.plans.pro.priceKobo;
 
   return tx(async (c) => {
     // One open subscription at a time. Asking twice should not owe twice.

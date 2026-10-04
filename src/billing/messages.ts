@@ -11,11 +11,12 @@ import { defaults, env } from "../config.ts";
 import { availableTo } from "../pdf/templates.ts";
 import { b, i, lines, para } from "../whatsapp/format.ts";
 import { GRACE_DAYS, type SubscriptionState } from "./subscription.ts";
+import { chargedAs, NAIRA_PRICE, type ProPrice } from "./price.ts";
 
 const free = defaults.plans.free;
 const pro = defaults.plans.pro;
 
-export function proOffer(used: number): string {
+export function proOffer(used: number, price: ProPrice = NAIRA_PRICE): string {
   /*
    * Ticks rather than bullets.
    *
@@ -26,7 +27,8 @@ export function proOffer(used: number): string {
    * decoration. `voice.test.ts` allows exactly that and nothing looser.
    */
   return para(
-    `⭐ ${b("Balans Pro")} — ${b(formatNaira(pro.priceKobo))} a month.`,
+    `⭐ ${b("Balans Pro")} — ${b(price.label)} a month.`,
+    chargedAs(price) ?? "",
     lines(
       `✅ Unlimited invoices (Free stops at ${free.documentsPerMonth}; you have used ${used})`,
       // No fee line any more. Naira invoices are paid straight into the
@@ -53,16 +55,16 @@ export function proOffer(used: number): string {
  * transfer, USSD and the rest are all on the page. At most 20 characters,
  * which Meta enforces by refusing the whole message.
  */
-export const proPayLabel = (): string => `Pay ${formatNaira(pro.priceKobo)}`;
+export const proPayLabel = (price: ProPrice = NAIRA_PRICE): string => `Pay ${price.label}`;
 
 /** Under the button, at most 60 characters. */
 export const PRO_PAY_FOOTER = "Card, bank transfer or USSD, through Paystack";
 
 /** For "pay now" typed or tapped: the same button, with less to read above it. */
-export function proPayPrompt(): string {
+export function proPayPrompt(price: ProPrice = NAIRA_PRICE): string {
   return para(
-    `⭐ ${b(`Pro is ${formatNaira(pro.priceKobo)} a month.`)}`,
-    "Tap below to pay by card, bank transfer or USSD.",
+    `⭐ ${b(`Pro is ${price.label} a month.`)}`,
+    chargedAs(price) ?? "Tap below to pay by card, bank transfer or USSD.",
     i("Pro starts the moment it goes through, and your receipt comes here and to your email."),
   );
 }
@@ -159,56 +161,56 @@ const day = (d: Date) =>
 const graceEnd = (end: Date) => new Date(end.getTime() + GRACE_DAYS * 86_400_000);
 
 /** Three days before. It does not renew by itself, so this says how to. */
-export function proEndingSoon(end: Date): string {
+export function proEndingSoon(end: Date, price: ProPrice = NAIRA_PRICE): string {
   return para(
     `⭐ ${b(`Your Balans Pro ends on ${day(end)}.`)}`,
     lines(
       "It does not renew by itself.",
-      `Tap below to pay ${formatNaira(pro.priceKobo)} for another month. It starts when this one ends, so renewing early costs you nothing.`,
+      `Tap below to pay ${price.label} for another month. It starts when this one ends, so renewing early costs you nothing.`,
     ),
   );
 }
 
 /** The day it ends. The grace week has started. */
-export function proEnded(end: Date): string {
+export function proEnded(end: Date, price: ProPrice = NAIRA_PRICE): string {
   return para(
     `⏳ ${b("Your Balans Pro ended today.")}`,
     lines(
       `You keep every Pro feature until ${day(graceEnd(end))}.`,
-      `Tap below to renew for ${formatNaira(pro.priceKobo)} a month.`,
+      `Tap below to renew for ${price.label} a month.`,
     ),
   );
 }
 
 /** The last day of the grace week. */
-export function proGraceEnding(end: Date): string {
+export function proGraceEnding(end: Date, price: ProPrice = NAIRA_PRICE): string {
   return para(
     `⏳ ${b("Last day of Pro.")}`,
     lines(
       `Tomorrow your account moves to Free: ${free.documentsPerMonth} invoices a month, and no logo on them.`,
-      `Tap below to keep Pro for ${formatNaira(pro.priceKobo)}.`,
+      `Tap below to keep Pro for ${price.label}.`,
     ),
   );
 }
 
 /** The day they move to Free. */
-export function proLapsed(): string {
+export function proLapsed(price: ProPrice = NAIRA_PRICE): string {
   return para(
     `📋 ${b("You are on Free now.")}`,
     lines(
       `${free.documentsPerMonth} invoices a month. Your logo and settings are saved for when you come back.`,
-      `Tap below to get Pro back for ${formatNaira(pro.priceKobo)} a month.`,
+      `Tap below to get Pro back for ${price.label} a month.`,
     ),
   );
 }
 
 /** A week later, once, and then nothing more. */
-export function proWinBack(): string {
+export function proWinBack(price: ProPrice = NAIRA_PRICE): string {
   return para(
     `⭐ ${b("Still want Pro?")}`,
     lines(
       "Unlimited invoices, your logo on them, and reminders sent to your clients for you.",
-      `Tap below: ${formatNaira(pro.priceKobo)} a month.`,
+      `Tap below: ${price.label} a month.`,
     ),
   );
 }
@@ -218,10 +220,10 @@ export function proWinBack(): string {
  * already in its grace week: the renewal, with the button under it. Anybody
  * else on Pro is told they are on Pro, as before.
  */
-export function proRenewOffer(state: SubscriptionState): string {
+export function proRenewOffer(state: SubscriptionState, price: ProPrice = NAIRA_PRICE): string {
   const end = state.periodEnd;
   return para(
-    `⭐ ${b("Renew Balans Pro")} — ${b(formatNaira(pro.priceKobo))} for another month.`,
+    `⭐ ${b("Renew Balans Pro")} — ${b(price.label)} for another month.`,
     end
       ? state.inGrace
         ? lines(`Your month ended on ${day(end)}. You keep Pro until ${day(graceEnd(end))}.`)

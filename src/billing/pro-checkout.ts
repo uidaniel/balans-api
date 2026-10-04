@@ -22,6 +22,7 @@ import { db } from "../db/pool.ts";
 import { env } from "../config.ts";
 import { initProCheckout } from "../payments/paystack.ts";
 import { attachPaymentReference, openSubscription, renewalOpen, stateOf } from "./subscription.ts";
+import { proPriceFor } from "./price.ts";
 
 export type ProCheckout =
   | { kind: "checkout"; url: string }
@@ -48,7 +49,9 @@ export async function openProCheckout(userId: string, log: FastifyBaseLogger): P
   // month is nearly up or in its grace week, when this is the renewal.
   if (user.plan === "pro" && !renewalOpen(await stateOf(userId))) return { kind: "already_pro" };
 
-  const opened = await openSubscription(userId, "link", log);
+  // Their own price outside Nigeria, charged as naira at today's rate.
+  const price = await proPriceFor(userId, log);
+  const opened = await openSubscription(userId, "link", log, price.chargeKobo);
   const reference = proReference(opened.id);
 
   const init = await initProCheckout({
