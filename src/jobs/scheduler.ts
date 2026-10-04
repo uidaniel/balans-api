@@ -64,6 +64,7 @@ async function tick(log: FastifyBaseLogger): Promise<void> {
 
     try {
       await runDailyJobs(log);
+      lastTickAt = new Date();
     } finally {
       // A lock we cannot release is not worth crashing over: an advisory lock
       // is tied to the session and dies with it anyway.
@@ -91,6 +92,9 @@ async function tick(log: FastifyBaseLogger): Promise<void> {
  * than a day later — while quiet hours still keep anything from going out
  * overnight.
  */
+/** When the jobs last ran to the end, for the admin's Health page. */
+export let lastTickAt: Date | null = null;
+
 export function startScheduler(log: FastifyBaseLogger): void {
   if (timer) return;
   if (!env.JOBS_ENABLED) {

@@ -37,6 +37,7 @@ import { publishChangedFlows } from "./whatsapp/flows/register.ts";
 import { submitMissingTemplates } from "./whatsapp/register-templates.ts";
 import { startBroadcasts, stopBroadcasts } from "./jobs/broadcast.ts";
 import { startPlanNotices, stopPlanNotices } from "./jobs/plan-notices.ts";
+import { startHealthChecks, stopHealthChecks } from "./jobs/health.ts";
 import { drainInbound, replayUnanswered } from "./http/routes/whatsapp.ts";
 
 const app = buildServer();
@@ -108,6 +109,7 @@ void publishChangedFlows(app.log).catch((e) =>
 // hourly scheduler: somebody who pressed "Send test" is watching their phone.
 startBroadcasts(app.log);
 startPlanNotices(app.log);
+startHealthChecks(app.log);
 
 // And the message templates the code sends, the same way.
 void submitMissingTemplates(app.log).catch((e) =>
@@ -120,6 +122,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     stopScheduler();
     stopBroadcasts();
     stopPlanNotices();
+    stopHealthChecks();
     // Replies already under way get a few seconds to finish before we go.
     const waited = await drainInbound(7_000);
     if (waited) app.log.info({ waited }, "let in-flight replies finish");
