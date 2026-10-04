@@ -71,6 +71,7 @@ export type TemplateName =
   | "invoice_overdue_prompt"
   | "monthly_summary_ready"
   | "pro_renewal"
+  | "pro_active"
   | "security_alert"
   | "client_invoice"
   | "client_quote"
@@ -155,6 +156,19 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
     body: "Your Balans Pro renews on {{1}} at {{2}}. Reply here to change or cancel it.",
     params: ["date", "amount"],
     example: ["1 October", "₦4,000"],
+  },
+
+  /*
+   * Pro switched on: paid for, or given from the admin. Outside the 24-hour
+   * window this is what says so; `pro_renewal` was used before, which asks
+   * for a price and says "renews", and Pro does neither.
+   */
+  pro_active: {
+    name: "pro_active",
+    category: "UTILITY",
+    body: "Your Balans Pro is active until {{1}}. Reply here to see what it adds.",
+    params: ["until"],
+    example: ["4 November"],
   },
 
   /*

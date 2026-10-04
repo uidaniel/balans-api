@@ -105,8 +105,8 @@ export async function expireQuotes(today: Civil, log: FastifyBaseLogger): Promis
 /* Reminders                                                                  */
 /* -------------------------------------------------------------------------- */
 
-/** F13: at the due date, then 3 and 7 days after. */
-const SCHEDULE: { kind: string; daysAfterDue: number; proOnly: boolean }[] = [
+/** F13: at the due date, then 3 and 7 days after. Keep REMINDER_KINDS in documents/actions.ts in step. */
+export const SCHEDULE: { kind: string; daysAfterDue: number; proOnly: boolean }[] = [
   { kind: "due", daysAfterDue: 0, proOnly: false },
   { kind: "late_3", daysAfterDue: 3, proOnly: true },
   { kind: "late_7", daysAfterDue: 7, proOnly: true },
@@ -388,7 +388,7 @@ export function promptMessage(x: {
       heading,
       `✅ ${b(`${x.clientName} has been reminded ${how}`)}, with the link to pay.`,
       "Nothing for you to do. I will tell you the moment it is paid.",
-      `Reply ${b("stop reminders")} to turn these off for this invoice.`,
+      `Reply ${b(x.number === null ? "stop reminders" : `stop reminders ${x.number}`)} to turn these off for this invoice.`,
     );
   }
 
@@ -408,7 +408,7 @@ export function promptMessage(x: {
     // naming what to copy.
     `${b("Send them this")} \u2014 copy the message below:`,
     forward,
-    `Or reply ${b("stop reminders")} to turn these off for this invoice.`,
+    `Or reply ${b(x.number === null ? "stop reminders" : `stop reminders ${x.number}`)} to turn these off for this invoice.`,
   );
 }
 

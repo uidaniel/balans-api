@@ -246,7 +246,7 @@ export async function notifyProActive(
       // Outside the window this is worth a template: somebody who has just
       // parted with ₦4,000 should not wait a day to hear it worked.
       fallback: {
-        template: "pro_renewal",
+        template: "pro_active",
         params: [until.toLocaleDateString("en-GB", { day: "numeric", month: "long" })],
       },
     },
@@ -255,6 +255,45 @@ export async function notifyProActive(
 
   if (outcome.kind === "failed") {
     log.error({ userId, reason: outcome.reason }, "could not confirm Pro activation");
+  }
+}
+
+/**
+ * Pro given from the admin rather than paid for (jobs/plan-notices.ts): the
+ * same card and welcome, saying it was given and until when.
+ */
+export async function notifyProGranted(
+  userId: string,
+  until: Date | null,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  const { rows } = await db()
+    .query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [userId])
+    .catch(() => ({ rows: [] as { wa_phone: string }[] }));
+  const phone = rows[0]?.wa_phone;
+  if (!phone) return;
+
+  const outcome = await send(
+    {
+      userId,
+      phone,
+      text: proStarted(undefined, { until }),
+      image: proCardUrl(new Date()),
+      fallback: {
+        template: "pro_active",
+        params: [
+          until
+            ? until.toLocaleDateString("en-GB", { day: "numeric", month: "long" })
+            : "no end date",
+        ],
+      },
+    },
+    log,
+  );
+  if (outcome.kind === "failed") {
+    log.error({ userId, reason: outcome.reason }, "could not announce Pro given by an admin");
+  } else {
+    log.info({ userId }, "Pro given by an admin announced");
   }
 }
 

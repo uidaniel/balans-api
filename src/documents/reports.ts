@@ -301,7 +301,11 @@ export function cannotConvertMessage(quoteNumber: number, why: string): string {
 }
 
 export function remindersStoppedMessage(count: number, number: number | null): string {
-  if (count === 0) return "🔕 There were no reminders waiting to stop.";
+  if (count === 0) {
+    return number === null
+      ? "🔕 There were no reminders waiting to stop."
+      : `🔕 There were no reminders waiting to stop for ${b(`invoice #${number}`)}.`;
+  }
   return number === null
     ? "🔕 Reminders are off for all your open invoices."
     : `🔕 Reminders are off for ${b(`invoice #${number}`)}.`;

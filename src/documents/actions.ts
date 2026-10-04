@@ -332,22 +332,52 @@ export async function convertQuote(
 /* Stop reminders (F13)                                                       */
 /* -------------------------------------------------------------------------- */
 
-/** "Users can say 'stop reminders for invoice 14'." */
+/** Every reminder an invoice can get; see SCHEDULE in jobs/overdue.ts. */
+export const REMINDER_KINDS = ["due", "late_3", "late_7"] as const;
+
+/**
+ * "Users can say 'stop reminders for invoice 14'." Returns how many open
+ * invoices it stopped.
+ *
+ * Reminder rows are only written on the day each one falls due, so after the
+ * due-date reminder has gone there is nothing pending — and this used to
+ * cancel only pending rows. On 4 October 2026 "stop reminders", sent in
+ * answer to the due-date reminder that suggests it, said there was nothing
+ * to stop while the 3- and 7-day ones were still coming. So it also writes
+ * every reminder not yet written as already cancelled, which the scheduler
+ * treats as done.
+ */
 export async function stopReminders(
   userId: string,
   number: number | null,
 ): Promise<number> {
-  const { rowCount } = await db().query(
-    number === null
-      ? `UPDATE reminders SET status = 'cancelled'
-          WHERE status = 'pending'
-            AND document_id IN (SELECT id FROM documents WHERE user_id = $1)`
-      : `UPDATE reminders SET status = 'cancelled'
-          WHERE status = 'pending'
-            AND document_id IN (
-              SELECT id FROM documents WHERE user_id = $1 AND number = $2
-            )`,
-    number === null ? [userId] : [userId, number],
+  const { rows } = await db().query<{ stopped: number }>(
+    `WITH docs AS (
+       SELECT d.id FROM documents d
+        WHERE d.user_id = $1
+          AND ($2::int IS NULL OR d.number = $2::int)
+          AND d.type IN ('invoice', 'payment_request')
+          AND d.status IN ('sent', 'viewed', 'overdue')
+          AND d.total_kobo > d.amount_paid_kobo
+     ),
+     cancelled AS (
+       UPDATE reminders SET status = 'cancelled'
+        WHERE status = 'pending' AND document_id IN (SELECT id FROM docs)
+       RETURNING document_id
+     ),
+     blocked AS (
+       INSERT INTO reminders (document_id, channel, kind, scheduled_at, status)
+       SELECT docs.id, 'whatsapp', k.kind, now(), 'cancelled'
+         FROM docs CROSS JOIN unnest($3::text[]) AS k(kind)
+        WHERE NOT EXISTS (
+          SELECT 1 FROM reminders r
+           WHERE r.document_id = docs.id AND r.kind = k.kind AND r.channel = 'whatsapp'
+        )
+       RETURNING document_id
+     )
+     SELECT COUNT(DISTINCT document_id)::int AS stopped
+       FROM (SELECT document_id FROM cancelled UNION ALL SELECT document_id FROM blocked) x`,
+    [userId, number, [...REMINDER_KINDS]],
   );
-  return rowCount ?? 0;
+  return rows[0]?.stopped ?? 0;
 }

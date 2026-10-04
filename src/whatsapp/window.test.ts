@@ -14,7 +14,7 @@ import { withinQuietHours, promptMessage, remindedHow } from "../jobs/overdue.ts
 describe("the templates we register with Meta", () => {
   const names = Object.keys(TEMPLATES) as TemplateName[];
 
-  it("covers the six F16 names, and the two that reach a client", () => {
+  it("covers every template we register", () => {
     assert.deepEqual(
       [...names].sort(),
       [
@@ -27,6 +27,7 @@ describe("the templates we register with Meta", () => {
         "launch_setup",
         "monthly_summary_ready",
         "payment_received",
+        "pro_active",
         "pro_ended_pay",
         "pro_ending_pay",
         "pro_free_pay",

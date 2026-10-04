@@ -213,6 +213,8 @@ const NUMBERED: [RegExp, Intent][] = [
   [/^convert (?:quote|qt) #?(\d{1,6})$/, "convert_quote"],
   [/^(?:invoice|quote|inv|doc|document) #?(\d{1,6}) status\??$/, "status"],
   [/^stop reminders? (?:for |on )?(?:invoice|inv|doc|document) #?(\d{1,6})$/, "stop_reminders"],
+  // "stop reminders 3", which is what a reminder tells them to send.
+  [/^stop reminders? #?(\d{1,6})$/, "stop_reminders"],
   /*
    * A payment the sender is telling us about (addendum section 5): "Zenith
    * paid invoice 16", "paid invoice 16", "mark invoice 16 paid", "invoice 16

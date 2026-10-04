@@ -110,7 +110,11 @@ export function proActive(state: SubscriptionState): string {
  * With what was paid, when it is known, as the receipt: the same facts the
  * email carries, for somebody who will never open the email.
  */
-export function proStarted(receipt?: { paidKobo: number; until: Date }): string {
+export function proStarted(
+  receipt?: { paidKobo: number; until: Date },
+  /** Given by Balans rather than paid for: until when, or null for no end. */
+  granted?: { until: Date | null },
+): string {
   const day = (d: Date) =>
     new Intl.DateTimeFormat("en-GB", {
       timeZone: defaults.behaviour.timezone,
@@ -128,7 +132,13 @@ export function proStarted(receipt?: { paidKobo: number; until: Date }): string 
             "A copy is in your email.",
           ),
         ]
-      : []),
+      : granted
+        ? [
+            granted.until
+              ? `Balans has put you on Pro until ${b(day(granted.until))}. Nothing to pay.`
+              : `Balans has put you on Pro, with no end date. Nothing to pay.`,
+          ]
+        : []),
     lines(
       env.INTL_ENABLED
         ? "Unlimited invoices, reminders that go out on their own, and invoices in dollars, pounds, euros and more."

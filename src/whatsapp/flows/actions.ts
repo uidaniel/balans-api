@@ -17,7 +17,7 @@
 import type { FastifyBaseLogger } from "fastify";
 
 import { env, legalConsentVersion } from "../../config.ts";
-import { sendContactCard, sendText } from "../client.ts";
+import { sendText } from "../client.ts";
 import { recordOutbound } from "../../conversation/store.ts";
 import { db } from "../../db/pool.ts";
 import { checkCode, issueCode } from "../../lib/codes.ts";
@@ -67,54 +67,6 @@ export function sendWelcome(
     if (sent.ok) log.info({ userId, delivered: sent.delivered }, "welcome email sent");
     else log.warn({ userId, reason: sent.reason }, "welcome email not sent");
   })().catch((e) => log.error({ userId, err: (e as Error).message }, "welcome email failed"));
-}
-
-/**
- * "Save Balans", once, straight after setup: one line and our contact card.
- *
- * Until Meta grants a verified badge (it will not consider one before the
- * business is 30 days old), WhatsApp heads an unsaved business chat with the
- * number and shows "~Balans" small underneath. Saved, it says "Balans". This
- * is the only way to get there before the badge, and it is one tap.
- *
- * Sent by the chat after "You are set up" and whatever follows it, so it
- * arrives last and reads as the aside it is. It used to go from the welcome,
- * which runs while the form is still closing, and so landed before the
- * confirmation (3 October 2026). Never allowed to fail setup.
- */
-export async function sendSaveUs(userId: string, log: FastifyBaseLogger): Promise<void> {
-  try {
-    // Once per person: setup can finish down more than one path.
-    const { rows: had } = await db().query(
-      `SELECT 1 FROM messages WHERE user_id = $1 AND direction = 'out' AND kind = 'contacts' LIMIT 1`,
-      [userId],
-    );
-    if (had.length) return;
-    const [ours, { rows }] = await Promise.all([
-      displayNumber(),
-      db().query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [userId]),
-    ]);
-    const phone = rows[0]?.wa_phone;
-    if (!ours || !phone) return;
-
-    const said = await sendText(phone, "📇 Save Balans to your contacts so we show up by name in your chats. Tap the card below, then *Add contact*.");
-    if (said.ok) await recordOutbound(userId, said.waMessageId, "sent", { kind: "text" });
-
-    const card = await sendContactCard(phone, {
-      name: "Balans",
-      waNumber: ours,
-      email: env.SUPPORT_EMAIL,
-      url: env.SITE_URL,
-    });
-    if (card.ok) {
-      await recordOutbound(userId, card.waMessageId, "sent", { kind: "contacts" });
-      log.info({ userId }, "contact card sent");
-    } else {
-      log.warn({ userId, reason: card.reason }, "contact card not sent");
-    }
-  } catch (e) {
-    log.warn({ userId, err: (e as Error).message }, "contact card failed");
-  }
 }
 
 async function emailCode(

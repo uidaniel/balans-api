@@ -413,48 +413,6 @@ export function sendImage(
   );
 }
 
-/**
- * A contact card: Balans, with our own number on it.
- *
- * Why it exists: until Meta grants a verified badge, WhatsApp shows an
- * unsaved business as its number, with the approved name small underneath as
- * "~Balans". A person who saves this card sees "Balans" at the top of the
- * chat and in their chat list from then on. One tap on "Add contact" does it.
- *
- * The picture on a saved contact comes from the business profile, not from
- * here; the card carries only words and numbers.
- */
-export function sendContactCard(
-  to: string,
-  card: { name: string; waNumber: string; email?: string; url?: string },
-  opts: { fetchImpl?: Transport } = {},
-): Promise<SendResult> {
-  const phone = normalisePhone(to);
-  if (!phone) {
-    return Promise.resolve({ ok: false, retryable: false, reason: `unusable phone number: ${to}` });
-  }
-  const digits = card.waNumber.replace(/\D/g, "");
-  return call(
-    `${env.WA_PHONE_NUMBER_ID}/messages`,
-    {
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: phone,
-      type: "contacts",
-      contacts: [
-        {
-          name: { formatted_name: card.name, first_name: card.name },
-          org: { company: card.name },
-          phones: [{ phone: `+${digits}`, wa_id: digits, type: "WORK" }],
-          ...(card.email ? { emails: [{ email: card.email, type: "WORK" }] } : {}),
-          ...(card.url ? { urls: [{ url: card.url, type: "WORK" }] } : {}),
-        },
-      ],
-    },
-    opts.fetchImpl ?? fetch,
-  );
-}
-
 export function sendDocument(
   to: string,
   mediaId: string,
