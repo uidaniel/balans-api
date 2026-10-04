@@ -173,7 +173,7 @@ describe("how the two readers are wired together", () => {
     assert.match(handle, /draftOnScreen\(saved\.context\.doc\)/);
     // And the draft's currency, so a correction the model reads is in the
     // invoice's money rather than in the message's.
-    assert.match(handle, /parseMessage\(text, \{ today, onScreen, correctionMoney \}\)/);
+    assert.match(handle, /parseMessage\(text, \{ today, onScreen, correctionMoney, home: abroadCurrencyFor\(msg\.from\) \}\)/);
   });
 });
 

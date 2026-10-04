@@ -35,6 +35,8 @@ import { renewalOpen, stateOf } from "../../billing/subscription.ts";
 import { cachedBanks } from "../../payments/paystack.ts";
 import { checkAccount } from "../../payments/bank-directory.ts";
 import { finishChange, sendChangeCode } from "../../whatsapp/flows/actions.ts";
+import { PAY_METHODS } from "../../whatsapp/flows/pay-methods.ts";
+import { abroadCurrencyFor } from "../../../core/home-currency.ts";
 
 const HTML = "text/html; charset=utf-8";
 const base = () => env.PUBLIC_BASE_URL.replace(/\/$/, "");
@@ -55,13 +57,15 @@ type Row = {
   next_number: number;
   payment_details: string | null;
   abroad_pay_by: "link" | "own";
+  payment_method: string | null;
+  wa_phone: string;
 };
 
 async function load(userId: string): Promise<Row> {
   const { rows } = await db().query<Row>(
     `SELECT u.business_name, u.email, u.email_verified_at IS NOT NULL AS email_verified, u.address, u.tin,
             u.plan, u.logo_url, u.brand_color, u.signature_url, u.default_due_days,
-            u.invoice_number_start, u.template_id, u.payment_details, u.abroad_pay_by,
+            u.invoice_number_start, u.template_id, u.payment_details, u.abroad_pay_by, u.payment_method, u.wa_phone,
             GREATEST(
               COALESCE((SELECT MAX(d.number) FROM documents d WHERE d.user_id = u.id AND d.type <> 'sample'), 0) + 1,
               u.invoice_number_start
@@ -101,7 +105,9 @@ async function state(userId: string) {
       nextNumber: u.next_number,
       design: design.name,
     },
-    abroad: { details: u.payment_details ?? "", payBy: u.abroad_pay_by },
+    abroad: { details: u.payment_details ?? "", payBy: u.abroad_pay_by, method: u.payment_method ?? "" },
+    // Outside Nigeria (Phase 3): no Nigerian bank, paid to their own details.
+    livesAbroad: abroadCurrencyFor(u.wa_phone) !== null,
     bank: account ? { bankName: account.bankName, last4: account.last4, accountName: account.accountName } : null,
     links: {
       designs,
@@ -198,20 +204,24 @@ export async function settingsPageRoutes(app: FastifyInstance): Promise<void> {
   );
 
   /* -- Clients abroad ----------------------------------------------------- */
-  app.post<{ Params: { token: string }; Body: { details?: string; payBy?: string } }>(
+  app.post<{ Params: { token: string }; Body: { details?: string; payBy?: string; method?: string } }>(
     "/settings/:token/abroad",
     async (req, reply) => {
       const owner = await who(req.params.token);
       if (!owner) return nope(reply, "This link has expired.", 404);
       const details = String(req.body?.details ?? "").replace(/\r\n?/g, "\n").trim();
-      const payBy = req.body?.payBy === "own" ? "own" : "link";
+      const abroad = abroadCurrencyFor((await load(owner.id)).wa_phone) !== null;
+      // Outside Nigeria there is no link to fall back on: always their details.
+      const payBy = abroad || req.body?.payBy === "own" ? "own" : "link";
+      const method = String(req.body?.method ?? "").trim();
+      if (method && !PAY_METHODS.some((m) => m.id === method)) return nope(reply, "Choose how your clients pay you.");
       if (details.length > 600) return nope(reply, "Keep your payment details under 600 characters.");
       if (payBy === "own" && !details) return nope(reply, "Add your payment details first, or keep the payment link.");
-      await db().query(`UPDATE users SET payment_details = NULLIF($2, ''), abroad_pay_by = $3 WHERE id = $1`, [
-        owner.id,
-        details,
-        payBy,
-      ]);
+      await db().query(
+        `UPDATE users SET payment_details = NULLIF($2, ''), abroad_pay_by = $3,
+                payment_method = COALESCE(NULLIF($4, ''), payment_method) WHERE id = $1`,
+        [owner.id, details, payBy, method],
+      );
       req.log.info({ userId: owner.id, payBy }, "settings page: payment details saved");
       return { ok: true };
     },
@@ -474,7 +484,17 @@ function fill() {
   $('b-name').value = S.business.name; $('b-address').value = S.business.address; $('b-tin').value = S.business.tin;
   $('b-email').value = S.business.email ? S.business.email + (S.business.emailVerified ? '' : ' (not verified)') : 'None';
   $('i-days').value = S.invoices.dueDays; $('i-next').value = S.invoices.nextNumber;
-  $('a-details').value = S.abroad.details; $('a-payby').value = S.abroad.payBy;
+  $('a-details').value = S.abroad.details; $('a-payby').value = S.abroad.payBy; $('a-method').value = S.abroad.method;
+  // Outside Nigeria: how they get paid is this tab, and there is no Nigerian bank.
+  if (S.livesAbroad) {
+    document.querySelector('.tab[data-tab="payout"]').remove();
+    // Hidden, not removed: the script below still reads its fields.
+    document.querySelector('section[data-tab="payout"]').dataset.tab = 'none';
+    document.querySelector('.tab[data-tab="abroad"]').textContent = 'How you get paid';
+    $('a-title').textContent = 'How you get paid';
+    $('a-hint').textContent = 'Your clients pay you directly. These go on every invoice, as you write them.';
+    $('a-payby-row').classList.add('hidden');
+  }
   $('l-design').querySelector('small').textContent = S.invoices.design;
   $('l-design').href = S.links.designs + '?from=settings';
   $('l-sign').href = S.links.signature + '?from=settings';
@@ -512,13 +532,13 @@ function snapshot() {
   saved = {
     b: [val('b-name'), val('b-address'), val('b-tin')].join('\u0000'),
     i: [val('i-days'), val('i-next')].join('\u0000'),
-    a: [val('a-details'), $('a-payby').value].join('\u0000'),
+    a: [val('a-details'), $('a-payby').value, $('a-method').value].join('\u0000'),
   };
   dirty();
 }
 function dirty() {
   $('b-save').disabled = !val('b-name') || [val('b-name'), val('b-address'), val('b-tin')].join('\u0000') === saved.b;
-  $('a-save').disabled = [val('a-details'), $('a-payby').value].join('\u0000') === saved.a
+  $('a-save').disabled = [val('a-details'), $('a-payby').value, $('a-method').value].join('\u0000') === saved.a
     || ($('a-payby').value === 'own' && !val('a-details'));
   $('i-save').disabled = val('i-days') === '' || val('i-next') === '' || [val('i-days'), val('i-next')].join('\u0000') === saved.i;
   if (S && S.plan === 'pro') {
@@ -531,6 +551,7 @@ function dirty() {
 }
 ['b-name', 'b-address', 'b-tin', 'i-days', 'i-next', 'a-details', 'k-number', 'k-code'].forEach((id) => $(id).addEventListener('input', dirty));
 $('a-payby').addEventListener('change', dirty);
+$('a-method').addEventListener('change', dirty);
 $('k-bank').addEventListener('change', () => { checked = null; $('k-found').classList.add('hidden'); $('k-verify').classList.add('hidden'); dirty(); });
 $('k-number').addEventListener('input', () => { if (checked) { checked = null; $('k-found').classList.add('hidden'); $('k-verify').classList.add('hidden'); } });
 
@@ -559,8 +580,8 @@ $('i-save').onclick = async (e) => {
 $('a-save').onclick = async (e) => {
   busy(e.target, true, 'Saving\u2026');
   try {
-    await api('/abroad', { details: $('a-details').value, payBy: $('a-payby').value });
-    S.abroad = { details: val('a-details'), payBy: $('a-payby').value };
+    await api('/abroad', { details: $('a-details').value, payBy: $('a-payby').value, method: $('a-method').value });
+    S.abroad = { details: val('a-details'), payBy: $('a-payby').value, method: $('a-method').value };
     say('a-msg', 'Saved. Your next invoices abroad use it.', true);
     busy(e.target, false, 'Save'); snapshot();
   } catch (err) { say('a-msg', err.message); busy(e.target, false, 'Save'); dirty(); }
@@ -724,8 +745,9 @@ $('k-confirm').onclick = async (e) => {
 
 /* Tabs: one section at a time. The open one is kept in the address, so a
    reload, or coming back from the design or signature page, lands on it. */
-const TABS = [...document.querySelectorAll('.tab')].map((b) => b.dataset.tab);
 function showTab(name) {
+  // Read each time: a tab can be taken away once the state is known.
+  const TABS = [...document.querySelectorAll('.tab')].map((b) => b.dataset.tab);
   if (!TABS.includes(name)) name = TABS[0];
   document.querySelectorAll('.tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
   document.querySelectorAll('section.card[data-tab]').forEach((s) => s.classList.toggle('off', s.dataset.tab !== name));
@@ -829,12 +851,14 @@ export function settingsPage(token: string): string {
   </section>
 
   <section class="card" data-tab="abroad">
-    <h2>Clients abroad</h2>
-    <p class="hint">For invoices in dollars, pounds and other currencies. Clients can pay by card through a Balans link, or straight to you by PayPal, Wise or a bank abroad.</p>
+    <h2 id="a-title">Clients abroad</h2>
+    <p class="hint" id="a-hint">For invoices in dollars, pounds and other currencies. Clients can pay by card through a Balans link, or straight to you by PayPal, Wise or a bank abroad.</p>
+    <label for="a-method">Payment method</label>
+    <select id="a-method"><option value="">Choose…</option>${PAY_METHODS.map((m) => `<option value="${esc(m.id)}">${esc(m.title)}</option>`).join("")}</select>
     <label for="a-details">Your payment details</label>
     <textarea id="a-details" maxlength="600" placeholder="PayPal: you@example.com&#10;or Wise: IBAN GB00 0000 0000 0000 00"></textarea>
-    <label for="a-payby">Invoices abroad go out with</label>
-    <select id="a-payby"><option value="link">A Balans payment link</option><option value="own">My payment details</option></select>
+    <div id="a-payby-row"><label for="a-payby">Invoices abroad go out with</label>
+    <select id="a-payby"><option value="link">A Balans payment link</option><option value="own">My payment details</option></select></div>
     <p class="hint" style="margin-top:8px">You can choose per invoice too: say <b>pay by my paypal</b> or <b>use payment link</b>. Payments to your own details are not seen by Balans, so mark them paid when they arrive.</p>
     <button class="btn" id="a-save" type="button" disabled>Save</button>
     <p class="msg" id="a-msg" role="status"></p>

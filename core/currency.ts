@@ -425,3 +425,29 @@ export function formatMoney(minor: number, currency: Currency): string {
   const cents = currency === "NGN" && part === 0 ? "" : `.${String(part).padStart(2, "0")}`;
   return `${minor < 0 ? "-" : ""}${INFO[currency].symbol}${whole.toLocaleString("en-NG")}${cents}`;
 }
+
+/**
+ * `readCurrency`, for somebody who lives outside Nigeria (Phase 3, October
+ * 2026). To a freelancer in London "invoice Acme 500 for the logo" means
+ * five hundred pounds, so an amount with no mark on it is in their own
+ * currency. Naira still has to be said — "₦500", "500 naira" — and is then
+ * naira, as it is for everybody.
+ *
+ * `home` null is a Nigerian number, read exactly as before.
+ */
+export function readCurrencyAt(text: string, home: Foreign | null): CurrencyRead {
+  const read = readCurrency(text);
+  if (!home || read.kind === "unsupported") return read;
+  if (read.kind === "foreign" && read.currency !== home) return read;
+
+  const tokens = readAmounts(text);
+  // Naira said out loud: theirs to ask for, and the usual question if mixed.
+  if (tokens.some((t) => t.currency === "NGN")) return read;
+
+  const marked = new Set(tokens.filter((t) => t.currency !== null).map((t) => t.currency));
+  // Another currency beside bare figures is the usual "which one?".
+  if ([...marked].some((c) => c !== home)) return read;
+
+  const all = tokens.filter((t) => t.currency === home || t.currency === null);
+  return { kind: "foreign", currency: home, amountMinor: all.length === 1 ? all[0]!.minor : null };
+}

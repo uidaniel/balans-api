@@ -69,6 +69,7 @@
  */
 
 import { bankOptions, mfbOptions } from "./banks.ts";
+import { PAY_METHODS } from "./pay-methods.ts";
 import { defaults, env } from "../../config.ts";
 import { formatNaira } from "../../../core/totals.ts";
 import { CURRENCIES, INFO, type Currency } from "../../../core/currency.ts";
@@ -131,10 +132,12 @@ const onboarding: FlowDefinition = {
     data_api_version: "3.0",
     routing_model: {
       BUSINESS: ["CODE"],
-      CODE: ["PAYOUT"],
+      // Outside Nigeria the code leads to ABROAD instead of the bank screens.
+      CODE: ["PAYOUT", "ABROAD"],
       PAYOUT: ["MFB", "CONFIRM"],
       MFB: ["CONFIRM"],
       CONFIRM: ["DONE"],
+      ABROAD: ["DONE"],
       DONE: [],
     },
     screens: [
@@ -188,6 +191,7 @@ const onboarding: FlowDefinition = {
       payoutScreen("onboarding"),
       mfbScreen("onboarding"),
       confirmScreen("onboarding"),
+      abroadScreen(),
       {
         /*
          * Everything is already done by the time this shows: the email
@@ -208,7 +212,7 @@ const onboarding: FlowDefinition = {
           type: "SingleColumnLayout",
           children: [
             { type: "TextHeading", text: "You're all set" },
-            { type: "TextBody", text: "Your account is verified and ready to send invoices." },
+            { type: "TextBody", text: "You are ready to send invoices." },
             { type: "TextSubheading", text: "Clients pay into" },
             { type: "TextBody", text: "${data.account_name}" },
             { type: "TextCaption", text: "${data.account_line}" },
@@ -236,6 +240,75 @@ const onboarding: FlowDefinition = {
  */
 
 type AccountForm = "onboarding" | "payout_change";
+
+/**
+ * Setup outside Nigeria (Phase 3, October 2026), after the email code.
+ *
+ * There is no bank anywhere else Balans can check an account with, so
+ * nothing is looked up: they say how they are paid and type the details,
+ * which are printed on their invoices as given. The terms are agreed here,
+ * since this screen stands where CONFIRM does for a Nigerian account.
+ */
+function abroadScreen(): Record<string, unknown> {
+  return {
+    id: "ABROAD",
+    title: "How you get paid",
+    terminal: false,
+    data: { error_messages: errorsFor("pay_method", "pay_details", "agreed") },
+    layout: {
+      type: "SingleColumnLayout",
+      children: [
+        { type: "TextSubheading", text: "Your clients pay you directly. These go on every invoice, as you write them." },
+        {
+          type: "EmbeddedLink",
+          text: "Read the Terms of use",
+          "on-click-action": { name: "open_url", url: `${site}/terms` },
+        },
+        {
+          type: "EmbeddedLink",
+          text: "Read the Privacy Notice",
+          "on-click-action": { name: "open_url", url: `${site}/privacy` },
+        },
+        {
+          type: "Form",
+          name: "abroad_form",
+          "error-messages": "${data.error_messages}",
+          children: [
+            {
+              type: "Dropdown",
+              name: "pay_method",
+              label: "Method",
+              required: true,
+              "data-source": PAY_METHODS.map((m) => ({ ...m })),
+            },
+            {
+              type: "TextArea",
+              name: "pay_details",
+              label: "Details",
+              "helper-text": "E.g. your PayPal email, or your IBAN and account name.",
+              required: true,
+              "max-length": 600,
+            },
+            { type: "OptIn", name: "agreed", label: "I agree to the Terms and the Privacy Notice", required: true },
+            {
+              type: "Footer",
+              label: "Finish setup",
+              "on-click-action": {
+                name: "data_exchange",
+                payload: {
+                  pay_method: "${form.pay_method}",
+                  pay_details: "${form.pay_details}",
+                  agreed: "${form.agreed}",
+                  form_version: "3",
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
 
 /** The Form's `error-messages`, keyed by field. Empty until something is wrong. */
 function errorsFor(...fields: string[]) {
@@ -1018,10 +1091,11 @@ const CURRENCY_TITLES: Record<Currency, string> = {
   AED: "UAE Dirham (AED)",
 };
 
-export function currencyOptions(pro: boolean, home: Currency = "NGN"): CurrencyOption[] {
+export function currencyOptions(pro: boolean, home: Currency = "NGN", abroad = false): CurrencyOption[] {
   const order: Currency[] = [...new Set<Currency>([home, "NGN", ...CURRENCIES])];
+  // Outside Nigeria their own currency is free, as naira is in Nigeria.
   return order.map((c) =>
-    c === "NGN" || pro
+    c === "NGN" || pro || (abroad && c === home)
       ? { id: c, title: CURRENCY_TITLES[c] }
       : {
           id: c,

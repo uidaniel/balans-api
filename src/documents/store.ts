@@ -412,6 +412,8 @@ export type Confirmed = {
   type: DocumentType;
   /** The account a naira invoice was sent with, or null if it has a link. */
   bank: BankDetails | null;
+  /** The sender's own payment details, on an invoice that went out with them. */
+  ownDetails?: string | null;
 };
 
 /**

@@ -47,3 +47,14 @@ export function homeCurrencyFor(phone: string | null | undefined): Currency {
   for (const [prefix, currency] of PREFIXES) if (digits.startsWith(prefix)) return currency;
   return "NGN";
 }
+
+/**
+ * Whether this number is outside Nigeria, and the currency they live in.
+ * Null for a Nigerian number. Dollars where we take nothing local.
+ */
+export function abroadCurrencyFor(phone: string | null | undefined): Exclude<Currency, "NGN"> | null {
+  const digits = String(phone ?? "").replace(/\D/g, "").replace(/^00/, "");
+  if (!digits || digits.startsWith("234")) return null;
+  const home = homeCurrencyFor(digits);
+  return home === "NGN" ? "USD" : home;
+}

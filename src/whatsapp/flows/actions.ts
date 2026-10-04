@@ -14,6 +14,7 @@
  * written twice.
  */
 
+import { abroadCurrencyFor } from "../../../core/home-currency.ts";
 import type { FastifyBaseLogger } from "fastify";
 
 import { env, legalConsentVersion } from "../../config.ts";
@@ -174,6 +175,44 @@ export async function completeSetup(userId: string, checked: Checked, log: Fasti
   await saveConversation(userId, "idle", context.opener ? { opener: context.opener } : {});
 
   log.info({ userId, version: legalConsentVersion }, "set up entirely inside the form");
+  return { ok: true };
+}
+
+/** Whether this user's WhatsApp number is outside Nigeria (Phase 3). */
+export async function isAbroad(userId: string): Promise<boolean> {
+  const { rows } = await db().query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [userId]);
+  return abroadCurrencyFor(rows[0]?.wa_phone) !== null;
+}
+
+/**
+ * Setup outside Nigeria, finished inside the form: the same as
+ * `completeSetup`, with their own payment details where a Nigerian account
+ * would be. Nothing is checked — there is no bank to ask — and every invoice
+ * goes out with these details rather than a Balans link (`abroad_pay_by`).
+ */
+export async function completeAbroadSetup(
+  userId: string,
+  pay: { method: string; details: string },
+  log: FastifyBaseLogger,
+): Promise<Done> {
+  const { rows } = await db().query<{ verified: boolean }>(
+    `SELECT email_verified_at IS NOT NULL AS verified FROM users WHERE id = $1`,
+    [userId],
+  );
+  if (!rows[0]?.verified) {
+    return { ok: false, message: "Your email is not verified yet. Go back to the code screen." };
+  }
+
+  await db().query(
+    `UPDATE users SET payment_method = $2, payment_details = $3, abroad_pay_by = 'own' WHERE id = $1`,
+    [userId, pay.method.slice(0, 40), pay.details.slice(0, 600)],
+  );
+  sendWelcome(userId, await recordConsent(userId, legalConsentVersion), log);
+
+  const { context } = await loadConversation(userId);
+  await saveConversation(userId, "idle", context.opener ? { opener: context.opener } : {});
+
+  log.info({ userId, method: pay.method }, "set up outside Nigeria, inside the form");
   return { ok: true };
 }
 

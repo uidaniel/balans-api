@@ -36,6 +36,7 @@ import { decrypt, encrypt } from "../../lib/crypto.ts";
 import { findBank, checkAccount } from "../../payments/bank-directory.ts";
 import { loadConversation, saveConversation, upsertUser } from "../../conversation/store.ts";
 import { MFB_CHOICE } from "./banks.ts";
+import { PAY_METHODS } from "./pay-methods.ts";
 import * as actions from "./actions.ts";
 
 const KEY_CONFIG = "flow_endpoint.private_key";
@@ -290,10 +291,12 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
     const code = str("code").replace(/\D/g, "");
     if (code.length !== 6) return codeScreen(shown, FORM_ERRORS.codeLength);
 
-    // Setup, current order: the address proved, and on to the bank.
+    // Setup, current order: the address proved, and on to the bank — or,
+    // outside Nigeria, to how they are paid, since there is no bank to check.
     if (setup && version === "v3") {
       const ok = await act.verifySetupEmail(userId, email, code, log);
       if (!ok.ok) return codeScreen(shown, ok.message);
+      if (await act.isAbroad(userId)) return { screen: "ABROAD", data: { error_messages: {} } };
       return { screen: "PAYOUT", data: { error_messages: {} } };
     }
 
@@ -329,6 +332,26 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
   /* -- The bank and the account ------------------------------------------ */
   if (req.screen === "PAYOUT" || req.screen === "MFB") {
     return checkPayout(key!, userId, req.screen, data as PayoutAsk, version, deps);
+  }
+
+  /* -- Outside Nigeria: how they are paid ---------------------------------- */
+  if (req.screen === "ABROAD") {
+    const method = str("pay_method").trim();
+    const details = str("pay_details").replace(/\r\n?/g, "\n").trim();
+    const back = (field: string, message: string) => ({
+      screen: "ABROAD",
+      data: { error_messages: { [field]: message } },
+    });
+    if (!PAY_METHODS.some((m) => m.id === method)) return back("pay_method", "Choose how your clients pay you.");
+    if (details.length < 3) return back("pay_details", "Type the details your clients need to pay you.");
+    if (details.length > 600) return back("pay_details", "Keep it under 600 characters.");
+    if (!ticked(data.agreed)) return back("agreed", FORM_ERRORS.notAgreed);
+    const done = await act.completeAbroadSetup(userId, { method, details }, log);
+    if (!done.ok) return back("pay_details", done.message);
+    return {
+      screen: "DONE",
+      data: { account_name: method, account_line: details.split("\n")[0]!.slice(0, 80) },
+    };
   }
 
   /* -- Is this you? -------------------------------------------------------- */

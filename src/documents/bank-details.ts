@@ -135,17 +135,34 @@ export async function attachOwnDetails(
   documentId: string,
   userId: string,
 ): Promise<string | null> {
-  const { rows } = await c.query<{ details: string | null; choice: string | null; currency: string; type: string }>(
-    `SELECT u.payment_details AS details, COALESCE(d.pay_by, u.abroad_pay_by) AS choice, d.currency, d.type
+  const { rows } = await c.query<{
+    details: string | null;
+    method: string | null;
+    choice: string | null;
+    currency: string;
+    type: string;
+  }>(
+    `SELECT u.payment_details AS details, u.payment_method AS method,
+            COALESCE(d.pay_by, u.abroad_pay_by) AS choice, d.currency, d.type
        FROM documents d JOIN users u ON u.id = d.user_id
       WHERE d.id = $1 AND d.user_id = $2`,
     [documentId, userId],
   );
   const r = rows[0];
-  if (!r || r.type === "quote" || r.currency === "NGN" || r.choice !== "own" || !r.details?.trim()) return null;
+  // Naira too: this is only reached when there is no Nigerian account to
+  // stamp, which is somebody outside Nigeria billing in naira.
+  if (!r || r.type === "quote" || r.choice !== "own" || !r.details?.trim()) return null;
+  const text = ownDetailsText(r.method, r.details);
   await c.query(
     `UPDATE documents SET delivery_type = 'own_details', payment_details = $2 WHERE id = $1`,
-    [documentId, r.details.trim()],
+    [documentId, text],
   );
-  return r.details.trim();
+  return text;
+}
+
+/** "PayPal" over "you@example.com": the method, when given, heads the details. */
+export function ownDetailsText(method: string | null | undefined, details: string): string {
+  const m = (method ?? "").trim();
+  const d = details.trim();
+  return m && !d.toLowerCase().startsWith(m.toLowerCase()) ? `${m}\n${d}` : d;
 }

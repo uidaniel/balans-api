@@ -15,7 +15,7 @@
 import { plainly } from "./corrections.ts";
 import { env } from "../config.ts";
 import { todayIn, type Civil } from "../../core/dates.ts";
-import { readCurrency, type CurrencyRead } from "../../core/currency.ts";
+import { readCurrencyAt, type CurrencyRead, type Foreign } from "../../core/currency.ts";
 import { parseAmountToKobo } from "../../core/amount.ts";
 import { defaults } from "../config.ts";
 import { asCommand } from "./commands.ts";
@@ -52,6 +52,8 @@ export async function parseMessage(
   opts: {
     today?: Civil;
     fetchImpl?: typeof fetch;
+    /** The sender's own currency when they live outside Nigeria; null in Nigeria. */
+    home?: Foreign | null;
     onScreen?: string | null;
     /**
      * The currency of the draft on screen, when there is one.
@@ -80,7 +82,8 @@ export async function parseMessage(
   // "40 percent", "50/50", "half upfront", "make am": one spelling for every
   // reader below, as for corrections (see `plainly`).
   text = plainly(text);
-  const money = readCurrency(text);
+  // Abroad, a bare amount is in the sender's own currency (`readCurrencyAt`).
+  const money = readCurrencyAt(text, opts.home ?? null);
   const correctionMoney = opts.correctionMoney ?? money;
   const priced = (parsed: Parsed): Parsed => (parsed.money === money ? parsed : { ...parsed, money });
 

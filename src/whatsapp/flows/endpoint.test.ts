@@ -398,6 +398,9 @@ describe("setup, email code first", () => {
     verifySetupEmail: async (_u: string, _e: string, code: string) =>
       code === "123456" ? (calls.push("verified"), { ok: true as const }) : { ok: false as const, message: "That code is not right." },
     completeSetup: async () => (calls.push("complete"), { ok: true as const }),
+    isAbroad: async () => false,
+    completeAbroadSetup: async (_u: string, pay: { method: string; details: string }) =>
+      (calls.push(`abroad:${pay.method}`), { ok: true as const }),
   };
   const deps = {
     actions,
@@ -412,6 +415,40 @@ describe("setup, email code first", () => {
   });
   const declared = (id: string) => Object.keys(screens.screens.find((s) => s.id === id)?.data ?? {}).sort();
   type Out = { screen: string; data: Record<string, unknown> };
+
+  it("goes to how they are paid, not the bank, outside Nigeria", async () => {
+    const abroad = { ...deps, actions: { ...actions, isAbroad: async () => true } };
+    const out = (await answer(v3("CODE", { code: "123456", email: "danny@x.ng" }), abroad)) as Out;
+    assert.equal(out.screen, "ABROAD");
+    assert.deepEqual(Object.keys(out.data).sort(), declared("ABROAD"));
+  });
+
+  it("finishes outside Nigeria with a method, details and the terms", async () => {
+    calls.length = 0;
+    const out = (await answer(
+      v3("ABROAD", { pay_method: "PayPal", pay_details: "me@example.com", agreed: "true" }),
+      deps,
+    )) as Out;
+    assert.equal(out.screen, "DONE");
+    assert.deepEqual(Object.keys(out.data).sort(), declared("DONE"));
+    assert.equal(out.data.account_name, "PayPal");
+    assert.deepEqual(calls, ["abroad:PayPal"]);
+  });
+
+  it("stays put outside Nigeria until everything is there", async () => {
+    calls.length = 0;
+    const cases: [Record<string, string>, string][] = [
+      [{ pay_method: "Gold bars", pay_details: "me@example.com", agreed: "true" }, "pay_method"],
+      [{ pay_method: "Wise", pay_details: " ", agreed: "true" }, "pay_details"],
+      [{ pay_method: "Wise", pay_details: "GB00 1234", agreed: "false" }, "agreed"],
+    ];
+    for (const [data, field] of cases) {
+      const out = (await answer(v3("ABROAD", data), deps)) as Out;
+      assert.equal(out.screen, "ABROAD");
+      assert.ok((out.data.error_messages as Record<string, string>)[field], field);
+    }
+    assert.deepEqual(calls, [], "saved something it should not have");
+  });
 
   it("makes the user from the number when the waitlist's form is used", async () => {
     // The launch message's button carries `onboarding:wa:<number>`, because
@@ -442,7 +479,7 @@ describe("setup, email code first", () => {
 
   it("asks for the code straight after the email", () => {
     assert.deepEqual(screens.routing_model.BUSINESS, ["CODE"]);
-    assert.deepEqual(screens.routing_model.CODE, ["PAYOUT"]);
+    assert.deepEqual(screens.routing_model.CODE, ["PAYOUT", "ABROAD"]);
   });
 
   it("sends the code from the first screen and shows the box for it", async () => {

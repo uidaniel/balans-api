@@ -7,7 +7,7 @@
  * which is why the interesting logic stays testable without a database.
  */
 
-import { homeCurrencyFor } from "../../core/home-currency.ts";
+import { abroadCurrencyFor, homeCurrencyFor } from "../../core/home-currency.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { legalConsentVersion } from "../config.ts";
 import { db, tx } from "../db/pool.ts";
@@ -581,7 +581,7 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   const onScreen =
     state === "awaiting_confirm" && saved.context.doc ? draftOnScreen(saved.context.doc) : null;
   const reading = needsParse
-    ? await parseMessage(text, { today, onScreen, correctionMoney })
+    ? await parseMessage(text, { today, onScreen, correctionMoney, home: abroadCurrencyFor(msg.from) })
     : null;
 
   /*
@@ -685,7 +685,7 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
       ? draftCurrency
       : undefined;
 
-  const abroad = await priceAbroad(user.id, parsed, log, repricing);
+  const abroad = await priceAbroad(user.id, parsed, log, repricing, msg.from);
   if (abroad.stop) {
     await reply(user.id, msg.from, [abroad.words], log);
     return;
@@ -1320,7 +1320,9 @@ async function runEffects(
            * morning, and the one number a user could rely on about this
            * feature would be the one that kept changing.
            */
-          const capped = doc.foreign
+          // Abroad they are paid to their own details, with no card of ours to
+          // be charged back, so the cap has nothing to protect.
+          const capped = doc.foreign && !abroadCurrencyFor(ctx.phone)
             ? await overForeignCap(userId, doc.foreign, ctx.today)
             : null;
           if (capped) {
@@ -1535,7 +1537,8 @@ async function runEffects(
             await tellIfClientWhatsAppFailed(confirmed.id, userId, ctx.phone, log);
           };
 
-          const markPaid: ReplyButton[] = confirmed.bank
+          // Paid to their own details abroad is the same: only they can tell.
+          const markPaid: ReplyButton[] = confirmed.bank || confirmed.ownDetails
             ? [{ id: `mark invoice ${confirmed.number} as paid`, title: "Mark as paid" }]
             : [];
 
@@ -1801,7 +1804,11 @@ async function runEffects(
               body: para(
                 `⚙️ ${b(p?.business_name ?? businessName ?? "Your settings")}`,
                 lines(
-                  account ? `Paid into ${account.accountName}, ${account.bankName} ••${account.last4}` : "No payout account yet",
+                  account
+                    ? `Paid into ${account.accountName}, ${account.bankName} ••${account.last4}`
+                    : abroadCurrencyFor(ctx.phone)
+                      ? "Clients pay you directly, by the details in settings"
+                      : "No payout account yet",
                   `${design?.name ?? "Classic"} design · ${plan === "pro" ? "Pro" : "Free"} plan`,
                 ),
                 "Tap below to change your details, logo and colours, invoices, signature or payout account.",
@@ -3061,7 +3068,7 @@ async function formCurrency(
     return { stop: true, words: VOICE.notInThatCurrency(INFO[code].many) };
   }
 
-  const plan = await planOf(userId);
+  const plan = code === abroadCurrencyFor(await phoneOf(userId)) ? "pro" : await planOf(userId);
   if (plan !== "pro") return { stop: true, words: VOICE.foreignIsPro };
 
   const quote = await currentRate(code, { log });
@@ -3159,12 +3166,19 @@ async function openedForPlan(
    * is how they learn Pro has them; Pro can choose any. The request form has
    * no currency box to switch.
    */
+  /*
+   * Outside Nigeria their own currency comes first and is free, and a new
+   * form starts on it rather than on naira (Phase 3).
+   */
+  const phone = await phoneOf(userId);
+  const abroad = abroadCurrencyFor(phone);
   const currency =
     env.INTL_ENABLED && "can_bill_abroad" in data
       ? {
           show_currency: true,
-          currencies: currencyOptions(pro, homeCurrencyFor(await phoneOf(userId))),
-          ...(pro ? { can_bill_abroad: true, amount_help: ABROAD_HELP } : {}),
+          currencies: currencyOptions(pro, homeCurrencyFor(phone), abroad !== null),
+          ...(pro || abroad ? { can_bill_abroad: true, amount_help: ABROAD_HELP } : {}),
+          ...(abroad && data.currency === "NGN" ? { currency: abroad } : {}),
         }
       : {};
 
@@ -3224,13 +3238,16 @@ async function priceAbroad(
   log: FastifyBaseLogger,
   /** Set when a correction is changing the money on a draft already abroad. */
   repricing?: Foreign,
+  phone?: string,
 ): Promise<{ stop: true; words: string } | { stop: false; quote?: Quote }> {
   const money = parsed?.money;
   const currency =
     repricing ?? (money?.kind === "foreign" ? money.currency : undefined);
   if (!currency || !env.INTL_ENABLED) return { stop: false };
 
-  const plan = await planOf(userId);
+  // Somebody outside Nigeria invoices in their own currency on any plan;
+  // the others are Pro, as they are for everybody (Phase 3).
+  const plan = currency === abroadCurrencyFor(phone) ? "pro" : await planOf(userId);
   if (plan !== "pro") {
     log.info({ userId, currency }, "foreign invoice refused: free plan");
     return { stop: true, words: VOICE.foreignIsPro };
