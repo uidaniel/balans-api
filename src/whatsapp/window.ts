@@ -171,7 +171,7 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
   payout_paid: {
     name: "payout_paid",
     category: "UTILITY",
-    body: "Your Balans payout: {{1}} for invoice {{2}} has been paid into {{3}}.",
+    body: "Your Balans payout of {{1}} for invoice {{2}} has been paid into {{3}}. Reply here to see your other invoices.",
     params: ["amount", "invoice number", "account"],
     example: ["₦350,000", "0014", "Access Bank ••5673"],
   },
