@@ -22,7 +22,7 @@ import { env } from "../config.ts";
 import { db } from "../db/pool.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { clientNumber } from "../documents/client-number.ts";
-import { b, lines, para } from "../whatsapp/format.ts";
+import { b, para } from "../whatsapp/format.ts";
 import { send } from "../whatsapp/outbound.ts";
 
 type Settlement = {
@@ -58,10 +58,9 @@ export function payoutMessage(x: {
         : `invoices ${x.invoices.join(", ")}`;
   return para(
     `💸 ${b("Paid out to your bank")}`,
-    lines(
-      `${b(formatNaira(x.amountKobo))} for ${which} has been sent to ${x.account ?? "your bank account"}.`,
-      "Banks usually show it within a few hours.",
-    ),
+    // No "banks usually show it within hours": Paystack marks a settlement
+    // successful once the bank has it.
+    `${b(formatNaira(x.amountKobo))} for ${which} has been paid into ${x.account ?? "your bank account"}.`,
   );
 }
 
@@ -130,7 +129,7 @@ export async function tellPayouts(log: FastifyBaseLogger, fetchImpl: typeof fetc
         phone: user.wa_phone,
         text: payoutMessage({ amountKobo: s.total_amount, invoices, account }),
         fallback: {
-          template: "payout_sent",
+          template: "payout_paid",
           params: [formatNaira(s.total_amount), invoices.join(", ") || "your card payments", account],
         },
       },

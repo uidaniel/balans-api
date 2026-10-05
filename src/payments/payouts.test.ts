@@ -12,7 +12,7 @@ describe("the payout message", () => {
   });
 
   it("names every invoice in one payout", () => {
-    assert.match(payoutMessage({ amountKobo: 1_000_00, invoices: ["0002", "0003"], account: null }), /invoices 0002, 0003 has been sent to your bank account/);
+    assert.match(payoutMessage({ amountKobo: 1_000_00, invoices: ["0002", "0003"], account: null }), /invoices 0002, 0003 has been paid into your bank account/);
   });
 });
 

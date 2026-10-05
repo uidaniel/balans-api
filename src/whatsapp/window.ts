@@ -72,7 +72,7 @@ export type TemplateName =
   | "monthly_summary_ready"
   | "pro_renewal"
   | "pro_active"
-  | "payout_sent"
+  | "payout_paid"
   | "security_alert"
   | "client_invoice"
   | "client_quote"
@@ -168,10 +168,10 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
    * Paystack has paid card money out to the user's bank (payments/payouts.ts).
    * Found by polling, hours after the payment, so usually outside the window.
    */
-  payout_sent: {
-    name: "payout_sent",
+  payout_paid: {
+    name: "payout_paid",
     category: "UTILITY",
-    body: "Your Balans payout is on its way: {{1}} for invoice {{2}} has been sent to {{3}}. Banks usually show it within a few hours.",
+    body: "Your Balans payout: {{1}} for invoice {{2}} has been paid into {{3}}.",
     params: ["amount", "invoice number", "account"],
     example: ["₦350,000", "0014", "Access Bank ••5673"],
   },
