@@ -3,6 +3,7 @@
  * or the job queue (PRD section 3).
  */
 
+import { captureLogError } from "../ops/alerts.ts";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { env, isProd } from "../config.ts";
@@ -49,6 +50,13 @@ export function buildServer(): FastifyInstance {
     logger: {
       level: env.LOG_LEVEL,
       redact: { paths: REDACT, remove: true },
+      // Every error line also goes to the team's email digest (ops/alerts.ts).
+      hooks: {
+        logMethod(args, method, level) {
+          if (level >= 50) captureLogError(args);
+          return method.apply(this, args);
+        },
+      },
       ...(isProd ? {} : { transport: { target: "pino-pretty" } }),
     },
     bodyLimit: 1_048_576, // 1 MB; webhook payloads are far smaller.

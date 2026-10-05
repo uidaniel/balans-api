@@ -17,6 +17,10 @@ import { env } from "../config.ts";
 import { db } from "../db/pool.ts";
 import { rendererAvailable, renderPng } from "../pdf/chrome.ts";
 import { lastTickAt } from "./scheduler.ts";
+import { healthAlert } from "../ops/alerts.ts";
+
+/** A check that stays down is emailed again this often. */
+const REMIND_MS = 3 * 3_600_000;
 
 const EVERY_MS = 2 * 60_000;
 const TIMEOUT_MS = 8_000;
@@ -195,15 +199,37 @@ export async function runHealthChecks(log: FastifyBaseLogger): Promise<void> {
         r = { status: "down", detail: (err as Error).message.slice(0, 200) };
       }
       const ms = Date.now() - started;
+
+      // Down, still down, or back: the team hears about the change.
+      const { rows: prev } = await db()
+        .query<{ status: string; last_ok_at: Date | null; alerted_at: Date | null }>(
+          `SELECT status, last_ok_at, alerted_at FROM service_health WHERE name = $1`,
+          [c.name],
+        )
+        .catch(() => ({ rows: [] as { status: string; last_ok_at: Date | null; alerted_at: Date | null }[] }));
+      const was = prev[0];
+      let alerted: "set" | "clear" | null = null;
+      if (r.status === "down" && was?.status !== "down") {
+        await healthAlert("down", c.name, r.detail, null, log).catch(() => undefined);
+        alerted = "set";
+      } else if (r.status === "down" && (!was?.alerted_at || Date.now() - was.alerted_at.getTime() > REMIND_MS)) {
+        await healthAlert("still_down", c.name, r.detail, was?.last_ok_at ?? null, log).catch(() => undefined);
+        alerted = "set";
+      } else if (r.status !== "down" && was?.status === "down") {
+        await healthAlert("recovered", c.name, r.detail, was.last_ok_at, log).catch(() => undefined);
+        alerted = "clear";
+      }
+
       await db()
         .query(
-          `INSERT INTO service_health (name, status, latency_ms, detail, checked_at, last_ok_at)
-           VALUES ($1, $2, $3, $4, now(), CASE WHEN $2 = 'ok' THEN now() END)
+          `INSERT INTO service_health (name, status, latency_ms, detail, checked_at, last_ok_at, alerted_at)
+           VALUES ($1, $2, $3, $4, now(), CASE WHEN $2 = 'ok' THEN now() END, CASE WHEN $5 = 'set' THEN now() END)
            ON CONFLICT (name) DO UPDATE
              SET status = EXCLUDED.status, latency_ms = EXCLUDED.latency_ms, detail = EXCLUDED.detail,
                  checked_at = now(),
-                 last_ok_at = CASE WHEN EXCLUDED.status = 'ok' THEN now() ELSE service_health.last_ok_at END`,
-          [c.name, r.status, ms, r.detail.slice(0, 300)],
+                 last_ok_at = CASE WHEN EXCLUDED.status = 'ok' THEN now() ELSE service_health.last_ok_at END,
+                 alerted_at = CASE $5 WHEN 'set' THEN now() WHEN 'clear' THEN NULL ELSE service_health.alerted_at END`,
+          [c.name, r.status, ms, r.detail.slice(0, 300), alerted ?? ""],
         )
         .catch((err: unknown) => log.warn({ err, check: c.name }, "could not record a health check"));
       if (r.status === "down") log.warn({ check: c.name, detail: r.detail }, "health check down");
