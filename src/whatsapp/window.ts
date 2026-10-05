@@ -72,6 +72,7 @@ export type TemplateName =
   | "monthly_summary_ready"
   | "pro_renewal"
   | "pro_active"
+  | "payout_sent"
   | "security_alert"
   | "client_invoice"
   | "client_quote"
@@ -163,6 +164,18 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
    * window this is what says so; `pro_renewal` was used before, which asks
    * for a price and says "renews", and Pro does neither.
    */
+  /*
+   * Paystack has paid card money out to the user's bank (payments/payouts.ts).
+   * Found by polling, hours after the payment, so usually outside the window.
+   */
+  payout_sent: {
+    name: "payout_sent",
+    category: "UTILITY",
+    body: "Your Balans payout is on its way: {{1}} for invoice {{2}} has been sent to {{3}}. Banks usually show it within a few hours.",
+    params: ["amount", "invoice number", "account"],
+    example: ["₦350,000", "0014", "Access Bank ••5673"],
+  },
+
   pro_active: {
     name: "pro_active",
     category: "UTILITY",

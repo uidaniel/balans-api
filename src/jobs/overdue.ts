@@ -13,6 +13,7 @@
  * the `reminders` row is claimed before the message goes out.
  */
 
+import { tellPayouts } from "../payments/payouts.ts";
 import { proPriceForPhone } from "../billing/price.ts";
 import { checkSubaccounts, emailUnverifiedDigest } from "../payments/subaccount-verification.ts";
 import type { FastifyBaseLogger } from "fastify";
@@ -537,6 +538,8 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
     if (env.PAYSTACK_SECRET_KEY) {
       await checkSubaccounts(log);
       await emailUnverifiedDigest(log);
+      // Paystack sends no webhook when it pays a subaccount out: ask.
+      await tellPayouts(log);
     }
   } catch (err) {
     // A failed run must not stop the next one.

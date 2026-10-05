@@ -27,6 +27,7 @@ describe("the templates we register with Meta", () => {
         "launch_setup",
         "monthly_summary_ready",
         "payment_received",
+        "payout_sent",
         "pro_active",
         "pro_ended_pay",
         "pro_ending_pay",
