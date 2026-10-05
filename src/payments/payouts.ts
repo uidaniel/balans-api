@@ -4,12 +4,13 @@
  * A card payment lands in the user's Paystack subaccount, and Paystack pays
  * the subaccount out to their bank in its own batches — a "settlement". It
  * sends no webhook when that happens, so this asks its Settlements API every
- * hour: every successful settlement of the last week, the transactions inside
- * it, matched to our payments by reference. Each settlement is told once
+ * hour: every successful settlement of the last week, matched to its owner by
+ * the subaccount it paid, with their card payments not yet paid out. Each
+ * settlement is told once
  * (`payouts_told`, migration 0039).
  *
  * Proved on 5 October 2026 against the live account: the $1 test settled as
- * settlement 11966518, ₦1,279.09 on 4 October, holding exactly our reference.
+ * settlement 11966518, ₦1,279.09 on 4 October, to subaccount ACCT_qc5nokzgtqszrcc.
  *
  * A naira invoice never comes here: it is paid straight into the user's bank
  * by their client, with no Paystack in between.
@@ -49,7 +50,12 @@ export function payoutMessage(x: {
   invoices: string[];
   account: string | null;
 }): string {
-  const which = x.invoices.length === 1 ? `invoice ${x.invoices[0]}` : `invoices ${x.invoices.join(", ")}`;
+  const which =
+    x.invoices.length === 0
+      ? "your card payments"
+      : x.invoices.length === 1
+        ? `invoice ${x.invoices[0]}`
+        : `invoices ${x.invoices.join(", ")}`;
   return para(
     `💸 ${b("Paid out to your bank")}`,
     lines(
@@ -77,26 +83,21 @@ export async function tellPayouts(log: FastifyBaseLogger, fetchImpl: typeof fetc
     const { rows: seen } = await db().query(`SELECT 1 FROM payouts_told WHERE settlement_id = $1`, [id]);
     if (seen.length) continue;
 
-    const txns = await paystack<{ reference: string }[]>(`/settlement/${id}/transactions`, fetchImpl);
-    const refs = (txns ?? []).map((t) => t.reference).filter(Boolean);
-    if (!refs.length) continue;
-
-    const { rows } = await db().query<{
-      payment_id: string;
-      user_id: string;
-      wa_phone: string;
-      ref: string | null;
-      number: number | null;
-    }>(
-      `SELECT p.id AS payment_id, d.user_id, u.wa_phone, d.ref, d.number
-         FROM payments p
-         JOIN documents d ON d.id = p.document_id
-         JOIN users u ON u.id = d.user_id
-        WHERE p.reference = ANY($1::text[]) AND p.provider = 'paystack' AND p.status = 'success'`,
-      [refs],
+    /*
+     * Whose payout, by its subaccount. Not by the transactions inside it:
+     * Paystack lists those under its own settlement for the account, with a
+     * total of nothing, and the subaccount's settlement — the one with the
+     * money — lists none (found on the first real payout, 5 October 2026).
+     */
+    const code = (s.subaccount as { subaccount_code?: string }).subaccount_code;
+    const { rows: owners } = await db().query<{ user_id: string; bank_name: string; account_last4: string }>(
+      `SELECT user_id, bank_name, account_last4 FROM bank_accounts
+        WHERE paystack_subaccount_code = $1
+        ORDER BY (status = 'active') DESC, effective_at DESC NULLS LAST LIMIT 1`,
+      [code ?? ""],
     );
-    // Not ours (or Pro, which pays Balans): remember it so it is not asked again.
-    if (!rows.length || new Set(rows.map((r) => r.user_id)).size !== 1) {
+    const owner = owners[0];
+    if (!code || !owner) {
       await db().query(
         `INSERT INTO payouts_told (settlement_id, amount_kobo, settled_on) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
         [id, s.total_amount, s.settlement_date?.slice(0, 10) ?? null],
@@ -104,13 +105,23 @@ export async function tellPayouts(log: FastifyBaseLogger, fetchImpl: typeof fetc
       continue;
     }
 
-    const user = rows[0]!;
-    const { rows: acct } = await db().query<{ bank_name: string; account_last4: string }>(
-      `SELECT bank_name, account_last4 FROM bank_accounts WHERE user_id = $1 AND status = 'active'
-        ORDER BY effective_at DESC NULLS LAST LIMIT 1`,
-      [user.user_id],
+    // Their card payments not yet paid out, up to the settlement's date.
+    const { rows } = await db().query<{ payment_id: string; wa_phone: string; ref: string | null; number: number | null }>(
+      `SELECT p.id AS payment_id, u.wa_phone, d.ref, d.number
+         FROM payments p
+         JOIN documents d ON d.id = p.document_id
+         JOIN users u ON u.id = d.user_id
+        WHERE d.user_id = $1 AND p.provider = 'paystack' AND p.status = 'success' AND p.settled_at IS NULL
+          AND ($2::date IS NULL OR p.paid_at < $2::date + 1)
+        ORDER BY p.paid_at`,
+      [owner.user_id, s.settlement_date?.slice(0, 10) ?? null],
     );
-    const account = acct[0] ? `${acct[0].bank_name} ••${acct[0].account_last4}` : null;
+    const { rows: phone } = await db().query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [
+      owner.user_id,
+    ]);
+    const user = { user_id: owner.user_id, wa_phone: phone[0]?.wa_phone ?? "" };
+    if (!user.wa_phone) continue;
+    const account = `${owner.bank_name} ••${owner.account_last4}`;
     const invoices = [...new Set(rows.map((r) => clientNumber(r.ref, r.number) ?? "—"))];
 
     const outcome = await send(
@@ -120,7 +131,7 @@ export async function tellPayouts(log: FastifyBaseLogger, fetchImpl: typeof fetc
         text: payoutMessage({ amountKobo: s.total_amount, invoices, account }),
         fallback: {
           template: "payout_sent",
-          params: [formatNaira(s.total_amount), invoices.join(", "), account ?? "your bank account"],
+          params: [formatNaira(s.total_amount), invoices.join(", ") || "your card payments", account],
         },
       },
       log,

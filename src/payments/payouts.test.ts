@@ -15,3 +15,18 @@ describe("the payout message", () => {
     assert.match(payoutMessage({ amountKobo: 1_000_00, invoices: ["0002", "0003"], account: null }), /invoices 0002, 0003 has been sent to your bank account/);
   });
 });
+
+describe("finding whose payout it is", () => {
+  it("goes by the subaccount, not the transactions Paystack lists under it", async () => {
+    // The subaccount's settlement lists no transactions; the payment sits under
+    // the account's own ₦0 settlement. Matching by transaction told nobody.
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("./payouts.ts", import.meta.url), "utf8");
+    assert.match(src, /paystack_subaccount_code = \$1/);
+    assert.doesNotMatch(src, /\/settlement\/\$\{id\}\/transactions/);
+  });
+
+  it("says something true with no invoice to name", () => {
+    assert.match(payoutMessage({ amountKobo: 5_000_00, invoices: [], account: "GTBank ••0001" }), /for your card payments/);
+  });
+});
