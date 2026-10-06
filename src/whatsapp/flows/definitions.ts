@@ -786,12 +786,12 @@ const businessDetails: FlowDefinition = {
 // Titles stay within the 30 characters a Flow dropdown shows.
 export const PLANS = [
   { id: "one", title: "One payment" },
-  { id: "deposit_25", title: "25% deposit + balance (Pro)" },
-  { id: "deposit_50", title: "50% deposit + balance (Pro)" },
-  { id: "split_2", title: "2 equal payments (Pro)" },
-  { id: "split_3", title: "3 equal payments (Pro)" },
-  { id: "split_4", title: "4 equal payments (Pro)" },
-  { id: "split_6", title: "6 equal payments (Pro)" },
+  { id: "deposit_25", title: "25% deposit + balance" },
+  { id: "deposit_50", title: "50% deposit + balance" },
+  { id: "split_2", title: "2 equal payments" },
+  { id: "split_3", title: "3 equal payments" },
+  { id: "split_4", title: "4 equal payments" },
+  { id: "split_6", title: "6 equal payments" },
 ] as const;
 
 export type PlanId = (typeof PLANS)[number]["id"];

@@ -23,10 +23,12 @@ describe("deposits and milestones", () => {
     assert.ok(gate > 0 && gate < draft, "the Pro check must run before the draft is created");
   });
 
-  it("are marked Pro on the form, within a dropdown's 30 characters", () => {
+  it("fit a dropdown's 30 characters, with no '(Pro)' on them", () => {
+    // Taken off the labels on 6 October 2026. Picking one on Free is still
+    // refused before the draft is made, with the upgrade offer.
     for (const p of PLANS) {
       assert.ok(p.title.length <= 30, p.title);
-      assert.equal(p.id === "one", !p.title.includes("(Pro)"), p.title);
+      assert.ok(!p.title.includes("(Pro)"), p.title);
     }
   });
 
