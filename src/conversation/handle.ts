@@ -88,7 +88,7 @@ import { renderDocumentPdf } from "../documents/pdf.ts";
 import { emailPaidToClient } from "../email/paid-delivery.ts";
 import { emailDocumentToClient } from "../email/client-delivery.ts";
 import { whatsappDocumentToClient } from "../documents/client-whatsapp.ts";
-import { cancelDocument, convertQuote, findForResend, stopReminders } from "../documents/actions.ts";
+import { cancelDocument, convertQuote, findForResend, openForReminders, stopReminders } from "../documents/actions.ts";
 import {
   accountInForce,
   cancelPendingChange,
@@ -2170,9 +2170,51 @@ async function runEffects(
         case "document_action": {
           const number = effect.number;
 
+          /*
+           * Asked back first (6 October 2026): stopping reminders means the
+           * client is not chased again, and a stray tap should not decide that.
+           */
           if (effect.intent === "stop_reminders") {
+            const open = await openForReminders(userId, number);
+            if (!open.count) {
+              extra.push(remindersStoppedMessage(0, number));
+              break;
+            }
+            const ask =
+              number === null
+                ? `🔕 Stop reminders for ${open.count === 1 ? "your open invoice" : `all ${open.count} open invoices`}? Neither you nor your clients will be reminded about ${open.count === 1 ? "it" : "them"} again.`
+                : `🔕 Stop reminders for ${b(`invoice #${number}`)}${open.client ? ` (${open.client})` : ""}? Neither you nor your client will be reminded about it again.`;
+            const yesId = number === null ? "yes stop all reminders" : `yes stop reminders ${number}`;
+            const noId = number === null ? "keep reminders" : `keep reminders ${number}`;
+            if (ctx.phone) {
+              const sent = await sendButtons(ctx.phone, {
+                body: ask,
+                buttons: [
+                  { id: yesId, title: "Yes, stop them" },
+                  { id: noId, title: "Keep them" },
+                ],
+              });
+              if (sent.ok) {
+                await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+                break;
+              }
+            }
+            extra.push(lines(ask, `Reply ${b(yesId)} to confirm.`));
+            break;
+          }
+
+          if (effect.intent === "confirm_stop_reminders") {
             const stopped = await stopReminders(userId, number);
             extra.push(remindersStoppedMessage(stopped, number));
+            break;
+          }
+
+          if (effect.intent === "keep_reminders") {
+            extra.push(
+              number === null
+                ? "🔔 Okay, reminders stay on."
+                : `🔔 Okay, reminders for ${b(`invoice #${number}`)} stay on.`,
+            );
             break;
           }
 

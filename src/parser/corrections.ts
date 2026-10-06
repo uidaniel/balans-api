@@ -67,6 +67,19 @@ export type Correction = {
    */
   setLineAmount?: { match: string; amountKobo: number };
   /**
+   * How many of a line: "increase the quantity to 3", "make the logo 3
+   * units". `match` is words from the line, or null for "the" quantity —
+   * which only means something on a one-line draft. Missing until 6 October
+   * 2026, when "increase the quantity to 3" was answered "I did not catch
+   * that" because neither reader had anywhere to put it.
+   */
+  setLineQty?: { match: string | null; qty: number };
+  /**
+   * They want the client's email or number on it but did not say it: "add
+   * his email". Asked for, rather than "I did not catch that".
+   */
+  askFor?: "email" | "phone";
+  /**
    * Whether a total was named as the document's own, rather than guessed at.
    *
    * "change the total to 400k" says which figure it means. "make it 400k"
@@ -814,8 +827,22 @@ export function readCorrection(
   // How they pay, said on its own ("use my paypal details") or with other
   // changes; it is a whole-message reading, so it is taken before the rest.
   const payBy = payByIn(text);
-  const whole0 = readOneCorrection(text, today, money);
-  const whole = payBy && (!whole0 || Object.keys(whole0).length === 0) ? { payBy } : whole0 && payBy ? { ...whole0, payBy } : whole0;
+  // A quantity, and a field they want but did not fill, are read the same
+  // whole-message way.
+  const qty = qtyIn(text);
+  const ask = qty ? null : askForIn(text);
+  const extra: Correction = {
+    ...(payBy ? { payBy } : {}),
+    ...(qty ? { setLineQty: qty } : {}),
+    ...(ask ? { askFor: ask } : {}),
+  };
+  const whole0 = qty || ask ? null : readOneCorrection(text, today, money);
+  const whole =
+    Object.keys(extra).length && (!whole0 || Object.keys(whole0).length === 0)
+      ? extra
+      : whole0 && Object.keys(extra).length
+        ? { ...whole0, ...extra }
+        : whole0;
   const s = text.replace(/\s+/g, " ").trim();
   const dues = (s.match(/\bdue\b/gi) ?? []).length;
   if (whole && dues < 2) return whole;
@@ -893,5 +920,48 @@ export function payByIn(text: string): "link" | "own" | null {
   ) {
     return "own";
   }
+  return null;
+}
+
+/**
+ * A quantity, said as a change to a draft. Null when the message says none.
+ *
+ *   "increase the quantity to 3", "qty 3", "change the quantity of the logo
+ *   to 5", "make it 3 units", "make the banners 4 pieces"
+ *
+ * Never a number with a money mark or multiplier after it — "quantity to 3k"
+ * is not three thousand units of anything — and never above 9,999.
+ */
+export function qtyIn(text: string): { match: string | null; qty: number } | null {
+  const t = text.toLowerCase().replace(/\s+/g, " ").trim();
+  const n = String.raw`(\d{1,4})(?![\d,.]*\s*(?:k|m|naira|ngn|dollars?|pounds?|euros?)\b)(?![\d.,])`;
+  const named = new RegExp(
+    String.raw`\b(?:quantity|qty|units?|number of units|no\.? of units)(?:\s+(?:of|for|on)\s+(?:the\s+)?(.+?))?\s*(?:to|=|:|is|as|at|should be|be)?\s*` + n,
+  ).exec(t);
+  if (named) {
+    const qty = Number(named[2]);
+    return qty > 0 ? { match: named[1]?.trim() || null, qty } : null;
+  }
+  const units = new RegExp(
+    String.raw`\b(?:make|change|set|put|update)\s+(?:it|them|the\s+(.+?)|(.+?))\s+(?:to\s+)?` + n + String.raw`\s*(?:units?|pieces?|pcs|copies|items?|of them|nos?\.?|x)\b`,
+  ).exec(t);
+  if (units) {
+    const qty = Number(units[3]);
+    const match = (units[1] ?? units[2] ?? "").trim();
+    return qty > 0 ? { match: match && !/^(?:it|them)$/.test(match) ? match : null, qty } : null;
+  }
+  return null;
+}
+
+/**
+ * "add his email", "include her number": the field, with nothing to put in
+ * it. An address or a number in the message is a value, read elsewhere.
+ */
+export function askForIn(text: string): "email" | "phone" | null {
+  const t = text.toLowerCase();
+  if (/@/.test(t) || /\d{7,}/.test(t.replace(/[\s-]/g, ""))) return null;
+  const verb = String.raw`\b(?:add|include|put|attach|insert|use|set|need|want)\b`;
+  if (new RegExp(verb + String.raw`.*\b(?:e-?mail|mail address|email address)\b`).test(t)) return "email";
+  if (new RegExp(verb + String.raw`.*\b(?:phone|whatsapp|phone number|his number|her number|their number|number)\b`).test(t)) return "phone";
   return null;
 }

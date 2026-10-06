@@ -301,6 +301,17 @@ describe("how the messages read", () => {
       },
       400_000_00,
     ],
+    whichQty: [
+      {
+        type: "invoice",
+        lines: [
+          { description: "Logo design", qty: 1, unitAmountKobo: 50_000_00 },
+          { description: "Flyer", qty: 2, unitAmountKobo: 10_000_00 },
+        ],
+      },
+      3,
+    ],
+    askClientDetail: ["email", "Edidiong Uwak"],
   };
 
   const rendered: unknown[] = [

@@ -336,6 +336,33 @@ export async function convertQuote(
 export const REMINDER_KINDS = ["due", "late_3", "late_7"] as const;
 
 /**
+ * What "stop reminders" would stop, for the question asked first: how many
+ * open invoices, and the client's name when it is one invoice by number.
+ */
+export async function openForReminders(
+  userId: string,
+  number: number | null,
+): Promise<{ count: number; client: string | null }> {
+  const { rows } = await db().query<{ count: number; client: string | null }>(
+    `SELECT count(*)::int AS count, min(c.name) AS client
+       FROM documents d JOIN clients c ON c.id = d.client_id
+      WHERE d.user_id = $1
+        AND ($2::int IS NULL OR d.number = $2::int)
+        AND d.type IN ('invoice', 'payment_request')
+        AND d.status IN ('sent', 'viewed', 'overdue')
+        AND d.total_kobo > d.amount_paid_kobo
+        AND EXISTS (
+          SELECT 1 FROM unnest($3::text[]) AS k(kind)
+           WHERE NOT EXISTS (
+             SELECT 1 FROM reminders r WHERE r.document_id = d.id AND r.kind = k.kind AND r.status IN ('cancelled', 'sent')
+           )
+        )`,
+    [userId, number, [...REMINDER_KINDS]],
+  );
+  return rows[0] ?? { count: 0, client: null };
+}
+
+/**
  * "Users can say 'stop reminders for invoice 14'." Returns how many open
  * invoices it stopped.
  *

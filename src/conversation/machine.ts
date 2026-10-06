@@ -680,6 +680,22 @@ export const VOICE = {
    * because by then they have read it and agreed with it.
    */
   /** A correction that, applied, left the draft exactly as it was. */
+  /** "add his email", with nothing to add. */
+  askClientDetail: (what: "email" | "phone", client: string | null | undefined): string =>
+    what === "email"
+      ? `📧 What is ${client ? `${b(client)}'s` : "their"} email? Send it here and I will put it on the invoice.`
+      : `📱 What is ${client ? `${b(client)}'s` : "their"} WhatsApp number? Send it here and I will put it on the invoice.`,
+
+  /** "increase the quantity to 3" on a draft with more than one item. */
+  whichQty: (doc: PendingDoc, qty: number): string =>
+    para(
+      `🤔 ${b(`Which item should be × ${qty}?`)}`,
+      lines(
+        ...doc.lines.map((l, i) => `${i + 1}. ${l.description} × ${l.qty}`),
+        `Reply like ${b(`make ${doc.lines[0]?.description.split(" ").slice(0, 2).join(" ").toLowerCase() ?? "the logo"} ${qty} units`)}.`,
+      ),
+    ),
+
   nothingChanged: para(
     `\u{1F914} ${b("That did not change anything on the draft.")}`,
     lines(
@@ -2062,6 +2078,8 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
 
     case "status":
     case "stop_reminders":
+    case "confirm_stop_reminders":
+    case "keep_reminders":
     case "cancel_document":
     case "resend_document":
     case "convert_quote":
@@ -2753,6 +2771,32 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
       };
     }
 
+    /*
+     * "add his email" with no address: ask for it. The next message holding
+     * one is read as the email, as any address on its own is.
+     */
+    const { askFor, ...rest } = msg.correction;
+    if (askFor && Object.keys(rest).length === 0) {
+      return {
+        replies: [VOICE.askClientDetail(askFor, doc.clientName)],
+        buttons: draftButtons(),
+        next: "awaiting_confirm",
+        context: ctx,
+        effects: [],
+      };
+    }
+
+    // "the quantity" on a draft with several lines: which one.
+    if (msg.correction.setLineQty && msg.correction.setLineQty.match === null && doc.lines.length > 1) {
+      return {
+        replies: [VOICE.whichQty(doc, msg.correction.setLineQty.qty)],
+        buttons: draftButtons(),
+        next: "awaiting_confirm",
+        context: ctx,
+        effects: [],
+      };
+    }
+
     const changed = applyCorrection(doc, msg.correction, msg.quote);
     /*
      * A change that changed nothing — a date for a part the plan does not
@@ -3060,6 +3104,24 @@ function applyIn(doc: PendingDoc, c: Correction): PendingDoc {
         // what one of several units of it should cost.
         i === at ? { ...l, qty: 1, unitAmountKobo: c.setLineAmount!.amountKobo } : l,
       );
+      next.totalKobo = undefined;
+    }
+  }
+
+  /*
+   * How many of a line, keeping the price of one. No line named means the
+   * only line; with several, `atConfirm` has already asked which.
+   */
+  if (c.setLineQty) {
+    const needle = c.setLineQty.match?.toLowerCase() ?? null;
+    const at =
+      needle === null
+        ? next.lines.length === 1
+          ? 0
+          : -1
+        : next.lines.findIndex((l) => l.description.toLowerCase().includes(needle));
+    if (at >= 0) {
+      next.lines = next.lines.map((l, i) => (i === at ? { ...l, qty: c.setLineQty!.qty } : l));
       next.totalKobo = undefined;
     }
   }

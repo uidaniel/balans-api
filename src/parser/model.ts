@@ -135,6 +135,24 @@ const TOOL = {
             },
             required: ["match", "amount"],
           },
+          set_line_qty: {
+            type: ["object", "null"],
+            description:
+              'How many of a line: "increase the quantity to 3" is {match: null, qty: 3}; ' +
+              '"make the banners 4 pieces" is {match: "banners", qty: 4}. The price of one stays the same.',
+            properties: {
+              match: { type: ["string", "null"], description: "Words from the line, or null for the only line." },
+              qty: { type: "integer" },
+            },
+            required: ["qty"],
+          },
+          asks_for: {
+            type: ["string", "null"],
+            enum: ["email", "phone", null],
+            description:
+              'They want the client\'s email or number on the invoice but did not give it ("add his email"). ' +
+              "Never set this when the address or number is in the message - that goes in client_email.",
+          },
           rename_line: {
             type: ["object", "null"],
             description:
@@ -237,6 +255,8 @@ When a <draft> block appears, a draft is on the user's screen and they have just
 - "change X to Y", where X is a line already on the draft, is rename_line. It keeps the price.
   Never say this with remove_line and add_lines together: the replacement usually carries no
   price, and the line is then deleted along with its money.
+- "increase the quantity to 3", "make it 3 units" is set_line_qty. It keeps the price of one.
+- "add his email" with no address is asks_for "email": the bot will ask for it.
 - Every line in add_lines needs a unit_amount. If they named work without a price, leave
   add_lines empty rather than guessing one.
 - A first payment with a share named is a deposit, not instalments: "break it into two milestones, 20% for the first" is deposit_percent 20 and nothing else, because the deposit and the balance are already the two parts. Equal parts with no share named are instalments: "split it into three" is instalments 3.

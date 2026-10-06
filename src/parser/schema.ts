@@ -39,8 +39,11 @@ export const INTENTS = [
   "settings",
   "upgrade",
   "referral",
-  /** F13: "stop reminders for invoice 14". */
+  /** F13: "stop reminders for invoice 14". Asked back before anything stops. */
   "stop_reminders",
+  /** The answers to "Stop reminders for invoice 14?" (buttons). */
+  "confirm_stop_reminders",
+  "keep_reminders",
   /** Choosing an invoice design. Advertised on the site, not built. */
   "templates",
   "remove_logo",
@@ -170,6 +173,17 @@ export const rawCorrection = z.object({
     })
     .nullish()
     .transform((v) => v ?? null),
+  /** How many of one line: "increase the quantity to 3". Null match: the only line. */
+  set_line_qty: z
+    .object({
+      match: z.string().trim().max(200).nullish().transform((v) => v || null),
+      qty: z.coerce.number().int().min(1).max(9999),
+    })
+    .nullish()
+    .catch(null)
+    .transform((v) => v ?? null),
+  /** "add his email" with no address: what to ask for. */
+  asks_for: z.enum(["email", "phone"]).nullish().catch(null).transform((v) => v ?? null),
   /**
    * A date for one part of the payment plan, rather than for the document.
    *
@@ -492,6 +506,8 @@ function asCorrection(
   }
 
   if (raw.rename_line) out.renameLine = raw.rename_line;
+  if (raw.set_line_qty) out.setLineQty = { match: raw.set_line_qty.match, qty: raw.set_line_qty.qty };
+  if (raw.asks_for) out.askFor = raw.asks_for;
 
   if (raw.set_line_amount) {
     const kobo = toMinor(raw.set_line_amount.amount);

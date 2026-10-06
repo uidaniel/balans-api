@@ -92,6 +92,9 @@ const EXACT: [RegExp, Intent][] = [
   [/^(upgrade|go pro|pro|subscribe|premium|upgrade me)$/, "upgrade"],
   [/^(referral|refer|refer a friend|invite|invite a friend|my referral|referral code)$/, "referral"],
   [/^(stop reminders?|no more reminders?|stop reminding me|turn off reminders?|stop chasing)$/, "stop_reminders"],
+  // The buttons under "Stop reminders for all your open invoices?".
+  [/^yes,? stop all reminders$/, "confirm_stop_reminders"],
+  [/^keep (?:the )?reminders?$/, "keep_reminders"],
   [/^(dashboard|my dashboard|web|website|link to dashboard)$/, "summary"],
 ];
 
@@ -215,6 +218,9 @@ const NUMBERED: [RegExp, Intent][] = [
   [/^stop reminders? (?:for |on )?(?:invoice|inv|doc|document) #?(\d{1,6})$/, "stop_reminders"],
   // "stop reminders 3", which is what a reminder tells them to send.
   [/^stop reminders? #?(\d{1,6})$/, "stop_reminders"],
+  // The buttons under "Stop reminders for invoice 3?".
+  [/^yes,? stop reminders? (?:for )?(?:invoice )?#?(\d{1,6})$/, "confirm_stop_reminders"],
+  [/^keep (?:the )?reminders? (?:for )?(?:invoice )?#?(\d{1,6})$/, "keep_reminders"],
   /*
    * A payment the sender is telling us about (addendum section 5): "Zenith
    * paid invoice 16", "paid invoice 16", "mark invoice 16 paid", "invoice 16

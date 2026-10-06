@@ -42,3 +42,19 @@ describe("stop reminders", () => {
     assert.match(overdue, /`stop reminders \$\{x\.number\}`/);
   });
 });
+
+describe("asked before anything stops", () => {
+  it("reads the two buttons, with and without a number", () => {
+    assert.deepEqual(asCommand("yes stop reminders 3"), { intent: "confirm_stop_reminders", documentNumber: 3 });
+    assert.deepEqual(asCommand("keep reminders 3"), { intent: "keep_reminders", documentNumber: 3 });
+    assert.equal(asCommand("yes stop all reminders")?.intent, "confirm_stop_reminders");
+    assert.equal(asCommand("keep reminders")?.intent, "keep_reminders");
+  });
+
+  it("does not stop anything on the first ask", () => {
+    const handle = readFileSync(new URL("../conversation/handle.ts", import.meta.url), "utf8");
+    const ask = handle.slice(handle.indexOf('if (effect.intent === "stop_reminders")'), handle.indexOf('if (effect.intent === "confirm_stop_reminders")'));
+    assert.doesNotMatch(ask, /stopReminders\(/);
+    assert.match(ask, /Yes, stop them/);
+  });
+});
