@@ -459,6 +459,8 @@ export function sendTemplate(
     urlSuffix?: string;
     /** The picture for a template with an image header, by address. */
     headerImage?: string;
+    /** The file for a template with a document header: Meta fetches the link. */
+    headerDocument?: { link: string; filename: string };
     /** The token for a template whose button opens a Flow. */
     flowToken?: string;
   } = {},
@@ -480,6 +482,9 @@ export function sendTemplate(
         components: [
           ...(opts.headerImage
             ? [{ type: "header", parameters: [{ type: "image", image: { link: opts.headerImage } }] }]
+            : []),
+          ...(opts.headerDocument
+            ? [{ type: "header", parameters: [{ type: "document", document: opts.headerDocument }] }]
             : []),
           ...(params.length
             ? [{ type: "body", parameters: params.map((text) => ({ type: "text", text })) }]

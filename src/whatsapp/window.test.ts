@@ -19,7 +19,9 @@ describe("the templates we register with Meta", () => {
       [...names].sort(),
       [
         "client_invoice",
+        "client_invoice_pdf",
         "client_quote",
+        "client_quote_pdf",
         "client_reminded",
         "client_reminder",
         "invoice_overdue_prompt",

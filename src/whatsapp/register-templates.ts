@@ -55,13 +55,23 @@ async function uploadSample(address: string): Promise<{ ok: true; handle: string
   const app = await appId();
   if (!app) return { ok: false, detail: "could not tell which app the token belongs to" };
 
-  const file = await fetch(address);
-  if (!file.ok) return { ok: false, detail: `the sample image did not load: ${address} said ${file.status}` };
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const type = file.headers.get("content-type") ?? "image/jpeg";
+  // A local file (the sample PDF lives in the repo) or an address.
+  let bytes: Buffer;
+  let type: string;
+  if (/^https?:/.test(address)) {
+    const file = await fetch(address);
+    if (!file.ok) return { ok: false, detail: `the sample did not load: ${address} said ${file.status}` };
+    bytes = Buffer.from(await file.arrayBuffer());
+    type = file.headers.get("content-type") ?? "image/jpeg";
+  } else {
+    const { readFileSync } = await import("node:fs");
+    bytes = readFileSync(address);
+    type = address.endsWith(".pdf") ? "application/pdf" : "image/jpeg";
+  }
+  const name = type === "application/pdf" ? "sample.pdf" : "header.jpg";
 
   const session = await fetch(
-    url(`${app}/uploads?file_name=header.jpg&file_length=${bytes.length}&file_type=${encodeURIComponent(type)}`),
+    url(`${app}/uploads?file_name=${name}&file_length=${bytes.length}&file_type=${encodeURIComponent(type)}`),
     { method: "POST", headers: { authorization: `Bearer ${env.WA_ACCESS_TOKEN}` } },
   );
   const opened = (await session.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
@@ -81,8 +91,12 @@ async function create(spec: TemplateSpec): Promise<{ ok: boolean; detail: string
   let header: Record<string, unknown> | null = null;
   if (spec.header) {
     const sample = await uploadSample(spec.header.sample);
-    if (!sample.ok) return { ok: false, detail: `header image: ${sample.detail}` };
-    header = { type: "HEADER", format: "IMAGE", example: { header_handle: [sample.handle] } };
+    if (!sample.ok) return { ok: false, detail: `header ${spec.header.type}: ${sample.detail}` };
+    header = {
+      type: "HEADER",
+      format: spec.header.type === "document" ? "DOCUMENT" : "IMAGE",
+      example: { header_handle: [sample.handle] },
+    };
   }
 
   let flowButton: Record<string, unknown> | null = null;

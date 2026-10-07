@@ -75,6 +75,8 @@ export type TemplateName =
   | "payout_paid"
   | "security_alert"
   | "client_invoice"
+  | "client_invoice_pdf"
+  | "client_quote_pdf"
   | "client_quote"
   | "client_reminder"
   | "client_reminded"
@@ -110,7 +112,7 @@ export type TemplateSpec = {
    * submission and the real one by address on every send; `sample` is the
    * address the sample is fetched from.
    */
-  header?: { type: "image"; sample: string };
+  header?: { type: "image" | "document"; sample: string };
 };
 
 /** Where the Pro Pay button goes: billing/pro-link.ts builds the same address. */
@@ -247,6 +249,42 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
       text: "View and pay",
       url: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/{{1}}`,
       example: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/1256e3fd1f1fb85572609f61607c3fa6`,
+    },
+  },
+
+  /*
+   * The same two, with the PDF attached (7 October 2026). The PDF is what a
+   * client saves and forwards to whoever pays it; a link alone left them to
+   * download it themselves. Sent instead of the plain ones once Meta has
+   * approved these (documents/client-whatsapp.ts), and the plain ones until.
+   */
+  client_invoice_pdf: {
+    name: "client_invoice_pdf",
+    category: "UTILITY",
+    body: "Hello {{1}}, {{2}} has sent you {{3}} for {{4}}. The invoice is attached. Tap below to pay.",
+    params: ["client", "business", "what it is, e.g. Invoice 8", "amount"],
+    example: ["Tunde", "Kemi Studio", "Invoice 8", "₦200,000"],
+    footer: "Sent with Balans",
+    header: { type: "document", sample: "src/whatsapp/samples/invoice-sample.pdf" },
+    button: {
+      text: "Pay now",
+      url: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/{{1}}`,
+      example: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/1256e3fd1f1fb85572609f61607c3fa6`,
+    },
+  },
+
+  client_quote_pdf: {
+    name: "client_quote_pdf",
+    category: "UTILITY",
+    body: "Hello {{1}}, {{2}} has sent you a quote for {{3}} ({{4}}). The quote is attached. Tap below to see it online.",
+    params: ["client", "business", "amount", "Quote 3"],
+    example: ["Tunde", "Kemi Studio", "₦450,000", "Quote 3"],
+    footer: "Sent with Balans",
+    header: { type: "document", sample: "src/whatsapp/samples/invoice-sample.pdf" },
+    button: {
+      text: "View quote",
+      url: `${env.SITE_URL.replace(/\/$/, "")}/q/{{1}}`,
+      example: `${env.SITE_URL.replace(/\/$/, "")}/q/1256e3fd1f1fb85572609f61607c3fa6`,
     },
   },
 

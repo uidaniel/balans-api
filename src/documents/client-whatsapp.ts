@@ -26,6 +26,15 @@ import { agreedTotalMinor } from "../../core/exchange.ts";
 import { sendTemplate } from "../whatsapp/client.ts";
 import { planOf } from "./queries.ts";
 import { TEMPLATES, TEMPLATE_LANGUAGE } from "../whatsapp/window.ts";
+import { env } from "../config.ts";
+
+/** Whether Meta has approved a template, as last recorded (register-templates.ts). */
+async function templateApproved(name: string): Promise<boolean> {
+  const { rows } = await db()
+    .query<{ s: string | null }>(`SELECT value_json ->> $1 AS s FROM config WHERE key = 'template_status'`, [name])
+    .catch(() => ({ rows: [] as { s: string | null }[] }));
+  return rows[0]?.s === "APPROVED";
+}
 
 export type WhatsAppDelivery =
   | { ok: true; to: string }
@@ -115,10 +124,28 @@ export async function whatsappDocumentToClient(
   if (!d.client_phone) return { ok: false, why: "no_client_phone" };
   if ((await planOf(d.user_id)) !== "pro") return { ok: false, why: "not_pro" };
 
-  const { template, params } = clientMessage({ ...d, amount: amountFor(d) });
-  const sent = await sendTemplate(d.client_phone, template, params, {
+  const plain = clientMessage({ ...d, amount: amountFor(d) });
+  /*
+   * With the PDF attached when Meta has approved that version (7 October
+   * 2026); the plain one, with only the link, until then. Meta fetches the
+   * PDF from our own public link for this document.
+   */
+  const pdfName = d.type === "quote" ? TEMPLATES.client_quote_pdf.name : TEMPLATES.client_invoice_pdf.name;
+  const withPdf = await templateApproved(pdfName);
+  const template = withPdf ? pdfName : plain.template;
+  const label = d.type === "quote" ? "Quote" : d.type === "payment_request" ? "Payment request" : "Invoice";
+  const base = env.PUBLIC_BASE_URL.replace(/\/$/, "");
+  const sent = await sendTemplate(d.client_phone, template, plain.params, {
     language: TEMPLATE_LANGUAGE,
     urlSuffix: d.public_token,
+    ...(withPdf
+      ? {
+          headerDocument: {
+            link: `${base}/${d.type === "quote" ? "q" : "i"}/${d.public_token}/pdf`,
+            filename: `${label}${d.number ? ` ${d.number}` : ""} - ${(d.business_name ?? "Balans").replace(/[\\/:*?"<>|]/g, "")}.pdf`,
+          },
+        }
+      : {}),
   });
 
   if (!sent.ok) {
