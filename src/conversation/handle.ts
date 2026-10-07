@@ -2956,6 +2956,8 @@ async function handleInvoiceForm(
     // No longer asked: the form's fee box went with the Monnify split.
     passFeesToClient: false,
     notes: notes || null,
+    // Abroad only: their own details or a Balans link. Empty is their default.
+    payBy: fields.pay_by === "own" || fields.pay_by === "link" ? fields.pay_by : null,
   };
 
   /*

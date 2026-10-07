@@ -1762,6 +1762,30 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                   required: true,
                   "data-source": PLANS.map((p) => ({ id: p.id, title: p.title })),
                 },
+                /*
+                 * Abroad: a Balans card link, or the sender's own details
+                 * (PayPal, Wise…) printed on the invoice instead (6 October
+                 * 2026). Shown to whoever can bill in other currencies; the
+                 * currency was picked screens back and this screen cannot see
+                 * it, so the server ignores the answer on a naira invoice.
+                 * Left empty, their default from settings applies.
+                 */
+                {
+                  type: "TextCaption",
+                  text: "If it is not in naira, how should your client pay?",
+                  visible: "${data.can_bill_abroad}",
+                },
+                {
+                  type: "Dropdown",
+                  name: "pay_by",
+                  label: "Paid by",
+                  required: false,
+                  visible: "${data.can_bill_abroad}",
+                  "data-source": [
+                    { id: "link", title: "Balans payment link (card)" },
+                    { id: "own", title: "My own payment details" },
+                  ],
+                },
                 {
                   type: "OptIn",
                   name: "vat",
@@ -1793,6 +1817,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       // submission that says this is not a naira invoice.
                       currency: "${data.currency}",
                       plan: "${form.plan}",
+                      pay_by: "${form.pay_by}",
                       vat: "${form.vat}",
                       notes: "${form.notes}",
                     },
