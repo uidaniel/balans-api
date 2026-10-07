@@ -35,7 +35,7 @@ import {
 import { formatNaira } from "../../core/totals.ts";
 import { resolveDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
-import { EXTRA_ITEMS, FRESH_WHO, currencyOptions, formScreenId, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
+import { EXTRA_ITEMS, FRESH_WHO, currencyOptions, payByOptions, formScreenId, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION, draftButtons } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
 import { INFO, type Foreign } from "../../core/currency.ts";
@@ -74,6 +74,11 @@ export type State =
   | "paused";
 
 export type Context = {
+  /**
+   * An invoice abroad waiting for the payment details asked for after its
+   * form (handle.ts, `handleInvoiceForm`). The next message is them.
+   */
+  awaitingPayDetails?: PendingDoc;
   businessName?: string;
   bankCode?: string;
   bankName?: string;
@@ -206,7 +211,7 @@ export type PendingDoc = {
   passFeesToClient?: boolean;
   notes?: string | null;
   /** Abroad: "link" for a Balans card link, "own" for the sender's own details. Unset is their default. */
-  payBy?: "link" | "own" | null;
+  payBy?: "link" | "own" | "bank" | null;
 };
 
 /**
@@ -2467,6 +2472,7 @@ function formValues(doc: PendingDoc, now: Civil): {
     can_bill_abroad: false,
     show_currency: false,
     currencies: currencyOptions(false),
+    pay_options: payByOptions({ bank: null, details: null }),
     amount_help: NAIRA_HELP,
     ...PHONE_OFF,
   };

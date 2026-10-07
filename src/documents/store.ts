@@ -24,7 +24,7 @@ export type DraftLine = Line & { originalUnitAmountMinor?: number };
 export type DraftInput = {
   type: DocumentType;
   /** For an invoice abroad: a Balans link, or the sender's own details. Null is their default. */
-  payBy?: "link" | "own" | null;
+  payBy?: "link" | "own" | "bank" | null;
   clientName: string;
   clientEmail: string | null;
   /** WhatsApp digits. Set, it is where the document goes when it is sent. */
@@ -431,8 +431,8 @@ export async function confirmDraft(userId: string, draftId: string): Promise<Con
   return tx(async (c) => {
     await c.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [userId]);
 
-    const { rows } = await c.query<{ id: string; type: DocumentType; currency: string }>(
-      `SELECT id, type, currency FROM documents
+    const { rows } = await c.query<{ id: string; type: DocumentType; currency: string; pay_by: string | null }>(
+      `SELECT id, type, currency, pay_by FROM documents
         WHERE id = $1 AND user_id = $2 AND status = 'draft'
         FOR UPDATE`,
       [draftId, userId],
@@ -497,7 +497,9 @@ export async function confirmDraft(userId: string, draftId: string): Promise<Con
     // A naira invoice goes out with the sender's own account on it, taken
     // now and kept (see bank-details.ts). Abroad, and quotes, keep a link.
     const bank =
-      deliveryFor(draft.type, draft.currency) === "bank_details"
+      deliveryFor(draft.type, draft.currency) === "bank_details" ||
+      // Abroad, paid into their own Nigerian account if that is what they chose.
+      (draft.pay_by === "bank" && draft.type !== "quote")
         ? await attachBankDetails(c, draft.id, userId)
         : null;
     // Abroad, the sender may have chosen their own details over a link.

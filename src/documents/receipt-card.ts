@@ -152,7 +152,13 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
    * (see bank-details.ts). No processor touches it and there is no fee to
    * itemise, so the card says the one thing that is true: all of it lands.
    */
-  const feeRows = draft.foreign
+  /*
+   * Paid by card through Paystack: a foreign invoice, unless the sender chose
+   * their own bank or their own details for it (7 October 2026), when no
+   * processor touches the money and there is no fee to show.
+   */
+  const card = Boolean(draft.foreign) && draft.payBy !== "own" && draft.payBy !== "bank";
+  const feeRows = card
     ? `
     <div class="rows">
       ${grossedUp ? row("Client pays", formatNaira(money.clientPaysKobo)) : ""}
@@ -319,13 +325,17 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
        * honest: an invoice drawn up at 11 PM says tomorrow, because 22:00 has
        * already gone.
        */
-      draft.foreign
+      card
         ? esc(settlesLine(new Date(), "paystack"))
-        : "Your client pays straight into your bank account"
+        : draft.payBy === "own"
+          ? "Your client pays you directly"
+          : "Your client pays straight into your bank account"
     }${
-      draft.foreign
+      card
         ? `<span>Paid by card</span>`
-        : `<span>By transfer. Tell me once it lands and I will send the receipt.</span>`
+        : draft.payBy === "own"
+          ? `<span>Using your payment details. Tell me once it lands and I will send the receipt.</span>`
+          : `<span>By transfer. Tell me once it lands and I will send the receipt.</span>`
     }</div>
   </div>
 </body></html>`;

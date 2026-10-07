@@ -112,7 +112,7 @@ export type Correction = {
    */
   stageDues?: { which: "first" | "last" | number; date: Civil; phrase: string }[];
   /** How a client abroad pays: a Balans link, or the sender's own details. */
-  payBy?: "link" | "own";
+  payBy?: "link" | "own" | "bank";
   clientName?: string;
   /**
    * Where the client's copy goes. Null takes the address off entirely.
@@ -908,10 +908,12 @@ export function stageDatesIn(
  * payment details" → own. "use the payment link", "pay by card", "send a
  * link" → link.
  */
-export function payByIn(text: string): "link" | "own" | null {
+export function payByIn(text: string): "link" | "own" | "bank" | null {
   const t = text.toLowerCase().replace(/[’‘]/g, "'");
   // "don't send a link" holds "send a link": the refusal is read first.
   if (/\b(?:no|without|don'?t\s+(?:send|use|generate|need))\s+(?:a\s+|the\s+|any\s+)?(?:payment\s+|pay\s+)?link\b/.test(t)) return "own";
+  // "pay into my bank", "use my access account": their Nigerian account.
+  if (/\b(?:into|to|use|with|via|through)\s+(?:my|our)\s+(?:nigerian\s+|local\s+|naira\s+)?(?:bank(?:\s+account)?|account\s+number|[a-z]+\s+bank\s+account)\b/.test(t)) return "bank";
   if (/\b(?:use|with|by|via|through|send)\s+(?:the\s+|a\s+)?(?:payment\s+|pay\s+|card\s+)?link\b|\bpay(?:s|ing)?\s+(?:by|with|via)\s+card\b/.test(t)) return "link";
   if (
     /\b(?:my|our)\s+(?:own\s+)?(?:payment\s+)?(?:details|info|information|paypal|wise|payoneer|cash\s*app|venmo|zelle|revolut|iban|account\s+details)\b/.test(t) ||

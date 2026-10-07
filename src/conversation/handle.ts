@@ -33,7 +33,7 @@ import {
   type PendingDoc,
   type State,
 } from "./machine.ts";
-import { FRESH_WHO, currencyOptions, splitForPlan } from "../whatsapp/flows/definitions.ts";
+import { FRESH_WHO, currencyOptions, payByOptions, splitForPlan } from "../whatsapp/flows/definitions.ts";
 import { VAT_PERCENT } from "../parser/extract.ts";
 import { forLog, type Parsed } from "../parser/schema.ts";
 import { b, i, lines, para, row } from "../whatsapp/format.ts";
@@ -535,6 +535,39 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
 
   const today = todayIn(defaults.behaviour.timezone);
   const text = msg.text ?? "";
+
+  /*
+   * The payment details asked for after an invoice form (see
+   * `handleInvoiceForm`). Anything that reads as a command is not them: the
+   * wait is dropped and the message handled as usual.
+   */
+  const waitingDoc = (saved.context as { awaitingPayDetails?: PendingDoc }).awaitingPayDetails;
+  if (waitingDoc && state === "idle" && text.trim()) {
+    const details = text.replace(/\r\n?/g, "\n").trim();
+    if (!asCommand(details) && details.length >= 3) {
+      await db().query(`UPDATE users SET payment_details = $2 WHERE id = $1`, [user.id, details.slice(0, 600)]);
+      log.info({ userId: user.id }, "payment details given for an invoice abroad");
+      const outcome = await runEffects([{ type: "save_draft", doc: waitingDoc }], user.id, user.businessName ?? undefined, log, {
+        today,
+        phone: msg.from,
+      });
+      await saveConversation(
+        user.id,
+        outcome.holdAt ?? (outcome.draftId ? "awaiting_confirm" : "idle"),
+        outcome.draftId ? { doc: waitingDoc, draftId: outcome.draftId } : {},
+      );
+      await reply(
+        user.id,
+        msg.from,
+        [`✅ ${b("Saved.")} These go on this invoice, and on the next ones you send with your own details. Change them any time in ${b("settings")}.`, ...outcome.lines],
+        log,
+        outcome.buttons,
+        outcome.buttonsImage,
+      );
+      return;
+    }
+    await saveConversation(user.id, "idle", {});
+  }
 
   // The parser runs here, not in the machine: it is asynchronous and the
   // machine is a pure function. Only the states that can act on a parse pay
@@ -2957,7 +2990,7 @@ async function handleInvoiceForm(
     passFeesToClient: false,
     notes: notes || null,
     // Abroad only: their own details or a Balans link. Empty is their default.
-    payBy: fields.pay_by === "own" || fields.pay_by === "link" ? fields.pay_by : null,
+    payBy: fields.pay_by === "own" || fields.pay_by === "link" || fields.pay_by === "bank" ? fields.pay_by : null,
   };
 
   /*
@@ -2999,6 +3032,18 @@ async function handleInvoiceForm(
     return;
   }
   const priced = abroad.quote ? repriced(doc, abroad.quote) : doc;
+
+  /*
+   * "Custom payment details" chosen, and none saved: ask for them here, and
+   * show the draft only once they are in (7 October 2026). It used to send
+   * the draft anyway with a card link and a note saying so — a breakdown of
+   * Paystack fees under a message saying the details were missing.
+   */
+  if (priced.payBy === "own" && priced.foreign && !(await savedPaymentDetails(userId))) {
+    await saveConversation(userId, "idle", { awaitingPayDetails: priced });
+    await reply(userId, phone, [askPayDetails()], log);
+    return;
+  }
 
   const outcome = await runEffects([{ type: "save_draft", doc: priced }], userId, businessName, log, {
     today,
@@ -3170,6 +3215,25 @@ async function tellIfClientWhatsAppFailed(
 }
 
 /** A client number from somebody on Free: said once, and left off the draft. */
+/** Their saved payment details, or null. */
+async function savedPaymentDetails(userId: string): Promise<string | null> {
+  const { rows } = await db().query<{ d: string | null }>(`SELECT payment_details AS d FROM users WHERE id = $1`, [userId]);
+  return rows[0]?.d?.trim() || null;
+}
+
+/** "Custom payment details", with none saved: what to send. */
+function askPayDetails(): string {
+  return para(
+    `💳 ${b("How should your client pay you?")}`,
+    lines(
+      "Send me the details to put on this invoice, for example:",
+      i("PayPal: you@email.com"),
+      i("Wise: IBAN GB00 0000 0000 0000 00, Kemi Adeyemi"),
+    ),
+    "I will save them for next time, then show you the draft.",
+  );
+}
+
 function noOwnDetailsYet(): string {
   return para(
     `💳 ${b("You have not added your payment details yet.")}`,
@@ -3197,6 +3261,18 @@ function clientWhatsAppIsPro(): string {
  * Only the document forms carry these keys. Onboarding and the rest do not
  * declare them, and a Flow handed one key too many dies at the first tap.
  */
+/** The "Paid by" box's list for this user: their bank by name, their details. */
+async function payOptionsFor(userId: string) {
+  const [account, { rows }] = await Promise.all([
+    accountInForce(userId),
+    db().query<{ d: string | null }>(`SELECT payment_details AS d FROM users WHERE id = $1`, [userId]),
+  ]);
+  return payByOptions({
+    bank: account ? `${account.bankName} ••${account.last4}` : null,
+    details: rows[0]?.d ?? null,
+  });
+}
+
 /** The sender's WhatsApp number, for putting their own currency first. */
 async function phoneOf(userId: string): Promise<string | null> {
   const { rows } = await db().query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [userId]);
@@ -3229,6 +3305,7 @@ async function openedForPlan(
           currencies: currencyOptions(pro, homeCurrencyFor(phone), abroad !== null),
           ...(pro || abroad ? { can_bill_abroad: true, amount_help: ABROAD_HELP } : {}),
           ...(abroad && data.currency === "NGN" ? { currency: abroad } : {}),
+          pay_options: await payOptionsFor(userId),
         }
       : {};
 

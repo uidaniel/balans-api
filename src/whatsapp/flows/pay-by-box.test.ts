@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 
-import { FLOWS } from "./definitions.ts";
+import { FLOWS, payByOptions } from "./definitions.ts";
 
 type Node = Record<string, unknown> & { children?: Node[] };
 const walk = (n: unknown): Node[] =>
@@ -23,7 +23,16 @@ describe("the pay-by box", () => {
     assert.equal(box.type, "Dropdown");
     assert.equal(box.visible, "${data.can_bill_abroad}");
     assert.equal(box.required, false, "required while hidden would make the form unsendable");
-    assert.deepEqual((box["data-source"] as { id: string }[]).map((o) => o.id), ["link", "own"]);
+    assert.equal(box["data-source"], "${data.pay_options}");
+  });
+
+  it("names their bank, and leaves it off when they have none", () => {
+    const withBank = payByOptions({ bank: "Access Bank ••5673", details: "PayPal: me@x.com" });
+    assert.deepEqual(withBank.map((o) => o.id), ["bank", "own", "link"]);
+    assert.equal(withBank[0]!.description, "Access Bank ••5673");
+    assert.equal(withBank[1]!.description, "PayPal: me@x.com");
+    assert.deepEqual(payByOptions({ bank: null, details: null }).map((o) => o.id), ["own", "link"]);
+    for (const o of withBank) assert.ok(o.title.length <= 30, o.title);
   });
 
   it("is sent back with the form", () => {
@@ -34,6 +43,6 @@ describe("the pay-by box", () => {
 
   it("is read onto the draft, and nothing else is", () => {
     const handle = readFileSync(new URL("../../conversation/handle.ts", import.meta.url), "utf8");
-    assert.match(handle, /payBy: fields\.pay_by === "own" \|\| fields\.pay_by === "link" \? fields\.pay_by : null/);
+    assert.match(handle, /payBy: fields\.pay_by === "own" \|\| fields\.pay_by === "link" \|\| fields\.pay_by === "bank" \? fields\.pay_by : null/);
   });
 });

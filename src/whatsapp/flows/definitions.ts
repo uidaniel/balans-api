@@ -1010,6 +1010,12 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
   show_currency: { type: "boolean", __example__: false },
   currencies: CURRENCIES_SCHEMA,
   /*
+   * How a client abroad can pay, as the last screen lists it (7 October 2026):
+   * their own bank (named), their own details, or a Balans link. Built for
+   * whoever opens the form (`payByOptions`), so it can name their account.
+   */
+  pay_options: CURRENCIES_SCHEMA,
+  /*
    * The line under the Amount box, which cannot be fixed text any more.
    *
    * "Naira, before VAT" is right for almost everybody and flatly wrong above
@@ -1059,6 +1065,7 @@ const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<str
   can_bill_abroad: "${data.can_bill_abroad}",
   show_currency: "${data.show_currency}",
   currencies: "${data.currencies}",
+  pay_options: "${data.pay_options}",
   amount_help: "${data.amount_help}",
   can_whatsapp_client: "${data.can_whatsapp_client}",
   phone_help: "${data.phone_help}",
@@ -1076,6 +1083,24 @@ const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<str
  * `home` is the currency their WhatsApp number suggests (core/home-currency.ts):
  * it goes to the top, then naira, then the rest in a fixed order.
  */
+/**
+ * What the "Paid by" box lists (7 October 2026). Their Nigerian account by
+ * name when they have one, their own details (saved, or asked for in the chat
+ * once the form closes), and a Balans card link.
+ */
+export function payByOptions(x: { bank: string | null; details: string | null }): CurrencyOption[] {
+  const first = (x.details ?? "").split("\n")[0]!.trim();
+  return [
+    ...(x.bank ? [{ id: "bank", title: "My bank account", description: x.bank }] : []),
+    {
+      id: "own",
+      title: "Custom payment details",
+      description: first ? (first.length > 60 ? `${first.slice(0, 59)}…` : first) : "PayPal, Wise and so on. I will ask you for them.",
+    },
+    { id: "link", title: "Balans payment link", description: "Your client pays by card." },
+  ];
+}
+
 export type CurrencyOption = { id: string; title: string; description?: string; enabled?: boolean };
 
 const CURRENCY_TITLES: Record<Currency, string> = {
@@ -1732,6 +1757,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           can_bill_abroad: { type: "boolean", __example__: false },
           show_currency: { type: "boolean", __example__: false },
           currencies: CURRENCIES_SCHEMA,
+          pay_options: CURRENCIES_SCHEMA,
           amount_help: { type: "string", __example__: "Naira, before VAT. Digits only." },
           can_whatsapp_client: { type: "boolean", __example__: false },
           phone_help: { type: "string", __example__: "WhatsApp delivery comes with Pro." },
@@ -1781,10 +1807,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                   label: "Paid by",
                   required: false,
                   visible: "${data.can_bill_abroad}",
-                  "data-source": [
-                    { id: "link", title: "Balans payment link (card)" },
-                    { id: "own", title: "My own payment details" },
-                  ],
+                  "data-source": "${data.pay_options}",
                 },
                 {
                   type: "OptIn",
