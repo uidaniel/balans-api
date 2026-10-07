@@ -77,6 +77,7 @@ export type TemplateName =
   | "client_invoice"
   | "client_invoice_pdf"
   | "client_quote_pdf"
+  | "client_paid"
   | "client_quote"
   | "client_reminder"
   | "client_reminded"
@@ -286,6 +287,20 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
       url: `${env.SITE_URL.replace(/\/$/, "")}/q/{{1}}`,
       example: `${env.SITE_URL.replace(/\/$/, "")}/q/1256e3fd1f1fb85572609f61607c3fa6`,
     },
+  },
+
+  /*
+   * Proof of payment to a client who gave a number and no email (7 October
+   * 2026). With an email, the receipt goes there instead and this is not sent.
+   */
+  client_paid: {
+    name: "client_paid",
+    category: "UTILITY",
+    body: "Hello {{1}}, {{2}} has received your payment of {{3}} for {{4}}. Your receipt is attached. Thank you.",
+    params: ["client", "business", "amount", "what it was for, e.g. Invoice 8"],
+    example: ["Tunde", "Kemi Studio", "₦200,000", "Invoice 8"],
+    footer: "Sent with Balans",
+    header: { type: "document", sample: "src/whatsapp/samples/invoice-sample.pdf" },
   },
 
   client_quote: {

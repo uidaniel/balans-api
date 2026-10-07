@@ -85,7 +85,7 @@ import {
 } from "../documents/reports.ts";
 import { defaultPeriod, readPeriod } from "../../core/period.ts";
 import { renderDocumentPdf } from "../documents/pdf.ts";
-import { emailPaidToClient } from "../email/paid-delivery.ts";
+import { deliverPaidToClient } from "../email/paid-delivery.ts";
 import { emailDocumentToClient } from "../email/client-delivery.ts";
 import { whatsappDocumentToClient } from "../documents/client-whatsapp.ts";
 import { cancelDocument, convertQuote, findForResend, openForReminders, stopReminders } from "../documents/actions.ts";
@@ -2318,16 +2318,21 @@ async function runEffects(
              * transfer through Balans sends), and nothing goes to anybody's
              * WhatsApp. Awaited, so the reply can say where it went.
              */
-            const emailed = await emailPaidToClient(inv.id, log);
+            // Their email if they gave one; their WhatsApp if only a number.
+            const delivered = await deliverPaidToClient(inv.id, log);
             extra.push(
               lines(
                 `✅ ${b("Done.")} Invoice ${number} is marked paid.`,
                 `${formatNaira(done.paidKobo)} from ${done.clientName}, by direct transfer.`,
-                emailed.ok
-                  ? `📧 Receipt emailed to ${emailed.to}.`
-                  : emailed.why === "no_client_email"
-                    ? i(`${done.clientName} has no email on file, so no receipt was sent.`)
-                    : i("The receipt email did not go through. The payment is recorded either way."),
+                delivered.ok
+                  ? delivered.via === "email"
+                    ? `📧 Receipt emailed to ${delivered.to}.`
+                    : `📱 Receipt sent to ${done.clientName}'s WhatsApp.`
+                  : delivered.why === "no_contact"
+                    ? i(`${done.clientName} has no email or number on file, so no receipt was sent.`)
+                    : delivered.why === "not_approved"
+                      ? i("Receipts by WhatsApp start once Meta approves them. The payment is recorded either way.")
+                      : i("The receipt did not go through. The payment is recorded either way."),
               ),
             );
             break;

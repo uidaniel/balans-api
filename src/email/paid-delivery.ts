@@ -339,3 +339,26 @@ async function receiptForDocument(
   const paymentId = rows[0]?.id;
   return paymentId ? renderReceiptPdf(paymentId, log) : null;
 }
+
+/**
+ * The client's proof of payment, by one channel (7 October 2026): their email
+ * when they gave one, and only that; their WhatsApp when they gave a number
+ * and no email. Never both — one receipt is a receipt, two is noise.
+ */
+export async function deliverPaidToClient(
+  documentId: string,
+  log: FastifyBaseLogger,
+): Promise<
+  | { ok: true; via: "email" | "whatsapp"; to: string }
+  | { ok: false; why: "no_contact" | "not_approved" | "failed" }
+> {
+  const emailed = await emailPaidToClient(documentId, log);
+  if (emailed.ok) return { ok: true, via: "email", to: emailed.to };
+  if (emailed.why !== "no_client_email") return { ok: false, why: "failed" };
+
+  const { whatsappPaidToClient } = await import("../documents/client-whatsapp.ts");
+  const sent = await whatsappPaidToClient(documentId, log);
+  if (sent.ok) return { ok: true, via: "whatsapp", to: sent.to };
+  if (sent.why === "no_client_phone") return { ok: false, why: "no_contact" };
+  return { ok: false, why: sent.why === "not_approved" ? "not_approved" : "failed" };
+}

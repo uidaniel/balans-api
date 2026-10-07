@@ -80,7 +80,7 @@ describe("the emails a payment sends", () => {
   const notify = readFileSync(new URL("../payments/notify.ts", import.meta.url), "utf8");
 
   it("sends both sides their copy, and only when it is settled", () => {
-    assert.match(notify, /emailPaidToClient\(n\.documentId, log\)/);
+    assert.match(notify, /deliverPaidToClient\(n\.documentId, log\)/);
     assert.match(notify, /emailPaidToUser\(n\.documentId, log\)/);
     // A deposit is not a paid invoice.
     assert.match(notify, /if \(n\.documentId && n\.fullyPaid\)/);
@@ -93,10 +93,10 @@ describe("the emails a payment sends", () => {
      * this product lives.
      */
     assert.ok(
-      notify.indexOf("const outcome = await send(") < notify.indexOf("emailPaidToClient("),
+      notify.indexOf("const outcome = await send(") < notify.indexOf("deliverPaidToClient("),
       "the WhatsApp message is sent first",
     );
-    assert.match(notify, /void emailPaidToClient/, "and the emails are not awaited");
+    assert.match(notify, /void deliverPaidToClient/, "and the emails are not awaited");
   });
 
   it("cannot throw, because the money has already moved", () => {
@@ -190,5 +190,17 @@ describe("the emails a payment sends", () => {
     assert.match(client, /Thank you for your business/);
     // "Receipt" is the word somebody searches their inbox for in March.
     assert.match(client, /subject: `Receipt — /);
+  });
+});
+
+describe("one receipt, by one channel", () => {
+  const source = readFileSync(new URL("./paid-delivery.ts", import.meta.url), "utf8");
+  it("emails when there is an email, and only then tries WhatsApp", () => {
+    const fn = source.slice(source.indexOf("export async function deliverPaidToClient"));
+    const email = fn.indexOf("emailPaidToClient(documentId, log)");
+    const wa = fn.indexOf("whatsappPaidToClient(documentId, log)");
+    assert.ok(email > 0 && wa > email, "email first");
+    assert.match(fn, /if \(emailed\.ok\) return/);
+    assert.match(fn, /emailed\.why !== "no_client_email"/);
   });
 });

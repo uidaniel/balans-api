@@ -26,6 +26,7 @@ import { agreedTotalMinor } from "../../core/exchange.ts";
 import { sendTemplate } from "../whatsapp/client.ts";
 import { planOf } from "./queries.ts";
 import { TEMPLATES, TEMPLATE_LANGUAGE } from "../whatsapp/window.ts";
+import { renderReceiptPdf } from "./pdf.ts";
 import { env } from "../config.ts";
 
 /** Whether Meta has approved a template, as last recorded (register-templates.ts). */
@@ -214,5 +215,81 @@ export async function whatsappReminderToClient(
     return { ok: false, why: "send_failed", to: d.client_phone };
   }
   log.info({ documentId }, "reminder sent to the client's WhatsApp");
+  return { ok: true, to: d.client_phone };
+}
+
+/**
+ * The receipt, to the client's WhatsApp, as a PDF (7 October 2026). Only for
+ * a client with a number and no email — `deliverPaidToClient` decides — and
+ * only once Meta has approved `client_paid`.
+ *
+ * The receipt PDF is rendered first so its public link has a file behind it;
+ * if it cannot be, the invoice itself goes, which is stamped PAID.
+ */
+export async function whatsappPaidToClient(
+  documentId: string,
+  log: FastifyBaseLogger,
+): Promise<{ ok: true; to: string } | { ok: false; why: "no_client_phone" | "not_approved" | "not_found" | "send_failed" }> {
+  const { rows } = await db().query<{
+    type: string;
+    number: string | null;
+    total_kobo: number;
+    subtotal_kobo: number;
+    vat_kobo: number;
+    currency: string;
+    original_amount_minor: number | null;
+    public_token: string | null;
+    client_name: string;
+    client_phone: string | null;
+    business_name: string | null;
+  }>(
+    `SELECT d.type, COALESCE(LPAD(d.number::text, GREATEST(4, length(d.number::text)), '0'), substring(d.ref from 4)) AS number,
+            d.total_kobo, d.subtotal_kobo, d.vat_kobo, d.currency, d.original_amount_minor, d.public_token,
+            c.name AS client_name, c.phone AS client_phone, u.business_name
+       FROM documents d JOIN clients c ON c.id = d.client_id JOIN users u ON u.id = d.user_id
+      WHERE d.id = $1`,
+    [documentId],
+  );
+  const d = rows[0];
+  if (!d?.public_token) return { ok: false, why: "not_found" };
+  if (!d.client_phone) return { ok: false, why: "no_client_phone" };
+  if (!(await templateApproved(TEMPLATES.client_paid.name))) {
+    log.info({ documentId }, "client receipt by WhatsApp waits for client_paid to be approved");
+    return { ok: false, why: "not_approved" };
+  }
+
+  // A file behind the receipt link, or the stamped invoice instead.
+  const { rows: pay } = await db().query<{ id: string }>(
+    `SELECT id FROM payments WHERE document_id = $1 AND status = 'success' ORDER BY created_at DESC LIMIT 1`,
+    [documentId],
+  );
+  const receipt = pay[0] ? await renderReceiptPdf(pay[0].id, log).catch(() => null) : null;
+  const { rows: stored } = await db().query<{ k: string | null }>(
+    `SELECT r.pdf_key AS k FROM receipts r JOIN payments p ON p.id = r.payment_id
+      WHERE p.document_id = $1 AND p.status = 'success' ORDER BY r.created_at DESC LIMIT 1`,
+    [documentId],
+  );
+  const base = env.PUBLIC_BASE_URL.replace(/\/$/, "");
+  const hasReceipt = Boolean(receipt && stored[0]?.k);
+  const label = d.type === "payment_request" ? "Payment request" : "Invoice";
+  const business = d.business_name ?? "A Balans user";
+
+  const sent = await sendTemplate(
+    d.client_phone,
+    TEMPLATES.client_paid.name,
+    [firstName(d.client_name), business, amountFor(d), `${label}${d.number ? ` ${d.number}` : ""}`],
+    {
+      language: TEMPLATE_LANGUAGE,
+      headerDocument: {
+        link: `${base}/i/${d.public_token}/${hasReceipt ? "receipt" : "pdf"}`,
+        filename: `${hasReceipt ? "Receipt" : label}${d.number ? ` ${d.number}` : ""} - ${business.replace(/[\\/:*?"<>|]/g, "")}.pdf`,
+      },
+    },
+  );
+  if (!sent.ok) {
+    log.error({ documentId, reason: sent.reason }, "could not send the receipt to the client's WhatsApp");
+    return { ok: false, why: "send_failed" };
+  }
+  log.info({ documentId, withReceipt: hasReceipt }, "receipt sent to the client's WhatsApp");
   return { ok: true, to: d.client_phone };
 }

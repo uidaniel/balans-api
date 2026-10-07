@@ -1386,7 +1386,10 @@ function whoScreen(o: DocumentFlow, fresh = false): Record<string, unknown> {
               "helper-text": "${data.phone_help}",
               enabled: "${data.can_whatsapp_client}",
               required: false,
-              "input-type": "phone",
+              // Text, not "phone": WhatsApp's own phone check refused
+              // "+1 (431) 276-7051", the way an iPhone pastes a contact
+              // (7 October 2026). The server reads any format.
+              "input-type": "text",
               "max-chars": 20,
             },
             {
@@ -1944,7 +1947,7 @@ const request: FlowDefinition = {
                   "helper-text": "${data.phone_help}",
                   enabled: "${data.can_whatsapp_client}",
                   required: false,
-                  "input-type": "phone",
+                  "input-type": "text",
                   "max-chars": 20,
                 },
                 {

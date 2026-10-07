@@ -20,6 +20,7 @@ describe("the templates we register with Meta", () => {
       [
         "client_invoice",
         "client_invoice_pdf",
+        "client_paid",
         "client_quote",
         "client_quote_pdf",
         "client_reminded",

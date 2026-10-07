@@ -707,7 +707,8 @@ describe("line items on the document forms", () => {
           ["client_name", "client_email", "client_phone"],
         );
         assert.equal(named("WHO", "client_name")!.required, true);
-        assert.equal(named("WHO", "client_phone")!["input-type"], "phone");
+        // Text, not "phone": WhatsApp refused "+1 (431) 276-7051" (7 Oct 2026).
+        assert.equal(named("WHO", "client_phone")!["input-type"], "text");
         assert.equal(named("WHO", "client_phone")!.required, false);
         assert.equal(json.screens[0], who, "the first page is the first screen");
         // And hands on to the item page, reading its own three from the form.

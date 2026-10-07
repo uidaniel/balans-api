@@ -20,7 +20,7 @@ import { renderReceiptPdf } from "../documents/pdf.ts";
 import { proStarted } from "../billing/messages.ts";
 import { PRO_CARD } from "../conversation/machine.ts";
 import { proEmail, sendEmail } from "../email/send.ts";
-import { emailPaidToClient, emailPaidToUser } from "../email/paid-delivery.ts";
+import { deliverPaidToClient, emailPaidToUser } from "../email/paid-delivery.ts";
 import { displayNumber } from "../whatsapp/number.ts";
 
 /**
@@ -199,7 +199,7 @@ export async function notifyPaid(n: PaidNotice, log: FastifyBaseLogger): Promise
    * Not awaited, and neither call throws. The money has already moved.
    */
   if (n.documentId && n.fullyPaid) {
-    void emailPaidToClient(n.documentId, log);
+    void deliverPaidToClient(n.documentId, log);
     void emailPaidToUser(n.documentId, log);
   }
 }
