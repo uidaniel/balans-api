@@ -242,7 +242,8 @@ describe("what the form path does with it", () => {
      */
     assert.match(
       handle,
-      /\(fields\.currency \?\? ""\)\.trim\(\) \|\| \(open\?\.foreign\?\.currency \?\? ""\)/,
+      // An edit of a sent invoice falls back to that invoice's currency.
+      /\(fields\.currency \?\? ""\)\.trim\(\) \|\| \(open\?\.foreign\?\.currency \?\? was\?\.foreign\?\.currency \?\? ""\)/,
     );
   });
 
@@ -250,7 +251,9 @@ describe("what the form path does with it", () => {
     // Above it a figure is in whatever currency was chosen; below it
     // everything is kobo. One conversion, at one recorded rate, and the form
     // does not get a second copy of that arithmetic.
-    assert.match(handle, /repriced\(doc, abroad\.quote\)/);
+    // The quote is the form's, or an edited invoice's own rate in the same currency.
+    assert.match(handle, /const priced = quote \? repriced\(doc, quote\) : doc;/);
+    assert.match(handle, /: abroad\.quote;/);
   });
 
   it("keeps the priced draft in the conversation, not the form's copy", () => {

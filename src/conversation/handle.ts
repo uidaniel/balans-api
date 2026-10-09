@@ -34,7 +34,7 @@ import {
   type State,
   formValues,
 } from "./machine.ts";
-import { FRESH_WHO, currencyOptions, payByOptions, splitForPlan } from "../whatsapp/flows/definitions.ts";
+import { EXTRA_ITEMS, FRESH_WHO, currencyOptions, payByOptions, planIdFor, splitForPlan } from "../whatsapp/flows/definitions.ts";
 import { VAT_PERCENT } from "../parser/extract.ts";
 import { forLog, type Parsed } from "../parser/schema.ts";
 import { b, i, lines, para, row } from "../whatsapp/format.ts";
@@ -43,7 +43,7 @@ import { readCorrection } from "../parser/corrections.ts";
 import { formatMoney, FOREIGN, INFO, type CurrencyRead, type Foreign } from "../../core/currency.ts";
 import { current as currentRate, type Quote } from "../fx/rate.ts";
 import { asCommand } from "../parser/commands.ts";
-import { resolveDueDate, todayIn, type Civil } from "../../core/dates.ts";
+import { compare as compareCivil, resolveDueDate, todayIn, type Civil } from "../../core/dates.ts";
 import { defaults, env } from "../config.ts";
 import { applyEdit, confirmDraft, createDraft, discardDraft, getOpenDraft, getSentForEdit } from "../documents/store.ts";
 import {
@@ -1510,6 +1510,15 @@ async function runEffects(
           const sent = await getSentForEdit(userId, found.id);
           if (!sent) {
             extra.push(`🔒 Invoice ${shown} cannot be changed now.`);
+            break;
+          }
+          if (sent.lines.length > EXTRA_ITEMS.length + 1) {
+            extra.push(
+              lines(
+                `✏️ Invoice ${shown} has ${sent.lines.length} lines, more than the form holds (${EXTRA_ITEMS.length + 1}), so it cannot be changed here.`,
+                `Send a new one, then reply ${b(`cancel invoice ${found.number}`)} to cancel this.`,
+              ),
+            );
             break;
           }
           const doc: PendingDoc = {
@@ -3211,25 +3220,55 @@ async function handleInvoiceForm(
    * move an invoice back to naira; the other way round costs them the invoice.
    */
   const open = await getOpenDraft(userId);
-  const chosen = (fields.currency ?? "").trim() || (open?.foreign?.currency ?? "");
+  // Changing a sent invoice: what it was, for everything the form cannot
+  // carry back exactly (9 October 2026).
+  const was = editId && /^[0-9a-f-]{36}$/i.test(editId) ? await getSentForEdit(userId, editId).catch(() => null) : null;
+  const chosen = (fields.currency ?? "").trim() || (open?.foreign?.currency ?? was?.foreign?.currency ?? "");
 
   const abroad = await formCurrency(userId, chosen, log);
   if (abroad.stop) {
     await reply(userId, phone, [abroad.words], log);
     return;
   }
-  const priced = abroad.quote ? repriced(doc, abroad.quote) : doc;
-
   /*
-   * Changing a sent invoice: an empty "Paid by" keeps what it had
-   * (9 October 2026). The box cannot be pre-selected from here (it is hidden
-   * for some senders, and a hidden field named in init-values kills the form),
-   * so an edit about the price must not quietly turn their PayPal details
-   * back into a card link.
+   * An edit in the same currency keeps the rate the client was sent. A fresh
+   * one would change the naira they pay over an edit to the notes.
    */
-  if (editId && !priced.payBy && /^[0-9a-f-]{36}$/i.test(editId)) {
-    const was = await getSentForEdit(userId, editId).catch(() => null);
-    if (was?.payBy) priced.payBy = was.payBy;
+  const quote =
+    abroad.quote && was?.foreign && was.foreign.currency === abroad.quote.currency
+      ? {
+          ...abroad.quote,
+          rate: was.foreign.rate,
+          source: was.foreign.source,
+          fetchedAt: new Date(was.foreign.fetchedAt),
+        }
+      : abroad.quote;
+  const priced = quote ? repriced(doc, quote) : doc;
+
+  if (was) {
+    /*
+     * Changing a sent invoice: an empty "Paid by" keeps what it had. The box
+     * cannot be pre-selected from here (it is hidden for some senders, and a
+     * hidden field named in init-values kills the form), so an edit about the
+     * price must not quietly turn their PayPal details back into a card link.
+     */
+    if (!priced.payBy && was.payBy) priced.payBy = was.payBy;
+    /*
+     * The payment plan left as it opened: the exact split it had. The form
+     * lists set plans only, so a 30% deposit opened as "one payment" and
+     * came back wiped; the dates set for each stage went the same way.
+     */
+    if ((fields.plan ?? "") === planIdFor({ depositPercent: was.depositPercent, instalments: was.instalments })) {
+      priced.depositPercent = was.depositPercent;
+      priced.instalments = was.instalments;
+      const sameDue =
+        (!priced.dueDate && !was.dueDate) ||
+        (!!priced.dueDate && !!was.dueDate && compareCivil(priced.dueDate, was.dueDate) === 0);
+      const stages = (await partsFor(was.id)).map((p) => p.dueOn);
+      if (sameDue && stages.length >= 2 && stages.some(Boolean)) priced.stageDueDates = stages;
+    }
+    // VAT still ticked: the rate it had (5% stays 5%), not the form's 7.5%.
+    if (priced.vatPercent !== null && was.vatPercent) priced.vatPercent = was.vatPercent;
   }
 
   /*
