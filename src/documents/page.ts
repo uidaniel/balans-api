@@ -51,6 +51,9 @@ box-shadow:0 0 0 1px var(--ink-6),0 1px 2px var(--ink-6);overflow:hidden}
 .top{padding:28px 28px 0}
 .brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;
 letter-spacing:-.03em;font-size:20px}
+.trybalans{display:block;margin-top:14px;padding:13px 16px;border-radius:14px;background:var(--cream);
+color:var(--ink);text-decoration:none;font-size:14px;line-height:1.45;text-align:center}
+.trybalans b{color:var(--ink);white-space:nowrap}
 .doctitle{margin-top:2px;font-size:15px;font-weight:600;color:var(--ink)}
 .dot{width:22px;height:22px;border-radius:50%;background:var(--marigold);flex:none}
 .pay.own .own-amt{margin-top:6px;font-family:var(--display);font-size:22px;font-weight:800;letter-spacing:-.03em}
@@ -687,7 +690,7 @@ function payBlock(
     case "bank_details":
       return bankBlock(doc, amount, partLabel);
     case "paid":
-      return `<div class="banner paid">Paid in full. Nothing more to do.</div>`;
+      return `<div class="banner paid">Paid in full. Nothing more to do.</div>${doc.plan === "pro" ? "" : tryBalans()}`;
     case "cancelled":
       return `<div class="banner cancelled">This ${LABEL[doc.type].toLowerCase()} was cancelled and cannot be paid.</div>`;
     case "quote":
@@ -785,6 +788,19 @@ function ownDetailsBlock(doc: PublicDocument, amount: number, partLabel: string 
       ${esc(clientNumber(doc.ref, doc.number) ? `invoice ${clientNumber(doc.ref, doc.number)}` : "the invoice number")} in the reference.
       ${esc(doc.businessName)} will confirm when it arrives.</p>
   </div>`;
+}
+
+/**
+ * Under "Paid in full", for a Free sender's client (9 October 2026): the
+ * moment somebody has just seen an invoice paid this way is the moment the
+ * idea lands. On the page, not by WhatsApp — a message they never asked for
+ * would be marketing, and reported as it. Never under a Pro sender's invoice,
+ * which is sold as theirs alone.
+ */
+function tryBalans(): string {
+  const site = env.SITE_URL.replace(/\/$/, "");
+  return `<a class="trybalans" href="${site}/?utm_source=paid_invoice&amp;utm_medium=invoice_page" target="_blank" rel="noopener">
+    Get paid like this. Send invoices on WhatsApp in seconds. <b>Try Balans free &rarr;</b></a>`;
 }
 
 function trustBlock(doc: PublicDocument): string {

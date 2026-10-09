@@ -82,6 +82,7 @@ type Row = {
   client_email: string | null;
   business_name: string | null;
   business_email: string | null;
+  plan: "free" | "pro";
 };
 
 const civil = (d: Date): Civil => ({ y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() });
@@ -90,7 +91,7 @@ async function paidRow(documentId: string): Promise<Row | null> {
   const { rows } = await db().query<Row>(
     `SELECT d.user_id, d.number, d.ref, d.type, d.total_kobo, d.paid_at, d.public_token,
             c.name AS client_name, c.email AS client_email,
-            u.business_name, u.email AS business_email
+            u.business_name, u.email AS business_email, u.plan
        FROM documents d
        JOIN clients c ON c.id = d.client_id
        JOIN users u   ON u.id = d.user_id
@@ -163,6 +164,13 @@ export async function emailPaidToClient(
         true,
       ),
       paragraph(`Thank you for your business.`, true),
+      // A Free sender's client only; never under a Pro sender's name.
+      d.plan === "pro"
+        ? ""
+        : paragraph(
+            `Get paid like this: send invoices on WhatsApp in seconds. <a href="${env.SITE_URL.replace(/\/$/, "")}/?utm_source=paid_invoice&amp;utm_medium=receipt_email">Try Balans free</a>.`,
+            true,
+          ),
     ]
       .filter(Boolean)
       .join("\n");
@@ -206,6 +214,8 @@ export async function emailPaidToClient(
           link ? `View the invoice: ${link}` : "",
           "",
           "Thank you for your business.",
+          d.plan === "pro" ? "" : `
+Get paid like this: send invoices on WhatsApp in seconds. Try Balans free: ${env.SITE_URL.replace(/\/$/, "")}`,
         ]
           .filter(Boolean)
           .join("\n"),
