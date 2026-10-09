@@ -3202,11 +3202,7 @@ async function handleInvoiceForm(
     : phoneTyped && !clientPhone
       ? [para(`📵 ${b(`"${phoneTyped}" is not a number I can send to.`)}`, "The draft is below without it. Say *their number is 0803 123 4567* to add it.")]
       : [];
-  const editNote =
-    context.editingId && outcome.draftId
-      ? [`✏️ ${b(`Changing invoice ${String(context.editingNumber ?? "").padStart(4, "0")}.`)} Tap Send it to update it: same number, same link.`]
-      : [];
-  await reply(userId, phone, [...editNote, ...phoneNote, ...outcome.lines], log, outcome.buttons, outcome.buttonsImage);
+  await reply(userId, phone, [...phoneNote, ...outcome.lines], log, outcome.buttons, outcome.buttonsImage);
 
   log.info({ userId, draftId: outcome.draftId, depositPercent, instalments }, "draft from a form");
 }
