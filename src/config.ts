@@ -53,6 +53,8 @@ const schema = z.object({
    */
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:4000"),
   SUPPORT_EMAIL: z.string().email().default("hello@balans.ng"),
+  /** Sentry (ops/sentry.ts). Unset sends nothing. */
+  SENTRY_DSN: z.string().url().optional(),
   /**
    * The marketing site: terms, privacy, the landing page.
    *

@@ -39,8 +39,11 @@ import { startBroadcasts, stopBroadcasts } from "./jobs/broadcast.ts";
 import { startPlanNotices, stopPlanNotices } from "./jobs/plan-notices.ts";
 import { startHealthChecks, stopHealthChecks } from "./jobs/health.ts";
 import { startErrorDigests, stopErrorDigests } from "./ops/alerts.ts";
+import { flushSentry, initSentry } from "./ops/sentry.ts";
 import { drainInbound, replayUnanswered } from "./http/routes/whatsapp.ts";
 
+// Before anything can throw: errors go to Sentry when SENTRY_DSN is set.
+initSentry();
 const app = buildServer();
 
 /*
@@ -132,6 +135,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     stopPlanNotices();
     stopHealthChecks();
     await stopErrorDigests(app.log);
+    await flushSentry();
     // Replies already under way get a few seconds to finish before we go.
     const waited = await drainInbound(7_000);
     if (waited) app.log.info({ waited }, "let in-flight replies finish");

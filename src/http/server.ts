@@ -4,6 +4,7 @@
  */
 
 import { captureLogError } from "../ops/alerts.ts";
+import { reportToSentry } from "../ops/sentry.ts";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { env, isProd } from "../config.ts";
@@ -53,7 +54,10 @@ export function buildServer(): FastifyInstance {
       // Every error line also goes to the team's email digest (ops/alerts.ts).
       hooks: {
         logMethod(args, method, level) {
-          if (level >= 50) captureLogError(args);
+          if (level >= 50) {
+            captureLogError(args);
+            reportToSentry(args);
+          }
           return method.apply(this, args);
         },
       },
