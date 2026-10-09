@@ -479,7 +479,7 @@ gap:1.2em;padding-top:1em}
   </div>
 
   <div class="lede">
-    ${cap(namesWork(d) ? (d.variant === "quote" ? "Quoted for" : "Work") : "Billed to")}
+    ${cap(d.title ? "Project" : namesWork(d) ? (d.variant === "quote" ? "Quoted for" : "Work") : "Billed to")}
     <h1>${esc(headline(d))}<span>.</span></h1>
   </div>
 
@@ -891,7 +891,7 @@ gap:1em;padding-top:1.2em}
 
   <div class="main">
     <h1>${kind(d)}</h1>
-    ${namesWork(d) ? `<p class="sub">${esc(headline(d))}</p>` : ""}
+    ${d.title ? titleBlock(d, "margin-top:.8em") : namesWork(d) ? `<p class="sub">${esc(headline(d))}</p>` : ""}
 
     <div class="work">${rows(d, { rate: false })}</div>
 

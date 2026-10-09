@@ -484,6 +484,7 @@ letter-spacing:-.04em;font-variant-numeric:tabular-nums;white-space:nowrap}
     <div class="main">
       ${biz(d)}
       <p class="k">${kind(d)}${d.number === null ? "" : ` &middot; ${no(d)}`}</p>
+      ${d.title ? cap("Project") : ""}
       <h1>${esc(headline(d))}</h1>
       <div class="facts">
         ${namesWork(d) ? billedTo(d, null) : ""}
@@ -878,7 +879,7 @@ letter-spacing:-.045em;font-variant-numeric:tabular-nums;white-space:nowrap}
 
   <div class="hr"></div>
   <p class="kd">${kind(d)}${d.number === null ? "" : ` &middot; ${no(d)}`}</p>
-  ${d.title ? `<p style="margin-top:.5em;font-weight:700;font-size:.8em">${esc(d.title)}</p>` : ""}
+  ${titleBlock(d, "margin:.6em 0 .2em")}
   <div class="lbl">${cap(h.label)}</div>
   <p class="amt">${h.display}</p>
   ${fxNote(d)}
