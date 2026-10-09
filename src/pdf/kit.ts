@@ -663,6 +663,16 @@ export function payWhere(d: DocumentData): string {
 export const shortUrl = (url: string): string => url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 
 /** Whatever the user wrote on the document, under a Terms label. */
+/**
+ * The document's title on a line of its own, bold, above the row of who it
+ * is for and what it comes to (9 October 2026): it names the whole job, so it
+ * is not squeezed in as one fact among four. Nothing when there is none.
+ */
+export function titleBlock(d: DocumentData, style = ""): string {
+  if (!d.title) return "";
+  return `<div class="dtitle" style="margin:0 0 1em;${style}">${cap("Project")}<p style="font-weight:800;font-size:1.32em;line-height:1.22;letter-spacing:-.015em;margin-top:.25em;overflow-wrap:anywhere">${esc(d.title)}</p></div>`;
+}
+
 export function notesBlock(d: DocumentData, className = ""): string {
   if (!d.notes) return "";
   return `<div class="${className}">${cap("Terms")}<p class="note">${esc(d.notes)}</p></div>`;

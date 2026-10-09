@@ -47,6 +47,7 @@ import {
   onlineAt,
   payWhere,
 } from "./kit.ts";
+import { titleBlock } from "./kit.ts";
 
 export type Variant = "invoice" | "quote" | "receipt" | "sample";
 
@@ -193,7 +194,6 @@ export function renderDocumentHtml(d: DocumentData, opts: RenderOptions = {}): s
      A client reading it on a phone should be able to stop after this line. */
   const band = `<div class="band">
     ${field("Billed to", party(d.clientName, d.clientEmail), "min0")}
-    ${d.title ? field("Project", esc(d.title), "min0") : ""}
     ${
       receipt
         ? field("Receipt number", `#${receipt.number}`)
@@ -240,6 +240,7 @@ export function renderDocumentHtml(d: DocumentData, opts: RenderOptions = {}): s
     <div class="right">${bizMeta(d, ["address", "tin"])}</div>
   </div>
 
+  ${titleBlock(d, "padding-top:1.1em")}
   ${band}
 
   ${facts.length ? `<div class="dates">${facts.join("")}</div>` : ""}

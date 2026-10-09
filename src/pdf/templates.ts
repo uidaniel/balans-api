@@ -55,6 +55,7 @@ import {
   payWhere,
   payInfo,
   notesBlock,
+  titleBlock,
   rows,
   sheet,
   shortUrl,
@@ -192,7 +193,6 @@ border-top:1px solid ${ink(0.12)};padding-top:.9em;font-size:.58em;color:${ink(0
     // No client email on the rail: it is six em wide, which a name fits and
     // an address does not.
     field("Billed to", party(d.clientName, null)),
-    d.title ? field("Project", esc(d.title)) : "",
     d.number === null ? "" : field(`${kind(d)} #`, String(d.number)),
     d.issueDate ? field("Issue date", when(d.issueDate)) : "",
     d.dueDate ? field(dueLabel(d), when(d.dueDate)) : "",
@@ -211,6 +211,7 @@ border-top:1px solid ${ink(0.12)};padding-top:.9em;font-size:.58em;color:${ink(0
   <div class="body">
     <div class="rail">${facts.join("")}</div>
     <div class="work">
+      ${titleBlock(d)}
       ${items(d)}
       ${totals(d, { accent: "marigold" })}
       ${notesBlock(d, "nb")}
@@ -300,10 +301,11 @@ gap:1.2em;padding-top:1.4em}
       </div>
     </div>
 
+    ${titleBlock(d, "padding-top:1em")}
     <div class="facts">
       ${field(isReceipt(d) ? "Received from" : "Billed to", party(d.clientName, d.clientEmail), "min0")}
       ${
-        namesWork(d)
+        namesWork(d) && !d.title
           ? field("Work", esc(headline(d)))
           : d.number === null
             ? ""
@@ -509,9 +511,9 @@ line-height:1;font-variant-numeric:tabular-nums}
     ${stamp ? `<p class="sub">${stamp}</p>` : ""}
   </div></div>
 
+  ${titleBlock(d, "padding-top:1em")}
   <div class="parties">
     ${field(isReceipt(d) ? "Received from" : "Prepared for", party(d.clientName, d.clientEmail))}
-    ${d.title ? field("Project", esc(d.title)) : ""}
     ${
       isReceipt(d) && d.receipt
         ? field("Paid on", when(d.receipt.paidOn))
@@ -596,7 +598,6 @@ gap:1.2em;padding-top:1.2em}
   const receipt = isReceipt(d) ? d.receipt : undefined;
   const facts = [
     fact(isReceipt(d) ? "Received from" : "Billed to", esc(d.clientName)),
-    d.title ? fact("Project", esc(d.title)) : "",
     receipt
       ? fact("Receipt no.", `#${receipt.number}`)
       : d.number === null
@@ -633,6 +634,7 @@ gap:1.2em;padding-top:1.2em}
     }
   </div>
 
+  ${titleBlock(d, "padding-top:1em")}
   <div class="facts">${facts.join("")}</div>
 </div>
 
@@ -709,6 +711,7 @@ border-top:.14em solid ${INK};padding-top:.8em}
     </div>
   </div>
 
+  ${titleBlock(d)}
   ${section(
     1,
     "From",
@@ -717,7 +720,7 @@ border-top:.14em solid ${INK};padding-top:.8em}
   ${section(
     2,
     "To",
-    line(esc(d.clientName), "b") + (d.clientEmail ? line(esc(d.clientEmail), "q") : "") + (d.title ? line(`Re: ${esc(d.title)}`, "q") : ""),
+    line(esc(d.clientName), "b") + (d.clientEmail ? line(esc(d.clientEmail), "q") : ""),
   )}
   ${section(3, "Work", rows(d, { rate: false }))}
   ${payInfo(d) ? section(4, onlineSection(d), payInfo(d, { label: false })) : ""}
