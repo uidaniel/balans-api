@@ -7,6 +7,7 @@
  * trade for a service whose whole job is being correct about money.
  */
 
+import { env } from "../config.ts";
 import { readdir, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -60,6 +61,9 @@ export async function migrate(
   opts: { recordOnly?: boolean } = {},
 ): Promise<number> {
   const pool = db();
+
+  // Staging's schema has to exist before anything is created in it.
+  if (env.DATABASE_SCHEMA) await pool.query(`CREATE SCHEMA IF NOT EXISTS ${env.DATABASE_SCHEMA}`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (

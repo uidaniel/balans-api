@@ -73,6 +73,33 @@ export async function whatsappRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const body = req.body as Payload;
+
+    /*
+     * The test number's traffic belongs to the staging server (9 October
+     * 2026): passed on as it came, signature and all, so staging checks it
+     * exactly as this server would, and nothing here touches it.
+     */
+    const staging = env.WA_STAGING_PHONE_NUMBER_ID;
+    if (staging && env.STAGING_WEBHOOK_URL) {
+      const numbers = (body.entry ?? []).flatMap((e) => (e.changes ?? []).map((c) => c.value?.metadata?.phone_number_id));
+      if (numbers.length && numbers.every((n) => n === staging)) {
+        const forwarded = await fetch(env.STAGING_WEBHOOK_URL, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-hub-signature-256": String(req.headers["x-hub-signature-256"] ?? ""),
+          },
+          body: raw,
+          signal: AbortSignal.timeout(8_000),
+        }).catch((err: unknown) => {
+          req.log.warn({ err }, "could not hand the test number's webhook to staging");
+          return null;
+        });
+        req.log.info({ status: forwarded?.status ?? null }, "test number webhook handed to staging");
+        return reply.status(200).send({ received: true, staging: true });
+      }
+    }
+
     const events = extractEvents(body);
 
     // Meta batches, and redelivers on any doubt. Each message id is written

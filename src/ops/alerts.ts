@@ -18,6 +18,7 @@
 import type { FastifyBaseLogger } from "fastify";
 
 import { sendEmail } from "../email/send.ts";
+import { env } from "../config.ts";
 
 /** Who hears. Not secret, so not in the environment. */
 export const ALERT_TO = [
@@ -80,6 +81,7 @@ const lagos = (d: Date) =>
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 async function mail(subject: string, text: string, html: string, log: FastifyBaseLogger): Promise<void> {
+  if (!env.ALERTS_ENABLED) return;
   for (const to of ALERT_TO) {
     const sent = await sendEmail({ to, subject, text, html }, log).catch(() => ({ ok: false as const }));
     if (!sent.ok) log.warn({ to, subject }, "alert email not sent");

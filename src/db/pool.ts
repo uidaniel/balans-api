@@ -31,6 +31,14 @@ export function db(): pg.Pool {
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
   });
+  // Staging: its own schema, first on every connection (see config.ts). The
+  // pooler is in session mode, so the setting holds for the connection.
+  const schema = env.DATABASE_SCHEMA;
+  if (schema) {
+    pool.on("connect", (client) => {
+      void client.query(`SET search_path TO ${schema}, extensions`);
+    });
+  }
   return pool;
 }
 

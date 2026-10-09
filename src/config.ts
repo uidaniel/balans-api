@@ -29,6 +29,15 @@ const schema = z.object({
   /** Postgres. Required everywhere except the unit tests. */
   DATABASE_URL: z.string().min(1).optional(),
   DATABASE_SSL: bool(false),
+  /*
+   * The staging server's own schema in the same database (9 October 2026):
+   * "staging". Unset is the live server, in the default schema. Every table,
+   * type and migration of a staging server lives there and nowhere else.
+   */
+  DATABASE_SCHEMA: z
+    .string()
+    .regex(/^[a-z_][a-z0-9_]*$/)
+    .optional(),
 
   /* -- Entity switch (section 14). Moving to Balans Technologies Ltd is a
         configuration change, not a rebuild. ------------------------------- */
@@ -72,6 +81,16 @@ const schema = z.object({
   /** Meta app secret. Every inbound webhook is signed with it. */
   WA_APP_SECRET: z.string().optional(),
   WA_GRAPH_VERSION: z.string().default("v21.0"),
+  /*
+   * Staging (9 October 2026). Meta sends every number on the app to one
+   * webhook, the live server's. A message to this number — the test number —
+   * is handed to the staging server at STAGING_WEBHOOK_URL, signature and
+   * all, and the live server does nothing else with it.
+   */
+  WA_STAGING_PHONE_NUMBER_ID: z.string().optional(),
+  STAGING_WEBHOOK_URL: z.string().url().optional(),
+  /** Off on staging, so a test server's faults do not email the team. */
+  ALERTS_ENABLED: bool(true),
 
   /* -- Payments: Paystack, for invoices priced abroad ---------------------- */
   /*
