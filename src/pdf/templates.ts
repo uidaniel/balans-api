@@ -109,6 +109,14 @@ export const TEMPLATES: TemplateSpec[] = [
     blurb: "The word set large, the details down a rail. Reads well in black and white.",
     ready: true,
   },
+  // The first Pro design shown: the one that could only come from here.
+  {
+    id: "adire",
+    name: "Adire",
+    pro: true,
+    blurb: "A band of adire cloth across the head and foot. The one that could only come from here.",
+    ready: true,
+  },
   {
     id: "statement",
     name: "Statement",
@@ -185,13 +193,6 @@ export const TEMPLATES: TemplateSpec[] = [
     name: "Gazette",
     pro: true,
     blurb: "Your name as a newspaper masthead, the work as the headline, the money in the sidebar.",
-    ready: true,
-  },
-  {
-    id: "adire",
-    name: "Adire",
-    pro: true,
-    blurb: "A band of adire cloth across the head and foot. The one that could only come from here.",
     ready: true,
   },
   {
