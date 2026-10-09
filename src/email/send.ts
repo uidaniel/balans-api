@@ -385,7 +385,8 @@ export function proEmail(opts: {
     { label: "Plan", value: "Balans Pro" },
     { label: "Paid", value: paid },
     { label: "Active until", value: until },
-    { label: "Paid by", value: "Bank transfer" },
+    // Card, transfer or USSD, all through the one checkout.
+    { label: "Paid through", value: "Paystack" },
   ];
   const renewal = `We will message you on WhatsApp three days before it ends. Reply settings in the chat to change or cancel it.`;
   const footer = [

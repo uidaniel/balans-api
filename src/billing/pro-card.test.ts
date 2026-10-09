@@ -154,12 +154,12 @@ describe("the Pay button", () => {
   const branch = start.slice(0, start.indexOf('case "save_logo"'));
 
   it("is a checkout button under the upgrade card", () => {
-    assert.match(offer, /sendProButton\(userId, ctx\.phone, proOffer\(used, price\), UPGRADE_CARD, log, price\)/);
+    assert.match(offer, /sendProButton\(userId, ctx\.phone, proOffer\(used, price, year\), UPGRADE_CARD, log, price\)/);
   });
 
   it("falls back to the link in words, never to nothing", () => {
-    assert.match(offer, /proPayLink\(proOffer\(used, price\), proStartUrl\(userId\)\)/);
-    assert.match(branch, /proPayLink\(proPayPrompt\(price\), proStartUrl\(userId\)\)/);
+    assert.match(offer, /proPayLink\(proOffer\(used, price, year\), proStartUrl\(userId\)\)/);
+    assert.match(branch, /proPayLink\(proPayPrompt\(price\), proStartUrl\(userId, price\.term\)\)/);
   });
 
   it("does not offer a second month to somebody already on Pro, until it is nearly up", () => {
@@ -169,10 +169,20 @@ describe("the Pay button", () => {
 
   it("points at /pro/start, which opens a fresh checkout each time", () => {
     const helper = handle.slice(handle.indexOf("async function sendProButton"));
-    assert.match(helper.slice(0, 1200), /url: proStartUrl\(userId\)/);
+    assert.match(helper.slice(0, 1200), /url: proStartUrl\(userId, price\.term\)/);
     const route = read("../http/routes/pro.ts");
-    assert.match(route, /openProCheckout\(userId, req\.log\)/);
+    assert.match(route, /openProCheckout\(userId, req\.log, /);
     assert.match(route, /reply\.redirect\(opened\.url, 303\)/);
+  });
+
+  it("offers a year for ten months' price, by the yearly link", async () => {
+    const { proOffer, proPayPrompt } = await import("./messages.ts");
+    const { NAIRA_YEAR_PRICE } = await import("./price.ts");
+    const { proStartUrl } = await import("./pro-link.ts");
+    assert.equal(NAIRA_YEAR_PRICE.chargeKobo, 30_000_00);
+    assert.match(proOffer(1, undefined, NAIRA_YEAR_PRICE), /₦30,000.*whole year.*yearly/s);
+    assert.match(proPayPrompt(NAIRA_YEAR_PRICE), /A year of Pro is ₦30,000/);
+    assert.match(proStartUrl("00000000-0000-0000-0000-000000000000", "year"), /&term=year$/);
   });
 
   it("says how it can be paid, and where the receipt goes", () => {

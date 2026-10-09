@@ -149,6 +149,8 @@ export async function openSubscription(
   log: FastifyBaseLogger,
   /** Outside Nigeria, their local price in naira at today's rate (billing/price.ts). */
   priceKobo: number = defaults.plans.pro.priceKobo,
+  /** 12 for a year of Pro (9 October 2026), otherwise a month. */
+  months = 1,
 ): Promise<{ id: string; priceKobo: number }> {
 
   return tx(async (c) => {
@@ -173,13 +175,18 @@ export async function openSubscription(
        * account goes with it, because Paystack matches a transfer by amount.
        * A subscription already collecting from invoices keeps its figure.
        */
-      if (open[0].status === "pending" && open[0].price_kobo !== priceKobo) {
+      if (open[0].status === "pending") {
+        // A month or a year, whichever was asked for last: the length goes
+        // with the price, so a year's money is never a month's Pro.
         await c.query(
           `UPDATE subscriptions
-              SET price_kobo = $2, transfer_bank_name = NULL, transfer_account_number = NULL,
-                  transfer_account_name = NULL, transfer_expires_at = NULL
+              SET price_kobo = $2, period_end = period_start + make_interval(months => $3),
+                  transfer_bank_name = CASE WHEN price_kobo = $2 THEN transfer_bank_name END,
+                  transfer_account_number = CASE WHEN price_kobo = $2 THEN transfer_account_number END,
+                  transfer_account_name = CASE WHEN price_kobo = $2 THEN transfer_account_name END,
+                  transfer_expires_at = CASE WHEN price_kobo = $2 THEN transfer_expires_at END
             WHERE id = $1`,
-          [open[0].id, priceKobo],
+          [open[0].id, priceKobo, months],
         );
         return { id: open[0].id, priceKobo };
       }
@@ -202,7 +209,7 @@ export async function openSubscription(
     const paidUntil = current[0]?.plan_expires_at ?? null;
     const start = paidUntil && paidUntil > now ? new Date(paidUntil.getTime()) : now;
     const end = new Date(start.getTime());
-    end.setMonth(end.getMonth() + 1);
+    end.setMonth(end.getMonth() + months);
 
     const { rows } = await c.query<{ id: string }>(
       `INSERT INTO subscriptions

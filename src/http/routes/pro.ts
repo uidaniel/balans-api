@@ -21,12 +21,13 @@ const HTML = "text/html; charset=utf-8";
 const site = (): string => env.SITE_URL.replace(/\/$/, "");
 
 export async function proRoutes(app: FastifyInstance): Promise<void> {
-  app.get<{ Querystring: { t?: string } }>("/pro/start", async (req, reply) => {
+  app.get<{ Querystring: { t?: string; term?: string } }>("/pro/start", async (req, reply) => {
     const token = req.query.t ?? "";
     const userId = token ? userForProToken(token) : null;
     if (!userId) return reply.status(404).type(HTML).send(renderNotFound());
 
-    const opened = await openProCheckout(userId, req.log);
+    // "&term=year" from the yearly button; anything else is a month.
+    const opened = await openProCheckout(userId, req.log, req.query.term === "year" ? "year" : "month");
     reply.header("cache-control", "no-store");
     if (opened.kind === "already_pro") return reply.redirect(`${site()}/pro/success`, 303);
     if (opened.kind === "failed") return reply.status(502).type(HTML).send(renderProUnavailable());

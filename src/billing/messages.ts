@@ -16,7 +16,7 @@ import { chargedAs, NAIRA_PRICE, type ProPrice } from "./price.ts";
 const free = defaults.plans.free;
 const pro = defaults.plans.pro;
 
-export function proOffer(used: number, price: ProPrice = NAIRA_PRICE): string {
+export function proOffer(used: number, price: ProPrice = NAIRA_PRICE, year?: ProPrice): string {
   /*
    * Ticks rather than bullets.
    *
@@ -43,7 +43,16 @@ export function proOffer(used: number, price: ProPrice = NAIRA_PRICE): string {
       // Counted from the registry, so the claim cannot outlive the designs.
       `✅ All ${availableTo("pro").length} invoice designs`,
     ),
+    year ? yearLine(year) : "",
   );
+}
+
+/**
+ * The year, offered under the month (9 October 2026): twelve months for the
+ * price of ten, said as what it saves.
+ */
+export function yearLine(year: ProPrice): string {
+  return `💡 Or ${b(year.label)} for a whole year — two months free. Reply ${b("yearly")}.`;
 }
 
 /**
@@ -62,7 +71,9 @@ export const PRO_PAY_FOOTER = "Card, bank transfer or USSD, through Paystack";
 /** For "pay now" typed or tapped: the same button, with less to read above it. */
 export function proPayPrompt(price: ProPrice = NAIRA_PRICE): string {
   return para(
-    `⭐ ${b(`Pro is ${price.label} a month.`)}`,
+    price.term === "year"
+      ? `⭐ ${b(`A year of Pro is ${price.label}.`)} Twelve months for the price of ten.`
+      : `⭐ ${b(`Pro is ${price.label} a month.`)}`,
     chargedAs(price) ?? "Tap below to pay by card, bank transfer or USSD.",
     i("Pro starts the moment it goes through, and your receipt comes here and to your email."),
   );
@@ -219,14 +230,15 @@ export function proWinBack(price: ProPrice = NAIRA_PRICE): string {
  * already in its grace week: the renewal, with the button under it. Anybody
  * else on Pro is told they are on Pro, as before.
  */
-export function proRenewOffer(state: SubscriptionState, price: ProPrice = NAIRA_PRICE): string {
+export function proRenewOffer(state: SubscriptionState, price: ProPrice = NAIRA_PRICE, year?: ProPrice): string {
   const end = state.periodEnd;
   return para(
     `⭐ ${b("Renew Balans Pro")} — ${b(price.label)} for another month.`,
     end
       ? state.inGrace
-        ? lines(`Your month ended on ${day(end)}. You keep Pro until ${day(graceEnd(end))}.`)
-        : lines(`Your month ends on ${day(end)}. The new one starts then, so nothing is lost.`)
+        ? lines(`Your Pro ended on ${day(end)}. You keep it until ${day(graceEnd(end))}.`)
+        : lines(`Your Pro ends on ${day(end)}. The new period starts then, so nothing is lost.`)
       : "",
+    year ? yearLine(year) : "",
   );
 }

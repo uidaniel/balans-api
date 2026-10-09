@@ -245,6 +245,8 @@ export const defaults = {
      */
     pro: {
       priceKobo: 3_000_00, // ₦4,000 until 26 September 2026
+      // A year for the price of ten months (9 October 2026): ₦30,000, not ₦36,000.
+      yearPriceKobo: 30_000_00,
       documentsPerMonth: null,
       feePercentBps: 0,
       feeMinKobo: 0,

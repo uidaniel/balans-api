@@ -59,5 +59,5 @@ export function userForProToken(token: string): string | null {
 }
 
 /** Where the button sends them. */
-export const proStartUrl = (userId: string): string =>
-  `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/pro/start?t=${proStartToken(userId)}`;
+export const proStartUrl = (userId: string, term?: "month" | "year"): string =>
+  `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/pro/start?t=${proStartToken(userId)}${term === "year" ? "&term=year" : ""}`;

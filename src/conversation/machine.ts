@@ -348,7 +348,7 @@ export type Effect =
   | { type: "cancel_bank_change" }
   | { type: "delete_account" }
   /* -- Pro (F18) --------------------------------------------------------- */
-  | { type: "start_pro"; method: "link" | "deduct_from_invoice" };
+  | { type: "start_pro"; method: "link" | "deduct_from_invoice"; term?: "year" };
 
 export type Step = {
   /**
@@ -1692,7 +1692,12 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       // "pay now" is a decision about money and its meaning is fixed.
       const pro = asProChoice(text);
       if (pro) {
-        return { replies: [], next: "idle", context, effects: [{ type: "start_pro", method: pro }] };
+        return {
+          replies: [],
+          next: "idle",
+          context,
+          effects: [pro === "year" ? { type: "start_pro", method: "link", term: "year" } : { type: "start_pro", method: pro }],
+        };
       }
       return fromParsed(msg, context, today(msg));
     }
@@ -3206,8 +3211,12 @@ function commandEscape(msg: Inbound, ctx: Context, now: Civil): Step | null {
 }
 
 /** The two answers to the Pro offer (F18). Fixed phrases, not a model call. */
-function asProChoice(text: string): "link" | "deduct_from_invoice" | null {
+function asProChoice(text: string): "link" | "year" | "deduct_from_invoice" | null {
   const s = text.toLowerCase().trim().replace(/[.!]+$/, "");
+  // A year of Pro (9 October 2026), as the offer says to reply.
+  if (/^(yearly|pay yearly|annual|annually|pay annually|year|a year|1 year|one year|pay for a year|yearly plan|pro yearly|yearly pro)$/.test(s)) {
+    return "year";
+  }
   // "pay" on its own is on the Pro card, in bold, as the thing to reply.
   if (/^(pay|pay now|pay link|payment link|send me the link|card|pay by card)$/.test(s)) {
     return "link";

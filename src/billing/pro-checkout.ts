@@ -22,7 +22,7 @@ import { db } from "../db/pool.ts";
 import { env } from "../config.ts";
 import { initProCheckout } from "../payments/paystack.ts";
 import { attachPaymentReference, openSubscription, renewalOpen, stateOf } from "./subscription.ts";
-import { proPriceFor } from "./price.ts";
+import { monthsOf, proPriceFor, type ProTerm } from "./price.ts";
 
 export type ProCheckout =
   | { kind: "checkout"; url: string }
@@ -38,7 +38,12 @@ export function subscriptionPrefixOf(reference: string): string | null {
   return /^sub_([0-9a-f]{16})_[0-9a-f]{8}$/.exec(reference)?.[1] ?? null;
 }
 
-export async function openProCheckout(userId: string, log: FastifyBaseLogger): Promise<ProCheckout> {
+export async function openProCheckout(
+  userId: string,
+  log: FastifyBaseLogger,
+  /** A year of Pro for ten months' price (9 October 2026). */
+  term: ProTerm = "month",
+): Promise<ProCheckout> {
   const { rows } = await db().query<{ email: string | null; business_name: string | null; plan: "free" | "pro" }>(
     `SELECT email, business_name, plan FROM users WHERE id = $1 AND status = 'active'`,
     [userId],
@@ -50,8 +55,8 @@ export async function openProCheckout(userId: string, log: FastifyBaseLogger): P
   if (user.plan === "pro" && !renewalOpen(await stateOf(userId))) return { kind: "already_pro" };
 
   // Their own price outside Nigeria, charged as naira at today's rate.
-  const price = await proPriceFor(userId, log);
-  const opened = await openSubscription(userId, "link", log, price.chargeKobo);
+  const price = await proPriceFor(userId, log, term);
+  const opened = await openSubscription(userId, "link", log, price.chargeKobo, monthsOf(price));
   const reference = proReference(opened.id);
 
   const init = await initProCheckout({
@@ -61,7 +66,7 @@ export async function openProCheckout(userId: string, log: FastifyBaseLogger): P
     // Back through the callback, which checks whether the webhook has
     // switched Pro on yet and lands on /pro/success saying which.
     callbackUrl: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/pay/callback`,
-    metadata: { purpose: "balans_pro", user_id: userId, business: user.business_name ?? "" },
+    metadata: { purpose: "balans_pro", user_id: userId, business: user.business_name ?? "", term },
   });
   if (!init.ok) {
     log.error({ userId, message: init.message }, "could not open a Pro checkout");
@@ -71,6 +76,6 @@ export async function openProCheckout(userId: string, log: FastifyBaseLogger): P
   // The latest one, for the exact match. Earlier ones are still found by
   // their prefix; see confirmSubscription.
   await attachPaymentReference(opened.id, reference);
-  log.info({ userId, reference }, "Pro checkout opened");
+  log.info({ userId, reference, term }, "Pro checkout opened");
   return { kind: "checkout", url: init.authorizationUrl };
 }
