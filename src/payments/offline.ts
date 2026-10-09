@@ -26,6 +26,10 @@ export type OfflinePaid =
       number: number | null;
       clientName: string;
       paidKobo: number;
+      /** Set when one part was paid rather than the whole: its label. */
+      partLabel?: string;
+      /** What is still owed after this one. */
+      owedAfterKobo: number;
     }
   | { ok: false; why: "not_found" | "not_payable" | "already_paid" };
 
@@ -35,7 +39,15 @@ export type OfflinePaid =
  * The whole balance: "Zenith paid invoice 16" means paid, and a part payment
  * reported this way would need an amount this sentence does not carry.
  */
-export async function recordOfflinePayment(userId: string, documentId: string): Promise<OfflinePaid> {
+export async function recordOfflinePayment(
+  userId: string,
+  documentId: string,
+  /**
+   * Only the next unpaid part (9 October 2026): a deposit paid by transfer,
+   * with the balance still to come. Without a payment plan it is the whole.
+   */
+  opts: { nextPart?: boolean } = {},
+): Promise<OfflinePaid> {
   return tx(async (c) => {
     const { rows } = await c.query<{
       id: string;
@@ -60,23 +72,46 @@ export async function recordOfflinePayment(userId: string, documentId: string): 
     const owed = d.total_kobo - d.amount_paid_kobo;
     if (owed <= 0 || d.status === "paid") return { ok: false as const, why: "already_paid" as const };
 
+    let amount = owed;
+    let partLabel: string | undefined;
+    if (opts.nextPart) {
+      const { rows: next } = await c.query<{ label: string; amount_kobo: number }>(
+        `SELECT label, amount_kobo FROM payment_parts
+          WHERE document_id = $1 AND status <> 'paid' ORDER BY position LIMIT 1`,
+        [documentId],
+      );
+      if (next[0] && next[0].amount_kobo < owed) {
+        amount = next[0].amount_kobo;
+        partLabel = next[0].label;
+      }
+    }
+
     const { rows: made } = await c.query<{ id: string }>(
       `INSERT INTO payments
          (document_id, provider, reference, amount_kobo, client_total_kobo, invoice_amount_kobo,
           provider_fee_kobo, balans_fee_kobo, channel, status, method, paid_at)
        VALUES ($1, 'offline', $2, $3, $3, $3, 0, 0, 'OFFLINE', 'success', 'offline', now())
        RETURNING id`,
-      [documentId, `offline_${randomUUID()}`, owed],
+      [documentId, `offline_${randomUUID()}`, amount],
     );
 
-    await settleParts(documentId, owed).catch(() => undefined);
+    // In this transaction: a part marked paid and an invoice that is not
+    // (or the other way round) asks the client for money twice.
+    await settleParts(documentId, amount, c);
 
-    await c.query(
-      `UPDATE documents
-          SET amount_paid_kobo = total_kobo, status = 'paid', paid_at = COALESCE(paid_at, now())
-        WHERE id = $1`,
-      [documentId],
-    );
+    if (amount >= owed) {
+      await c.query(
+        `UPDATE documents
+            SET amount_paid_kobo = total_kobo, status = 'paid', paid_at = COALESCE(paid_at, now())
+          WHERE id = $1`,
+        [documentId],
+      );
+    } else {
+      await c.query(
+        `UPDATE documents SET amount_paid_kobo = amount_paid_kobo + $2, status = 'part_paid' WHERE id = $1`,
+        [documentId, amount],
+      );
+    }
 
     return {
       ok: true as const,
@@ -84,7 +119,9 @@ export async function recordOfflinePayment(userId: string, documentId: string): 
       documentId,
       number: d.number,
       clientName: d.client_name,
-      paidKobo: owed,
+      paidKobo: amount,
+      ...(partLabel ? { partLabel } : {}),
+      owedAfterKobo: owed - amount,
     };
   });
 }

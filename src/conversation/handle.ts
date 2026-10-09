@@ -2390,6 +2390,31 @@ async function runEffects(
               extra.push(`✅ Invoice ${number} for ${inv.clientName} is already paid in full.`);
               break;
             }
+            /*
+             * A payment plan with more than one part still open: which came in
+             * (9 October 2026). The deposit by transfer, with the balance to
+             * come, was otherwise only recordable as the whole invoice paid.
+             */
+            const open = (await partsFor(inv.id)).filter((p) => p.status !== "paid");
+            if (open.length >= 2 && ctx.phone) {
+              const next = open[0]!;
+              const title = `${next.label} ${formatNaira(next.amountKobo)}`;
+              const sent = await sendButtons(ctx.phone, {
+                body: lines(
+                  `Which payment came in for ${b(`Invoice ${number}`)} (${inv.clientName})?`,
+                  ...open.map((p) => `• ${p.label}: ${formatNaira(p.amountKobo)}`),
+                ),
+                buttons: [
+                  { id: `yes mark invoice ${number} part paid`, title: (title.length <= 20 ? title : next.label).slice(0, 20) },
+                  { id: `yes mark invoice ${number} paid`, title: "Paid in full" },
+                  { id: `leave invoice ${number} unpaid`, title: "No" },
+                ],
+              });
+              if (sent.ok) {
+                await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+                break;
+              }
+            }
             const ask = `Mark ${b(`Invoice ${number}`)} (${inv.clientName}, ${formatNaira(inv.owedKobo)}) as paid by direct transfer?`;
             if (ctx.phone) {
               const sent = await sendButtons(ctx.phone, {
@@ -2423,11 +2448,13 @@ async function runEffects(
             break;
           }
 
-          if (effect.intent === "confirm_payment") {
+          if (effect.intent === "confirm_payment" || effect.intent === "confirm_part_payment") {
             if (!number) { extra.push(notFoundMessage({})); break; }
             const inv = await findPayableByNumber(userId, number);
             if (!inv) { extra.push(notFoundMessage({ number })); break; }
-            const done = await recordOfflinePayment(userId, inv.id);
+            const done = await recordOfflinePayment(userId, inv.id, {
+              nextPart: effect.intent === "confirm_part_payment",
+            });
             if (!done.ok) {
               extra.push(
                 done.why === "already_paid"
@@ -2450,8 +2477,11 @@ async function runEffects(
             // Their email if they gave one; their WhatsApp if only a number.
             const delivered = await deliverPaidToClient(inv.id, log);
             const doneText = lines(
-                `✅ ${b("Done.")} Invoice ${number} is marked paid.`,
+                done.partLabel
+                  ? `✅ ${b("Done.")} The ${done.partLabel.toLowerCase()} on Invoice ${number} is marked paid.`
+                  : `✅ ${b("Done.")} Invoice ${number} is marked paid.`,
                 `${formatNaira(done.paidKobo)} from ${done.clientName}, by direct transfer.`,
+                ...(done.owedAfterKobo > 0 ? [`${formatNaira(done.owedAfterKobo)} still to come.`] : []),
                 delivered.ok
                   ? delivered.via === "email"
                     ? `📧 Receipt emailed to ${delivered.to}.`

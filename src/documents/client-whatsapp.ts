@@ -245,6 +245,8 @@ export async function whatsappPaidToClient(
     vat_kobo: number;
     currency: string;
     original_amount_minor: number | null;
+    amount_paid_kobo: number;
+    last_paid_kobo: number | null;
     public_token: string | null;
     client_name: string;
     client_phone: string | null;
@@ -252,6 +254,10 @@ export async function whatsappPaidToClient(
   }>(
     `SELECT d.type, COALESCE(LPAD(d.number::text, GREATEST(4, length(d.number::text)), '0'), substring(d.ref from 4)) AS number,
             d.total_kobo, d.subtotal_kobo, d.vat_kobo, d.currency, d.original_amount_minor, d.public_token,
+            d.amount_paid_kobo,
+            (SELECT COALESCE(p.invoice_amount_kobo, p.amount_kobo) FROM payments p
+              WHERE p.document_id = d.id AND p.status = 'success'
+              ORDER BY p.created_at DESC LIMIT 1)::int AS last_paid_kobo,
             c.name AS client_name, c.phone AS client_phone, u.business_name
        FROM documents d JOIN clients c ON c.id = d.client_id JOIN users u ON u.id = d.user_id
       WHERE d.id = $1`,
@@ -284,7 +290,13 @@ export async function whatsappPaidToClient(
   const sent = await sendTemplate(
     d.client_phone,
     TEMPLATES.client_paid.name,
-    [firstName(d.client_name), business, amountFor(d), `${label}${d.number ? ` ${d.number}` : ""}`],
+    [
+      firstName(d.client_name),
+      business,
+      // A deposit is the deposit's figure, not the invoice's (9 October 2026).
+      d.amount_paid_kobo >= d.total_kobo ? amountFor(d) : formatNaira(d.last_paid_kobo ?? d.amount_paid_kobo),
+      `${label}${d.number ? ` ${d.number}` : ""}`,
+    ],
     {
       language: TEMPLATE_LANGUAGE,
       headerDocument: {

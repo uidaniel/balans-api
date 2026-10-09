@@ -35,6 +35,8 @@ export const INTENTS = [
   "record_payment",
   /** The answers to "Mark invoice 16 as paid?". */
   "confirm_payment",
+  /** "Deposit ₦175,000" under "Which payment came in?": the next part only. */
+  "confirm_part_payment",
   "decline_payment",
   "settings",
   "upgrade",

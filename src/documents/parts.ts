@@ -325,8 +325,10 @@ export const nextPayable = (parts: Part[]): Part | null =>
 export async function settleParts(
   documentId: string,
   paidKobo: number,
+  /** The caller's transaction, so the parts and the invoice move together. */
+  client?: pg.PoolClient,
 ): Promise<{ settled: Part[]; allPaid: boolean }> {
-  return tx(async (c) => {
+  const run = async (c: pg.PoolClient): Promise<{ settled: Part[]; allPaid: boolean }> => {
     const { rows } = await c.query<{
       id: string;
       position: number;
@@ -381,5 +383,6 @@ export async function settleParts(
     }
 
     return { settled, allPaid: left.length === 0 };
-  });
+  };
+  return client ? run(client) : tx(run);
 }

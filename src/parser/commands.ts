@@ -235,6 +235,9 @@ const NUMBERED: [RegExp, Intent][] = [
   // The two buttons under "Mark invoice 16 as paid?". Ids are commands, so a
   // tap and a typed reply take the same path.
   [/^yes,? mark (?:invoice|inv|request) #?(\d{1,6}) paid$/, "confirm_payment"],
+  // Only the next part of a payment plan: the deposit, then the balance.
+  [/^yes,? mark (?:invoice|inv|request) #?(\d{1,6}) part paid$/, "confirm_part_payment"],
+  [/^(?:the )?(?:deposit|balance|first part|part payment|milestone|instalment|installment)(?: \d)? (?:is |has been |was )?paid (?:on |for )?(?:invoice|inv) #?(\d{1,6})$/, "record_payment"],
   [/^leave (?:invoice|inv|request) #?(\d{1,6}) unpaid$/, "decline_payment"],
 ];
 

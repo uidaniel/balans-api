@@ -29,6 +29,7 @@ import { formatNaira } from "../../core/totals.ts";
 import { sendEmail } from "./send.ts";
 import { amount, layout, paragraph, button, type InlineImage } from "./layout.ts";
 import { renderDocumentPdf, renderReceiptPdf } from "../documents/pdf.ts";
+import { amountFor } from "../documents/client-whatsapp.ts";
 
 const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -76,6 +77,13 @@ type Row = {
   ref: string | null;
   type: string;
   total_kobo: number;
+  subtotal_kobo: number;
+  vat_kobo: number;
+  currency: string;
+  original_amount_minor: number | null;
+  amount_paid_kobo: number;
+  /** The payment this email is about: the latest that succeeded. */
+  last_paid_kobo: number | null;
   paid_at: Date | null;
   public_token: string | null;
   client_name: string;
@@ -90,6 +98,10 @@ const civil = (d: Date): Civil => ({ y: d.getFullYear(), m: d.getMonth() + 1, d:
 async function paidRow(documentId: string): Promise<Row | null> {
   const { rows } = await db().query<Row>(
     `SELECT d.user_id, d.number, d.ref, d.type, d.total_kobo, d.paid_at, d.public_token,
+            d.subtotal_kobo, d.vat_kobo, d.currency, d.original_amount_minor, d.amount_paid_kobo,
+            (SELECT COALESCE(p.invoice_amount_kobo, p.amount_kobo) FROM payments p
+              WHERE p.document_id = d.id AND p.status = 'success'
+              ORDER BY p.created_at DESC LIMIT 1)::int AS last_paid_kobo,
             c.name AS client_name, c.email AS client_email,
             u.business_name, u.email AS business_email, u.plan
        FROM documents d
@@ -129,6 +141,14 @@ export async function emailPaidToClient(
     const when = d.paid_at ? civil(d.paid_at) : null;
 
     /*
+     * What this payment was, said truly (9 October 2026): a deposit is not
+     * "received in full", and a dollar invoice paid in full is in dollars.
+     */
+    const full = d.amount_paid_kobo >= d.total_kobo;
+    const paidShown = full ? amountFor(d) : formatNaira(d.last_paid_kobo ?? d.amount_paid_kobo);
+    const rest = full ? "" : ` ${formatNaira(d.total_kobo - d.amount_paid_kobo)} remains on this invoice.`;
+
+    /*
      * Both documents, because they are not the same document.
      *
      * The invoice says what the money was for, line by line, and now carries
@@ -153,9 +173,11 @@ export async function emailPaidToClient(
     const body = [
       paragraph(`Dear ${esc(d.client_name)},`),
       paragraph(
-        `This confirms that your payment to ${esc(business)} has been received in full.`,
+        full
+          ? `This confirms that your payment to ${esc(business)} has been received in full.`
+          : `This confirms that your payment to ${esc(business)} has been received.${esc(rest)}`,
       ),
-      amount("Amount paid", formatNaira(d.total_kobo), when ? formatFriendly(when) : undefined),
+      amount("Amount paid", paidShown, when ? formatFriendly(when) : undefined),
       link ? button("View the invoice", link) : "",
       paragraph(
         receipt
@@ -194,9 +216,9 @@ export async function emailPaidToClient(
         // "Receipt", not "Paid". This is the word somebody searches their
         // inbox for in March, and the word their accounts department asks
         // them for.
-        subject: `Receipt — ${label} from ${business}, ${formatNaira(d.total_kobo)}`,
+        subject: `Receipt — ${label} from ${business}, ${paidShown}`,
         html: layout({
-          preheader: `${formatNaira(d.total_kobo)} received${when ? ` on ${formatFriendly(when)}` : ""}.`,
+          preheader: `${paidShown} received${when ? ` on ${formatFriendly(when)}` : ""}.`,
           eyebrow: business,
           heading: "Payment received",
           // Our drawn banner is ours: a Pro receipt goes without it.
@@ -207,9 +229,9 @@ export async function emailPaidToClient(
         text: [
           `Dear ${d.client_name},`,
           "",
-          `This confirms that your payment of ${formatNaira(d.total_kobo)} to ${business} has been received in full${
+          `This confirms that your payment of ${paidShown} to ${business} has been received${full ? " in full" : ""}${
             when ? ` on ${formatFriendly(when)}` : ""
-          }.`,
+          }.${rest}`,
           "",
           link ? `View the invoice: ${link}` : "",
           "",
@@ -267,9 +289,17 @@ export async function emailPaidToUser(
       receiptForDocument(documentId, log),
     ]);
 
+    // A part is a part, and a dollar invoice paid in full is in dollars.
+    const full = d.amount_paid_kobo >= d.total_kobo;
+    const got = full ? amountFor(d) : formatNaira(d.last_paid_kobo ?? d.amount_paid_kobo);
+
     const body = [
-      paragraph(`${esc(d.client_name)} has paid ${esc(label)}.`),
-      amount("Paid to you", formatNaira(d.total_kobo), when ? formatFriendly(when) : undefined),
+      paragraph(
+        full
+          ? `${esc(d.client_name)} has paid ${esc(label)}.`
+          : `${esc(d.client_name)} has paid part of ${esc(label)}. ${formatNaira(d.total_kobo - d.amount_paid_kobo)} is still to come.`,
+      ),
+      amount("Paid to you", got, when ? formatFriendly(when) : undefined),
       link ? button("See the invoice", link) : "",
       paragraph(
         receipt
@@ -289,9 +319,9 @@ export async function emailPaidToUser(
     const sent = await sendEmail(
       {
         to: d.business_email,
-        subject: `Dem don balans you — ${formatNaira(d.total_kobo)} from ${d.client_name}`,
+        subject: `Dem don balans you — ${got} from ${d.client_name}`,
         html: layout({
-          preheader: `${d.client_name} paid ${formatNaira(d.total_kobo)}.`,
+          preheader: `${d.client_name} paid ${got}.`,
           eyebrow: "Payment received",
           heading: "Dem don balans you",
           // Theirs alone. The poster carries the phrase, so the heading does
@@ -302,7 +332,7 @@ export async function emailPaidToUser(
         }),
         images: [PAID_BANNER],
         text: [
-          `${d.client_name} has paid ${label}: ${formatNaira(d.total_kobo)}${
+          `${d.client_name} has paid ${label}: ${got}${
             when ? ` on ${formatFriendly(when)}` : ""
           }.`,
           "",

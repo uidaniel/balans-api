@@ -2112,6 +2112,7 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
     case "convert_quote":
     case "record_payment":
     case "confirm_payment":
+    case "confirm_part_payment":
     case "decline_payment":
       return {
         replies: [],
