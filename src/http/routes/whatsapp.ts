@@ -100,6 +100,22 @@ export async function whatsappRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
+    /*
+     * A batch with both numbers in it cannot be handed on: the signature is
+     * over the whole body. Live never answers the test number's part, though
+     * (9 October 2026), or a tester gets replies from the real number. The two
+     * numbers sit on different WhatsApp accounts, so this should never happen.
+     */
+    if (staging) {
+      let dropped = 0;
+      for (const e of body.entry ?? []) {
+        const before = e.changes?.length ?? 0;
+        e.changes = (e.changes ?? []).filter((c) => c.value?.metadata?.phone_number_id !== staging);
+        dropped += before - e.changes.length;
+      }
+      if (dropped) req.log.warn({ dropped }, "test number entries in a mixed webhook batch; not answered by live");
+    }
+
     const events = extractEvents(body);
 
     // Meta batches, and redelivers on any doubt. Each message id is written
