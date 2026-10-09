@@ -75,11 +75,12 @@ const SHEET_EM = 297 / EM_MM;
  * The fix is a second page that repeats the header, which needs the renderer
  * to measure rather than estimate.
  */
-export function sheetFontSize(d: DocumentData, rowEm = 1.5): string {
+export function sheetFontSize(d: DocumentData, rowEm = 1.5, logoEm = 0): string {
   const rows = Math.max(0, d.lines.length - 6) * rowEm;
   const notes = d.notes ? 2 : 0;
   const receipt = d.receipt ? 1.5 : 0;
-  const scale = Math.min(1, Math.max(0.58, SHEET_EM / (SHEET_EM + rows + notes + receipt)));
+  const logo = d.logoDataUri ? logoEm : 0;
+  const scale = Math.min(1, Math.max(0.58, SHEET_EM / (SHEET_EM + rows + notes + receipt + logo)));
   return `${(EM_MM * scale).toFixed(3)}mm`;
 }
 
@@ -261,11 +262,16 @@ type SheetParts = {
   fonts?: FontSet[];
   /** What one line item costs this layout, for `sheetFontSize`. */
   rowEm?: number;
+  /**
+   * What a logo costs this layout, where it stacks above the name rather than
+   * sitting beside it: a page that just fits without one runs off with one.
+   */
+  logoEm?: number;
 };
 
 /** Wraps a layout's markup in a sheet, with only the typefaces it uses. */
 export function sheet(d: DocumentData, opts: RenderOptions, parts: SheetParts): string {
-  const { css, body, fonts = ["sans", "display"], rowEm } = parts;
+  const { css, body, fonts = ["sans", "display"], rowEm, logoEm } = parts;
   const tokens = brandTokens(d.brandColor);
   const brandCss = tokens && parts.brand ? parts.brand(tokens) : "";
   const link =
@@ -277,7 +283,7 @@ export function sheet(d: DocumentData, opts: RenderOptions, parts: SheetParts): 
     `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">${link}
 <style>${fontFaces(fonts, opts.fonts ?? "embed")}${BASE}${css}${brandCss}</style></head>
-<body><div class="sheet" style="font-size:${sheetFontSize(d, rowEm)}">
+<body><div class="sheet" style="font-size:${sheetFontSize(d, rowEm, logoEm)}">
 ${d.variant === "sample" ? `<div class="mark">SAMPLE</div>` : ""}
 ${body}
 </div></body></html>`,

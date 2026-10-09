@@ -11,7 +11,7 @@
  * user input is rendered into markup a third party sees.
  */
 
-import { applyBrand } from "../brand/colour.ts";
+import { applyBrand, brandTokens } from "../brand/colour.ts";
 import { clientNumber } from "./client-number.ts";
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
@@ -40,175 +40,205 @@ export function esc(s: string): string {
 const CSS = `
 ${fontFacesForPage(["sans", "display"])}
 :root{--marigold:#f5b82e;--marigold-hi:#ffc848;--ink:#10231c;--ink-2:#173128;
---cream:#f6f1e7;--sand:#e9e1d0;--paper:#fffdf8;--moss:#3f8f5f;--moss-deep:#2f6b47;--clay:#c2462e;
---ink-65:rgba(16,35,28,.65);--ink-50:rgba(16,35,28,.5);--ink-10:rgba(16,35,28,.1);--ink-6:rgba(16,35,28,.06);
+--cream:#f6f1e7;--sand:#e9e1d0;--paper:#ffffff;--moss:#3f8f5f;--moss-deep:#2f6b47;--clay:#c2462e;
+--ink-80:rgba(16,35,28,.8);--ink-65:rgba(16,35,28,.65);--ink-50:rgba(16,35,28,.5);--ink-40:rgba(16,35,28,.4);
+--ink-10:rgba(16,35,28,.1);--ink-6:rgba(16,35,28,.06);--ink-3:rgba(16,35,28,.03);
+--line:rgba(16,35,28,.08);
+--lift:0 0 0 1px rgba(16,35,28,.06),0 1px 2px rgba(16,35,28,.05),0 12px 32px -16px rgba(16,35,28,.18);
 --sans:${FONT.sans};--display:${FONT.display}}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--cream);color:var(--ink);font-family:var(--sans);
--webkit-font-smoothing:antialiased;line-height:1.5;padding:28px 16px 56px}
-.sheet{max-width:600px;margin:0 auto;background:var(--paper);border-radius:24px;
-box-shadow:0 0 0 1px var(--ink-6),0 1px 2px var(--ink-6);overflow:hidden}
-.top{padding:28px 28px 0}
-.brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;
-letter-spacing:-.03em;font-size:20px}
-.trybalans{display:block;margin-top:14px;padding:13px 16px;border-radius:14px;background:var(--cream);
-color:var(--ink);text-decoration:none;font-size:14px;line-height:1.45;text-align:center}
-.trybalans b{color:var(--ink);white-space:nowrap}
-.doctitle{margin-top:2px;font-size:15px;font-weight:600;color:var(--ink)}
-.dot{width:22px;height:22px;border-radius:50%;background:var(--marigold);flex:none}
-.pay.own .own-amt{margin-top:6px;font-family:var(--display);font-size:22px;font-weight:800;letter-spacing:-.03em}
-.pay.own .own-details{margin-top:12px;padding:14px 16px;border-radius:16px;background:var(--cream);
-font-size:15.5px;line-height:1.55;white-space:normal;overflow-wrap:anywhere;user-select:all}
-.own-logo{display:block;max-height:52px;max-width:220px;width:auto;height:auto;object-fit:contain}
-.own-name{font-size:22px}
-/* The site's .label: small, spaced capitals that say what a figure is. */
-.kind,th,.teyebrow,.part.phead .who{font-size:11.5px;font-weight:600;letter-spacing:.06em;
-text-transform:uppercase}
-.kind{margin-top:28px;color:var(--ink-50)}
-h1{font-family:var(--display);font-size:44px;font-weight:800;letter-spacing:-.045em;
-line-height:1.05;margin-top:8px;font-variant-numeric:tabular-nums}
-.from{margin-top:10px;font-size:15px;color:var(--ink-65)}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--cream);color:var(--ink);font-family:var(--sans);font-size:15px;
+-webkit-font-smoothing:antialiased;line-height:1.5;padding:0 0 56px}
 /*
- * The naira charge, directly under the price it converts (section 9).
- *
- * Small and quiet, but not hidden: this is the figure that leaves the
- * payer's account, and finding it for the first time on a bank statement is
- * how somebody decides they were overcharged by whoever billed them.
- *
- * (No word here that a stranger's eye would catch. This stylesheet is shared
- * with the not-found page, which must give away nothing about whether a
- * token was ever real, and a leaked noun in a comment is enough.)
+ * The page, as a hosted payment page is laid out: a band of colour across
+ * the top, and the cards rising out of it. On a phone the cards stack in the
+ * order somebody reads them — what is owed, what it was for, how to pay it.
+ * From 920px the paying sits in its own column and stays put while the
+ * details scroll beside it.
  */
+.band{height:208px;background:var(--ink);position:relative;overflow:hidden}
+.band::after{content:"";position:absolute;inset:auto 0 0;height:1px;background:rgba(246,241,231,.08)}
+.shell{position:relative;max-width:560px;margin:-168px auto 0;padding:0 16px;display:grid;gap:14px}
+.card{background:var(--paper);border-radius:20px;box-shadow:var(--lift)}
+@media(min-width:920px){
+  .band{height:248px}
+  .shell{max-width:1060px;margin-top:-188px;padding:0 32px;grid-template-columns:minmax(0,1fr) 400px;gap:24px;align-items:start}
+  .summary{grid-column:1;grid-row:1}
+  .items{grid-column:1;grid-row:2}
+  .side{grid-column:2;grid-row:1 / span 2;position:sticky;top:24px}
+}
+.summary{padding:26px 26px 22px}
+.ident{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px}
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;
+letter-spacing:-.03em;font-size:20px;min-width:0}
+.dot{width:22px;height:22px;border-radius:50%;background:var(--marigold);flex:none}
+.own-logo{display:block;max-height:44px;max-width:200px;width:auto;height:auto;object-fit:contain}
+.own-name{font-size:19px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kind{font-size:13px;font-weight:600;color:var(--ink-50);letter-spacing:.01em;white-space:nowrap}
+.doctitle{margin-top:22px;font-size:15px;font-weight:600;color:var(--ink-80)}
+.eyebrow{margin-top:26px;font-size:13px;color:var(--ink-50)}
+.doctitle + .eyebrow{margin-top:6px}
+h1{font-family:var(--display);font-size:46px;font-weight:800;letter-spacing:-.045em;
+line-height:1.02;margin-top:6px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.from{margin-top:10px;font-size:15px;color:var(--ink-65)}
+.from b{color:var(--ink);font-weight:600}
 .fx{margin-top:8px;font-size:13px;line-height:1.5;color:var(--ink-65);max-width:38ch}
 .fx b{color:var(--ink);font-weight:600}
-.from b{color:var(--ink);font-weight:600}
-.pill{display:inline-flex;align-items:center;height:28px;margin-top:16px;padding:0 12px;
-border-radius:999px;font-size:12.5px;font-weight:600}
-.pill.due{background:var(--sand);color:var(--ink-2)}
+/* Status, as a small badge with a dot of its colour. */
+.pill{display:inline-flex;align-items:center;gap:7px;height:28px;margin-top:14px;padding:0 11px 0 10px;
+border-radius:999px;font-size:13px;font-weight:600;white-space:nowrap}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+.pill.due{background:rgba(245,184,46,.16);color:#8a5a00}
 .pill.paid{background:rgba(63,143,95,.13);color:var(--moss-deep)}
 .pill.overdue{background:rgba(194,70,46,.1);color:var(--clay)}
 .pill.cancelled{background:var(--ink-6);color:var(--ink-65)}
-table{width:100%;border-collapse:collapse;margin-top:28px}
-th{text-align:left;color:var(--ink-50);padding:0 28px 10px;border-bottom:1px solid var(--ink-10)}
+.facts{margin-top:22px;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;gap:0 20px}
+.facts>div{padding-top:14px;min-width:0}
+.facts dt{font-size:12.5px;color:var(--ink-50)}
+.facts dd{margin-top:2px;font-size:14.5px;font-weight:600;overflow-wrap:anywhere}
+/* The work, as a table in its own card. */
+.items{padding:6px 0 4px;overflow:hidden}
+.sect{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 26px 6px;
+font-size:13px;font-weight:600;color:var(--ink-50)}
+table{width:100%;border-collapse:collapse}
+th{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;text-align:left;color:var(--ink-40);
+padding:10px 26px 10px;border-bottom:1px solid var(--line)}
 th.r,td.r{text-align:right}
-td{padding:14px 28px;border-bottom:1px solid var(--ink-6);font-size:15px;vertical-align:top}
+td{padding:15px 26px;border-bottom:1px solid var(--line);font-size:15px;vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
 td.r{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 td .qty{display:block;font-size:13px;color:var(--ink-50);margin-top:2px;font-variant-numeric:tabular-nums}
-.totals{padding:16px 28px 0}
-.row{display:flex;justify-content:space-between;gap:16px;font-size:15px;color:var(--ink-65);
-padding:5px 0;font-variant-numeric:tabular-nums}
-.row.grand{margin-top:8px;padding-top:14px;border-top:1px solid var(--ink);color:var(--ink);
-font-family:var(--display);font-size:22px;font-weight:700;letter-spacing:-.03em}
+.totals{margin:0 26px;padding:14px 0 18px;border-top:1px solid var(--line)}
+.row{display:flex;justify-content:space-between;gap:16px;font-size:14.5px;color:var(--ink-65);
+padding:4px 0;font-variant-numeric:tabular-nums}
+.row.grand{margin-top:8px;padding-top:12px;border-top:1px solid var(--line);color:var(--ink);
+font-family:var(--display);font-size:20px;font-weight:700;letter-spacing:-.025em}
 .row.paidoff{color:var(--moss)}
-.note{margin:22px 28px 0;padding:14px 16px;background:var(--cream);border-radius:14px;
+.totals .row.grand:first-child{margin-top:0;padding-top:4px;border-top:0}
+.note{margin:0 26px 22px;padding:14px 16px;background:var(--cream);border-radius:14px;
 font-size:14px;line-height:1.6;color:var(--ink-65);white-space:pre-wrap}
-.pay{padding:28px 28px 4px}
-/* The site's primary button: a marigold pill, the width of the page here
-   because it is the only thing on it to press. */
-button.pay-btn,a.pay-btn,button.tcopy{display:flex;align-items:center;justify-content:center;
-width:100%;height:54px;padding:0 24px;border:0;border-radius:999px;background:var(--marigold);
-color:var(--ink);font:600 16px/1 var(--sans);cursor:pointer;text-decoration:none;
-transition:background-color .2s,transform .2s;-webkit-tap-highlight-color:transparent}
-button.pay-btn:hover,a.pay-btn:hover,button.tcopy:hover{background:var(--marigold-hi)}
-button.pay-btn:active,button.tcopy:active{transform:scale(.98)}
-button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-button.pay-btn:disabled{opacity:.5;cursor:default}
-.secure{margin-top:12px;text-align:center;font-size:13px;color:var(--ink-50)}
-.banner{margin:28px 28px 4px;padding:16px 18px;border-radius:16px;font-size:14.5px;
-line-height:1.55;text-align:center}
-.banner.paid{background:rgba(63,143,95,.12);color:var(--moss-deep);font-weight:600}
-.banner.cancelled{background:var(--ink-6);color:var(--ink-65)}
-.banner.quote{background:var(--cream);color:var(--ink-65)}
-.parts{padding:18px 28px 0}
+/* The parts of a split, under the amount they divide. */
+.parts{margin-top:18px;border-radius:14px;background:var(--ink-3);box-shadow:inset 0 0 0 1px var(--line);padding:4px 14px}
 .part{display:flex;justify-content:space-between;align-items:center;gap:16px;
-padding:12px 0;border-bottom:1px solid var(--ink-6);font-size:14.5px}
+padding:11px 0;border-bottom:1px solid var(--line);font-size:14.5px}
 .part:last-child{border-bottom:0}
 .part .who{color:var(--ink-65)}
 .part .amt{font-weight:600;font-variant-numeric:tabular-nums}
 .part.done .who,.part.done .amt{color:var(--moss)}
-.part.phead{border-bottom:0;padding-bottom:2px}
-.part.phead .who{color:var(--ink-50)}
+.part.phead{border-bottom:0;padding-bottom:0}
+.part.phead .who{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-40)}
 .part .tag{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;
 background:var(--ink-6);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;
 color:var(--ink-65);font-weight:600;vertical-align:1px}
 .part.done .tag{background:rgba(63,143,95,.12);color:var(--moss-deep)}
-/* The date sits under the label rather than beside it: three things on one
-   line wraps badly at 320px, and the label is what is being scanned. */
 .part .on{display:block;font-size:12.5px;color:var(--ink-50);margin-top:3px}
-/* The processor, as the site shows it: one quiet pill, not a boxed panel
-   competing with the amount for attention. */
-.trust{margin:26px 28px 0;text-align:center}
+/* The paying column. */
+.side{display:grid;gap:16px;align-content:start;background:var(--paper);border-radius:20px;box-shadow:var(--lift);padding:18px}
+/* Everything in the paying column shares its card, so nothing in it is
+   framed twice and none of it ever sits on the band. */
+.side .paycard,.side .pay.own{box-shadow:none;padding:0;border-radius:0;background:none}
+.side .banner{box-shadow:none;background:var(--cream)}
+.side .banner.paid{background:#eef7f1;box-shadow:none}
+.side .trybalans{box-shadow:none;background:var(--cream)}
+.side .files{padding-top:16px;border-top:1px solid var(--line)}
+.side .trust{padding:0}
+.side .tfine{margin:12px 2px 0}
+.pay{padding:0}
+.paycard{padding:22px}
+.teyebrow{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.pay.own{background:var(--paper);border-radius:20px;box-shadow:var(--lift);padding:22px}
+.pay.own .teyebrow{color:var(--ink-50)}
+.pay.own .own-amt{margin-top:6px;font-family:var(--display);font-size:22px;font-weight:800;letter-spacing:-.03em}
+.pay.own .own-details{margin-top:12px;padding:14px 16px;border-radius:14px;background:var(--cream);
+font-size:15.5px;line-height:1.55;white-space:normal;overflow-wrap:anywhere;user-select:all}
+.pay.own .tsmall{text-align:left;margin:12px 0 0;max-width:none}
+/* The site's primary button: a marigold pill. */
+button.pay-btn,a.pay-btn,button.tcopy{display:flex;align-items:center;justify-content:center;gap:8px;
+width:100%;height:54px;padding:0 24px;border:0;border-radius:999px;background:var(--marigold);
+color:var(--ink);font:600 16px/1 var(--sans);cursor:pointer;text-decoration:none;
+box-shadow:inset 0 -2px 0 rgba(16,35,28,.12);
+transition:background-color .2s,transform .15s;-webkit-tap-highlight-color:transparent}
+button.pay-btn:hover,a.pay-btn:hover,button.tcopy:hover{background:var(--marigold-hi)}
+button.pay-btn:active,a.pay-btn:active,button.tcopy:active{transform:scale(.985)}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button.pay-btn:disabled{opacity:.5;cursor:default}
+.lock{width:14px;height:14px;flex:none;margin-top:2px}
+.secure{margin-top:12px;display:flex;align-items:flex-start;justify-content:center;gap:6px;
+font-size:13px;color:var(--ink-50);text-align:center}
+.banner{padding:18px 20px;border-radius:20px;font-size:14.5px;line-height:1.55;text-align:center;
+background:var(--paper);box-shadow:var(--lift);color:var(--ink-65)}
+.banner.paid{background:#eef7f1;color:var(--moss-deep);font-weight:600;box-shadow:0 0 0 1px rgba(63,143,95,.18)}
+.banner.paid::before{content:"";display:block;width:34px;height:34px;margin:2px auto 10px;border-radius:50%;
+background:var(--moss) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5 10 17.5 19 7.5'/%3E%3C/svg%3E") center/18px no-repeat}
+.banner.cancelled{color:var(--ink-65)}
+.banner.quote{color:var(--ink-65)}
+.trybalans{display:block;padding:14px 16px;border-radius:16px;background:var(--paper);box-shadow:var(--lift);
+color:var(--ink);text-decoration:none;font-size:14px;line-height:1.45;text-align:center}
+.trybalans b{color:var(--ink);white-space:nowrap}
+/* Who handles the money, said once, quietly. */
+.trust{text-align:center;padding:2px 8px}
 .badge{display:inline-flex;align-items:center;gap:8px;padding:6px 14px 6px 10px;
-border-radius:999px;background:#fff;box-shadow:inset 0 0 0 1px var(--ink-10);
+border-radius:999px;background:var(--paper);box-shadow:inset 0 0 0 1px var(--ink-10);
 font-size:11.5px;font-weight:500;color:var(--ink-65);white-space:nowrap}
 .badge svg{width:14px;height:14px;color:var(--moss);flex:none}
 .badge img{height:12px;width:auto;display:block}
-.tsmall{margin:12px auto 0;max-width:420px;font-size:12.5px;line-height:1.6;color:var(--ink-50)}
+.badge svg.psmark{width:12px;height:12px;margin-right:-3px}
+.tsmall{margin:10px auto 0;max-width:420px;font-size:12.5px;line-height:1.6;color:var(--ink-50)}
 .tsmall b{color:var(--ink-65);font-weight:600}
-.files{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;padding:22px 28px 28px}
-.files a{display:inline-flex;align-items:center;height:40px;padding:0 18px;border-radius:999px;
-font-size:13.5px;font-weight:600;color:var(--ink);text-decoration:none;
-box-shadow:inset 0 0 0 1.5px rgba(16,35,28,.2);transition:box-shadow .2s}
-.files a:hover{box-shadow:inset 0 0 0 1.5px var(--ink)}
+.files{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.files a{display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 16px 0 14px;border-radius:999px;
+font-size:13.5px;font-weight:600;color:var(--ink);text-decoration:none;background:var(--paper);
+box-shadow:inset 0 0 0 1px var(--ink-10);transition:box-shadow .2s}
+.files a:hover{box-shadow:inset 0 0 0 1px var(--ink-40)}
+.files svg{width:15px;height:15px;flex:none}
 .foot{display:flex;align-items:center;justify-content:center;gap:8px;max-width:600px;
-margin:20px auto 0;padding:0 16px;font-size:12.5px;line-height:1.5;color:var(--ink-50)}
+margin:28px auto 0;padding:0 16px;font-size:12.5px;line-height:1.5;color:var(--ink-50);text-align:center}
 .foot a{color:inherit;text-underline-offset:3px}
 .foot svg{width:16px;height:16px;flex:none}
 .foot b{color:var(--ink-65);font-weight:600}
-.badge svg.psmark{width:12px;height:12px;margin-right:-3px}
 /* The step before a card is charged in naira for a foreign price. Opened by
-   :target, so it needs no JavaScript: the button is a link to #confirm, and
-   closing it is a link back. */
-.modal{display:none;position:fixed;inset:0;z-index:10;background:rgba(16,35,28,.45);
-align-items:flex-end;justify-content:center;padding:16px}
-.modal:target{display:flex}
+   :target, so it needs no JavaScript. */
+.modal{display:none;position:fixed;inset:0;z-index:10;background:rgba(16,35,28,.5);
+-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+align-items:flex-end;justify-content:center;padding:12px}
+.modal:target{display:flex;animation:fade .2s ease-out}
+.modal:target .msheet{animation:rise .32s cubic-bezier(.16,1,.3,1)}
+@keyframes fade{from{opacity:0}}
+@keyframes rise{from{transform:translateY(24px);opacity:0}}
 .msheet{width:100%;max-width:440px;background:var(--paper);border-radius:24px;padding:26px 22px 18px;
-box-shadow:0 20px 60px rgba(16,35,28,.25)}
+box-shadow:0 24px 64px rgba(16,35,28,.3)}
 .mfield{display:block;margin:0 0 14px;font-size:13px;font-weight:600;color:var(--ink-65)}
 .mfield input{display:block;width:100%;margin-top:6px;height:48px;padding:0 14px;border-radius:14px;
 border:1px solid var(--ink-10);background:#fff;font:400 16px/1 var(--sans);color:var(--ink)}
-.mfield input:focus{outline:2px solid var(--ink);outline-offset:1px}
+.mfield input:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px rgba(16,35,28,.08)}
 @media (min-width:600px){.modal{align-items:center}}
 .msheet h2{margin:0;font:700 22px/1.2 var(--display);letter-spacing:-.02em}
 .msheet p{margin:10px 0 0;font-size:14.5px;line-height:1.55;color:var(--ink-65)}
 .msheet p b{color:var(--ink);font-weight:600}
-.mrows{margin:18px 0 20px;padding:14px 16px;border-radius:16px;background:var(--cream)}
+.mrows{margin:18px 0 20px;padding:12px 16px;border-radius:16px;background:var(--cream)}
 .mrows .row{padding:5px 0}
 .mrows .row b{color:var(--ink);font-variant-numeric:tabular-nums}
 .mclose{display:block;margin-top:10px;padding:12px;text-align:center;font-size:14px;font-weight:600;
 color:var(--ink-65);text-decoration:none}
-/* The transfer step is the one thing on this page that is an action rather
-   than a document, so it sits on ink and everything above it stays paper —
-   the same move as the pay panel on the site. */
-.tcard{background:var(--ink);color:var(--cream);border-radius:24px;padding:24px 20px 20px;text-align:center}
-.teyebrow{color:rgba(246,241,231,.5)}
+/* The transfer panel, on ink: the one thing here that is an action. */
+.tcard{background:var(--ink);color:var(--cream);border-radius:20px;padding:22px 18px 18px;text-align:center;
+box-shadow:0 18px 40px -20px rgba(16,35,28,.6)}
+.tcard .teyebrow{color:rgba(246,241,231,.55)}
 .tamt{font-family:var(--display);font-size:17px;font-weight:700;letter-spacing:-.02em;
 font-variant-numeric:tabular-nums}
-.tbox{margin-top:16px;background:var(--ink-2);border-radius:16px;overflow:hidden;text-align:left}
+.tbox{margin-top:14px;background:var(--ink-2);border-radius:14px;overflow:hidden;text-align:left;
+box-shadow:inset 0 0 0 1px rgba(246,241,231,.06)}
 .trow{display:flex;align-items:center;justify-content:space-between;gap:14px;
 padding:13px 16px;border-top:1px solid rgba(246,241,231,.07)}
 .trow:first-child{border-top:0}
 .trow.wide{display:block}
-/* The account number reads as one of the four details, on its line, in the
-   same shape as the rest. It was on a line of its own at 26px, which made it
-   look like a different kind of thing from the bank and the amount beside it. */
 .tk{color:rgba(246,241,231,.5);font-size:13px;flex:none}
 .tv{font-weight:600;text-align:right;color:var(--cream);min-width:0;font-size:14.5px}
 .trow.wide .tv{text-align:left;margin-top:5px}
 .tv .acct{font-family:var(--display);font-variant-numeric:tabular-nums;letter-spacing:.03em;
 font-size:20px;font-weight:700;line-height:1.2}
-button.tcopy{height:52px;margin-top:16px}
-/* Copying the amount.
-   The figure can carry kobo — 54,670.06 — because it was grossed up so the
-   freelancer still receives the whole of what they billed. These accounts are
-   matched on the amount as well as the number, so a mistyped kobo is not a
-   short payment, it is a payment that never arrives and a page that waits
-   forever. Nobody should have to retype that. The icon sits inside the row
-   with the figure rather than under it, because it belongs to that number and
-   not to the panel.
-   (No mention here of what kind of document this is: the stylesheet is served
-   with the not-found page too, and that page must not hint whether a token
-   was ever real.) */
+button.tcopy{height:52px;margin-top:14px}
 button.icopy{flex:none;display:grid;place-items:center;width:34px;height:34px;margin:-6px -6px -6px 0;
 border:0;border-radius:10px;background:transparent;color:rgba(246,241,231,.55);cursor:pointer;
 -webkit-tap-highlight-color:transparent}
@@ -216,38 +246,39 @@ button.icopy:hover,button.icopy:focus-visible{background:rgba(246,241,231,.08);c
 button.icopy:active{transform:scale(.94)}
 button.icopy svg{width:17px;height:17px;display:block;fill:none;stroke:currentColor;
 stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-/* The tick replaces the sheets in place: swapping textContent, which is what
-   the wide button does, would throw the icon away. */
 button.icopy .i-yes{display:none}
 button.icopy.done{color:#6fdc9c}
 button.icopy.done .i-no{display:none}
 button.icopy.done .i-yes{display:block}
 .trow .tv{display:flex;align-items:center;justify-content:flex-end;gap:8px}
 button.tcopy.done{background:var(--moss);color:var(--cream)}
-.tfine{margin:16px 4px 0;font-size:13.5px;line-height:1.65;color:var(--ink-65);text-align:center}
+.tfine{margin:14px 6px 0;font-size:13px;line-height:1.6;color:var(--ink-65);text-align:center}
 .tfine strong{color:var(--ink);font-weight:600}
 .twait{margin-top:16px;font-size:13px;color:rgba(246,241,231,.6);text-align:center;line-height:1.7}
 .twait .dot{display:inline-block;vertical-align:baseline;width:7px;height:7px;
 border-radius:50%;background:var(--marigold);margin-right:8px;animation:pulse 1.8s ease-in-out infinite}
 .twait .tleft{color:rgba(246,241,231,.45)}
 @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
-@media(prefers-reduced-motion:reduce){.twait .dot{animation:none;opacity:.8}}
+@media(prefers-reduced-motion:reduce){.twait .dot,.modal:target,.modal:target .msheet{animation:none}}
 .tussd{margin-top:12px;text-align:center;font-size:13.5px;color:var(--ink-65)}
+/* The page for when there is nothing to show: one card, centred. */
+.sheet{max-width:520px;margin:-120px auto 0;padding:0 16px;position:relative}
+.sheet .top{background:var(--paper);border-radius:20px;box-shadow:var(--lift);padding:28px}
+.sheet h1{font-size:36px}
 @media(max-width:520px){
-  body{padding:12px 10px 44px}
-  .sheet{border-radius:20px}
-  .top{padding:22px 20px 0}
-  .kind{margin-top:24px}
-  h1{font-size:38px}
-  th{padding:0 20px 10px}
-  td{padding:13px 20px}
-  .totals,.parts{padding-left:20px;padding-right:20px}
-  .note,.trust,.banner{margin-left:20px;margin-right:20px}
-  .pay{padding:24px 12px 4px}
-  .files{padding:20px 20px 24px}
-  .tcard{padding:22px 14px 16px;border-radius:20px}
+  .band{height:184px}
+  .shell{margin-top:-150px;padding:0 10px;gap:12px}
+  .summary{padding:22px 20px 18px}
+  h1{font-size:40px}
+  .sect{padding-left:20px;padding-right:20px}
+  th{padding:10px 20px}
+  td{padding:14px 20px}
+  .totals{margin:0 20px}
+  .note{margin:0 20px 20px}
+  .tcard{padding:20px 14px 16px}
   .trow{padding:12px 13px}
   .tv .acct{font-size:18px;letter-spacing:.02em}
+  .sheet{padding:0 10px}
 }
 `;
 
@@ -426,70 +457,87 @@ function renderDocumentPage(
 <meta name="description" content="${label} for ${esc(formatNaira(doc.totalKobo))} from ${esc(doc.businessName)}.">
 <style>${CSS}</style>
 </head><body>
-<div class="sheet">
-  <div class="top">
-    <div class="brand">${
-      // The real logo where we have it; the wordmark in text if the asset is
-      // missing, because a payment page must render either way.
-      // Larger than it was. This is the only thing on the page that says who
-      // is asking, above an amount and a card button, and at 28px it read as
-      // a footnote on the surface that has to carry the most trust.
-      whose(doc)
-    }</div>
-    <div class="kind">${label} ${clientNumber(doc.ref, doc.number) ?? ""}</div>
+<div class="band" aria-hidden="true"></div>
+<main class="shell">
+  <section class="card summary">
+    <div class="ident">
+      <div class="brand">${
+        // The real logo where we have it; the wordmark in text if the asset is
+        // missing, because a payment page must render either way. Inside the
+        // card rather than on the band: a dark logo on a dark band vanishes.
+        whose(doc)
+      }</div>
+      <div class="kind">${label} ${clientNumber(doc.ref, doc.number) ?? ""}</div>
+    </div>
     ${doc.title ? `<div class="doctitle">${esc(doc.title)}</div>` : ""}
+    <p class="eyebrow">${headlineLabel(doc)}</p>
     <h1>${doc.foreign ? formatMoney(agreedTotalMinor(doc.foreign.amountMinor, doc.subtotalKobo, doc.vatKobo), doc.foreign.currency) : formatNaira(doc.totalKobo)}</h1>
-    <div class="from">From <b>${esc(doc.businessName)}</b> to ${esc(doc.clientName)}</div>
     ${statusPill(doc, today, overdue)}
-  </div>
+    <dl class="facts">
+      <div><dt>${doc.type === "quote" ? "For" : "Billed to"}</dt><dd>${esc(doc.clientName)}</dd></div>
+      <div><dt>From</dt><dd>${esc(doc.businessName)}</dd></div>
+      ${doc.issueDate ? `<div><dt>Issued</dt><dd>${esc(formatFriendly(doc.issueDate, today))}</dd></div>` : ""}
+      ${
+        doc.dueDate && doc.status !== "paid" && doc.status !== "cancelled"
+          ? `<div><dt>${doc.type === "quote" ? "Valid until" : "Due"}</dt><dd>${esc(formatFriendly(doc.dueDate, today))}</dd></div>`
+          : ""
+      }
+    </dl>
+    ${partsBlock(doc, today)}
+  </section>
 
-  <table>
-    <thead><tr><th>Description</th><th class="r">Amount</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
 
-  <div class="totals">
-    ${
-      doc.vatKobo > 0
-        ? `<div class="row"><span>Subtotal</span><span>${agreed?.subtotal ?? formatNaira(doc.subtotalKobo)}</span></div>
-           <div class="row"><span>VAT</span><span>${agreed?.vat ?? formatNaira(doc.vatKobo)}</span></div>`
-        : ""
-    }
-    ${
-      /*
-       * What is owed stays in naira, always, even on an invoice priced
-       * abroad. The headline says what was agreed; this says what is left to
-       * pay, and what is left to pay is a naira figure — part-paid in naira,
-       * charged in naira. Converting it back would produce a dollar amount
-       * that nobody agreed to and that moves with the rate.
-       */
-      doc.amountPaidKobo > 0
-        ? `<div class="row"><span>Total</span><span>${formatNaira(doc.totalKobo)}</span></div>
-           <div class="row paidoff"><span>Paid</span><span>&minus;${formatNaira(doc.amountPaidKobo)}</span></div>
-           <div class="row grand"><span>Still owed</span><span>${formatNaira(outstanding)}</span></div>`
-        : `<div class="row grand"><span>Total</span><span>${agreed?.total ?? formatNaira(doc.totalKobo)}</span></div>`
-    }
-  </div>
+  <section class="card items">
+    <p class="sect"><span>What it is for</span><span>${doc.lines.length} item${doc.lines.length === 1 ? "" : "s"}</span></p>
+    <table>
+      <thead><tr><th>Description</th><th class="r">Amount</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
 
-  ${partsBlock(doc, today)}
-  ${doc.notes ? `<div class="note">${esc(doc.notes)}</div>` : ""}
-  ${payBlock(doc, can, payableNowKobo(doc), opts, payableLabel(doc))}
-  ${trustBlock(doc)}
-  <div class="files">
-    ${
-      // F8: a payment request is "a lightweight payable with no PDF". There is
-      // nothing itemised to render, and offering one implies there is.
-      doc.type === "payment_request"
-        ? ""
-        : `<a href="${opts.base ?? "/i"}/${esc(opts.token)}/pdf">Download ${label.toLowerCase()} (PDF)</a>`
-    }
-    ${
-      doc.amountPaidKobo > 0
-        ? `<a href="/i/${esc(opts.token)}/receipt">Download receipt</a>`
-        : ""
-    }
-  </div>
-</div>
+    <div class="totals">
+      ${
+        doc.vatKobo > 0
+          ? `<div class="row"><span>Subtotal</span><span>${agreed?.subtotal ?? formatNaira(doc.subtotalKobo)}</span></div>
+             <div class="row"><span>VAT</span><span>${agreed?.vat ?? formatNaira(doc.vatKobo)}</span></div>`
+          : ""
+      }
+      ${
+        /*
+         * What is owed stays in naira, always, even on an invoice priced
+         * abroad. The headline says what was agreed; this says what is left to
+         * pay, and what is left to pay is a naira figure — part-paid in naira,
+         * charged in naira. Converting it back would produce a dollar amount
+         * that nobody agreed to and that moves with the rate.
+         */
+        doc.amountPaidKobo > 0
+          ? `<div class="row"><span>Total</span><span>${formatNaira(doc.totalKobo)}</span></div>
+             <div class="row paidoff"><span>Paid</span><span>&minus;${formatNaira(doc.amountPaidKobo)}</span></div>
+             <div class="row grand"><span>Still owed</span><span>${formatNaira(outstanding)}</span></div>`
+          : `<div class="row grand"><span>Total</span><span>${agreed?.total ?? formatNaira(doc.totalKobo)}</span></div>`
+      }
+    </div>
+    ${doc.notes ? `<div class="note">${esc(doc.notes)}</div>` : ""}
+  </section>
+
+  <aside class="side">
+    ${payBlock(doc, can, payableNowKobo(doc), opts, payableLabel(doc))}
+    ${trustBlock(doc)}
+    <div class="files">
+      ${
+        // F8: a payment request is "a lightweight payable with no PDF". There is
+        // nothing itemised to render, and offering one implies there is.
+        doc.type === "payment_request"
+          ? ""
+          : `<a href="${opts.base ?? "/i"}/${esc(opts.token)}/pdf">${DOWNLOAD}Download ${label.toLowerCase()} (PDF)</a>`
+      }
+      ${
+        doc.amountPaidKobo > 0
+          ? `<a href="/i/${esc(opts.token)}/receipt">${DOWNLOAD}Download receipt</a>`
+          : ""
+      }
+    </div>
+  </aside>
+</main>
 ${doc.plan === "pro" ? "" : footer(doc)}
 ${doc.bank && can.ok === false ? `<script>${COPY_JS}</script>` : ""}
 </body></html>`;
@@ -499,8 +547,27 @@ ${doc.bank && can.ok === false ? `<script>${COPY_JS}</script>` : ""}
 export function renderDocument(...args: Parameters<typeof renderDocumentPage>): string {
   const html = renderDocumentPage(...args);
   const doc = args[0];
-  return doc.plan === "pro" ? applyBrand(html, doc.brandColor) : html;
+  if (doc.plan !== "pro") return html;
+  // The band across the top wears their colour too: it is the first thing
+  // on the page, and on Pro the page is theirs.
+  const k = brandTokens(doc.brandColor);
+  const band = k ? html.replace("</head>", `<style>.band{background:${k.c}}</style></head>`) : html;
+  return applyBrand(band, doc.brandColor);
 }
+
+/** The word over the headline figure: what it is, as the client reads it. */
+function headlineLabel(doc: PublicDocument): string {
+  if (doc.status === "cancelled") return "Cancelled";
+  if (doc.type === "quote") return "Quoted";
+  if (doc.status === "paid" || outstandingKobo(doc) === 0) return "Paid";
+  return doc.amountPaidKobo > 0 ? "Total, part paid" : "Amount due";
+}
+
+/** A padlock, beside the line that says where a card payment goes. */
+const LOCK = `<svg class="lock" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3.2" y="7" width="9.6" height="6.8" rx="1.8" stroke="currentColor" stroke-width="1.5"/><path d="M5.4 7V5.2a2.6 2.6 0 0 1 5.2 0V7" stroke="currentColor" stroke-width="1.5"/></svg>`;
+
+/** A small arrow into a tray, on the download links. */
+const DOWNLOAD = `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.5v7.5M4.8 7 8 10.2 11.2 7M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 /**
  * Whose page this is, at the top.
@@ -630,10 +697,10 @@ function payBlock(
      * is charged.
      */
     if (doc.foreign) {
-      return `<div class="pay">
-    ${opts.error ? `<p class="banner cancelled" style="margin:0 0 14px">${esc(opts.error.text)}</p>` : ""}
+      return `<div class="pay card paycard">
+    ${opts.error ? `<p class="banner cancelled" style="margin:0 0 14px;box-shadow:none;background:var(--cream)">${esc(opts.error.text)}</p>` : ""}
     <a class="pay-btn" href="#confirm">Continue to payment</a>
-    <p class="secure">Paid by card to ${esc(doc.businessName)}. Takes about a minute.</p>
+    <p class="secure">${LOCK}Paid by card to ${esc(doc.businessName)}. Takes about a minute.</p>
   </div>
   <div class="modal" id="confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
     <div class="msheet">
@@ -926,7 +993,8 @@ export function renderProUnavailable(): string {
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Try again in a minute</title><meta name="robots" content="noindex,nofollow">
 <style>${CSS}</style></head><body>
-<div class="sheet"><div class="top" style="padding-bottom:32px">
+<div class="band" aria-hidden="true"></div>
+<div class="sheet"><div class="top">
   <div class="brand">${logoAvailable() ? logoSvg("28px") : `<span class="dot"></span>balans`}</div>
   <h1 style="margin-top:22px">Try again in a minute</h1>
   <p class="from">The payment page did not open just now. Nothing was charged. Go back to WhatsApp and tap Pay again.</p>
@@ -942,7 +1010,8 @@ export function renderNotFound(): string {
 <meta name="format-detection" content="telephone=no">
 <title>Not found</title><meta name="robots" content="noindex,nofollow">
 <style>${CSS}</style></head><body>
-<div class="sheet"><div class="top" style="padding-bottom:32px">
+<div class="band" aria-hidden="true"></div>
+<div class="sheet"><div class="top">
   <div class="brand">${logoAvailable() ? logoSvg("28px") : `<span class="dot"></span>balans`}</div>
   <h1 style="margin-top:22px">Nothing here</h1>
   <p class="from">This link has expired, or it was never quite right. Ask whoever sent it for a new one.</p>

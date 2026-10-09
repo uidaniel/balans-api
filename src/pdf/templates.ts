@@ -1,8 +1,10 @@
 /**
  * The invoice layouts (PRD F24, and the design system PRD's template set).
  *
- * Eight of them: two on Free, six on Pro. They exist as React components in
- * the web repo, where they are captured to WebP for the landing page. These
+ * Twenty of them: two on Free, eighteen on Pro. The first eight exist as
+ * React components in the web repo, where they are captured to WebP for the
+ * landing page; the other twelve (templates-plus.ts) are captured from here,
+ * since this is the renderer the documents come from. These
  * are the same designs rebuilt as plain HTML — the same paddings, rules and
  * type sizes, set in the same typefaces — because a user chooses a design from
  * the pictures on balans.ng and has to get the design in the pictures.
@@ -68,6 +70,7 @@ import {
 } from "./kit.ts";
 import type { DocumentData } from "./template.ts";
 import { renderDocumentHtml } from "./template.ts";
+import { PLUS_RENDERERS } from "./templates-plus.ts";
 
 export type TemplateId =
   | "classic"
@@ -77,7 +80,8 @@ export type TemplateId =
   | "atelier"
   | "statement"
   | "ledger"
-  | "folio";
+  | "folio"
+  | keyof typeof PLUS_RENDERERS;
 
 export type TemplateSpec = {
   id: TemplateId;
@@ -145,6 +149,91 @@ export const TEMPLATES: TemplateSpec[] = [
     name: "Folio",
     pro: true,
     blurb: "A sand margin holding the facts, the work on clean paper beside it.",
+    ready: true,
+  },
+  // The second set (9 October 2026), in templates-plus.ts.
+  {
+    id: "swiss",
+    name: "Swiss",
+    pro: true,
+    blurb: "A strict grid, one heavy rule and a lot of white. Hierarchy by size alone.",
+    ready: true,
+  },
+  {
+    id: "poster",
+    name: "Poster",
+    pro: true,
+    blurb: "The amount set as large as the page allows, on a block of your colour.",
+    ready: true,
+  },
+  {
+    id: "ticket",
+    name: "Ticket",
+    pro: true,
+    blurb: "The job on a ticket, the amount and date on a stub torn off at the perforation.",
+    ready: true,
+  },
+  {
+    id: "bento",
+    name: "Bento",
+    pro: true,
+    blurb: "Every fact in its own rounded tile, the amount on the dark one. Like a product page.",
+    ready: true,
+  },
+  {
+    id: "gazette",
+    name: "Gazette",
+    pro: true,
+    blurb: "Your name as a newspaper masthead, the work as the headline, the money in the sidebar.",
+    ready: true,
+  },
+  {
+    id: "adire",
+    name: "Adire",
+    pro: true,
+    blurb: "A band of adire cloth across the head and foot. The one that could only come from here.",
+    ready: true,
+  },
+  {
+    id: "slip",
+    name: "Slip",
+    pro: true,
+    blurb: "A long torn slip down the page, set like a good till receipt. Everything centred.",
+    ready: true,
+  },
+  {
+    id: "letterhead",
+    name: "Letterhead",
+    pro: true,
+    blurb: "Company stationery: a centred letterhead, a boxed table, a solid total. Procurement-ready.",
+    ready: true,
+  },
+  {
+    id: "meridian",
+    name: "Meridian",
+    pro: true,
+    blurb: "A solid band of reference facts and striped rows. What a large client's accounts team expects.",
+    ready: true,
+  },
+  {
+    id: "blueprint",
+    name: "Blueprint",
+    pro: true,
+    blurb: "A drawing sheet: faint grid, ruled frame and the facts in a title block, bottom right.",
+    ready: true,
+  },
+  {
+    id: "angle",
+    name: "Angle",
+    pro: true,
+    blurb: "Cut triangles in the corner and a slanted band at the foot. Modern, and plain in the middle.",
+    ready: true,
+  },
+  {
+    id: "monogram",
+    name: "Monogram",
+    pro: true,
+    blurb: "Your initials set enormous in the corner and the amount in an outlined pill.",
     ready: true,
   },
 ];
@@ -834,6 +923,7 @@ const RENDERERS: Partial<Record<TemplateId, (d: DocumentData, opts: RenderOption
   editorial,
   atelier,
   folio,
+  ...PLUS_RENDERERS,
 };
 
 /**

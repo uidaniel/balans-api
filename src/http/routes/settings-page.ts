@@ -27,6 +27,7 @@ import { get as getFile } from "../../storage/files.ts";
 import { normaliseHex } from "../../brand/colour.ts";
 import { renderDocumentHtml, type DocumentData } from "../../pdf/template.ts";
 import { FONT } from "../../pdf/fonts.ts";
+import { logoSvg } from "../../brand/logo.ts";
 import { renderTemplate, TEMPLATES } from "../../pdf/templates.ts";
 import { pickerUrlFor } from "./templates.ts";
 import { issueSignatureToken } from "../../brand/signature.ts";
@@ -387,77 +388,174 @@ export async function settingsPageRoutes(app: FastifyInstance): Promise<void> {
 /* -------------------------------------------------------------------------- */
 
 const CSS = `
-:root{--marigold:#f5b82e;--ink:#10231c;--cream:#f6f1e7;--sand:#e9e1d0;--paper:#fffdf8;--line:#e4dccb;
---muted:#5f6f67;--faint:#8a978f;--moss:#2f7a4b;--clay:#b8452d}
+:root{--marigold:#f5b82e;--ink:#10231c;--ink2:#173128;--cream:#f6f1e7;--sand:#e9e1d0;--paper:#ffffff;
+--line:rgba(16,35,28,.09);--muted:#5f6f67;--faint:#8a978f;--moss:#2f7a4b;--clay:#b8452d;
+--lift:0 0 0 1px rgba(16,35,28,.06),0 1px 2px rgba(16,35,28,.05),0 12px 32px -18px rgba(16,35,28,.2)}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--cream);color:var(--ink);font-family:${FONT.sans};-webkit-font-smoothing:antialiased;
-line-height:1.5;padding:20px 14px 60px}
-.wrap{max-width:560px;margin:0 auto}
-h1{font-family:${FONT.display};font-size:26px;font-weight:800;letter-spacing:-.035em;line-height:1.1}
-.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
-.sub{color:var(--muted);font-size:14px;margin-bottom:18px}
-.pill{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:4px 9px;border-radius:99px;
-background:var(--sand);color:var(--muted);white-space:nowrap}
-.pill.pro{background:var(--ink);color:var(--marigold)}
-.card{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:18px;margin-top:14px}
-.card.off{display:none}
-/* One section at a time, chosen from a row of tabs that stays in reach. */
-.tabs{position:sticky;top:0;z-index:5;display:flex;gap:6px;overflow-x:auto;margin:0 -14px;padding:10px 14px;
-background:var(--cream);scrollbar-width:none;-webkit-overflow-scrolling:touch}
-.tabs::-webkit-scrollbar{display:none}
-.tab{flex:none;border:1px solid var(--line);background:var(--paper);color:var(--muted);font:inherit;font-size:14px;
-font-weight:600;padding:8px 14px;border-radius:99px;cursor:pointer;white-space:nowrap}
-.tab[aria-selected="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
-.card h2{font-family:${FONT.display};font-size:17px;font-weight:700;letter-spacing:-.02em}
-.card .hint{color:var(--muted);font-size:13.5px;margin-top:2px}
-label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-top:14px}
-input,select{width:100%;margin-top:5px;height:46px;border:1px solid var(--line);border-radius:12px;background:#fff;
-padding:0 13px;font:inherit;font-size:16px;color:var(--ink);outline:none}
-input:focus,select:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(16,35,28,.08)}
-input[readonly]{background:var(--cream);color:var(--muted)}
-textarea{width:100%;margin-top:5px;min-height:110px;border:1px solid var(--line);border-radius:12px;background:#fff;
-padding:11px 13px;font:inherit;font-size:16px;line-height:1.45;color:var(--ink);outline:none;resize:vertical}
-textarea:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(16,35,28,.08)}
-.row{display:flex;gap:10px}.row>*{flex:1}
+line-height:1.5;padding:0 0 64px}
 button{cursor:pointer;font:inherit}
-.btn{margin-top:16px;width:100%;height:48px;border:0;border-radius:999px;background:var(--ink);color:var(--cream);
-font-weight:600;font-size:15px}
-.btn.gold{background:var(--marigold);color:var(--ink)}
-.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
-.btn:disabled{opacity:.5;cursor:not-allowed}
-.link{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-top:1px solid var(--line);
-color:var(--ink);text-decoration:none;font-weight:600;font-size:15px}
-.link:first-of-type{border-top:0}
-.link small{display:block;font-weight:400;color:var(--muted);font-size:13px}
-.link .go{color:var(--faint);font-size:20px}
-.msg{margin-top:10px;font-size:13.5px;min-height:1px}
+.hidden{display:none!important}
+/* The head: who these settings belong to, on the same ink band as the pay
+   page, the designs and the summary. */
+.band{background:var(--ink);color:var(--cream);padding:24px 16px 26px}
+.band .in{max-width:1040px;margin:0 auto;display:flex;align-items:center;gap:14px}
+.av{width:48px;height:48px;border-radius:14px;flex:none;display:grid;place-items:center;background:var(--marigold);
+color:var(--ink);font-family:${FONT.display};font-weight:800;font-size:18px;letter-spacing:-.03em}
+.who{min-width:0;flex:1}
+.who .k{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:rgba(246,241,231,.5)}
+h1{font-family:${FONT.display};font-size:24px;font-weight:800;letter-spacing:-.035em;line-height:1.15;
+overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill{flex:none;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border-radius:99px;
+background:rgba(246,241,231,.12);color:rgba(246,241,231,.85);white-space:nowrap}
+.pill.pro{background:var(--marigold);color:var(--ink)}
+.shell{max-width:1040px;margin:0 auto;padding:0 16px}
+/* The sections: a row of tabs on a phone, kept in reach as the page
+   scrolls; a column down the side from 860px. */
+.tabs{position:sticky;top:0;z-index:5;display:flex;gap:6px;overflow-x:auto;margin:0 -16px;padding:12px 16px;
+background:rgba(246,241,231,.92);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;display:inline-flex;align-items:center;gap:8px;border:0;background:var(--paper);color:var(--muted);
+font-size:14px;font-weight:600;height:38px;padding:0 15px 0 12px;border-radius:99px;white-space:nowrap;
+box-shadow:inset 0 0 0 1px var(--line);transition:background-color .2s,color .2s}
+.tab svg{width:16px;height:16px;flex:none;opacity:.75}
+.tab[aria-selected="true"]{background:var(--ink);color:var(--cream);box-shadow:none}
+.tab[aria-selected="true"] svg{opacity:1}
+.panes{min-width:0}
+@media(min-width:860px){
+  .band{padding:34px 24px 34px}
+  .av{width:56px;height:56px;font-size:21px;border-radius:16px}
+  h1{font-size:28px}
+  .shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;padding:28px 24px 0;align-items:start}
+  .tabs{flex-direction:column;gap:2px;margin:0;padding:0;background:none;backdrop-filter:none;-webkit-backdrop-filter:none;
+    top:24px;overflow:visible}
+  .tab{height:42px;width:100%;background:none;box-shadow:none;border-radius:12px;padding:0 12px}
+  .tab:hover{background:rgba(16,35,28,.05)}
+  .tab[aria-selected="true"]{background:var(--paper);color:var(--ink);box-shadow:var(--lift)}
+}
+.saved{margin:4px 0 12px;display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;background:#eef7f1;
+color:var(--moss);font-weight:600;font-size:14.5px;box-shadow:0 0 0 1px rgba(47,122,75,.18)}
+/* A section: a heading, its fields, and a bar along the foot holding the
+   one thing to press and what happened when it was pressed. */
+.card{background:var(--paper);border-radius:20px;box-shadow:var(--lift);overflow:hidden;animation:in .25s ease-out}
+@keyframes in{from{opacity:0;transform:translateY(6px)}}
+@media(prefers-reduced-motion:reduce){.card{animation:none}}
+.card.off{display:none}
+.ch{padding:22px 22px 4px}
+.card h2{font-family:${FONT.display};font-size:19px;font-weight:700;letter-spacing:-.025em}
+.hint{color:var(--muted);font-size:14px;margin-top:4px;max-width:60ch}
+.hint b{color:var(--ink)}
+.cb{padding:6px 22px 22px}
+.cf{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;padding:14px 22px;
+border-top:1px solid var(--line);background:#fcfaf6}
+.cf .msg{margin:0 auto 0 0;flex:1;min-width:10em}
+.field{padding:14px 0;border-top:1px solid var(--line)}
+.field:first-child{border-top:0}
+.field>label,.field>.lb{display:block;font-size:13.5px;font-weight:600;color:var(--ink)}
+.field .opt{font-weight:400;color:var(--faint)}
+.field .help{display:block;font-size:12.5px;font-weight:400;color:var(--muted);margin-top:2px}
+@media(min-width:860px){
+  .ch{padding:26px 28px 6px}
+  .cb{padding:6px 28px 26px}
+  .cf{padding:14px 28px}
+  .field{display:grid;grid-template-columns:200px minmax(0,1fr);gap:24px;align-items:start}
+  .field>label,.field>.lb{padding-top:12px}
+  .field>input,.field>select,.field>textarea,.field>div{margin-top:0!important}
+}
+input,select{width:100%;margin-top:7px;height:46px;border:1px solid rgba(16,35,28,.14);border-radius:12px;background:#fff;
+padding:0 13px;font:inherit;font-size:16px;color:var(--ink);outline:none;transition:border-color .15s,box-shadow .15s;
+box-shadow:0 1px 2px rgba(16,35,28,.04)}
+select{appearance:none;-webkit-appearance:none;padding-right:38px;
+background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6l4 4 4-4' stroke='%235f6f67' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") right 13px center/14px no-repeat}
+input:focus,select:focus,textarea:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(16,35,28,.08)}
+input[readonly]{background:var(--cream);color:var(--muted);box-shadow:none;border-color:transparent}
+textarea{width:100%;margin-top:7px;min-height:112px;border:1px solid rgba(16,35,28,.14);border-radius:12px;background:#fff;
+padding:11px 13px;font:inherit;font-size:16px;line-height:1.45;color:var(--ink);outline:none;resize:vertical}
+.row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
+/* Pills, as every button on balans.ng is. */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 22px;border:0;border-radius:999px;
+background:var(--ink);color:var(--cream);font-weight:600;font-size:14.5px;text-decoration:none;white-space:nowrap;
+transition:opacity .2s,transform .15s}
+.btn:active{transform:scale(.98)}
+.btn.gold{background:var(--marigold);color:var(--ink);box-shadow:inset 0 -2px 0 rgba(16,35,28,.12)}
+.btn.ghost{background:#fff;color:var(--ink);box-shadow:inset 0 0 0 1px rgba(16,35,28,.16)}
+.btn.wide{width:100%}
+.btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
+@media(max-width:520px){.cf .btn{flex:1}}
+.msg{font-size:13.5px;min-height:1px}
 .msg.ok{color:var(--moss)}.msg.err{color:var(--clay)}
-.logo{display:flex;align-items:center;gap:14px;margin-top:12px}
-.logo .box{width:84px;height:84px;border-radius:14px;border:1px dashed var(--line);background:#fff;display:grid;
-place-items:center;overflow:hidden;flex:none}
+/* Invoices: the two pages it opens, as rows. */
+.links{margin-top:6px;border-radius:16px;box-shadow:inset 0 0 0 1px var(--line);overflow:hidden}
+.link{display:flex;align-items:center;gap:14px;padding:14px 16px;border-top:1px solid var(--line);color:var(--ink);
+text-decoration:none;font-weight:600;font-size:15px;transition:background-color .15s}
+.link:first-child{border-top:0}
+.link:hover{background:#fcfaf6}
+.link .ic{width:38px;height:38px;border-radius:12px;background:var(--cream);display:grid;place-items:center;flex:none}
+.link .ic svg{width:18px;height:18px}
+.link .tx{flex:1;min-width:0}
+.link small{display:block;font-weight:400;color:var(--muted);font-size:13px}
+.link .go{color:var(--faint);font-size:22px;line-height:1}
+/* Brand. */
+.brandgrid{display:grid;gap:22px}
+@media(min-width:1000px){.brandgrid{grid-template-columns:minmax(0,1fr) 260px}}
+/* Beside the preview there is no room for a label column: the label sits
+   over its control instead. */
+@media(min-width:860px){.brandgrid .field{display:block}.brandgrid .field>.lb{padding-top:0;margin-bottom:6px}}
+.logo{display:flex;align-items:center;gap:14px;margin-top:8px}
+.logo .box{width:92px;height:92px;border-radius:18px;border:1.5px dashed rgba(16,35,28,.2);background:var(--cream);display:grid;
+place-items:center;overflow:hidden;flex:none;padding:8px}
 .logo .box img{max-width:100%;max-height:100%;object-fit:contain}
-.logo .box span{font-size:11px;color:var(--faint);text-align:center;padding:6px}
-.logo .acts{display:flex;flex-direction:column;gap:8px;flex:1}
-.logo .acts .btn{margin-top:0;height:42px}
+.logo .box span{font-size:11.5px;color:var(--faint);text-align:center;padding:6px}
+.logo .acts{display:flex;flex-direction:column;gap:8px;flex:1;min-width:0}
+.logo .acts .btn{width:100%}
 .swatches{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
-.sw{width:40px;height:40px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px var(--line)}
+.sw{width:40px;height:40px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px var(--line);transition:transform .15s}
+.sw:active{transform:scale(.94)}
 .sw.on{box-shadow:0 0 0 2px var(--ink)}
-.pick{display:flex;gap:10px;align-items:center;margin-top:12px}
-.pick input[type=color]{width:56px;height:46px;padding:4px;flex:none}
-.frame{margin-top:14px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;position:relative;
-height:calc(1122.5px * var(--sc));--sc:.42}
-.frame::before{content:"Loading preview…";position:absolute;top:45%;left:0;right:0;text-align:center;
-color:var(--faint);font-size:14px}
-.frame iframe{position:absolute;top:0;left:0;width:793.7px;height:1122.5px;border:0;transform:scale(var(--sc));
-transform-origin:top left}
-.locked{margin-top:10px;padding:14px;border-radius:14px;background:var(--cream);font-size:14px;color:var(--muted)}
-.bank{margin-top:10px;padding:14px;border-radius:14px;background:var(--cream)}
-.bank b{display:block;font-size:15.5px}
-.bank span{color:var(--muted);font-size:13.5px}
-.found{margin-top:12px;padding:12px 14px;border-radius:12px;background:#e6f2ea;color:var(--moss);font-weight:600}
-.hidden{display:none}
-.saved{margin-top:4px;padding:12px 14px;border-radius:12px;background:#e6f2ea;color:var(--moss);font-weight:600;font-size:14.5px}
-.foot{margin-top:22px;text-align:center;color:var(--faint);font-size:12.5px}
+.pick{display:flex;gap:10px;align-items:center;margin-top:10px}
+.pick input[type=color]{width:52px;height:46px;padding:4px;flex:none;margin-top:0}
+.pick input{margin-top:0}
+.brow{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.brow .btn{flex:1}
+.pv .lb{display:block;font-size:13.5px;font-weight:600;margin-bottom:8px}
+.frame{border-radius:12px;overflow:hidden;background:#fff;position:relative;
+box-shadow:0 0 0 1px var(--line),0 16px 36px -20px rgba(16,35,28,.35);height:calc(1122.5px * var(--sc));--sc:.42}
+.frame::before{content:"Loading preview…";position:absolute;top:45%;left:0;right:0;text-align:center;color:var(--faint);font-size:14px}
+.frame iframe{position:absolute;top:0;left:0;width:793.7px;height:1122.5px;border:0;transform:scale(var(--sc));transform-origin:top left}
+.locked{margin-top:6px;padding:18px;border-radius:16px;background:var(--ink);color:var(--cream)}
+.locked p{font-size:14.5px;color:rgba(246,241,231,.8)}
+.locked .btn{margin-top:14px}
+/* Payout: the account as a card, because it is one. */
+.bank{position:relative;margin-top:6px;padding:20px 20px 18px;border-radius:18px;color:var(--cream);overflow:hidden;
+background:radial-gradient(120% 140% at 100% 0%,#24463a 0%,var(--ink) 55%);min-height:118px;display:flex;flex-direction:column;justify-content:flex-end;gap:2px}
+.bank::before{content:"";position:absolute;top:18px;left:20px;width:34px;height:24px;border-radius:6px;
+background:linear-gradient(135deg,#f7cf6a,#d99a12)}
+.bank::after{content:"";position:absolute;top:16px;right:18px;width:28px;height:28px;border-radius:50%;background:rgba(246,241,231,.08)}
+.bank b{display:block;font-family:${FONT.display};font-size:17px;letter-spacing:-.01em}
+.bank span{color:rgba(246,241,231,.62);font-size:13.5px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.found{margin-top:12px;padding:12px 14px;border-radius:12px;background:#eef7f1;color:var(--moss);font-weight:600}
+.step{margin-top:14px;padding:16px;border-radius:16px;background:#fcfaf6;box-shadow:inset 0 0 0 1px var(--line)}
+.step .hint{margin-top:0}
+.step .btn{margin-top:12px}
+/* Plan. */
+.plan{display:grid;gap:16px}
+.plancard{padding:20px;border-radius:18px;background:var(--ink);color:var(--cream)}
+.plancard .pt{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:rgba(246,241,231,.5)}
+.plancard .pn{margin-top:4px;font-family:${FONT.display};font-size:24px;font-weight:800;letter-spacing:-.03em}
+.plancard .hint{color:rgba(246,241,231,.7)}
+.plancard ul{list-style:none;margin-top:14px;display:grid;gap:8px}
+.plancard li{display:flex;align-items:center;gap:10px;font-size:14px;color:rgba(246,241,231,.85)}
+.plancard li::before{content:"";width:18px;height:18px;flex:none;border-radius:50%;
+background:var(--marigold) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310231c' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5 10 17.5 19 7.5'/%3E%3C/svg%3E") center/11px no-repeat}
+.foot{margin:28px auto 0;max-width:1040px;padding:0 16px;display:flex;flex-direction:column;align-items:center;gap:12px;
+text-align:center;color:var(--faint);font-size:12.5px}
+.foot b{color:var(--muted)}
+.foot svg{display:block;opacity:.85}
+/* The page for an expired link, and for one that would not load. */
+.wrap{max-width:560px;margin:0 auto;padding:40px 16px}
+.wrap h1{white-space:normal;color:var(--ink)}
+.wrap .sub{color:var(--muted);font-size:15px;margin-top:8px}
 `;
 
 const JS = `
@@ -476,9 +574,13 @@ const api = async (path, body, method) => {
 const say = (id, text, ok) => { const el = $(id); el.textContent = text || ''; el.className = 'msg ' + (ok ? 'ok' : 'err'); };
 const busy = (btn, on, label) => { btn.disabled = on; if (label) btn.textContent = label; };
 let S = null;
+const initials = (n) => (n || '').split(/\\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || 'B';
 
 function fill() {
   $('title').textContent = S.business.name || 'Your settings';
+  $('av').textContent = initials(S.business.name);
+  $('plan-name').textContent = S.plan === 'pro' ? 'Balans Pro' : 'Balans Free';
+  $('plan-incl').textContent = S.plan === 'pro' ? 'Included' : 'Pro adds';
   $('plan').textContent = S.plan === 'pro' ? 'Pro' : 'Free';
   $('plan').className = 'pill' + (S.plan === 'pro' ? ' pro' : '');
   $('b-name').value = S.business.name; $('b-address').value = S.business.address; $('b-tin').value = S.business.tin;
@@ -490,7 +592,7 @@ function fill() {
     document.querySelector('.tab[data-tab="payout"]').remove();
     // Hidden, not removed: the script below still reads its fields.
     document.querySelector('section[data-tab="payout"]').dataset.tab = 'none';
-    document.querySelector('.tab[data-tab="abroad"]').textContent = 'How you get paid';
+    document.querySelector('.tab[data-tab="abroad"] .tl').textContent = 'How you get paid';
     $('a-title').textContent = 'How you get paid';
     $('a-hint').textContent = 'Your clients pay you directly. These go on every invoice, as you write them.';
     $('a-payby-row').classList.add('hidden');
@@ -560,7 +662,7 @@ $('b-save').onclick = async (e) => {
   busy(e.target, true, 'Saving\\u2026');
   try {
     await api('/business', { name: $('b-name').value, address: $('b-address').value, tin: $('b-tin').value });
-    S.business.name = $('b-name').value.trim(); $('title').textContent = S.business.name;
+    S.business.name = $('b-name').value.trim(); $('title').textContent = S.business.name; $('av').textContent = initials(S.business.name);
     say('b-msg', 'Saved.', true); refreshPreview();
     busy(e.target, false, 'Save details'); snapshot();
   } catch (err) { say('b-msg', err.message); busy(e.target, false, 'Save details'); dirty(); }
@@ -772,9 +874,23 @@ document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () 
       history.replaceState(null, '', location.pathname + '#invoices');
     }
   }
-  catch (err) { document.body.innerHTML = '<div class="wrap"><h1>Nothing here</h1><p class="sub">' + err.message + '</p></div>'; }
+  catch (err) { document.body.innerHTML = '<div class="wrap"><h1>Nothing here</h1><p class="sub"></p></div>'; document.querySelector('.sub').textContent = err.message; }
 })();
 `;
+
+const ICON = {
+  business: `<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 17V6.5L10 3l7 3.5V17M3 17h14M7.5 17v-4h5v4M7 8.5h.01M10 8.5h.01M13 8.5h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  brand: `<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 17a7 7 0 1 1 7-7c0 1.7-1.3 2.5-2.6 2.5H12.8a1.6 1.6 0 0 0-1.2 2.7c.4.4.1 1.8-1.6 1.8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="6.6" cy="9.4" r="1" fill="currentColor"/><circle cx="9" cy="6.3" r="1" fill="currentColor"/><circle cx="12.6" cy="6.8" r="1" fill="currentColor"/></svg>`,
+  invoices: `<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 2.8h7l3 3V17.2H5V2.8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 2.8V6h3M7.5 10h5M7.5 13h3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  abroad: `<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.6"/><path d="M2.8 10h14.4M10 2.8c2 2 2.9 4.4 2.9 7.2S12 15.2 10 17.2C8 15.2 7.1 12.8 7.1 10S8 4.8 10 2.8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`,
+  payout: `<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2.8 7.5 10 3.3l7.2 4.2H2.8ZM4.5 8v6.3M8.2 8v6.3M11.8 8v6.3M15.5 8v6.3M2.8 16.7h14.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  plan: `<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m10 2.8 2.1 4.4 4.8.6-3.5 3.3.9 4.8L10 13.6l-4.3 2.3.9-4.8-3.5-3.3 4.8-.6L10 2.8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`,
+  design: `<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3.5" y="2.8" width="13" height="14.4" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M6.5 6.5h7M6.5 9.5h4M6.5 13.5h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  sign: `<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 15.5c2.5-1 3.6-8.5 6-8.5 1.7 0-.3 6.3 1.2 6.3 1.1 0 1.6-2.2 2.6-2.2.8 0 .9 1.6 1.7 1.6.6 0 1.1-.6 1.5-1.1M3 17.5h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+};
+
+const tab = (id: keyof typeof ICON, label: string) =>
+  `<button class="tab" type="button" role="tab" data-tab="${id}" aria-selected="false">${ICON[id]}<span class="tl">${label}</span></button>`;
 
 export function settingsPage(token: string): string {
   return `<!doctype html>
@@ -783,117 +899,152 @@ export function settingsPage(token: string): string {
 <meta name="robots" content="noindex,nofollow"><meta name="format-detection" content="telephone=no">
 <title>Settings</title>
 <link rel="stylesheet" href="/designs/fonts.css"><style>${CSS}</style></head>
-<body data-t="${esc(token)}"><div class="wrap">
-  <div class="top"><h1 id="title">Settings</h1><span id="plan" class="pill">&nbsp;</span></div>
-  <p class="sub">Each tab saves on its own. Close this page when you are done.</p>
+<body data-t="${esc(token)}">
+<header class="band"><div class="in">
+  <span class="av" id="av" aria-hidden="true"></span>
+  <div class="who"><p class="k">Settings</p><h1 id="title">Settings</h1></div>
+  <span id="plan" class="pill">&nbsp;</span>
+</div></header>
+
+<div class="shell">
   <nav class="tabs" role="tablist" aria-label="Settings sections">
-    <button class="tab" type="button" role="tab" data-tab="business" aria-selected="false">Business</button>
-    <button class="tab" type="button" role="tab" data-tab="brand" aria-selected="false">Brand</button>
-    <button class="tab" type="button" role="tab" data-tab="invoices" aria-selected="false">Invoices</button>
-    <button class="tab" type="button" role="tab" data-tab="abroad" aria-selected="false">Clients abroad</button>
-    <button class="tab" type="button" role="tab" data-tab="payout" aria-selected="false">Payout account</button>
-    <button class="tab" type="button" role="tab" data-tab="plan" aria-selected="false">Plan</button>
+    ${tab("business", "Business")}${tab("brand", "Brand")}${tab("invoices", "Invoices")}${tab("abroad", "Clients abroad")}${tab("payout", "Payout account")}${tab("plan", "Plan")}
   </nav>
+
+  <main class="panes">
   <p class="saved hidden" id="saved" role="status"></p>
 
   <section class="card" data-tab="business">
-    <h2>Business</h2>
-    <p class="hint">What your clients see on every invoice.</p>
-    <label for="b-name">Business name</label><input id="b-name" maxlength="80" autocomplete="organization">
-    <label for="b-address">Address <span style="font-weight:400">(optional)</span></label><input id="b-address" maxlength="200">
-    <label for="b-tin">TIN <span style="font-weight:400">(optional)</span></label><input id="b-tin" maxlength="30">
-    <label for="b-email">Email</label><input id="b-email" readonly>
-    <button class="btn" id="b-save" type="button" disabled>Save details</button>
-    <p class="msg" id="b-msg" role="status"></p>
+    <div class="ch"><h2>Business</h2><p class="hint">What your clients see at the top of every invoice.</p></div>
+    <div class="cb">
+      <div class="field"><label for="b-name">Business name</label><input id="b-name" maxlength="80" autocomplete="organization"></div>
+      <div class="field"><label for="b-address">Address <span class="opt">optional</span></label><input id="b-address" maxlength="200"></div>
+      <div class="field"><label for="b-tin">TIN <span class="opt">optional</span><span class="help">Printed on invoices when you add it.</span></label><input id="b-tin" maxlength="30"></div>
+      <div class="field"><label for="b-email">Email<span class="help">Where receipts and codes are sent.</span></label><input id="b-email" readonly></div>
+    </div>
+    <div class="cf"><p class="msg" id="b-msg" role="status"></p><button class="btn" id="b-save" type="button" disabled>Save details</button></div>
   </section>
 
   <section class="card" data-tab="brand">
-    <h2>Brand</h2>
-    <p class="hint">Your logo and colour on your invoices, pay page and emails, with nothing of Balans on them.</p>
-    <div id="brand-free" class="hidden">
-      <p class="locked">Part of Pro: your logo and your colours on everything your clients see, and no Balans branding anywhere.</p>
-      <a class="btn gold" id="brand-up" style="display:grid;place-items:center;text-decoration:none">Upgrade to Pro</a>
-    </div>
-    <div id="brand-pro" class="hidden">
-      <label>Logo</label>
-      <div class="logo">
-        <div class="box" id="logo-box"><span>No logo yet</span></div>
-        <div class="acts">
-          <label class="btn ghost" style="display:grid;place-items:center;margin:0;color:var(--ink);font-size:15px">
-            Upload logo<input type="file" id="logo-file" accept="image/png,image/jpeg,image/webp" hidden></label>
-          <button class="btn ghost hidden" id="logo-remove" type="button">Remove</button>
+    <div class="ch"><h2>Brand</h2><p class="hint">Your logo and colour on your invoices, pay page and emails, with nothing of Balans on them.</p></div>
+    <div class="cb">
+      <div id="brand-free" class="hidden">
+        <div class="locked">
+          <p>Part of Pro: your logo and your colours on everything your clients see, and no Balans branding anywhere.</p>
+          <a class="btn gold" id="brand-up">Upgrade to Pro</a>
         </div>
       </div>
-      <p class="msg" id="logo-msg" role="status"></p>
-      <label>Brand colour</label>
-      <p class="hint hidden" id="swatch-hint">From your logo:</p>
-      <div class="swatches" id="swatches"></div>
-      <div class="pick"><input type="color" id="c-input" aria-label="Pick a colour"><input id="c-hex" placeholder="#1A73E8" maxlength="7" aria-label="Colour code"></div>
-      <div class="row"><button class="btn" id="c-save" type="button" disabled>Save colour</button><button class="btn ghost" id="c-reset" type="button">Use standard</button></div>
-      <p class="msg" id="c-msg" role="status"></p>
-      <label>How your invoice looks</label>
-      <div class="frame" id="frame"><iframe id="preview" title="Invoice preview" sandbox="allow-same-origin"></iframe></div>
+      <div id="brand-pro" class="hidden">
+        <div class="brandgrid">
+          <div>
+            <div class="field"><span class="lb">Logo<span class="help">PNG, JPG or WebP, up to 2 MB.</span></span>
+              <div>
+                <div class="logo">
+                  <div class="box" id="logo-box"><span>No logo yet</span></div>
+                  <div class="acts">
+                    <label class="btn ghost" style="margin:0">Upload logo<input type="file" id="logo-file" accept="image/png,image/jpeg,image/webp" hidden></label>
+                    <button class="btn ghost hidden" id="logo-remove" type="button">Remove</button>
+                  </div>
+                </div>
+                <p class="msg" id="logo-msg" role="status" style="margin-top:8px"></p>
+              </div>
+            </div>
+            <div class="field"><span class="lb">Brand colour<span class="help hidden" id="swatch-hint">Suggested from your logo.</span></span>
+              <div>
+                <div class="swatches" id="swatches"></div>
+                <div class="pick"><input type="color" id="c-input" aria-label="Pick a colour"><input id="c-hex" placeholder="#1A73E8" maxlength="7" aria-label="Colour code"></div>
+                <div class="brow"><button class="btn" id="c-save" type="button" disabled>Save colour</button><button class="btn ghost" id="c-reset" type="button">Use standard</button></div>
+                <p class="msg" id="c-msg" role="status" style="margin-top:8px"></p>
+              </div>
+            </div>
+          </div>
+          <div class="pv">
+            <span class="lb">How your invoice looks</span>
+            <div class="frame" id="frame"><iframe id="preview" title="Invoice preview" sandbox="allow-same-origin"></iframe></div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
   <section class="card" data-tab="invoices">
-    <h2>Invoices</h2>
-    <div class="row">
-      <div><label for="i-days">Days to pay</label><input id="i-days" type="number" min="0" max="180" inputmode="numeric"></div>
-      <div><label for="i-next">Next invoice #</label><input id="i-next" type="number" min="1" inputmode="numeric"></div>
+    <div class="ch"><h2>Invoices</h2><p class="hint">How your invoices are numbered and when they fall due.</p></div>
+    <div class="cb">
+      <div class="field"><label for="i-days">Days to pay<span class="help">Due this many days after you send.</span></label><input id="i-days" type="number" min="0" max="180" inputmode="numeric"></div>
+      <div class="field"><label for="i-next">Next invoice number</label><input id="i-next" type="number" min="1" inputmode="numeric"></div>
+      <div class="field"><span class="lb">Look</span>
+        <div class="links">
+          <a class="link" id="l-design" href="#"><span class="ic">${ICON.design}</span><span class="tx">Invoice design<small></small></span><span class="go">&rsaquo;</span></a>
+          <a class="link" id="l-sign" href="#"><span class="ic">${ICON.sign}</span><span class="tx">Signature<small></small></span><span class="go">&rsaquo;</span></a>
+        </div>
+      </div>
     </div>
-    <button class="btn" id="i-save" type="button" disabled>Save</button>
-    <p class="msg" id="i-msg" role="status"></p>
-    <div style="margin-top:10px">
-      <a class="link" id="l-design" href="#">Invoice design<small></small><span class="go">&rsaquo;</span></a>
-      <a class="link" id="l-sign" href="#">Signature<small></small><span class="go">&rsaquo;</span></a>
-    </div>
+    <div class="cf"><p class="msg" id="i-msg" role="status"></p><button class="btn" id="i-save" type="button" disabled>Save</button></div>
   </section>
 
   <section class="card" data-tab="abroad">
-    <h2 id="a-title">Clients abroad</h2>
-    <p class="hint" id="a-hint">For invoices in dollars, pounds and other currencies. Clients can pay by card through a Balans link, or straight to you by PayPal, Wise or a bank abroad.</p>
-    <label for="a-method">Payment method</label>
-    <select id="a-method"><option value="">Choose…</option>${PAY_METHODS.map((m) => `<option value="${esc(m.id)}">${esc(m.title)}</option>`).join("")}</select>
-    <label for="a-details">Your payment details</label>
-    <textarea id="a-details" maxlength="600" placeholder="PayPal: you@example.com&#10;or Wise: IBAN GB00 0000 0000 0000 00"></textarea>
-    <div id="a-payby-row"><label for="a-payby">Invoices abroad go out with</label>
-    <select id="a-payby"><option value="link">A Balans payment link</option><option value="own">My payment details</option></select></div>
-    <p class="hint" style="margin-top:8px">You can choose per invoice too: say <b>pay by my paypal</b> or <b>use payment link</b>. Payments to your own details are not seen by Balans, so mark them paid when they arrive.</p>
-    <button class="btn" id="a-save" type="button" disabled>Save</button>
-    <p class="msg" id="a-msg" role="status"></p>
+    <div class="ch"><h2 id="a-title">Clients abroad</h2><p class="hint" id="a-hint">For invoices in dollars, pounds and other currencies. Clients can pay by card through a Balans link, or straight to you by PayPal, Wise or a bank abroad.</p></div>
+    <div class="cb">
+      <div class="field"><label for="a-method">Payment method</label>
+        <select id="a-method"><option value="">Choose…</option>${PAY_METHODS.map((m) => `<option value="${esc(m.id)}">${esc(m.title)}</option>`).join("")}</select></div>
+      <div class="field"><label for="a-details">Your payment details<span class="help">Printed on invoices that use them.</span></label>
+        <textarea id="a-details" maxlength="600" placeholder="PayPal: you@example.com&#10;or Wise: IBAN GB00 0000 0000 0000 00"></textarea></div>
+      <div class="field" id="a-payby-row"><label for="a-payby">Invoices abroad go out with</label>
+        <select id="a-payby"><option value="link">A Balans payment link</option><option value="own">My payment details</option></select></div>
+      <p class="hint" style="margin-top:6px">You can choose per invoice too: say <b>pay by my paypal</b> or <b>use payment link</b>. Payments to your own details are not seen by Balans, so mark them paid when they arrive.</p>
+    </div>
+    <div class="cf"><p class="msg" id="a-msg" role="status"></p><button class="btn" id="a-save" type="button" disabled>Save</button></div>
   </section>
 
   <section class="card" data-tab="payout">
-    <h2>Payout account</h2>
-    <p class="hint">Where your clients pay. It is printed on your invoices.</p>
-    <div class="bank" id="bank-now"></div>
-    <button class="btn ghost" id="bank-change" type="button">Change account</button>
-    <div id="bank-form" class="hidden">
-      <label for="k-bank">Bank</label><select id="k-bank"><option>Loading banks…</option></select>
-      <label for="k-number">Account number</label><input id="k-number" inputmode="numeric" maxlength="10" autocomplete="off">
-      <button class="btn" id="k-check" type="button" disabled>Check account</button>
-      <div class="found hidden" id="k-found"></div>
-      <div id="k-verify" class="hidden">
-        <p class="hint" style="margin-top:12px">To keep your money safe, we email you a code before changing where you are paid.</p>
-        <button class="btn gold" id="k-send" type="button">Email me a code</button>
-        <div id="k-code-row" class="hidden">
-          <label for="k-code">Code from the email</label><input id="k-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
-          <button class="btn" id="k-confirm" type="button" disabled>Confirm change</button>
+    <div class="ch"><h2>Payout account</h2><p class="hint">Where your clients pay. It is printed on your invoices.</p></div>
+    <div class="cb">
+      <div class="bank" id="bank-now"></div>
+      <button class="btn ghost wide" id="bank-change" type="button" style="margin-top:12px">Change account</button>
+      <div id="bank-form" class="hidden">
+        <div class="field"><label for="k-bank">Bank</label><select id="k-bank"><option>Loading banks…</option></select></div>
+        <div class="field"><label for="k-number">Account number</label><input id="k-number" inputmode="numeric" maxlength="10" autocomplete="off"></div>
+        <button class="btn wide" id="k-check" type="button" disabled>Check account</button>
+        <div class="found hidden" id="k-found"></div>
+        <div id="k-verify" class="hidden step">
+          <p class="hint">To keep your money safe, we email you a code before changing where you are paid.</p>
+          <button class="btn gold wide" id="k-send" type="button">Email me a code</button>
+          <div id="k-code-row" class="hidden">
+            <div class="field" style="border-top:0"><label for="k-code">Code from the email</label><input id="k-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>
+            <button class="btn wide" id="k-confirm" type="button" disabled>Confirm change</button>
+          </div>
         </div>
+        <p class="msg" id="k-msg" role="status" style="margin-top:10px"></p>
       </div>
-      <p class="msg" id="k-msg" role="status"></p>
     </div>
   </section>
 
   <section class="card" data-tab="plan">
-    <h2>Plan</h2>
-    <p class="hint" id="plan-text"></p>
-    <a class="btn gold hidden" id="plan-btn" style="display:grid;place-items:center;text-decoration:none"></a>
+    <div class="ch"><h2>Plan</h2></div>
+    <div class="cb plan">
+      <div class="plancard">
+        <p class="pt">Your plan</p>
+        <p class="pn" id="plan-name"></p>
+        <p class="hint" id="plan-text"></p>
+        <p class="pt" id="plan-incl" style="margin-top:18px"></p>
+        <ul style="margin-top:10px">
+          <li>Unlimited invoices, quotes and receipts</li>
+          <li>All ${TEMPLATES.filter((t) => t.ready).length} invoice designs</li>
+          <li>Your logo and colour on everything</li>
+          <li>No Balans branding anywhere</li>
+        </ul>
+      </div>
+      <a class="btn gold wide hidden" id="plan-btn"></a>
+    </div>
   </section>
+  </main>
+</div>
 
-  <p class="foot">To close your account, reply <b>close my account</b> on WhatsApp.</p>
-</div><script>${JS}</script></body></html>`;
+<footer class="foot">
+  <p>To close your account, reply <b>close my account</b> on WhatsApp.</p>
+  ${logoSvg("24px")}
+</footer>
+<script>${JS}</script></body></html>`;
 }
 
 function gonePage(): string {
@@ -902,5 +1053,5 @@ function gonePage(): string {
 <meta name="robots" content="noindex,nofollow"><title>Link expired</title>
 <link rel="stylesheet" href="/designs/fonts.css"><style>${CSS}</style></head>
 <body><div class="wrap"><h1>This link has expired</h1>
-<p class="sub" style="margin-top:8px">Reply <b>settings</b> on WhatsApp for a new one.</p></div></body></html>`;
+<p class="sub">Reply <b>settings</b> on WhatsApp for a new one.</p></div></body></html>`;
 }
