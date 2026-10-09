@@ -3211,8 +3211,14 @@ function asProChoice(text: string): "link" | "deduct_from_invoice" | null {
   if (/^(pay|pay now|pay link|payment link|send me the link|card|pay by card)$/.test(s)) {
     return "link";
   }
+  /*
+   * Taking Pro out of invoice money is off (9 October 2026): naira invoices
+   * are paid straight to the sender, so nothing passes through to take it
+   * from, and a subscription opened that way stayed pending for ever. The
+   * words still get an answer: the checkout.
+   */
   if (/^(from my invoices?|deduct|deduct from invoices?|take it from my invoices?|take from invoice|from invoice)$/.test(s)) {
-    return "deduct_from_invoice";
+    return "link";
   }
   return null;
 }
