@@ -2099,11 +2099,11 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
     case "remove_signature":
       return { replies: [], next: "idle", context: ctx, effects: [{ type: "remove_signature" }] };
 
-    case "status":
     // "edit invoice 3": open it in the form, filled in (9 October 2026).
     case "edit_document":
       return { replies: [], next: "idle", context: ctx, effects: [{ type: "edit_sent", number: p.documentNumber }] };
 
+    case "status":
     case "stop_reminders":
     case "confirm_stop_reminders":
     case "keep_reminders":
@@ -2881,6 +2881,14 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
     if (overflowsForm(doc)) {
       return retry("awaiting_confirm", { ...ctx, attempts: 0 }, VOICE.tooManyLinesToForm);
     }
+    /*
+     * A request's form has no boxes to fill back in, so it is changed by
+     * typing, as it always could be. Opening the invoice form here made a
+     * quote or a request into an invoice when it was sent (9 October 2026).
+     */
+    if (doc.type === "payment_request") {
+      return retry("awaiting_confirm", { ...ctx, attempts: 0 }, VOICE.changeByHand);
+    }
 
     return {
       replies: [],
@@ -2889,9 +2897,12 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
       effects: [
         {
           type: "send_flow",
-          key: "invoice",
+          key: doc.type === "quote" ? "quote" : "invoice",
           body: VOICE.changeInvite,
-          cta: "Change the invoice",
+          cta: doc.type === "quote" ? "Change the quote" : "Change the invoice",
+          // Still changing a sent invoice: the form must say so, or Send
+          // makes a second invoice instead of updating the first.
+          ...(ctx.editingId ? { tokenTail: `edit:${ctx.editingId}` } : {}),
           ...formValues(doc, now),
           fallback: { line: VOICE.changeByHand, holdAt: "awaiting_confirm" },
         },
