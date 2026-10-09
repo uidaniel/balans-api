@@ -160,12 +160,25 @@ async function work(b: Broadcast, log: FastifyBaseLogger): Promise<void> {
     const { rows } = await db().query<Recipient>(
       `SELECT id, phone, email, wa_status, email_status FROM broadcast_recipients
         WHERE broadcast_id = $1 AND (wa_status = 'pending' OR email_status = 'pending')
+          -- Not one already claimed: see below.
+          AND sent_at IS NULL
         ORDER BY id LIMIT 50`,
       [b.id],
     );
     if (rows.length === 0) break;
 
     for (const r of rows) {
+      /*
+       * Claimed before it is sent (9 October 2026), so a restart or a second
+       * worker mid-batch cannot send it again. A send cut off half way stays
+       * claimed and unsent: once at most, which for a launch message is the
+       * right side to err on.
+       */
+      const claim = await db().query(
+        `UPDATE broadcast_recipients SET sent_at = now() WHERE id = $1 AND sent_at IS NULL`,
+        [r.id],
+      );
+      if (claim.rowCount === 0) continue;
       const wa = r.wa_status === "pending" ? await sendWhatsApp(b, r, approved).catch((e: Error) => ({ status: "failed", error: e.message })) : null;
       const mail = r.email_status === "pending" ? await sendMail(b, r, log).catch((e: Error) => ({ status: "failed", error: e.message })) : null;
       await db().query(
