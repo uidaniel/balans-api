@@ -549,7 +549,7 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   const waitingDoc = (saved.context as { awaitingPayDetails?: PendingDoc }).awaitingPayDetails;
   if (waitingDoc && state === "idle" && text.trim()) {
     const details = text.replace(/\r\n?/g, "\n").trim();
-    if (!asCommand(details) && details.length >= 3) {
+    if (!asCommand(details) && looksLikePayDetails(details)) {
       await db().query(`UPDATE users SET payment_details = $2 WHERE id = $1`, [user.id, details.slice(0, 600)]);
       log.info({ userId: user.id }, "payment details given for an invoice abroad");
       const outcome = await runEffects([{ type: "save_draft", doc: waitingDoc }], user.id, user.businessName ?? undefined, log, {
@@ -3402,6 +3402,19 @@ async function editTarget(userId: string, id: string): Promise<{ id: string; num
     [id, userId],
   );
   return rows[0] ?? null;
+}
+
+/**
+ * Whether a message reads as payment details rather than chat (9 October
+ * 2026). Anything of three letters used to be saved and printed on every
+ * invoice abroad, so "Invoice Tunde 20k for logo" could end up on one. Details
+ * carry an address, a long number, or the name of a way to pay.
+ */
+export function looksLikePayDetails(text: string): boolean {
+  const t = text.toLowerCase();
+  if (/[^\s@]+@[^\s@]+\.[^\s@]+/.test(t)) return true;
+  if (/\d[\d\s-]{5,}\d/.test(t)) return true;
+  return /\b(paypal|wise|transferwise|iban|swift|bic|sort ?code|routing|account|acct|a\/c|bank|revolut|payoneer|zelle|venmo|cash ?app|grey|chipper|m-?pesa|momo|mobile money|interac|e-?transfer|bsb|crypto|usdt|btc|wallet)\b/.test(t);
 }
 
 /** Their saved payment details, or null. */
