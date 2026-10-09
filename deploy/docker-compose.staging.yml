@@ -1,0 +1,35 @@
+# The staging copy of the API (9 October 2026).
+#
+# Its own checkout (/opt/balans/staging, branch "staging"), its own container
+# and its own settings (/opt/balans/.env.staging): the test WhatsApp number,
+# the "staging" database schema, a Paystack test key, no alert emails. It
+# joins the live project's network so the live Caddy can reach it as
+# balans-staging-api, at staging.balans.ng.
+#
+# Smaller than the live API on purpose: the box has 2GB and the live one comes
+# first. One Chrome tab, and a lower memory ceiling.
+
+name: balans-staging
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: balans-staging-api
+    restart: always
+    stop_grace_period: 15s
+    env_file:
+      - /opt/balans/.env.staging
+    environment:
+      PDF_TABS: "1"
+    expose:
+      - "4000"
+    mem_limit: 550m
+    networks:
+      - live
+
+networks:
+  live:
+    external: true
+    name: balans_default

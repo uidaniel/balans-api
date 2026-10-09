@@ -31,12 +31,16 @@ APP="${BALANS_APP:-/opt/balans/app}"
 # Outside the repository, so a deploy can never reset it away.
 FAILED="${BALANS_FAILED:-/opt/balans/.failed-deploy}"
 
+# The staging copy watches its own branch (balans-staging-deploy.service).
+BRANCH="${BALANS_BRANCH:-main}"
+export BALANS_BRANCH="$BRANCH"
+
 cd "$APP"
 
-git fetch --quiet origin main
+git fetch --quiet origin "$BRANCH"
 
 LOCAL=$(git rev-parse HEAD)
-REMOTE=$(git rev-parse origin/main)
+REMOTE=$(git rev-parse "origin/$BRANCH")
 
 [ "$LOCAL" = "$REMOTE" ] && exit 0
 
@@ -47,7 +51,7 @@ if [ -f "$FAILED" ] && [ "$(cat "$FAILED")" = "$REMOTE" ]; then
   exit 0
 fi
 
-echo "main moved: ${LOCAL:0:7} -> ${REMOTE:0:7}"
+echo "$BRANCH moved: ${LOCAL:0:7} -> ${REMOTE:0:7}"
 
 if "$APP/deploy/deploy.sh"; then
   rm -f "$FAILED"

@@ -68,3 +68,15 @@ api.balans.ng, payment.balans.ng {
 		format json
 	}
 }
+
+# The staging copy (9 October 2026; deploy/docker-compose.staging.yml). Same
+# Origin certificate: it covers *.balans.ng.
+staging.balans.ng {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+	reverse_proxy balans-staging-api:4000 {
+		header_up X-Real-IP {remote_host}
+		lb_try_duration 30s
+		lb_try_interval 250ms
+	}
+	encode gzip
+}

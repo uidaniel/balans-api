@@ -11,7 +11,19 @@
 
 set -euo pipefail
 
-APP="/opt/balans/app"
+APP="${BALANS_APP:-/opt/balans/app}"
+# Staging sets these (balans-staging-deploy.service); the live box sets none.
+BRANCH="${BALANS_BRANCH:-main}"
+HEALTH_URL="${BALANS_HEALTH_URL:-http://127.0.0.1:80/health}"
+STAGING=$([ "$BRANCH" = "main" ] && echo 0 || echo 1)
+# Every compose call names its file. Through sudo, COMPOSE_FILE from the
+# environment is dropped, and staging would then act on the live project —
+# replacing the live API with staging's build. Never again by accident.
+if [ "$STAGING" = "1" ]; then
+  DC=(sudo docker compose -f "$APP/deploy/docker-compose.staging.yml")
+else
+  DC=(sudo docker compose -f "$APP/deploy/docker-compose.yml")
+fi
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
 cd "$APP"
@@ -25,9 +37,9 @@ BEFORE=$(git rev-parse --short HEAD)
 if [ "${DEPLOY_NO_FETCH:-}" = "1" ]; then
   say "Building what is checked out ($BEFORE), not fetching"
 else
-  say "Fetching"
-  git fetch --quiet origin main
-  git reset --hard --quiet origin/main
+  say "Fetching $BRANCH"
+  git fetch --quiet origin "$BRANCH"
+  git reset --hard --quiet "origin/$BRANCH"
 fi
 
 AFTER=$(git rev-parse --short HEAD)
@@ -42,28 +54,39 @@ fi
 cd "$APP/deploy"
 
 say "Building"
-sudo docker compose build api
+"${DC[@]}" build api
 
 # The Caddyfile is bind-mounted as a single file, and `git reset` replaces the
 # file rather than rewriting it, so a running Caddy keeps reading the old one.
 # Compared with what Caddy actually has, not with git, so a change is picked
 # up even by the deploy after the one that shipped it. Validated in a
 # throwaway container first: a bad Caddyfile must never replace a working one.
-if ! sudo docker compose exec -T caddy cat /etc/caddy/Caddyfile 2>/dev/null | cmp -s - "$APP/deploy/Caddyfile"; then
-  if sudo docker compose run --rm --no-deps -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+if [ "$STAGING" = "0" ] && ! "${DC[@]}" exec -T caddy cat /etc/caddy/Caddyfile 2>/dev/null | cmp -s - "$APP/deploy/Caddyfile"; then
+  if "${DC[@]}" run --rm --no-deps -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
     say "Caddyfile changed — recreating Caddy"
-    sudo docker compose up -d --no-deps --force-recreate caddy
+    "${DC[@]}" up -d --no-deps --force-recreate caddy
   else
     printf '\n\033[1;31mNew Caddyfile does not validate; keeping the running one.\033[0m\n'
   fi
 fi
 
+# The staging copy, set up on this box the first time (staging-setup.sh).
+# Before the live API is replaced, so it starts with the settings that hand
+# the test number's messages over. Never allowed to stop a live deploy.
+if [ "$STAGING" = "0" ] && [ -x "$APP/deploy/staging-setup.sh" ]; then
+  "$APP/deploy/staging-setup.sh" || printf '
+[1;33mStaging setup did not finish; the live deploy carries on.[0m
+'
+fi
+
 say "Replacing the API"
-sudo docker compose up -d --no-deps api
+"${DC[@]}" up -d --no-deps api
 
 say "Waiting for health"
 for i in $(seq 1 30); do
-  if curl -fsS --max-time 3 http://127.0.0.1:80/health >/dev/null 2>&1; then
+  # Staging is asked inside its own container: it has no port on the host,
+  # and Caddy only answers it by name.
+  if { [ "$STAGING" = "1" ] && sudo docker exec balans-staging-api node -e "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; }      || { [ "$STAGING" = "0" ] && curl -fsSk --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; }; then
     printf '\n\033[1;32mHealthy on %s\033[0m\n' "$AFTER"
 
     # Old images pile up fast — each is ~400MB with Chromium in it, and a full
@@ -75,6 +98,6 @@ for i in $(seq 1 30); do
 done
 
 printf '\n\033[1;31mNot healthy after 90s. Last 60 lines:\033[0m\n'
-sudo docker compose logs --tail 60 api
+"${DC[@]}" logs --tail 60 api
 printf '\n\033[1;33mTo go back:  git -C %s reset --hard %s && %s/deploy/deploy.sh\033[0m\n' "$APP" "$BEFORE" "$APP"
 exit 1

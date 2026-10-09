@@ -1,0 +1,21 @@
+# Deploys the staging copy when the "staging" branch moves. Like
+# balans-deploy.service, for /opt/balans/staging and its own compose file.
+
+[Unit]
+Description=Deploy Balans staging when the staging branch moves
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/balans/staging
+TimeoutStartSec=900
+Environment=BALANS_APP=/opt/balans/staging
+Environment=BALANS_BRANCH=staging
+Environment=BALANS_FAILED=/opt/balans/.failed-staging-deploy
+Environment=COMPOSE_FILE=/opt/balans/staging/deploy/docker-compose.staging.yml
+ExecStart=/opt/balans/staging/deploy/watch.sh
+StandardOutput=journal
+StandardError=journal
