@@ -582,6 +582,35 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     await saveConversation(user.id, "idle", {});
   }
 
+  /*
+   * Send it, Discard or Change it, tapped under an older draft (9 October
+   * 2026). The ids are the same on every draft, so a tap under draft A while
+   * draft B waits used to send or discard B. A button reply names the message
+   * it was under; one sent before the current draft existed is not about it.
+   */
+  if (msg.kind === "interactive" && msg.repliedTo && state === "awaiting_confirm") {
+    const draftId = (saved.context as { draftId?: string }).draftId;
+    const tapped = text.trim().toLowerCase();
+    if (draftId && draftButtons().some((x) => x.id === tapped)) {
+      const { rows: stale } = await db().query<{ stale: boolean }>(
+        `SELECT m.created_at < d.created_at AS stale
+           FROM messages m, documents d
+          WHERE m.wa_message_id = $1 AND m.user_id = $2 AND d.id = $3`,
+        [msg.repliedTo, user.id, draftId],
+      );
+      if (stale[0]?.stale) {
+        log.info({ userId: user.id }, "draft button tapped under an older draft");
+        await reply(
+          user.id,
+          msg.from,
+          [`↩️ That button is under an older draft. Use the buttons on the latest one, just above.`],
+          log,
+        );
+        return;
+      }
+    }
+  }
+
   // The parser runs here, not in the machine: it is asynchronous and the
   // machine is a pure function. Only the states that can act on a parse pay
   // for one — onboarding answers are a bank number and an email, and putting
@@ -2453,6 +2482,10 @@ async function runEffects(
             const inv = number ? await findPayableByNumber(userId, number) : null;
             if (inv && (inv.owedKobo <= 0 || inv.status === "paid")) {
               extra.push(`✅ Invoice ${number} is already paid in full. Nothing changed.`);
+              break;
+            }
+            if (inv?.status === "cancelled") {
+              extra.push(`Invoice ${number} was cancelled. Nothing changed.`);
               break;
             }
             extra.push(`Okay — invoice ${number ?? ""} stays unpaid.`.replace("invoice  ", "invoice "));
