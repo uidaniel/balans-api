@@ -432,6 +432,8 @@ export type Confirmed = {
   bank: BankDetails | null;
   /** The sender's own payment details, on an invoice that went out with them. */
   ownDetails?: string | null;
+  /** Set by applyEdit: when the version this one replaces was sent. */
+  updatedFrom?: Date | null;
 };
 
 /**
@@ -579,8 +581,9 @@ export async function applyEdit(userId: string, draftId: string, originalId: str
       public_token: string;
       type: DocumentType;
       current_version: number;
+      sent_at: Date | null;
     }>(
-      `SELECT id, number, ref, public_token, type, current_version FROM documents
+      `SELECT id, number, ref, public_token, type, current_version, sent_at FROM documents
         WHERE id = $1 AND user_id = $2 AND status IN ('sent', 'viewed', 'overdue') AND amount_paid_kobo = 0
         FOR UPDATE`,
       [originalId, userId],
@@ -646,6 +649,7 @@ export async function applyEdit(userId: string, draftId: string, originalId: str
       type: original.type,
       bank,
       ownDetails,
+      updatedFrom: original.sent_at ?? new Date(),
     } as Confirmed;
   });
 }

@@ -1595,7 +1595,7 @@ async function runEffects(
           // F21: if the client's email is known, the invoice goes to their
           // inbox too. Not awaited — the user is waiting on their own message,
           // and a slow mail provider must not hold it up.
-          void emailDocumentToClient(confirmed.id, log).then((r) => {
+          void emailDocumentToClient(confirmed.id, log, confirmed.updatedFrom ?? null).then((r) => {
             if (!r.ok && r.why !== "no_client_email") {
               log.error({ documentId: confirmed.id, why: r.why }, "client delivery failed");
             }
@@ -1685,7 +1685,7 @@ async function runEffects(
            * anything (see record_payment), so a stray one changes nothing.
            */
           const toClient = async (): Promise<void> => {
-            await tellIfClientWhatsAppFailed(confirmed.id, userId, ctx.phone, log);
+            await tellIfClientWhatsAppFailed(confirmed.id, userId, ctx.phone, log, Boolean(confirmed.updatedFrom));
           };
 
           // Paid to their own details abroad is the same: only they can tell.
@@ -3335,8 +3335,9 @@ async function tellIfClientWhatsAppFailed(
   userId: string,
   phone: string | undefined,
   log: FastifyBaseLogger,
+  updated = false,
 ): Promise<void> {
-  const r = await whatsappDocumentToClient(documentId, log);
+  const r = await whatsappDocumentToClient(documentId, log, updated);
   if (r.ok || r.why !== "send_failed" || !phone || !r.to) return;
   const text = await sendText(
     phone,

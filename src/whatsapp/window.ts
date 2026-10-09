@@ -78,6 +78,7 @@ export type TemplateName =
   | "client_invoice_pdf"
   | "client_quote_pdf"
   | "client_paid"
+  | "client_invoice_updated"
   | "client_quote"
   | "client_reminder"
   | "client_reminded"
@@ -293,6 +294,25 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
    * Proof of payment to a client who gave a number and no email (7 October
    * 2026). With an email, the receipt goes there instead and this is not sent.
    */
+  /*
+   * An invoice changed after it was sent (9 October 2026), with the new PDF.
+   * Says "updated" so a client holding the first one pays the right amount.
+   */
+  client_invoice_updated: {
+    name: "client_invoice_updated",
+    category: "UTILITY",
+    body: "Hello {{1}}, {{2}} has updated {{3}}. It now comes to {{4}}. The updated invoice is attached and replaces the earlier one. Tap below to pay.",
+    params: ["client", "business", "what it is, e.g. Invoice 8", "amount"],
+    example: ["Tunde", "Kemi Studio", "Invoice 8", "₦200,000"],
+    footer: "Sent with Balans",
+    header: { type: "document", sample: "src/whatsapp/samples/invoice-sample.pdf" },
+    button: {
+      text: "Pay now",
+      url: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/{{1}}`,
+      example: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/1256e3fd1f1fb85572609f61607c3fa6`,
+    },
+  },
+
   client_paid: {
     name: "client_paid",
     category: "UTILITY",

@@ -51,3 +51,20 @@ describe("only the edit form can update an invoice", () => {
     assert.doesNotMatch(handle, /before\.editingId/);
   });
 });
+
+describe("the client is told it is an update", () => {
+  const email = readFileSync(new URL("../email/client-delivery.ts", import.meta.url), "utf8");
+  const wa = readFileSync(new URL("../documents/client-whatsapp.ts", import.meta.url), "utf8");
+  const handle = readFileSync(new URL("./handle.ts", import.meta.url), "utf8");
+  it("says Updated in the email subject and names the version it replaces", () => {
+    assert.match(email, /\(updatedFrom \? "Updated: " : ""\)/);
+    assert.match(email, /It replaces the version sent on/);
+  });
+  it("uses the updated template on WhatsApp once Meta approves it", () => {
+    assert.match(wa, /TEMPLATES\.client_invoice_updated\.name/);
+  });
+  it("passes the edit through from the send step", () => {
+    assert.match(handle, /emailDocumentToClient\(confirmed\.id, log, confirmed\.updatedFrom \?\? null\)/);
+    assert.match(handle, /Boolean\(confirmed\.updatedFrom\)/);
+  });
+});

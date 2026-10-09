@@ -95,6 +95,8 @@ export function clientMessage(d: {
 export async function whatsappDocumentToClient(
   documentId: string,
   log: FastifyBaseLogger,
+  /** Changed after it was sent: say "updated", once that template is approved. */
+  updated = false,
 ): Promise<WhatsAppDelivery> {
   const { rows } = await db().query<{
     user_id: string;
@@ -131,7 +133,12 @@ export async function whatsappDocumentToClient(
    * 2026); the plain one, with only the link, until then. Meta fetches the
    * PDF from our own public link for this document.
    */
-  const pdfName = d.type === "quote" ? TEMPLATES.client_quote_pdf.name : TEMPLATES.client_invoice_pdf.name;
+  const updatedName =
+    updated && d.type === "invoice" && (await templateApproved(TEMPLATES.client_invoice_updated.name))
+      ? TEMPLATES.client_invoice_updated.name
+      : null;
+  const pdfName =
+    updatedName ?? (d.type === "quote" ? TEMPLATES.client_quote_pdf.name : TEMPLATES.client_invoice_pdf.name);
   const withPdf = await templateApproved(pdfName);
   const template = withPdf ? pdfName : plain.template;
   const label = d.type === "quote" ? "Quote" : d.type === "payment_request" ? "Payment request" : "Invoice";

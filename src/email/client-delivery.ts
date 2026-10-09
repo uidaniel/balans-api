@@ -93,6 +93,12 @@ export function dueInvite(
 export async function emailDocumentToClient(
   documentId: string,
   log: FastifyBaseLogger,
+  /**
+   * The document was changed after it was sent (9 October 2026): when the
+   * version it replaces went out. The email says it is an update, so a client
+   * holding the first one knows which to pay.
+   */
+  updatedFrom: Date | null = null,
 ): Promise<DeliveryResult> {
   const { rows } = await db().query<{
     user_id: string;
@@ -155,7 +161,13 @@ export async function emailDocumentToClient(
      the reader has to re-read to find it. */
   const body = [
     paragraph(`${esc(d.client_name)},`),
-    paragraph(`${esc(business)} has sent you ${d.type === "quote" ? "a quote" : "an invoice"}.`),
+    updatedFrom
+      ? paragraph(
+          `${esc(business)} has updated ${d.type === "quote" ? "this quote" : "this invoice"}. It replaces the version sent on ${esc(
+            updatedFrom.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "Africa/Lagos" }),
+          )}; the number and the link are the same. Please use this one.`,
+        )
+      : paragraph(`${esc(business)} has sent you ${d.type === "quote" ? "a quote" : "an invoice"}.`),
     amount(
       d.type === "quote" ? "Quoted" : "Amount due",
       price,
@@ -202,15 +214,16 @@ export async function emailDocumentToClient(
       // And a question about the invoice should reach the person who sent it.
       replyTo: d.business_email ?? undefined,
       subject:
-        d.number === null
+        (updatedFrom ? "Updated: " : "") +
+        (d.number === null
           ? `${label} from ${business} — ${price}`
-          : `${label} #${d.number} from ${business} — ${price}`,
+          : `${label} #${d.number} from ${business} — ${price}`),
       html: layout({
         preheader: `${price}${when ? `, ${dateWord.toLowerCase()} ${formatFriendly(when)}` : ""}.`,
         // Who it is from, over what it is: the two things a client checks
         // before deciding whether this is a message they have to deal with.
         eyebrow: business,
-        heading: `${label}${d.number === null ? "" : ` #${d.number}`}`,
+        heading: `${updatedFrom ? "Updated: " : ""}${label}${d.number === null ? "" : ` #${d.number}`}`,
         body,
         ...(brand ? { brand } : {}),
       }),
