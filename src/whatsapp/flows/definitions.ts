@@ -1098,9 +1098,9 @@ export function payByOptions(x: { bank: string | null; details: string | null })
     {
       id: "own",
       title: "Custom payment details",
-      description: first ? (first.length > 60 ? `${first.slice(0, 59)}…` : first) : "PayPal, Wise and so on. I will ask you for them.",
+      description: first ? (first.length > 60 ? `${first.slice(0, 59)}…` : first) : "Not for naira. PayPal, Wise and so on.",
     },
-    { id: "link", title: "Balans payment link", description: "Your client pays by card." },
+    { id: "link", title: "Balans payment link", description: "Not for naira. Your client pays by card." },
   ];
 }
 
@@ -1816,7 +1816,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                  */
                 {
                   type: "TextCaption",
-                  text: "If it is not in naira, how should your client pay?",
+                  text: "Only for invoices not in naira. Naira is always paid by bank transfer to your account.",
                   visible: "${data.can_bill_abroad}",
                 },
                 {

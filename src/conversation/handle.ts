@@ -1407,6 +1407,22 @@ async function runEffects(
            * where to add them, rather than sending an invoice with no way to pay.
            */
           let payBy = doc.payBy ?? null;
+          /*
+           * A naira invoice is paid into their own account, whatever "Paid
+           * by" says (9 October 2026): the form cannot hide the box by
+           * currency, so a card link or custom details picked on a naira
+           * invoice is said back plainly rather than ignored in silence.
+           */
+          if (!doc.foreign && (payBy === "link" || payBy === "own") && doc.type !== "quote") {
+            extra.push(
+              i(
+                payBy === "link"
+                  ? "Naira invoices are paid by bank transfer to your account. The card link is for invoices in other currencies."
+                  : "Naira invoices are paid by bank transfer to your account. Custom payment details are for invoices in other currencies.",
+              ),
+            );
+            payBy = null;
+          }
           if (payBy === "own" && doc.foreign) {
             const { rows: own } = await db().query<{ d: string | null }>(
               `SELECT payment_details AS d FROM users WHERE id = $1`,
@@ -3171,6 +3187,18 @@ async function handleInvoiceForm(
     return;
   }
   const priced = abroad.quote ? repriced(doc, abroad.quote) : doc;
+
+  /*
+   * Changing a sent invoice: an empty "Paid by" keeps what it had
+   * (9 October 2026). The box cannot be pre-selected from here (it is hidden
+   * for some senders, and a hidden field named in init-values kills the form),
+   * so an edit about the price must not quietly turn their PayPal details
+   * back into a card link.
+   */
+  if (editId && !priced.payBy && /^[0-9a-f-]{36}$/i.test(editId)) {
+    const was = await getSentForEdit(userId, editId).catch(() => null);
+    if (was?.payBy) priced.payBy = was.payBy;
+  }
 
   /*
    * "Custom payment details" chosen, and none saved: ask for them here, and
