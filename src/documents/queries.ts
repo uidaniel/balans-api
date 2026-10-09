@@ -305,11 +305,14 @@ export async function documentsEverSent(userId: string): Promise<number> {
 export async function documentsThisMonth(userId: string, today: Civil): Promise<number> {
   const from = formatISO({ ...today, d: 1 });
   const { rows } = await db().query<{ n: string }>(
-    `SELECT COUNT(*) AS n FROM documents
-      WHERE user_id = $1
-        AND type <> 'sample'
-        AND status <> 'draft' AND status <> 'cancelled'
-        AND issue_date >= $2::date`,
+    // A change to a sent invoice counts as one more (migration 0043).
+    `SELECT (SELECT COUNT(*) FROM documents
+              WHERE user_id = $1
+                AND type <> 'sample'
+                AND status <> 'draft' AND status <> 'cancelled'
+                AND issue_date >= $2::date)
+          + (SELECT COUNT(*) FROM document_edits
+              WHERE user_id = $1 AND created_at >= $2::date) AS n`,
     [userId, from],
   );
   return Number(rows[0]?.n ?? 0);

@@ -211,6 +211,8 @@ export function faqKind(text: string): FaqKind | null {
 /** "invoice 12" style commands, where the number is part of the instruction. */
 const NUMBERED: [RegExp, Intent][] = [
   [/^cancel (?:invoice|quote|inv|doc|document) #?(\d{1,6})$/, "cancel_document"],
+  // Changing one already sent: the same invoice, the same number (9 Oct 2026).
+  [/^(?:edit|change|update|correct|fix|amend) (?:invoice|inv|request) #?(\d{1,6})$/, "edit_document"],
   [/^(?:resend|send again|share) (?:invoice|quote|inv|doc|document) #?(\d{1,6})$/, "resend_document"],
   [/^(?:status(?: of)?|check) (?:invoice|quote|inv|doc|document) #?(\d{1,6})\??$/, "status"],
   [/^convert (?:quote|qt) #?(\d{1,6})$/, "convert_quote"],

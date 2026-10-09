@@ -1073,11 +1073,19 @@ describe("a tapped button", () => {
      * and "no" and the parser calls those confirm and reject. Only the middle
      * one fell through, which is exactly the kind of gap a third case gets.
      */
-    for (const id of ["yes", "change something", "no"]) {
+    for (const id of ["yes", "no"]) {
       const out = doc("idle", {}, id, { parsed: parse({ intent: "unknown" }) });
       assert.deepEqual(out.replies, [VOICE.nothingPending], `tapping ${id} after the draft is gone`);
       assert.deepEqual(out.effects, [], `tapping ${id} must not do anything`);
     }
+  });
+
+  it("opens the sent invoice when Change it is tapped after sending", () => {
+    // 9 October 2026: "Change it" now changes the invoice already sent —
+    // same number, same link — rather than saying there is nothing waiting.
+    const out = doc("idle", {}, "change something", { parsed: parse({ intent: "unknown" }) });
+    assert.deepEqual(out.effects, [{ type: "edit_sent", number: null }]);
+    assert.deepEqual(out.replies, []);
   });
 
   it("still says it only does invoices to something it really cannot read", () => {

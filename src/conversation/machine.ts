@@ -79,6 +79,14 @@ export type Context = {
    * form (handle.ts, `handleInvoiceForm`). The next message is them.
    */
   awaitingPayDetails?: PendingDoc;
+  /**
+   * The sent invoice being changed (9 October 2026). Set when "Change it"
+   * is tapped after sending, or "edit invoice 3" is said; the next draft is
+   * sent into this invoice — same number, same link — rather than as a new
+   * one (documents/store.ts, `applyEdit`).
+   */
+  editingId?: string;
+  editingNumber?: number;
   businessName?: string;
   bankCode?: string;
   bankName?: string;
@@ -250,6 +258,11 @@ export type Effect =
       body: string;
       cta: string;
       /**
+       * Added to the form's token: "edit:<document id>" on the form that
+       * changes a sent invoice, so only that form can update one (9 Oct 2026).
+       */
+      tokenTail?: string;
+      /**
        * A picture above the message.
        *
        * Only the setup invitation has one. It is somebody's first sight of
@@ -301,6 +314,8 @@ export type Effect =
   | { type: "save_draft"; doc: PendingDoc }
   /** Number it, make the link, send it (F6 step 4). */
   | { type: "send_document" }
+  /** Open a sent invoice in the form, to change it. Null: the latest one. */
+  | { type: "edit_sent"; number: number | null }
   | { type: "discard_draft" }
   | { type: "show_debtors" }
   | { type: "show_summary" }
@@ -2043,7 +2058,8 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
     case "create_invoice":
     case "create_quote":
     case "payment_request":
-      return startDocument(p, ctx, now, msg.quote, msg.text);
+      // A new document, never the sent one somebody opened to change and left.
+      return startDocument(p, forget(ctx), now, msg.quote, msg.text);
 
     case "help":
       return {
@@ -2082,13 +2098,16 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
       return { replies: [], next: "idle", context: ctx, effects: [{ type: "remove_signature" }] };
 
     case "status":
+    // "edit invoice 3": open it in the form, filled in (9 October 2026).
+    case "edit_document":
+      return { replies: [], next: "idle", context: ctx, effects: [{ type: "edit_sent", number: p.documentNumber }] };
+
     case "stop_reminders":
     case "confirm_stop_reminders":
     case "keep_reminders":
     case "cancel_document":
     case "resend_document":
     case "convert_quote":
-    case "edit_document":
     case "record_payment":
     case "confirm_payment":
     case "decline_payment":
@@ -2156,6 +2175,10 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
        * The ids come from `draftButtons` so renaming one cannot quietly
        * bring the old answer back.
        */
+      // "Change it" under an invoice already sent: change that invoice.
+      if (msg.text.trim().toLowerCase() === "change something") {
+        return { replies: [], next: "idle", context: ctx, effects: [{ type: "edit_sent", number: null }] };
+      }
       if (DRAFT_BUTTONS.has(msg.text.trim().toLowerCase())) {
         return {
         replies: [VOICE.nothingPending],
@@ -2382,7 +2405,7 @@ export function blankForm(
     : formValues({ type: key, lines: [] }, now);
 }
 
-function formValues(doc: PendingDoc, now: Civil): {
+export function formValues(doc: PendingDoc, now: Civil): {
   screen: string;
   data: Record<string, unknown>;
 } {
@@ -3189,7 +3212,8 @@ function asProChoice(text: string): "link" | "deduct_from_invoice" | null {
  * the *previous* turn's context, so clearing it here cannot strand one.
  */
 const forget = (ctx: Context): Context => {
-  const { doc: _doc, draftId: _draftId, changing: _changing, ...rest } = ctx;
+  // A new document is never the one being changed.
+  const { doc: _doc, draftId: _draftId, changing: _changing, editingId: _e, editingNumber: _n, ...rest } = ctx;
   return rest;
 };
 

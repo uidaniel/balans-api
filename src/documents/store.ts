@@ -299,6 +299,19 @@ export async function createDraft(
 }
 
 export async function getOpenDraft(userId: string): Promise<Draft | null> {
+  return loadDocument(userId, null);
+}
+
+/**
+ * A sent invoice, read back as a draft would be, to open in the form for
+ * changing (9 October 2026). Null unless it is the user's and still open:
+ * nothing paid on it and not cancelled.
+ */
+export async function getSentForEdit(userId: string, documentId: string): Promise<Draft | null> {
+  return loadDocument(userId, documentId);
+}
+
+async function loadDocument(userId: string, documentId: string | null): Promise<Draft | null> {
   const { rows } = await db().query<{
     id: string;
     client_id: string;
@@ -320,17 +333,21 @@ export async function getOpenDraft(userId: string): Promise<Draft | null> {
     fx_rate: string | null;
     fx_source: string | null;
     fx_fetched_at: Date | null;
+    pay_by: "link" | "own" | "bank" | null;
   }>(
     `SELECT d.id, d.client_id, d.type, d.subtotal_kobo, d.vat_kobo, d.total_kobo,
             d.pass_fees_to_client, d.due_date, d.valid_until, d.notes, d.number, d.public_token,
-            d.currency, d.original_amount_minor, d.fx_rate, d.fx_source, d.fx_fetched_at,
+            d.currency, d.original_amount_minor, d.fx_rate, d.fx_source, d.fx_fetched_at, d.pay_by,
             c.name AS client_name, c.email AS client_email, c.phone AS client_phone
        FROM documents d
        JOIN clients c ON c.id = d.client_id
-      WHERE d.user_id = $1 AND d.status = 'draft'
+      WHERE d.user_id = $1
+        AND ${documentId === null
+          ? "d.status = 'draft'"
+          : "d.id = $2 AND d.status IN ('sent', 'viewed', 'overdue') AND d.amount_paid_kobo = 0"}
       ORDER BY d.created_at DESC
       LIMIT 1`,
-    [userId],
+    documentId === null ? [userId] : [userId, documentId],
   );
 
   const row = rows[0];
@@ -378,6 +395,7 @@ export async function getOpenDraft(userId: string): Promise<Draft | null> {
     totalKobo: row.total_kobo,
     number: row.number,
     publicToken: row.public_token,
+    payBy: row.pay_by,
     /*
      * The rate is read back, not recomputed. Somebody who leaves a draft open
      * overnight and answers "Send it?" in the morning is sending the invoice
@@ -531,3 +549,103 @@ const civilOrNull = (d: Date | null): Civil | null =>
   d ? { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() } : null;
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
+
+/* -------------------------------------------------------------------------- */
+/* Changing a sent invoice (9 October 2026)                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Puts a draft's content into an invoice already sent, keeping the invoice's
+ * id, number, reference and link. The draft row is the vehicle: it was built
+ * by the same form, summary and corrections as any draft, and its lines and
+ * payment plan move across whole rather than being rewritten field by field.
+ *
+ * Refused (null) once anything is paid or it is cancelled: a changed total
+ * under a payment already made is a dispute, not an edit.
+ *
+ * The version goes up, so the PDF and the page are rendered from the new
+ * content and the old version's PDF stays on file. Reminders not yet sent
+ * are cleared and the invoice counts as sent again from now, so the due-date
+ * reminders follow the new date. The change is logged in `document_edits`,
+ * which the monthly count reads.
+ */
+export async function applyEdit(userId: string, draftId: string, originalId: string): Promise<Confirmed | null> {
+  return tx(async (c) => {
+    await c.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [userId]);
+    const { rows } = await c.query<{
+      id: string;
+      number: number;
+      ref: string | null;
+      public_token: string;
+      type: DocumentType;
+      current_version: number;
+    }>(
+      `SELECT id, number, ref, public_token, type, current_version FROM documents
+        WHERE id = $1 AND user_id = $2 AND status IN ('sent', 'viewed', 'overdue') AND amount_paid_kobo = 0
+        FOR UPDATE`,
+      [originalId, userId],
+    );
+    const original = rows[0];
+    if (!original) return null;
+    const { rows: drafts } = await c.query<{ id: string; currency: string; type: DocumentType; pay_by: string | null }>(
+      `SELECT id, currency, type, pay_by FROM documents WHERE id = $1 AND user_id = $2 AND status = 'draft' FOR UPDATE`,
+      [draftId, userId],
+    );
+    const draft = drafts[0];
+    if (!draft || draft.type !== original.type) return null;
+
+    const version = original.current_version + 1;
+    await c.query(
+      `UPDATE documents o
+          SET client_id = d.client_id, currency = d.currency,
+              subtotal_kobo = d.subtotal_kobo, vat_kobo = d.vat_kobo, total_kobo = d.total_kobo,
+              pass_fees_to_client = d.pass_fees_to_client,
+              due_date = d.due_date, valid_until = d.valid_until, notes = d.notes,
+              original_amount_minor = d.original_amount_minor, fx_rate = d.fx_rate,
+              fx_source = d.fx_source, fx_fetched_at = d.fx_fetched_at,
+              pay_by = d.pay_by,
+              -- Delivery is decided again below, from the new content.
+              delivery_type = 'payment_link', payment_details = NULL,
+              bank_details_bank_name = NULL, bank_details_account_name = NULL,
+              bank_details_account_last4 = NULL, bank_details_account_number_encrypted = NULL,
+              status = 'sent', sent_at = now(), current_version = $3
+         FROM documents d
+        WHERE o.id = $1 AND d.id = $2`,
+      [original.id, draft.id, version],
+    );
+
+    // The lines and the payment plan, moved across whole.
+    await c.query(`DELETE FROM line_items WHERE document_id = $1`, [original.id]);
+    await c.query(`UPDATE line_items SET document_id = $1 WHERE document_id = $2`, [original.id, draft.id]);
+    await c.query(`DELETE FROM payment_parts WHERE document_id = $1`, [original.id]);
+    await c.query(`UPDATE payment_parts SET document_id = $1 WHERE document_id = $2`, [original.id, draft.id]);
+    await c.query(`DELETE FROM documents WHERE id = $1`, [draft.id]);
+
+    // Reminders follow the new date; one stopped by the user stays stopped.
+    await c.query(`DELETE FROM reminders WHERE document_id = $1 AND status IN ('pending', 'sent', 'failed', 'sending')`, [
+      original.id,
+    ]);
+
+    const bank =
+      deliveryFor(original.type, draft.currency) === "bank_details" || (draft.pay_by === "bank" && original.type !== "quote")
+        ? await attachBankDetails(c, original.id, userId)
+        : null;
+    const ownDetails = bank ? null : await attachOwnDetails(c, original.id, userId);
+
+    await c.query(`INSERT INTO document_edits (document_id, user_id, version) VALUES ($1, $2, $3)`, [
+      original.id,
+      userId,
+      version,
+    ]);
+
+    return {
+      id: original.id,
+      number: original.number,
+      ref: original.ref,
+      publicToken: original.public_token,
+      type: original.type,
+      bank,
+      ownDetails,
+    } as Confirmed;
+  });
+}

@@ -32,6 +32,7 @@ import {
   type Effect,
   type PendingDoc,
   type State,
+  formValues,
 } from "./machine.ts";
 import { FRESH_WHO, currencyOptions, payByOptions, splitForPlan } from "../whatsapp/flows/definitions.ts";
 import { VAT_PERCENT } from "../parser/extract.ts";
@@ -44,7 +45,7 @@ import { current as currentRate, type Quote } from "../fx/rate.ts";
 import { asCommand } from "../parser/commands.ts";
 import { resolveDueDate, todayIn, type Civil } from "../../core/dates.ts";
 import { defaults, env } from "../config.ts";
-import { confirmDraft, createDraft, discardDraft, getOpenDraft } from "../documents/store.ts";
+import { applyEdit, confirmDraft, createDraft, discardDraft, getOpenDraft, getSentForEdit } from "../documents/store.ts";
 import {
   draftButtons,
   draftSummary,
@@ -501,6 +502,9 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
       return;
     }
     if (key === "invoice" || key === "quote" || key === "request") {
+      // "invoice:<user>:edit:<id>": the form sent to change a sent invoice.
+      const tokenParts = msg.flow.token.split(":");
+      const editId = key === "invoice" && tokenParts[2] === "edit" ? (tokenParts[3] ?? null) : null;
       await handleInvoiceForm(
         key === "request" ? "payment_request" : key,
         user.id,
@@ -509,6 +513,7 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
         user.businessName ?? undefined,
         log,
         todayIn(defaults.behaviour.timezone),
+        editId,
       );
       return;
     }
@@ -554,7 +559,15 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
       await saveConversation(
         user.id,
         outcome.holdAt ?? (outcome.draftId ? "awaiting_confirm" : "idle"),
-        outcome.draftId ? { doc: waitingDoc, draftId: outcome.draftId } : {},
+        outcome.draftId
+          ? {
+              doc: waitingDoc,
+              draftId: outcome.draftId,
+              ...(saved.context.editingId
+                ? { editingId: saved.context.editingId, editingNumber: saved.context.editingNumber }
+                : {}),
+            }
+          : {},
       );
       await reply(
         user.id,
@@ -762,6 +775,8 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     parsed: reading?.ok ? reading.parsed : undefined,
     phone: msg.from,
     changing: saved.context.changing as never,
+    editingId: saved.context.editingId,
+    editingNumber: saved.context.editingNumber,
   });
 
   // An effect can refuse to let the conversation move on: a wrong code must not
@@ -787,9 +802,10 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   if (outcome.draftId) context = { ...context, draftId: outcome.draftId };
   if (outcome.pendingBankChange) context = { ...context, changing: outcome.pendingBankChange };
   if (outcome.clearDraft) {
-    const { doc: _doc, draftId: _id, ...rest } = context;
+    const { doc: _doc, draftId: _id, editingId: _e, editingNumber: _n, ...rest } = context;
     context = rest;
   }
+  if (outcome.editing) context = { ...context, editingId: outcome.editing.id, editingNumber: outcome.editing.number };
 
   // The effect owns the last message when it added lines, so its buttons win.
   // When an effect held or faulted, the machine's question was never asked and
@@ -896,6 +912,8 @@ type EffectOutcome = {
   draftId?: string;
   /** Set once a draft is gone, so the conversation stops pointing at it. */
   clearDraft?: boolean;
+  /** Set by edit_sent: the sent invoice the next draft goes into. */
+  editing?: { id: string; number: number };
   /**
    * Tappable answers for the last line this effect produced.
    *
@@ -961,6 +979,9 @@ async function runEffects(
     parsed?: Parsed;
     /** Where to send a file, which does not go through the reply path. */
     phone?: string;
+    /** A sent invoice being changed (9 October 2026). */
+    editingId?: string;
+    editingNumber?: number;
     /** A bank change resolved on the previous turn, waiting on a yes (F17). */
     changing?: {
       bankCode: string;
@@ -989,6 +1010,7 @@ async function runEffects(
   let buttons: ReplyButton[] | undefined;
   let buttonsImage: string | undefined;
   let clearDraft: boolean | undefined;
+  let editing: { id: string; number: number } | undefined;
 
   for (const effect of effects) {
     // Once something has held the conversation, the effects after it are acting
@@ -1166,7 +1188,7 @@ async function runEffects(
             flowId: id,
             // Ties the submission back to this person. Read on the way in, and
             // never trusted for anything the sender could have chosen.
-            token: `${effect.key}:${userId}`,
+            token: `${effect.key}:${userId}${effect.tokenTail ? `:${effect.tokenTail}` : ""}`,
             // The document forms pick their own, by how many items the
             // draft has. Everything else opens where it always does.
             screen: effect.screen ?? FLOW_SCREEN[effect.key],
@@ -1453,6 +1475,84 @@ async function runEffects(
           break;
         }
 
+        /*
+         * "Change it" after sending, or "edit invoice 3" (9 October 2026): the
+         * sent invoice, opened in the form with everything filled in. Sending
+         * the draft it makes goes into the same invoice (see send_document).
+         */
+        case "edit_sent": {
+          const { rows } = await db().query<{ id: string; number: number; status: string; paid: number }>(
+            effect.number === null
+              ? `SELECT id, number, status::text, amount_paid_kobo::int AS paid FROM documents
+                  WHERE user_id = $1 AND type = 'invoice' AND status <> 'draft'
+                  ORDER BY COALESCE(sent_at, created_at) DESC LIMIT 1`
+              : `SELECT id, number, status::text, amount_paid_kobo::int AS paid FROM documents
+                  WHERE user_id = $1 AND type = 'invoice' AND number = $2 LIMIT 1`,
+            effect.number === null ? [userId] : [userId, effect.number],
+          );
+          const found = rows[0];
+          if (!found) {
+            extra.push(effect.number === null ? "📭 There is no invoice to change yet." : notFoundMessage({ number: effect.number }));
+            break;
+          }
+          const shown = String(found.number).padStart(4, "0");
+          if (found.status === "cancelled") {
+            extra.push(`🚫 Invoice ${shown} was cancelled, so it cannot be changed. Send a new one instead.`);
+            break;
+          }
+          if (found.status === "paid" || found.paid > 0) {
+            extra.push(`🔒 Invoice ${shown} has a payment on it, so it cannot be changed. Send a new one for anything extra.`);
+            break;
+          }
+          const sent = await getSentForEdit(userId, found.id);
+          if (!sent) {
+            extra.push(`🔒 Invoice ${shown} cannot be changed now.`);
+            break;
+          }
+          const doc: PendingDoc = {
+            type: "invoice",
+            clientName: sent.clientName,
+            clientEmail: sent.clientEmail,
+            clientPhone: sent.clientPhone ?? null,
+            lines: sent.lines,
+            dueDate: sent.dueDate,
+            vatPercent: sent.vatPercent,
+            depositPercent: sent.depositPercent,
+            instalments: sent.instalments,
+            passFeesToClient: sent.passFeesToClient,
+            notes: sent.notes,
+            payBy: sent.payBy ?? null,
+            ...(sent.foreign ? { foreign: sent.foreign } : {}),
+          };
+          const form = formValues(doc, ctx.today);
+          const inner = await runEffects(
+            [
+              {
+                type: "send_flow",
+                key: "invoice",
+                body: `✏️ ${b(`Change invoice ${shown}`)} below. When you send it, the same invoice is updated: same number, same link.`,
+                cta: "Change the invoice",
+                // Only this form can update the invoice; see handleInvoiceForm.
+                tokenTail: `edit:${found.id}`,
+                ...form,
+                fallback: { line: VOICE.changeByHand, holdAt: "idle" },
+              } as Effect,
+            ],
+            userId,
+            businessName,
+            log,
+            ctx,
+          );
+          extra.push(...inner.lines);
+          if (inner.holdAt) holdAt = inner.holdAt;
+          // Only once the form is out: at the Free limit the card goes instead.
+          if (!inner.holdAt) {
+            editing = { id: found.id, number: found.number };
+            log.info({ userId, documentId: found.id }, "sent invoice opened for changing");
+          }
+          break;
+        }
+
         case "send_document": {
           // Read it back rather than trusting the conversation: what goes out
           // must be the row the summary was rendered from.
@@ -1464,11 +1564,26 @@ async function runEffects(
             break;
           }
 
-          const confirmed = await confirmDraft(userId, draft.id);
+          // Changing a sent invoice: into the same one, same number and link.
+          const confirmed = ctx.editingId
+            ? await applyEdit(userId, draft.id, ctx.editingId)
+            : await confirmDraft(userId, draft.id);
           if (!confirmed) {
+            if (ctx.editingId) {
+              extra.push(
+                `🔒 ${b(`Invoice ${String(ctx.editingNumber ?? "").padStart(4, "0")} cannot be changed now`)}: it has been paid or cancelled. Send it as a new invoice instead.`,
+              );
+              clearDraft = true;
+              break;
+            }
             extra.push("⚠️ I could not send that just now. Try again in a moment.");
             holdAt = "awaiting_confirm";
             break;
+          }
+          if (ctx.editingId) {
+            extra.push(
+              `✏️ ${b(`Invoice ${String(confirmed.number).padStart(4, "0")} updated.`)} Same number, same link: your client sees the new version.`,
+            );
           }
 
           clearDraft = true;
@@ -2494,6 +2609,7 @@ async function runEffects(
     resolvedName,
     draftId,
     clearDraft,
+    editing,
     pendingBankChange,
     buttons,
     buttonsImage,
@@ -2896,6 +3012,8 @@ async function handleInvoiceForm(
   businessName: string | undefined,
   log: FastifyBaseLogger,
   today: Civil,
+  /** The sent invoice this form changes, from its token; null for a new one. */
+  editId: string | null = null,
 ): Promise<void> {
   const clientName = (fields.client_name ?? "").trim();
   const email = (fields.client_email ?? "").trim().toLowerCase();
@@ -3045,7 +3163,11 @@ async function handleInvoiceForm(
    * Paystack fees under a message saying the details were missing.
    */
   if (priced.payBy === "own" && priced.foreign && !(await savedPaymentDetails(userId))) {
-    await saveConversation(userId, "idle", { awaitingPayDetails: priced });
+    const target = editId ? await editTarget(userId, editId) : null;
+    await saveConversation(userId, "idle", {
+      awaitingPayDetails: priced,
+      ...(target ? { editingId: target.id, editingNumber: target.number } : {}),
+    });
     await reply(userId, phone, [askPayDetails()], log);
     return;
   }
@@ -3060,6 +3182,13 @@ async function handleInvoiceForm(
   // put the dollar figures back.
   const context: Record<string, unknown> = { doc: priced };
   if (outcome.draftId) context.draftId = outcome.draftId;
+  // Changing a sent invoice: the draft goes into it (9 October 2026). Only a
+  // form sent for that edit says so; any other form is a new invoice.
+  const editing = editId ? await editTarget(userId, editId) : null;
+  if (editing) {
+    context.editingId = editing.id;
+    context.editingNumber = editing.number;
+  }
 
   // An effect that held — the monthly limit — never wrote a draft, and there
   // is nothing for a "yes" to refer to.
@@ -3073,7 +3202,11 @@ async function handleInvoiceForm(
     : phoneTyped && !clientPhone
       ? [para(`📵 ${b(`"${phoneTyped}" is not a number I can send to.`)}`, "The draft is below without it. Say *their number is 0803 123 4567* to add it.")]
       : [];
-  await reply(userId, phone, [...phoneNote, ...outcome.lines], log, outcome.buttons, outcome.buttonsImage);
+  const editNote =
+    context.editingId && outcome.draftId
+      ? [`✏️ ${b(`Changing invoice ${String(context.editingNumber ?? "").padStart(4, "0")}.`)} Tap Send it to update it: same number, same link.`]
+      : [];
+  await reply(userId, phone, [...editNote, ...phoneNote, ...outcome.lines], log, outcome.buttons, outcome.buttonsImage);
 
   log.info({ userId, draftId: outcome.draftId, depositPercent, instalments }, "draft from a form");
 }
@@ -3220,6 +3353,16 @@ async function tellIfClientWhatsAppFailed(
 }
 
 /** A client number from somebody on Free: said once, and left off the draft. */
+/** The user's own invoice named by an edit form's token, or null. */
+async function editTarget(userId: string, id: string): Promise<{ id: string; number: number } | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const { rows } = await db().query<{ id: string; number: number }>(
+    `SELECT id, number FROM documents WHERE id = $1 AND user_id = $2 AND type = 'invoice' AND status <> 'draft'`,
+    [id, userId],
+  );
+  return rows[0] ?? null;
+}
+
 /** Their saved payment details, or null. */
 async function savedPaymentDetails(userId: string): Promise<string | null> {
   const { rows } = await db().query<{ d: string | null }>(`SELECT payment_details AS d FROM users WHERE id = $1`, [userId]);
