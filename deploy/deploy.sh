@@ -14,7 +14,6 @@ set -euo pipefail
 APP="${BALANS_APP:-/opt/balans/app}"
 # Staging sets these (balans-staging-deploy.service); the live box sets none.
 BRANCH="${BALANS_BRANCH:-main}"
-HEALTH_URL="${BALANS_HEALTH_URL:-http://127.0.0.1:80/health}"
 STAGING=$([ "$BRANCH" = "main" ] && echo 0 || echo 1)
 # Every compose call names its file. Through sudo, COMPOSE_FILE from the
 # environment is dropped, and staging would then act on the live project —
@@ -100,9 +99,11 @@ fi
 
 say "Waiting for health"
 for i in $(seq 1 30); do
-  # Staging is asked inside its own container: it has no port on the host,
-  # and Caddy only answers it by name.
-  if { [ "$STAGING" = "1" ] && sudo docker exec balans-staging-api node -e "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; }      || { [ "$STAGING" = "0" ] && curl -fsSk --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; }; then
+  # Asked inside the new container itself, live and staging alike (9 October
+  # 2026). Live used to curl Caddy on port 80, which answers a request for a
+  # host it has no site for by itself, so a deploy could pass with the API
+  # down and never roll back.
+  if "${DC[@]}" exec -T "$SERVICE" node -e "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; then
     printf '\n\033[1;32mHealthy on %s\033[0m\n' "$AFTER"
 
     # Old images pile up fast — each is ~400MB with Chromium in it, and a full

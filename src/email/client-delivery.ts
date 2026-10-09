@@ -257,7 +257,7 @@ export async function emailDocumentToClient(
     return { ok: false, why: "send_failed" };
   }
 
-  log.info({ documentId, to: d.client_email, pro: d.plan === "pro" }, "document emailed to client");
+  log.info({ documentId, pro: d.plan === "pro" }, "document emailed to client");
   return { ok: true };
 }
 
@@ -278,6 +278,6 @@ export async function markClientEmailInvalid(
     [email],
   );
 
-  if (rows.length) log.warn({ email, clients: rows.length }, "client email marked invalid");
+  if (rows.length) log.warn({ clients: rows.length }, "client email marked invalid");
   return rows.map((r) => ({ userId: r.user_id, clientName: r.name }));
 }

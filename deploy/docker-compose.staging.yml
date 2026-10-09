@@ -22,6 +22,12 @@ services:
       dockerfile: Dockerfile
     container_name: balans-staging-api
     restart: always
+    # Rotated, so logs cannot fill the disk (9 October 2026): 5 files of 20MB.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     stop_grace_period: 15s
     env_file:
       - /opt/balans/.env.staging

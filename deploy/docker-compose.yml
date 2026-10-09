@@ -17,6 +17,12 @@ services:
       context: ..
       dockerfile: Dockerfile
     restart: always
+    # Rotated, so logs cannot fill the disk (9 October 2026): 5 files of 20MB.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
     # Time to finish replies already under way before the old container is
     # killed on a deploy (src/index.ts drains for up to 7 seconds).
@@ -46,6 +52,12 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: always
+    # Rotated, so logs cannot fill the disk (9 October 2026): 5 files of 20MB.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     ports:
       - "80:80"
       - "443:443"

@@ -52,6 +52,20 @@ export function buildServer(): FastifyInstance {
     logger: {
       level: env.LOG_LEVEL,
       redact: { paths: REDACT, remove: true },
+      /*
+       * Request lines without the tokens in them (9 October 2026). /i/{token},
+       * /settings/{token} and the rest are keys to somebody's invoice or
+       * account, and the logs are kept and read by more people than those.
+       */
+      serializers: {
+        req: (req: { method?: string; url?: string; id?: string }) => ({
+          method: req.method,
+          url: String(req.url ?? "")
+            .replace(/\/(i|q|r|settings|signature|summary|designs)\/[A-Za-z0-9_-]{8,}/g, "/$1/[token]")
+            .replace(/([?&](t|token)=)[^&]+/g, "$1[token]"),
+          id: req.id,
+        }),
+      },
       // Every error line also goes to the team's email digest (ops/alerts.ts).
       hooks: {
         logMethod(args, method, level) {

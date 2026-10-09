@@ -100,6 +100,13 @@ export async function migrate(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      /*
+       * A migration that has to wait for a lock gives up after 5 seconds
+       * (9 October 2026) rather than queueing behind a long query, during
+       * which every read of the table it is altering would queue behind it.
+       * The boot fails loudly and the deploy rolls back; nothing half-done.
+       */
+      await client.query("SET LOCAL lock_timeout = '5s'");
       if (!opts.recordOnly) await client.query(sql);
       await client.query("INSERT INTO schema_migrations (name, checksum) VALUES ($1, $2)", [
         name,
