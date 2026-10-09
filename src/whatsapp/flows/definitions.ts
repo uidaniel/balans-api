@@ -1055,11 +1055,12 @@ const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<str
   due_date: `\${${from}.due_date}`,
   // Chosen on the form screens, so it is read wherever the others are.
   currency: `\${${from}.currency}`,
+  // Typed on the work screens, above the first item (9 October 2026).
+  title: `\${${from}.title}`,
   // These three are only ever set on TERMS, at the end, so every screen
   // before it is simply carrying them.
   plan: "${data.plan}",
   notes: "${data.notes}",
-  title: "${data.title}",
   vat: "${data.vat}",
   // Never typed by anybody: decided before the form opens, by who is opening
   // it and when, and every screen is only carrying them.
@@ -1540,6 +1541,7 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
             ? {}
             : {
                 "init-values": {
+                  title: "${data.title}",
                   description: "${data.description}",
                   qty: "${data.qty}",
                   amount: "${data.amount}",
@@ -1558,6 +1560,16 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
                 },
               }),
           children: [
+            {
+              // What the whole invoice is for, above its items (9 October 2026).
+              type: "TextInput",
+              name: "title",
+              label: "Title",
+              "helper-text": "Optional. E.g. Website redesign, Phase 1.",
+              required: false,
+              "input-type": "text",
+              "max-chars": 120,
+            },
             {
               type: "TextInput",
               name: "description",
@@ -1784,7 +1796,6 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
               "init-values": {
                 plan: "${data.plan}",
                 notes: "${data.notes}",
-                title: "${data.title}",
                 vat: "${data.vat}",
               },
               children: [
@@ -1822,15 +1833,6 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                   label: "Add 7.5% VAT",
                 },
                 {
-                  type: "TextInput",
-                  name: "title",
-                  label: "Title",
-                  "helper-text": "Optional. E.g. Website redesign, Phase 1.",
-                  required: false,
-                  "input-type": "text",
-                  "max-chars": 120,
-                },
-                {
                   type: "TextArea",
                   name: "notes",
                   label: "Notes",
@@ -1859,7 +1861,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       pay_by: "${form.pay_by}",
                       vat: "${form.vat}",
                       notes: "${form.notes}",
-                      title: "${form.title}",
+                      title: "${data.title}",
                     },
                   },
                 },
