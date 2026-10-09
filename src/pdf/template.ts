@@ -113,6 +113,8 @@ export type DocumentData = {
   issueDate: Civil | null;
   dueDate: Civil | null;
   notes: string | null;
+  /** "Website redesign — Phase 1". Optional (9 October 2026). */
+  title?: string | null;
   /** Where the client can pay or check it. */
   publicUrl: string | null;
   /** Receipts only. */
@@ -191,6 +193,7 @@ export function renderDocumentHtml(d: DocumentData, opts: RenderOptions = {}): s
      A client reading it on a phone should be able to stop after this line. */
   const band = `<div class="band">
     ${field("Billed to", party(d.clientName, d.clientEmail), "min0")}
+    ${d.title ? field("Project", esc(d.title), "min0") : ""}
     ${
       receipt
         ? field("Receipt number", `#${receipt.number}`)

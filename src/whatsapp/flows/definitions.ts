@@ -969,6 +969,7 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
   due_date: { type: "string", __example__: "" },
   plan: { type: "string", __example__: "one" },
   notes: { type: "string", __example__: "" },
+  title: { type: "string", __example__: "" },
   vat: { type: "boolean", __example__: false },
   /*
    * Today, as the date picker's floor, so nobody can make an invoice due
@@ -1058,6 +1059,7 @@ const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<str
   // before it is simply carrying them.
   plan: "${data.plan}",
   notes: "${data.notes}",
+  title: "${data.title}",
   vat: "${data.vat}",
   // Never typed by anybody: decided before the form opens, by who is opening
   // it and when, and every screen is only carrying them.
@@ -1745,6 +1747,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           due_date: { type: "string", __example__: "" },
           plan: { type: "string", __example__: "one" },
           notes: { type: "string", __example__: "" },
+          title: { type: "string", __example__: "" },
           vat: { type: "boolean", __example__: false },
           today: { type: "string", __example__: "2026-09-26" },
           /*
@@ -1781,6 +1784,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
               "init-values": {
                 plan: "${data.plan}",
                 notes: "${data.notes}",
+                title: "${data.title}",
                 vat: "${data.vat}",
               },
               children: [
@@ -1818,6 +1822,15 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                   label: "Add 7.5% VAT",
                 },
                 {
+                  type: "TextInput",
+                  name: "title",
+                  label: "Title",
+                  "helper-text": "Optional. E.g. Website redesign, Phase 1.",
+                  required: false,
+                  "input-type": "text",
+                  "max-chars": 120,
+                },
+                {
                   type: "TextArea",
                   name: "notes",
                   label: "Notes",
@@ -1846,6 +1859,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       pay_by: "${form.pay_by}",
                       vat: "${form.vat}",
                       notes: "${form.notes}",
+                      title: "${form.title}",
                     },
                   },
                 },

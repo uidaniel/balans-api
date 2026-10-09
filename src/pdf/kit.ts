@@ -391,10 +391,10 @@ export function headlineAmount(d: DocumentData): Headline {
  * back to the client, which is true of every invoice ever written.
  */
 export const headline = (d: DocumentData): string =>
-  d.lines.length === 1 ? d.lines[0]!.description : d.clientName;
+  d.title ? d.title : d.lines.length === 1 ? d.lines[0]!.description : d.clientName;
 
 /** Whether `headline` is naming the work rather than repeating the client. */
-export const namesWork = (d: DocumentData): boolean => d.lines.length === 1;
+export const namesWork = (d: DocumentData): boolean => Boolean(d.title) || d.lines.length === 1;
 
 /** "1", "2.5" — never "2.500", which reads as a price. */
 export const qty = (n: number): string => (Number.isInteger(n) ? String(n) : String(Number(n.toFixed(3))));

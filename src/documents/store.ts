@@ -52,6 +52,8 @@ export type DraftInput = {
   stageDueDates?: (Civil | null)[] | null;
   passFeesToClient: boolean;
   notes: string | null;
+  /** "Website redesign — Phase 1". Null for none. */
+  title?: string | null;
   /**
    * The foreign price and the rate it was converted at, or absent on the
    * naira invoices that are nearly all of them (International PRD section 11).
@@ -217,9 +219,9 @@ export async function createDraft(
       `INSERT INTO documents
          (user_id, client_id, type, status, subtotal_kobo, vat_kobo, total_kobo,
           pass_fees_to_client, due_date, valid_until, notes,
-          currency, original_amount_minor, fx_rate, fx_source, fx_fetched_at, pay_by)
+          currency, original_amount_minor, fx_rate, fx_source, fx_fetched_at, pay_by, title)
        VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, $9, $10,
-               $11, $12, $13, $14, $15, $16)
+               $11, $12, $13, $14, $15, $16, $17)
        RETURNING id`,
       [
         userId,
@@ -245,6 +247,7 @@ export async function createDraft(
         input.foreign?.source ?? null,
         input.foreign?.fetchedAt ?? null,
         input.payBy ?? null,
+        input.title?.trim().slice(0, 120) || null,
       ],
     );
     const id = rows[0]!.id;
@@ -334,10 +337,11 @@ async function loadDocument(userId: string, documentId: string | null): Promise<
     fx_source: string | null;
     fx_fetched_at: Date | null;
     pay_by: "link" | "own" | "bank" | null;
+    title: string | null;
   }>(
     `SELECT d.id, d.client_id, d.type, d.subtotal_kobo, d.vat_kobo, d.total_kobo,
             d.pass_fees_to_client, d.due_date, d.valid_until, d.notes, d.number, d.public_token,
-            d.currency, d.original_amount_minor, d.fx_rate, d.fx_source, d.fx_fetched_at, d.pay_by,
+            d.currency, d.original_amount_minor, d.fx_rate, d.fx_source, d.fx_fetched_at, d.pay_by, d.title,
             c.name AS client_name, c.email AS client_email, c.phone AS client_phone
        FROM documents d
        JOIN clients c ON c.id = d.client_id
@@ -390,6 +394,7 @@ async function loadDocument(userId: string, documentId: string | null): Promise<
     ...splitOf(parts, row.total_kobo),
     passFeesToClient: row.pass_fees_to_client,
     notes: row.notes,
+    title: row.title,
     subtotalKobo: row.subtotal_kobo,
     vatKobo: row.vat_kobo,
     totalKobo: row.total_kobo,
@@ -603,7 +608,7 @@ export async function applyEdit(userId: string, draftId: string, originalId: str
           SET client_id = d.client_id, currency = d.currency,
               subtotal_kobo = d.subtotal_kobo, vat_kobo = d.vat_kobo, total_kobo = d.total_kobo,
               pass_fees_to_client = d.pass_fees_to_client,
-              due_date = d.due_date, valid_until = d.valid_until, notes = d.notes,
+              due_date = d.due_date, valid_until = d.valid_until, notes = d.notes, title = d.title,
               original_amount_minor = d.original_amount_minor, fx_rate = d.fx_rate,
               fx_source = d.fx_source, fx_fetched_at = d.fx_fetched_at,
               pay_by = d.pay_by,

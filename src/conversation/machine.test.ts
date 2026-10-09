@@ -648,6 +648,7 @@ describe("a tapped button", () => {
       today: "2026-09-23",
       plan: "deposit_50",
       notes: "half now",
+      title: "",
       vat: true,
       /*
        * Naira, and no currency box. Both are the safe default, and both are

@@ -120,12 +120,13 @@ export async function emailDocumentToClient(
     subtotal_kobo: number;
     vat_kobo: number;
     delivery_type: string;
+    title: string | null;
   }>(
     `SELECT d.user_id, COALESCE(LPAD(d.number::text, GREATEST(4, length(d.number::text)), '0'), substring(d.ref from 4)) AS number, d.type, d.total_kobo, d.due_date, d.valid_until,
             d.public_token, d.notes,
             c.name AS client_name, c.email AS client_email,
             u.business_name, u.email AS business_email, u.plan,
-            d.currency, d.original_amount_minor, d.subtotal_kobo, d.vat_kobo, d.delivery_type
+            d.currency, d.original_amount_minor, d.subtotal_kobo, d.vat_kobo, d.delivery_type, d.title
        FROM documents d
        JOIN clients c ON c.id = d.client_id
        JOIN users u   ON u.id = d.user_id
@@ -216,14 +217,14 @@ export async function emailDocumentToClient(
       subject:
         (updatedFrom ? "Updated: " : "") +
         (d.number === null
-          ? `${label} from ${business} — ${price}`
-          : `${label} #${d.number} from ${business} — ${price}`),
+          ? `${label}${d.title ? `: ${d.title}` : ""} from ${business} — ${price}`
+          : `${label} #${d.number}${d.title ? `: ${d.title}` : ""} from ${business} — ${price}`),
       html: layout({
         preheader: `${price}${when ? `, ${dateWord.toLowerCase()} ${formatFriendly(when)}` : ""}.`,
         // Who it is from, over what it is: the two things a client checks
         // before deciding whether this is a message they have to deal with.
         eyebrow: business,
-        heading: `${updatedFrom ? "Updated: " : ""}${label}${d.number === null ? "" : ` #${d.number}`}`,
+        heading: `${updatedFrom ? "Updated: " : ""}${label}${d.number === null ? "" : ` #${d.number}`}${d.title ? `: ${d.title}` : ""}`,
         body,
         ...(brand ? { brand } : {}),
       }),

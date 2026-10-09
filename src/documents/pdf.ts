@@ -252,9 +252,10 @@ async function loadForRender(
     payment_details: string | null;
     client_name: string;
     client_email: string | null;
+    title: string | null;
   }>(
     `SELECT d.user_id, d.type, d.number, d.ref, d.subtotal_kobo, d.vat_kobo, d.total_kobo,
-            d.amount_paid_kobo, d.issue_date, d.due_date, d.valid_until, d.notes,
+            d.amount_paid_kobo, d.issue_date, d.due_date, d.valid_until, d.notes, d.title,
             d.public_token, d.current_version,
             d.currency, d.original_amount_minor,
             u.business_name, u.email AS business_email, u.address, u.tin, u.logo_url,
@@ -327,6 +328,7 @@ async function loadForRender(
       issueDate: civil(r.issue_date),
       dueDate: civil(r.due_date ?? r.valid_until),
       notes: r.notes,
+      title: r.title,
       publicUrl: r.public_token
         ? documentLink(r.type, r.public_token)
         : null,

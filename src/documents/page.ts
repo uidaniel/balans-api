@@ -51,6 +51,7 @@ box-shadow:0 0 0 1px var(--ink-6),0 1px 2px var(--ink-6);overflow:hidden}
 .top{padding:28px 28px 0}
 .brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;
 letter-spacing:-.03em;font-size:20px}
+.doctitle{margin-top:2px;font-size:15px;font-weight:600;color:var(--ink)}
 .dot{width:22px;height:22px;border-radius:50%;background:var(--marigold);flex:none}
 .pay.own .own-amt{margin-top:6px;font-family:var(--display);font-size:22px;font-weight:800;letter-spacing:-.03em}
 .pay.own .own-details{margin-top:12px;padding:14px 16px;border-radius:16px;background:var(--cream);
@@ -433,6 +434,7 @@ function renderDocumentPage(
       whose(doc)
     }</div>
     <div class="kind">${label} ${clientNumber(doc.ref, doc.number) ?? ""}</div>
+    ${doc.title ? `<div class="doctitle">${esc(doc.title)}</div>` : ""}
     <h1>${doc.foreign ? formatMoney(agreedTotalMinor(doc.foreign.amountMinor, doc.subtotalKobo, doc.vatKobo), doc.foreign.currency) : formatNaira(doc.totalKobo)}</h1>
     <div class="from">From <b>${esc(doc.businessName)}</b> to ${esc(doc.clientName)}</div>
     ${statusPill(doc, today, overdue)}

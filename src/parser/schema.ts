@@ -257,6 +257,8 @@ export type RawParse = z.infer<typeof rawParse>;
 export type LineItem = { description: string; qty: number; unitAmountKobo: number };
 
 export type Parsed = {
+  /** "title: Phase 1 redesign", taken out of the message before it is read. */
+  title?: string | null;
   intent: Intent;
   clientName: string | null;
   clientEmail: string | null;

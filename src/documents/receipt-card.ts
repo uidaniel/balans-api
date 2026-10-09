@@ -273,7 +273,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
     }</div>
 
     <h1>${quote ? "Quote" : "Invoice"} breakdown</h1>
-    <p class="sub">For ${esc(draft.clientName)} · ${esc(line)}</p>
+    <p class="sub">For ${esc(draft.clientName)} · ${esc(draft.title || line)}</p>
 
     <div class="band">
       ${

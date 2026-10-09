@@ -241,7 +241,9 @@ export function draftSummary(
    * for a gap. Fourteen lines of label-and-value with nothing between them is
    * a wall, and the reader is scanning for one number in it.
    */
-  const sections: (string | false)[][] = [[row("Client", draft.clientName)]];
+  const sections: (string | false)[][] = [
+    [row("Client", draft.clientName), ...(draft.title ? [row("Title", draft.title)] : [])],
+  ];
 
   // One line reads as a single "Item" row. Several deserve their own lines,
   // because the itemisation is the part a client queries.

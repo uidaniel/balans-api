@@ -218,6 +218,8 @@ export type PendingDoc = {
   stageDueDates?: (Civil | null)[] | null;
   passFeesToClient?: boolean;
   notes?: string | null;
+  /** "Website redesign — Phase 1". Optional. */
+  title?: string | null;
   /** Abroad: "link" for a Balans card link, "own" for the sender's own details. Unset is their default. */
   payBy?: "link" | "own" | "bank" | null;
 };
@@ -2222,6 +2224,7 @@ function startDocument(p: Parsed, ctx: Context, now: Civil, quote?: Quote, said?
     instalments: p.options.depositPercent == null ? p.options.instalments : null,
     passFeesToClient: p.options.passFeesToClient ?? false,
     notes: p.options.notes,
+    title: p.title ?? null,
     // "…pay by my paypal", "…use my details": the sender's own details, not a link.
     payBy: payByIn(said ?? ""),
   };
@@ -2477,6 +2480,7 @@ export function formValues(doc: PendingDoc, now: Civil): {
     today: iso(now),
     plan: planIdFor({ depositPercent: doc.depositPercent, instalments: doc.instalments }),
     notes: doc.notes ?? "",
+    title: doc.title ?? "",
     vat: doc.vatPercent != null,
     /*
      * What the draft is priced in, and whether the box that says so is even
@@ -3047,6 +3051,7 @@ function applyIn(doc: PendingDoc, c: Correction): PendingDoc {
   }
   if (c.passFeesToClient !== undefined) next.passFeesToClient = c.passFeesToClient;
   if (c.payBy !== undefined) next.payBy = c.payBy;
+  if (c.title !== undefined) next.title = c.title;
 
   if (c.description) {
     next.lines = next.lines.length

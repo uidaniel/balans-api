@@ -1446,6 +1446,7 @@ async function runEffects(
             instalments: doc.instalments ?? null,
             passFeesToClient: doc.passFeesToClient ?? false,
             notes: doc.notes ?? null,
+            title: doc.title ?? null,
             // The price as agreed and the rate it was converted at, when the
             // invoice was not written in naira. Locked here and never fetched
             // again for this document.
@@ -1521,6 +1522,7 @@ async function runEffects(
             instalments: sent.instalments,
             passFeesToClient: sent.passFeesToClient,
             notes: sent.notes,
+            title: sent.title ?? null,
             payBy: sent.payBy ?? null,
             ...(sent.foreign ? { foreign: sent.foreign } : {}),
           };
@@ -3112,6 +3114,7 @@ async function handleInvoiceForm(
     // No longer asked: the form's fee box went with the Monnify split.
     passFeesToClient: false,
     notes: notes || null,
+    title: (fields.title ?? "").trim().slice(0, 120) || null,
     // Abroad only: their own details or a Balans link. Empty is their default.
     payBy: fields.pay_by === "own" || fields.pay_by === "link" || fields.pay_by === "bank" ? fields.pay_by : null,
   };

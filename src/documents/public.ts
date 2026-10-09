@@ -66,6 +66,8 @@ export type PublicDocument = {
   dueDate: Civil | null;
   issueDate: Civil | null;
   notes: string | null;
+  /** "Website redesign — Phase 1". Optional. */
+  title?: string | null;
   /** Where the user's share settles. Absent means the page cannot take money. */
   subAccountCode: string | null;
   /**
@@ -136,6 +138,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     valid_until: Date | null;
     issue_date: Date | null;
     notes: string | null;
+    title: string | null;
     business_name: string | null;
     plan: "free" | "pro";
     logo_url: string | null;
@@ -157,7 +160,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
   }>(
     `SELECT d.id, d.user_id, d.type, d.number, d.ref, d.status,
             d.subtotal_kobo, d.vat_kobo, d.total_kobo, d.amount_paid_kobo,
-            d.pass_fees_to_client, d.due_date, d.valid_until, d.issue_date, d.notes,
+            d.pass_fees_to_client, d.due_date, d.valid_until, d.issue_date, d.notes, d.title,
             d.currency, d.original_amount_minor, d.fx_rate,
             d.delivery_type, d.payment_details, d.bank_details_bank_name, d.bank_details_account_name,
             d.bank_details_account_last4, d.bank_details_account_number_encrypted,
@@ -226,6 +229,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     dueDate: civil(r.due_date ?? r.valid_until),
     issueDate: civil(r.issue_date),
     notes: r.notes,
+    title: r.title,
     subAccountCode: r.sub_account_code,
     hasPayoutAccount: r.has_payout_account,
     plan: r.plan,

@@ -113,6 +113,8 @@ export type Correction = {
   stageDues?: { which: "first" | "last" | number; date: Civil; phrase: string }[];
   /** How a client abroad pays: a Balans link, or the sender's own details. */
   payBy?: "link" | "own" | "bank";
+  /** A title for the document, or null to take it off. */
+  title?: string | null;
   clientName?: string;
   /**
    * Where the client's copy goes. Null takes the address off entirely.
@@ -831,12 +833,14 @@ export function readCorrection(
   // whole-message way.
   const qty = qtyIn(text);
   const ask = qty ? null : askForIn(text);
+  const titled = titleIn(text);
   const extra: Correction = {
+    ...(titled ? { title: titled.title } : {}),
     ...(payBy ? { payBy } : {}),
     ...(qty ? { setLineQty: qty } : {}),
     ...(ask ? { askFor: ask } : {}),
   };
-  const whole0 = qty || ask ? null : readOneCorrection(text, today, money);
+  const whole0 = qty || ask ? null : titled ? (titled.rest ? readOneCorrection(titled.rest, today, money) : null) : readOneCorrection(text, today, money);
   const whole =
     Object.keys(extra).length && (!whole0 || Object.keys(whole0).length === 0)
       ? extra
@@ -966,4 +970,26 @@ export function askForIn(text: string): "email" | "phone" | null {
   if (new RegExp(verb + String.raw`.*\b(?:e-?mail|mail address|email address)\b`).test(t)) return "email";
   if (new RegExp(verb + String.raw`.*\b(?:phone|whatsapp|phone number|his number|her number|their number|number)\b`).test(t)) return "phone";
   return null;
+}
+
+/**
+ * A title said in a message (9 October 2026), and the message without it.
+ *
+ *   "invoice Acme 500k for the website, title: Phase 1 redesign"
+ *   "change the title to September retainer", "titled Phase 2"
+ *   "no title", "remove the title" → null
+ *
+ * Only after the word "title", so a description is never taken for one.
+ */
+export function titleIn(text: string): { title: string | null; rest: string } | null {
+  if (/\b(?:no|remove|delete|drop|clear)\s+(?:the\s+)?title\b/i.test(text)) {
+    return { title: null, rest: text.replace(/[,;]?\s*\b(?:no|remove|delete|drop|clear)\s+(?:the\s+)?title\b/i, "").trim() };
+  }
+  const m = /[,;]?\s*\b(?:(?:change|set|make|update)\s+(?:the\s+)?title\s+(?:to|as)|title(?:\s+it)?\s*(?:[:=-]|is|as|to)|titled|call\s+it)\s*["“']?([^"”'\n]{2,120}?)["”']?\s*(?=$|[;\n]|,\s*(?:due|vat|deposit|split|pay|send)\b)/i.exec(
+    text,
+  );
+  if (!m) return null;
+  const title = m[1]!.trim().replace(/[.,;:\s]+$/, "");
+  if (title.length < 2) return null;
+  return { title, rest: (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim() };
 }

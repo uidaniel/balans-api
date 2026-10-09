@@ -192,6 +192,7 @@ border-top:1px solid ${ink(0.12)};padding-top:.9em;font-size:.58em;color:${ink(0
     // No client email on the rail: it is six em wide, which a name fits and
     // an address does not.
     field("Billed to", party(d.clientName, null)),
+    d.title ? field("Project", esc(d.title)) : "",
     d.number === null ? "" : field(`${kind(d)} #`, String(d.number)),
     d.issueDate ? field("Issue date", when(d.issueDate)) : "",
     d.dueDate ? field(dueLabel(d), when(d.dueDate)) : "",
@@ -510,6 +511,7 @@ line-height:1;font-variant-numeric:tabular-nums}
 
   <div class="parties">
     ${field(isReceipt(d) ? "Received from" : "Prepared for", party(d.clientName, d.clientEmail))}
+    ${d.title ? field("Project", esc(d.title)) : ""}
     ${
       isReceipt(d) && d.receipt
         ? field("Paid on", when(d.receipt.paidOn))
@@ -594,6 +596,7 @@ gap:1.2em;padding-top:1.2em}
   const receipt = isReceipt(d) ? d.receipt : undefined;
   const facts = [
     fact(isReceipt(d) ? "Received from" : "Billed to", esc(d.clientName)),
+    d.title ? fact("Project", esc(d.title)) : "",
     receipt
       ? fact("Receipt no.", `#${receipt.number}`)
       : d.number === null
@@ -714,7 +717,7 @@ border-top:.14em solid ${INK};padding-top:.8em}
   ${section(
     2,
     "To",
-    line(esc(d.clientName), "b") + (d.clientEmail ? line(esc(d.clientEmail), "q") : ""),
+    line(esc(d.clientName), "b") + (d.clientEmail ? line(esc(d.clientEmail), "q") : "") + (d.title ? line(`Re: ${esc(d.title)}`, "q") : ""),
   )}
   ${section(3, "Work", rows(d, { rate: false }))}
   ${payInfo(d) ? section(4, onlineSection(d), payInfo(d, { label: false })) : ""}

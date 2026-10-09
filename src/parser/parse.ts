@@ -12,6 +12,7 @@
  * language model.
  */
 
+import { titleIn } from "./corrections.ts";
 import { plainly } from "./corrections.ts";
 import { env } from "../config.ts";
 import { todayIn, type Civil } from "../../core/dates.ts";
@@ -42,7 +43,7 @@ const empty = (intent: RawParse["intent"], confidence: number): RawParse => ({
   confidence,
 });
 
-export async function parseMessage(
+async function parseMessageInner(
   text: string,
   /**
    * `onScreen` is the draft the user is looking at, when there is one. It only
@@ -219,4 +220,19 @@ function recoverAmount(parsed: Parsed, text: string, today: Civil): Parsed {
     "model",
     parsed.money,
   );
+}
+
+/**
+ * Reads a message, with any title taken out first (9 October 2026): the rest
+ * is read as always, and the title put back on the result, so "title: Phase
+ * 1 redesign" never ends up inside the description.
+ */
+export async function parseMessage(
+  text: string,
+  opts: Parameters<typeof parseMessageInner>[1] = {},
+): Promise<ParseOutcome> {
+  const titled = titleIn(text);
+  const out = await parseMessageInner(titled?.rest || text, opts);
+  if (titled && out.ok) return { ...out, parsed: { ...out.parsed, title: titled.title } };
+  return out;
 }
