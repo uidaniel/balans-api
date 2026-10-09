@@ -274,6 +274,23 @@ export async function confirmPayment(
    */
   const creditKobo = payment.invoice_amount_kobo ?? payment.client_total_kobo;
 
+  /*
+   * More than is still owed: held, not absorbed (9 October 2026). An invoice
+   * changed to a smaller figure, or marked paid by hand, while a checkout was
+   * still open would otherwise take the money, cap the credit and send a
+   * second "paid". The error log reaches the alert emails.
+   */
+  const { rows: owing } = await db().query<{ owed: number }>(
+    `SELECT (total_kobo - amount_paid_kobo)::int AS owed FROM documents WHERE id = $1`,
+    [payment.document_id],
+  );
+  if ((owing[0]?.owed ?? 0) < creditKobo) {
+    const why = `pays ${creditKobo} kobo but only ${owing[0]?.owed ?? 0} is owed`;
+    log.error({ reference, documentId: payment.document_id, why }, "payment held for review: more than is owed");
+    await markNeedsReview(payment.id, t, why);
+    return { kind: "needs_review", reference, why };
+  }
+
   const applied = await apply(payment.id, payment.document_id, t, creditKobo);
   if (!applied) return { kind: "already_confirmed", reference };
 
