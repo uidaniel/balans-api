@@ -119,7 +119,16 @@ export async function paystackRoutes(app: FastifyInstance): Promise<void> {
 
     const event = req.body as Event;
     const data = event.data ?? {};
-    const reference = data.reference;
+    /*
+     * Where the reference is depends on the event (9 October 2026): a charge
+     * has it at the top, a refund as `transaction_reference`, a dispute under
+     * `transaction`. Read from the top only, every dispute was "no reference".
+     */
+    const nested = (data as { transaction?: { reference?: unknown } }).transaction;
+    const reference =
+      data.reference ??
+      ((data as { transaction_reference?: unknown }).transaction_reference as string | undefined) ??
+      (typeof nested?.reference === "string" ? nested.reference : undefined);
     const type = event.event ?? "";
 
     /*

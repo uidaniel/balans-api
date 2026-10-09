@@ -12,6 +12,7 @@
  * never reverses the same event twice.
  */
 
+import { settleParts } from "../documents/parts.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { db, tx } from "../db/pool.ts";
 import { formatNaira } from "../../core/totals.ts";
@@ -50,9 +51,10 @@ export async function reversePayment(
     document_id: string;
     status: string;
     client_total_kobo: number;
+    invoice_amount_kobo: number | null;
   }>(
-    `SELECT id, reference, document_id, status, client_total_kobo
-       FROM payments WHERE provider_reference = $1
+    `SELECT id, reference, document_id, status, client_total_kobo, invoice_amount_kobo
+       FROM payments WHERE provider_reference = $1 OR reference = $1
        ORDER BY created_at DESC LIMIT 1`,
     [input.providerReference],
   );
@@ -73,6 +75,14 @@ export async function reversePayment(
   // A refund with no amount named is a full one; that is the common case and
   // the only safe reading of a missing figure.
   const reversedKobo = Math.min(input.amountKobo ?? payment.client_total_kobo, payment.client_total_kobo);
+  /*
+   * What comes off the invoice is what this payment put on it, not what the
+   * card was charged: with fees passed on, the client paid more than the
+   * invoice was credited. A part refund takes its share.
+   */
+  const credited = payment.invoice_amount_kobo ?? payment.client_total_kobo;
+  const unpaidKobo =
+    payment.client_total_kobo > 0 ? Math.round((reversedKobo * credited) / payment.client_total_kobo) : reversedKobo;
 
   const result = await tx(async (c) => {
     const claimed = await c.query(
@@ -98,7 +108,7 @@ export async function reversePayment(
     const doc = docs[0];
     if (!doc) throw new Error(`refund for ${payment.reference} points at a document that is gone`);
 
-    const paid = Math.max(0, doc.amount_paid_kobo - reversedKobo);
+    const paid = Math.max(0, doc.amount_paid_kobo - unpaidKobo);
     // Back to sent rather than draft: the document was issued and the client
     // has seen it. It is owed again, not unmade.
     const status = paid === 0 ? "sent" : "part_paid";
@@ -111,6 +121,20 @@ export async function reversePayment(
         WHERE id = $1`,
       [payment.document_id, paid, status],
     );
+
+    // The deposit or stage it paid is owed again: the parts are settled
+    // afresh against what is still paid, so the page asks for the right one.
+    const { rows: hasParts } = await c.query(`SELECT 1 FROM payment_parts WHERE document_id = $1 LIMIT 1`, [
+      payment.document_id,
+    ]);
+    if (hasParts.length) {
+      await c.query(
+        `UPDATE payment_parts SET status = (CASE WHEN position = 0 THEN 'payable' ELSE 'pending' END)::part_status, paid_at = NULL
+          WHERE document_id = $1`,
+        [payment.document_id],
+      );
+      if (paid > 0) await settleParts(payment.document_id, paid, c);
+    }
 
     return { ...doc, paidAfter: paid };
   });
