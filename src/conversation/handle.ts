@@ -3601,7 +3601,9 @@ async function openedForPlan(
     env.INTL_ENABLED && "can_bill_abroad" in data
       ? {
           show_currency: true,
-          currencies: currencyOptions(pro, homeCurrencyFor(phone), abroad !== null),
+          // Abroad, the currency they bill in is "home", even where their number
+          // maps to none of ours (India: USD), or it opens greyed out.
+          currencies: currencyOptions(pro, abroad ?? homeCurrencyFor(phone), abroad !== null),
           ...(pro || abroad ? { can_bill_abroad: true, amount_help: ABROAD_HELP } : {}),
           ...(abroad && data.currency === "NGN" ? { currency: abroad } : {}),
           pay_options: await payOptionsFor(userId),

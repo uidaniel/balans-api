@@ -1100,7 +1100,9 @@ export function payByOptions(x: { bank: string | null; details: string | null })
       title: "Custom payment details",
       description: first ? (first.length > 60 ? `${first.slice(0, 59)}…` : first) : "Not for naira. PayPal, Wise and so on.",
     },
-    { id: "link", title: "Balans payment link", description: "Not for naira. Your client pays by card." },
+    // A card payment settles to a Nigerian account through Paystack: with
+    // none, the client would reach a checkout that cannot open (9 Oct 2026).
+    ...(x.bank ? [{ id: "link", title: "Balans payment link", description: "Not for naira. Your client pays by card." }] : []),
   ];
 }
 

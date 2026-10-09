@@ -31,7 +31,8 @@ describe("the pay-by box", () => {
     assert.deepEqual(withBank.map((o) => o.id), ["bank", "own", "link"]);
     assert.equal(withBank[0]!.description, "Access Bank ••5673");
     assert.equal(withBank[1]!.description, "PayPal: me@x.com");
-    assert.deepEqual(payByOptions({ bank: null, details: null }).map((o) => o.id), ["own", "link"]);
+    // No Nigerian account: no card link either, since it settles to one.
+    assert.deepEqual(payByOptions({ bank: null, details: null }).map((o) => o.id), ["own"]);
     for (const o of withBank) assert.ok(o.title.length <= 30, o.title);
   });
 

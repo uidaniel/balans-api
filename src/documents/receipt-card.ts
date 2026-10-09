@@ -191,7 +191,8 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
               muted: true,
               cost: true,
             })
-          : row("Balans fee (Pro)", "₦0", { muted: true })
+          : // "(Pro)" only on Pro: a Free invoice with no fee is not Pro's doing.
+            row(plan === "pro" ? "Balans fee (Pro)" : "Balans fee", "₦0", { muted: true })
       }
     </div>
     <div class="total"><span class="ic">${BANK}</span>${row("To your bank", formatNaira(money.receivesKobo), { strong: true })}</div>

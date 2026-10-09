@@ -587,16 +587,23 @@ export async function applyEdit(userId: string, draftId: string, originalId: str
       type: DocumentType;
       current_version: number;
       sent_at: Date | null;
+      client_id: string;
     }>(
-      `SELECT id, number, ref, public_token, type, current_version, sent_at FROM documents
+      `SELECT id, number, ref, public_token, type, current_version, sent_at, client_id FROM documents
         WHERE id = $1 AND user_id = $2 AND status IN ('sent', 'viewed', 'overdue') AND amount_paid_kobo = 0
         FOR UPDATE`,
       [originalId, userId],
     );
     const original = rows[0];
     if (!original) return null;
-    const { rows: drafts } = await c.query<{ id: string; currency: string; type: DocumentType; pay_by: string | null }>(
-      `SELECT id, currency, type, pay_by FROM documents WHERE id = $1 AND user_id = $2 AND status = 'draft' FOR UPDATE`,
+    const { rows: drafts } = await c.query<{
+      id: string;
+      currency: string;
+      type: DocumentType;
+      pay_by: string | null;
+      client_id: string;
+    }>(
+      `SELECT id, currency, type, pay_by, client_id FROM documents WHERE id = $1 AND user_id = $2 AND status = 'draft' FOR UPDATE`,
       [draftId, userId],
     );
     const draft = drafts[0];
@@ -654,7 +661,9 @@ export async function applyEdit(userId: string, draftId: string, originalId: str
       type: original.type,
       bank,
       ownDetails,
-      updatedFrom: original.sent_at ?? new Date(),
+      // "Updated" only to the client who had the first one (9 October 2026):
+      // a different client is getting it for the first time.
+      ...(draft.client_id === original.client_id ? { updatedFrom: original.sent_at ?? new Date() } : {}),
     } as Confirmed;
   });
 }

@@ -129,7 +129,8 @@ export async function sendEmail(
         from: email.fromName ? withName(email.fromName) : from(),
         to: [email.to],
         ...(email.replyTo ? { reply_to: email.replyTo } : {}),
-        subject: email.subject,
+        // One line, whatever a title or a name had in it.
+        subject: email.subject.replace(/\s*[\r\n]+\s*/g, " ").trim(),
         text: email.text,
         ...(email.html
           ? {
