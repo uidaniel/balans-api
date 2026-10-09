@@ -21,8 +21,10 @@ STAGING=$([ "$BRANCH" = "main" ] && echo 0 || echo 1)
 # replacing the live API with staging's build. Never again by accident.
 if [ "$STAGING" = "1" ]; then
   DC=(sudo docker compose -f "$APP/deploy/docker-compose.staging.yml")
+  SERVICE=staging-api
 else
   DC=(sudo docker compose -f "$APP/deploy/docker-compose.yml")
+  SERVICE=api
 fi
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
@@ -54,7 +56,7 @@ fi
 cd "$APP/deploy"
 
 say "Building"
-"${DC[@]}" build api
+"${DC[@]}" build "$SERVICE"
 
 # The Caddyfile is bind-mounted as a single file, and `git reset` replaces the
 # file rather than rewriting it, so a running Caddy keeps reading the old one.
@@ -80,7 +82,21 @@ if [ "$STAGING" = "0" ] && [ -x "$APP/deploy/staging-setup.sh" ]; then
 fi
 
 say "Replacing the API"
-"${DC[@]}" up -d --no-deps api
+"${DC[@]}" up -d --no-deps "$SERVICE"
+
+# Staging must never answer to the live API's name on the shared network:
+# Caddy sends payment.balans.ng to "api", and a second container there takes
+# a share of live traffic. Stopped at once if it does.
+if [ "$STAGING" = "1" ]; then
+  aliases=$(sudo docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{range $v.Aliases}}{{.}} {{end}}{{end}}' balans-staging-api 2>/dev/null || true)
+  if printf ' %s ' "$aliases" | grep -q ' api '; then
+    sudo docker stop balans-staging-api >/dev/null 2>&1 || true
+    printf '
+[1;31mStaging answered to "api" on the live network; stopped it.[0m
+'
+    exit 1
+  fi
+fi
 
 say "Waiting for health"
 for i in $(seq 1 30); do
@@ -98,6 +114,6 @@ for i in $(seq 1 30); do
 done
 
 printf '\n\033[1;31mNot healthy after 90s. Last 60 lines:\033[0m\n'
-"${DC[@]}" logs --tail 60 api
+"${DC[@]}" logs --tail 60 "$SERVICE"
 printf '\n\033[1;33mTo go back:  git -C %s reset --hard %s && %s/deploy/deploy.sh\033[0m\n' "$APP" "$BEFORE" "$APP"
 exit 1

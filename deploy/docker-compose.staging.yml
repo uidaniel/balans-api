@@ -12,7 +12,11 @@
 name: balans-staging
 
 services:
-  api:
+  # NOT "api": a service's name is its address on every network it joins,
+  # and on the live network "api" is what Caddy sends payment.balans.ng to.
+  # Named api, this container shared the live traffic (9 October 2026):
+  # messages to the main number were answered from the test number.
+  staging-api:
     build:
       context: ..
       dockerfile: Dockerfile
