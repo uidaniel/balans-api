@@ -86,7 +86,7 @@ import {
 } from "../documents/reports.ts";
 import { defaultPeriod, readPeriod } from "../../core/period.ts";
 import { renderDocumentPdf } from "../documents/pdf.ts";
-import { deliverPaidToClient } from "../email/paid-delivery.ts";
+import { deliverPaidToClient, receiptForDocument } from "../email/paid-delivery.ts";
 import { emailDocumentToClient } from "../email/client-delivery.ts";
 import { whatsappDocumentToClient } from "../documents/client-whatsapp.ts";
 import { cancelDocument, convertQuote, findForResend, openForReminders, stopReminders } from "../documents/actions.ts";
@@ -1398,22 +1398,8 @@ async function runEffects(
           const phoneAllowed = !doc.clientPhone || gate.plan === "pro";
           if (!phoneAllowed) extra.push(clientWhatsAppIsPro());
 
-          /*
-           * Deposits and milestones are Pro (29 September 2026). On Free the
-           * draft is made as one payment and says so, the same way as the
-           * client's number above: refusing the whole invoice over how it is
-           * split would throw away everything else they just told us. Cleared
-           * from the draft in progress too, so a correction does not ask again.
-           */
-          const splitAsked = Boolean(doc.depositPercent || doc.instalments || doc.stageDueDates?.length);
-          const splitAllowed = !splitAsked || gate.plan === "pro";
-          if (!splitAllowed) {
-            extra.push(splitIsPro());
-            doc.depositPercent = null;
-            doc.instalments = null;
-            doc.stageDueDates = null;
-            log.info({ userId }, "payment plan left off: free plan");
-          }
+          // Deposits and milestones are on every plan again (9 October 2026);
+          // they were Pro from 29 September.
 
           /*
            * Their own payment details instead of a link, for an invoice abroad.
@@ -2407,6 +2393,16 @@ async function runEffects(
           }
 
           if (effect.intent === "decline_payment") {
+            /*
+             * The No on an old ask can come after the invoice was paid some
+             * other way (9 October 2026), so it says what is true rather
+             * than "stays unpaid" about an invoice that is paid.
+             */
+            const inv = number ? await findPayableByNumber(userId, number) : null;
+            if (inv && (inv.owedKobo <= 0 || inv.status === "paid")) {
+              extra.push(`✅ Invoice ${number} is already paid in full. Nothing changed.`);
+              break;
+            }
             extra.push(`Okay — invoice ${number ?? ""} stays unpaid.`.replace("invoice  ", "invoice "));
             break;
           }
@@ -2432,13 +2428,12 @@ async function runEffects(
              * It used to come back here as a PDF for the sender to forward,
              * which made them the courier for their own paperwork. The client
              * is emailed the paid invoice and the receipt (the same email a
-             * transfer through Balans sends), and nothing goes to anybody's
-             * WhatsApp. Awaited, so the reply can say where it went.
+             * transfer through Balans sends). Awaited, so the reply can say
+             * where it went.
              */
             // Their email if they gave one; their WhatsApp if only a number.
             const delivered = await deliverPaidToClient(inv.id, log);
-            extra.push(
-              lines(
+            const doneText = lines(
                 `✅ ${b("Done.")} Invoice ${number} is marked paid.`,
                 `${formatNaira(done.paidKobo)} from ${done.clientName}, by direct transfer.`,
                 delivered.ok
@@ -2450,8 +2445,26 @@ async function runEffects(
                     : delivered.why === "not_approved"
                       ? i("Receipts by WhatsApp start once Meta approves them. The payment is recorded either way.")
                       : i("The receipt did not go through. The payment is recorded either way."),
-              ),
             );
+
+            /*
+             * And the receipt comes back here too (9 October 2026), attached
+             * to the confirmation, the way a card payment's does: the sender
+             * keeps a copy of what their client was sent. Text alone if the
+             * PDF cannot be made or sent.
+             */
+            const receipt = ctx.phone ? await receiptForDocument(inv.id, log).catch(() => null) : null;
+            if (receipt && ctx.phone) {
+              const up = await uploadDocument(receipt.bytes, receipt.filename);
+              if (up.ok) {
+                const sent = await sendDocument(ctx.phone, up.mediaId, receipt.filename, doneText);
+                if (sent.ok) {
+                  await recordOutbound(userId, sent.waMessageId, "sent", { kind: "document" });
+                  break;
+                }
+              }
+            }
+            extra.push(doneText);
             break;
           }
 
@@ -3386,13 +3399,6 @@ function noOwnDetailsYet(): string {
   return para(
     `💳 ${b("You have not added your payment details yet.")}`,
     `This one goes out with a payment link. Reply ${b("settings")} to add your PayPal, Wise or bank details for clients abroad.`,
-  );
-}
-
-function splitIsPro(): string {
-  return para(
-    `⭐ ${b("Deposits and milestone payments are a Pro feature.")}`,
-    `The draft below is one payment for the full amount. Reply ${b("upgrade")} to split it.`,
   );
 }
 

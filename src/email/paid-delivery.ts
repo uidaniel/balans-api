@@ -335,7 +335,7 @@ export async function emailPaidToUser(
  * document can be marked paid by hand, and an email that says a receipt is
  * attached when none is sends somebody looking for a file that does not exist.
  */
-async function receiptForDocument(
+export async function receiptForDocument(
   documentId: string,
   log: FastifyBaseLogger,
 ): Promise<{ bytes: Buffer; filename: string } | null> {

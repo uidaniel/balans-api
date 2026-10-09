@@ -37,7 +37,6 @@ export function proOffer(used: number, price: ProPrice = NAIRA_PRICE): string {
       // something Free does not charge either.
       `✅ Invoices sent straight to your client's WhatsApp`,
       `✅ Reminders to your clients by email, so you stop chasing`,
-      `✅ Deposits and milestone payments`,
       // Only while it is switched on: an offer is a promise.
       ...(env.INTL_ENABLED ? [`✅ Invoices in dollars, pounds, euros and 6 more currencies`] : []),
       `✅ Your logo on every invoice`,

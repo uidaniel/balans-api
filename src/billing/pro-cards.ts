@@ -36,7 +36,6 @@ export function proPoints(): string[] {
     `${availableTo("pro").length} invoice designs`,
     "Invoices sent to your client\u2019s WhatsApp",
     "Automatic reminders to late clients",
-    "Deposits and milestones",
   ];
 }
 

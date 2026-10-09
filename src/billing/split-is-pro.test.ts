@@ -1,8 +1,6 @@
 /**
- * Deposits and milestone payments are Pro (29 September 2026).
- *
- * The draft step is the one place every document passes through — a typed
- * message, a correction and the form alike — so the rule is pinned there.
+ * Deposits and milestone payments, on every plan (9 October 2026). They were
+ * Pro from 29 September; this pins that nothing takes them off a Free draft.
  */
 
 import { describe, it } from "node:test";
@@ -10,29 +8,25 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PLANS } from "../whatsapp/flows/definitions.ts";
 import { proOffer } from "./messages.ts";
+import { proPoints } from "./pro-cards.ts";
 
 const handle = readFileSync(new URL("../conversation/handle.ts", import.meta.url), "utf8");
 
 describe("deposits and milestones", () => {
-  it("are left off a Free draft, which says why, and kept on Pro", () => {
-    assert.match(handle, /const splitAllowed = !splitAsked \|\| gate\.plan === "pro";/);
-    assert.match(handle, /if \(!splitAllowed\) \{\s*extra\.push\(splitIsPro\(\)\);/);
-    // Cleared before the draft is written, not after.
-    const gate = handle.indexOf("const splitAllowed");
-    const draft = handle.indexOf("const draft = await createDraft(userId, {");
-    assert.ok(gate > 0 && gate < draft, "the Pro check must run before the draft is created");
+  it("are not taken off a Free draft", () => {
+    assert.doesNotMatch(handle, /splitAllowed|splitIsPro/);
+    assert.doesNotMatch(handle, /payment plan left off: free plan/);
   });
 
   it("fit a dropdown's 30 characters, with no '(Pro)' on them", () => {
-    // Taken off the labels on 6 October 2026. Picking one on Free is still
-    // refused before the draft is made, with the upgrade offer.
     for (const p of PLANS) {
       assert.ok(p.title.length <= 30, p.title);
       assert.ok(!p.title.includes("(Pro)"), p.title);
     }
   });
 
-  it("are sold in the upgrade offer", () => {
-    assert.match(proOffer(1), /Deposits and milestone payments/);
+  it("are not sold as Pro", () => {
+    assert.doesNotMatch(proOffer(1), /Deposits and milestone/);
+    assert.ok(!proPoints().some((p) => /deposit|milestone/i.test(p)));
   });
 });
