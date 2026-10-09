@@ -63,13 +63,21 @@ async function call<T>(
   path: string,
   init: RequestInit,
   fetchImpl: typeof fetch = fetch,
+  /** "lookup": a read that takes no money, allowed the lookup-only key. */
+  use: "payments" | "lookup" = "payments",
 ): Promise<{ ok: true; body: T } | { ok: false; status: number; message: string }> {
-  require_("PAYSTACK_SECRET_KEY");
+  /*
+   * The staging copy has no payments key — card payments there are off — but
+   * still has to check account names and list banks, which take no money.
+   * PAYSTACK_LOOKUP_SECRET_KEY is for exactly those (9 October 2026).
+   */
+  const key = use === "lookup" ? (env.PAYSTACK_LOOKUP_SECRET_KEY ?? env.PAYSTACK_SECRET_KEY) : env.PAYSTACK_SECRET_KEY;
+  if (!key) require_("PAYSTACK_SECRET_KEY");
 
   const res = await fetchImpl(`${base()}${path}`, {
     ...init,
     headers: {
-      authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`,
+      authorization: `Bearer ${key}`,
       "content-type": "application/json",
       ...init.headers,
     },
@@ -247,6 +255,7 @@ export async function listBanks(fetchImpl: typeof fetch = fetch): Promise<Paysta
     `/bank?country=nigeria&currency=NGN&perPage=500`,
     { method: "GET" },
     fetchImpl,
+    "lookup",
   );
   if (!res.ok) return [];
   return res.body
@@ -495,6 +504,7 @@ export async function resolveAccountNumber(
     `/bank/resolve?${q}`,
     { method: "GET" },
     fetchImpl,
+    "lookup",
   );
   if (res.ok && res.body.account_name) {
     return {

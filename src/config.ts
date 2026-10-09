@@ -104,6 +104,8 @@ const schema = z.object({
    */
   PAYSTACK_BASE_URL: z.string().url().default("https://api.paystack.co"),
   PAYSTACK_SECRET_KEY: z.string().optional(),
+  /** Account-name checks and the bank list only; for staging. See paystack.ts `call`. */
+  PAYSTACK_LOOKUP_SECRET_KEY: z.string().optional(),
 
   /* -- International invoices ---------------------------------------------- */
   /**
