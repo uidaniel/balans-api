@@ -66,10 +66,14 @@ if [ ! -d "$STAGING_APP/.git" ]; then
   sudo mkdir -p "$STAGING_APP"
   sudo chown "$(id -u):$(id -g)" "$STAGING_APP"
   git clone --quiet --branch staging "$origin" "$STAGING_APP"
-  # One commit behind, so the watcher sees the branch move and does the first
-  # deploy itself, with its rollback and health check, rather than this script.
-  git -C "$STAGING_APP" reset --hard --quiet HEAD~1
   chmod +x "$STAGING_APP/deploy/"*.sh
+  #
+  # The first deploy, started here and left to run on its own (it is a full
+  # build). Not by setting the checkout a commit back for the watcher to
+  # notice, which is what this did first, on 9 October 2026: the older
+  # commit's deploy.sh only knew the live copy, and the staging watcher spent
+  # twenty minutes re-checking the live API instead of building staging.
+  FIRST=1
 fi
 
 # -- Staging's watcher ---------------------------------------------------------
@@ -78,6 +82,11 @@ if [ ! -f /etc/systemd/system/balans-staging-deploy.timer ]; then
   sudo cp "$LIVE_APP/deploy/balans-staging-deploy.service" "$LIVE_APP/deploy/balans-staging-deploy.timer" /etc/systemd/system/
   sudo systemctl daemon-reload
   sudo systemctl enable --now balans-staging-deploy.timer
+fi
+
+if [ "${FIRST:-0}" = "1" ]; then
+  say "starting the first staging deploy in the background"
+  sudo systemd-run --unit=balans-staging-first --uid="$(id -u)" --gid="$(id -g)"     --setenv=BALANS_APP="$STAGING_APP" --setenv=BALANS_BRANCH=staging --setenv=DEPLOY_NO_FETCH=1     "$STAGING_APP/deploy/deploy.sh" || true
 fi
 
 say "ready"
