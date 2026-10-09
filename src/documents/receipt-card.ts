@@ -69,6 +69,28 @@ const row = (
      <span class="l">${esc(label)}</span><span class="lead"></span><span class="v${opts.cost ? " cost" : ""}">${esc(value)}</span>
    </div>`;
 
+/** An item: its name, a chip with how many, a leader and the figure. */
+const itemRow = (name: string, qty: number, value: string): string =>
+  `<div class="row item">
+     <span class="l">${esc(name)}</span><span class="q">× ${esc(String(qty))}</span><span class="lead"></span><span class="v">${esc(value)}</span>
+   </div>`;
+
+/** Up to two initials, for the client's mark beside their name. */
+const initials = (name: string): string =>
+  name
+    .split(/\s+/)
+    .filter((w) => /[A-Za-z0-9]/.test(w))
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("") || "·";
+
+/** A bank, drawn: for the line that says the money lands there. */
+const BANK = `<svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.5 12 4l9 5.5H3ZM5 10v7M9.5 10v7M14.5 10v7M19 10v7M3 20h18"/></svg>`;
+/** A calendar, for the date it is due. */
+const CAL = `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>`;
+/** A clock, for when the money arrives. */
+const CLOCK = `<svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>`;
+
 /** Two arrows passing, for "this converts to that". Drawn, not a font glyph. */
 const SWAP = `<svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="#10231c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg>`;
 
@@ -112,7 +134,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
     ? `<div class="rows items">
       ${draft.lines
         .slice(0, SHOWN)
-        .map((l) => row(`${l.description} × ${l.qty}`, itemAmount(l)))
+        .map((l) => itemRow(l.description, l.qty, itemAmount(l)))
         .join("")}
       ${draft.lines.length > SHOWN ? `<div class="more">+ ${draft.lines.length - SHOWN} more on the invoice</div>` : ""}
     </div>`
@@ -171,14 +193,14 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
             })
           : row("Balans fee (Pro)", "₦0", { muted: true })
       }
-      <div class="total">${row("To your bank", formatNaira(money.receivesKobo), { strong: true })}</div>
     </div>
+    <div class="total"><span class="ic">${BANK}</span>${row("To your bank", formatNaira(money.receivesKobo), { strong: true })}</div>
 
 `
     : `<div class="rows">
       ${row("Fees", "₦0", { muted: true })}
-      <div class="total">${row("To your bank", formatNaira(draft.totalKobo), { strong: true })}</div>
-    </div>`;
+    </div>
+    <div class="total"><span class="ic">${BANK}</span>${row("To your bank", formatNaira(draft.totalKobo), { strong: true })}</div>`;
 
   return `<!doctype html>
 <html><head><meta charset="utf-8"><style>
@@ -188,92 +210,115 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
      which, in this image, is DejaVu. */
   ${fontFaces(["display"])}
   :root {
-    --ink:#10231c; --cream:#f6f1e7; --sand:#e9e1d0; --sand-2:#ddd3bf; --moss:#2e8a55; --red:#d14343;
+    --ink:#10231c; --ink2:#173128; --cream:#f6f1e7; --sand:#e9e1d0; --sand-2:#ddd3bf; --moss:#2e8a55; --red:#d14343;
+    --marigold:#f5b82e; --soft:#f6f2ea;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body { width:${CARD}px; height:${CARD}px; overflow:hidden; }
   body {
-    background:var(--cream); color:var(--ink);
+    background:var(--cream);
+    color:var(--ink);
     font-family:${FONT.display};
-    font-size:34px; line-height:1.45;
-    display:flex; align-items:center; justify-content:center; padding:52px;
+    font-size:34px; line-height:1.4;
+    display:flex; align-items:center; justify-content:center; padding:50px;
   }
 
   /* The torn edge, exactly as the site draws it: a conic-gradient mask cut
      into teeth. Chrome renders it; nothing here is an image of a zigzag. */
   .paper {
     --tooth:34px;
-    width:100%; background:#fff; padding:62px 64px calc(var(--tooth) + 54px);
+    width:100%; background:#fff; padding:50px 58px calc(var(--tooth) + 46px);
+    border-radius:34px 34px 0 0;
+    box-shadow:0 26px 60px -40px rgb(16 35 28 / 0.45);
     mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg)
           50% / var(--tooth) 100%;
-    box-shadow:0 26px 60px -40px rgb(16 35 28 / 0.45);
   }
 
   /* The logo is inlined as SVG markup rather than linked, so it cannot be a
-     request that fails mid-render. This only styles what is already there;
-     if the asset is missing the wordmark is set in type instead. */
-  .mark { display:flex; justify-content:center; margin-bottom:36px; }
-  .mark svg { height:64px; width:auto; display:block; }
-  .mark .word { font-size:44px; font-weight:800; letter-spacing:-0.03em; }
+     request that fails mid-render. If the asset is missing the wordmark is
+     set in type instead. */
+  .head { display:flex; align-items:center; justify-content:space-between; gap:24px; }
+  .mark { display:flex; }
+  .mark svg { height:58px; width:auto; display:block; }
+  .mark .word { font-size:42px; font-weight:800; letter-spacing:-0.03em; }
   .mark .word i { font-style:normal; color:var(--moss); }
+  .tag { padding:10px 22px; border-radius:999px; background:var(--soft); font-size:26px; font-weight:700;
+         letter-spacing:0.06em; text-transform:uppercase; color:rgb(16 35 28 / 0.62); white-space:nowrap; }
 
-  h1 { font-size:46px; font-weight:800; letter-spacing:-0.02em; text-align:center; }
-  .sub { margin-top:10px; text-align:center; font-size:29px; color:rgb(16 35 28 / 0.5); }
+  h1 { margin-top:34px; font-size:52px; font-weight:800; letter-spacing:-0.035em; line-height:1.1; }
+  .sub { margin-top:14px; display:flex; align-items:center; gap:16px; font-size:30px; color:rgb(16 35 28 / 0.6); min-width:0; }
+  .sub .av { width:52px; height:52px; border-radius:50%; flex:none; display:grid; place-items:center;
+             background:var(--ink); color:var(--cream); font-size:22px; font-weight:800; letter-spacing:0; }
+  .sub span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sub b { color:var(--ink); font-weight:700; }
 
-  .band { margin-top:38px; padding:26px 0; border-top:2px dashed rgb(16 35 28 / 0.25);
-          border-bottom:2px dashed rgb(16 35 28 / 0.25); }
-  .cap { font-size:28px; color:rgb(16 35 28 / 0.55); }
-  .amount { margin-top:4px; font-size:76px; font-weight:800; letter-spacing:-0.03em; }
-  .pair { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:28px; }
-  .pair .amount { font-size:62px; white-space:nowrap; }
+  /* The amount, on a panel of its own. */
+  .band { margin-top:30px; padding:30px 34px; border-radius:28px; background:var(--soft); }
+  .cap { font-size:27px; color:rgb(16 35 28 / 0.55); }
+  .amount { margin-top:2px; font-size:88px; font-weight:800; letter-spacing:-0.045em; line-height:1.05; }
+  .pair { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:24px; }
+  .pair .amount { font-size:64px; white-space:nowrap; }
   .pair .r { text-align:right; }
   .amount.naira { color:var(--moss); }
-  .swap { width:96px; height:96px; border-radius:50%; background:#f5b82e;
+  .swap { width:92px; height:92px; border-radius:50%; background:var(--marigold);
           display:grid; place-items:center; }
-  .rate { margin:22px auto 6px; display:table; padding:10px 22px; border-radius:999px;
-          background:rgb(16 35 28 / 0.06); font-size:32px; font-weight:700; letter-spacing:-0.01em; }
-  .when { margin-top:10px; font-size:29px; color:rgb(16 35 28 / 0.6); }
+  .rate { margin:18px auto 0; display:table; padding:10px 22px; border-radius:999px;
+          background:#fff; font-size:30px; font-weight:700; letter-spacing:-0.01em; }
+  .meta { margin-top:18px; display:flex; flex-wrap:wrap; gap:12px; }
+  .when { display:inline-flex; align-items:center; gap:10px; padding:10px 20px 10px 16px; border-radius:999px;
+          background:#fff; font-size:27px; font-weight:600; color:var(--ink); }
+  .when svg { color:var(--moss); }
+  .stages { margin-top:18px; display:grid; gap:10px; font-size:27px; color:rgb(16 35 28 / 0.7); }
+  .stages div { display:flex; align-items:center; gap:14px; }
+  .stages div::before { content:""; width:14px; height:14px; border-radius:50%; background:var(--marigold); flex:none; }
 
-  .stages { margin-top:20px; font-size:28px; color:rgb(16 35 28 / 0.6); }
-  .stages div { margin-top:6px; }
-
-  .rows { margin-top:34px; }
-  .row { display:flex; align-items:baseline; gap:14px; margin-top:16px; }
+  .rows { margin-top:28px; }
+  .row { display:flex; align-items:baseline; gap:14px; margin-top:14px; }
   .row .lead { flex:1; min-width:24px; border-bottom:3px dotted currentColor;
-               opacity:0.3; transform:translateY(-0.3em); }
+               opacity:0.25; transform:translateY(-0.3em); }
   .row.muted { color:rgb(16 35 28 / 0.55); }
-  .row .v.cost { color:var(--red); font-weight:600; }
-  .row.strong { margin-top:0; font-size:40px; font-weight:800; }
+  .row .v { font-weight:600; white-space:nowrap; }
+  .row .v.cost { color:var(--red); font-weight:700; }
+  .items { margin-top:30px; font-size:30px; }
+  .items .row { margin-top:12px; }
+  .items .l { max-width:62%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  .items .q { flex:none; align-self:center; padding:3px 12px; border-radius:999px; background:var(--soft);
+              font-size:23px; font-weight:700; color:rgb(16 35 28 / 0.6); }
+  .items .more { margin-top:10px; font-size:25px; color:rgb(16 35 28 / 0.5); }
 
-  .total { margin-top:26px; padding-top:24px; border-top:4px solid var(--ink); }
-  .items { margin-top:26px; font-size:30px; }
-  .items .row { margin-top:10px; }
-  .items .l { max-width:70%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .items .more { margin-top:10px; font-size:25px; color:rgb(16 35 28 / 0.55); }
+  /* What lands, in the colour of money that has arrived. */
+  .total { margin-top:24px; display:flex; align-items:center; gap:22px; padding:24px 28px; border-radius:24px;
+           background:rgb(46 138 85 / 0.1); color:var(--moss); }
+  .total .ic { width:72px; height:72px; border-radius:20px; flex:none; display:grid; place-items:center;
+               background:var(--moss); color:#fff; }
+  .total .row { flex:1; margin:0; color:var(--ink); }
+  .total .row .lead { display:none; }
+  .total .row .l { flex:1; }
+  .row.strong { font-size:40px; font-weight:800; letter-spacing:-0.02em; }
+  .row.strong .v { font-size:46px; font-weight:800; color:var(--moss); letter-spacing:-0.03em; }
   .note { margin-top:20px; font-size:26px; line-height:1.5; color:rgb(16 35 28 / 0.5); }
   /*
-   * The settlement line is the footer of the card, not a footnote on it.
-   *
-   * It used to be grey 26px under the total and repeated in the message text
-   * below the picture. When somebody is deciding whether to send an invoice,
-   * "when do I get the money" is the question the card exists to answer, so it
-   * is said once, here, at a size that survives being looked at on a phone in
-   * a chat thread.
+   * The settlement line is the footer of the card, not a footnote on it:
+   * "when do I get the money" is the question the card exists to answer, so
+   * it is said once, here, at a size that survives a phone in a chat thread.
    */
-  .settles { margin-top:34px; padding:26px 30px; border-radius:20px;
-             background:rgb(245 184 46 / 0.16); color:var(--ink);
-             font-size:32px; font-weight:700; line-height:1.4; text-align:center; }
-  .settles span { display:block; margin-top:8px; font-size:25px; font-weight:500;
-                  color:rgb(16 35 28 / 0.62); }
+  .settles { margin-top:26px; display:flex; align-items:center; gap:22px; padding:24px 28px; border-radius:24px;
+             background:rgb(245 184 46 / 0.16); color:var(--ink); font-size:32px; font-weight:700; line-height:1.3; }
+  .settles .ic { width:64px; height:64px; border-radius:50%; flex:none; display:grid; place-items:center;
+                 background:var(--marigold); color:var(--ink); }
+  .settles span { display:block; margin-top:6px; font-size:24px; font-weight:500; color:rgb(16 35 28 / 0.62); }
 </style></head>
 <body>
   <div class="paper">
-    <div class="mark">${
-      logoAvailable() ? logoSvg("64px") : `<span class="word">bala<i>n</i>s</span>`
-    }</div>
+    <div class="head">
+      <div class="mark">${
+        logoAvailable() ? logoSvg("58px") : `<span class="word">bala<i>n</i>s</span>`
+      }</div>
+      <span class="tag">${quote ? "Quote" : "Invoice"}${draft.number ? ` · No. ${esc(String(draft.number))}` : ""}</span>
+    </div>
 
     <h1>${quote ? "Quote" : "Invoice"} breakdown</h1>
-    <p class="sub">For ${esc(draft.clientName)} · ${esc(draft.title || line)}</p>
+    <p class="sub"><span class="av">${esc(initials(draft.clientName))}</span><span>For ${esc(draft.clientName)} · ${esc(draft.title || line)}</span></p>
 
     <div class="band">
       ${
@@ -299,10 +344,13 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
           : `<div class="cap">${quote ? "Quote" : "Invoice"} amount</div>
              <div class="amount">${formatNaira(draft.totalKobo)}</div>`
       }
-      ${draft.vatKobo > 0 ? `<div class="when">Includes ${esc(String(draft.vatPercent))}% VAT</div>` : ""}
       ${
-        draft.dueDate
-          ? `<div class="when">${quote ? "Valid until" : "Due"} ${esc(formatFriendly(draft.dueDate, today))}</div>`
+        draft.vatKobo > 0 || draft.dueDate
+          ? `<div class="meta">${
+              draft.dueDate
+                ? `<span class="when">${CAL}${quote ? "Valid until" : "Due"} ${esc(formatFriendly(draft.dueDate, today))}</span>`
+                : ""
+            }${draft.vatKobo > 0 ? `<span class="when">Includes ${esc(String(draft.vatPercent))}% VAT</span>` : ""}</div>`
           : ""
       }
       ${stages.length ? `<div class="stages">${stages.map((s) => `<div>${esc(s)}</div>`).join("")}</div>` : ""}
@@ -312,7 +360,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
 
     ${feeRows}
 
-    <div class="settles">${
+    <div class="settles"><span class="ic">${CLOCK}</span><div>${
       /*
        * Section 9, in as many words: never say "tonight" about a card.
        * Monnify's 10 PM run is a promise we can make because we know the hour
@@ -336,7 +384,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
         : draft.payBy === "own"
           ? `<span>Using your payment details. Tell me once it lands and I will send the receipt.</span>`
           : `<span>By transfer. Tell me once it lands and I will send the receipt.</span>`
-    }</div>
+    }</div></div>
   </div>
 </body></html>`;
 }
