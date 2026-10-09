@@ -447,8 +447,9 @@ function ticket(d: DocumentData, opts: RenderOptions): string {
 .tk .main .k{margin-top:auto;padding-top:1.6em;font-size:.56em;font-weight:700;letter-spacing:.3em;text-transform:uppercase;color:${ink(0.55)}}
 .tk .main h1{margin-top:.25em;font-family:${DISPLAY};font-size:1.75em;line-height:1.02;font-weight:800;
 letter-spacing:-.045em;overflow-wrap:anywhere}
-.tk .main .facts{margin-top:.9em;display:flex;gap:1.3em}
-.tk .main .facts>div{min-width:0}
+.tk .main .facts{margin-top:.9em;display:flex;flex-wrap:wrap;gap:.8em 1.6em}
+.tk .main .facts>div{min-width:0;max-width:100%}
+.tk .main .facts .fv{overflow-wrap:anywhere}
 .tk .stub{position:relative;width:10.6em;flex:none;background:${INK};color:${CREAM};padding:1.35em 1.25em;
 display:flex;flex-direction:column}
 .tk .stub::before{content:"";position:absolute;left:-.06em;top:1em;bottom:1em;border-left:.13em dashed ${CREAM}}
@@ -487,7 +488,6 @@ letter-spacing:-.04em;font-variant-numeric:tabular-nums;white-space:nowrap}
       <div class="facts">
         ${namesWork(d) ? billedTo(d, null) : ""}
         ${d.issueDate ? field("Issued", when(d.issueDate)) : ""}
-        ${bizMeta(d, ["email"]) ? field("Contact", bizMeta(d, ["email"])) : ""}
       </div>
     </div>
     <div class="stub">
@@ -501,7 +501,10 @@ letter-spacing:-.04em;font-variant-numeric:tabular-nums;white-space:nowrap}
     <span class="notch t"></span><span class="notch b"></span>
   </div>
 
-  <div class="work">${titleBlock(d)}${rows(d)}</div>
+  <div class="work">${
+    // The title is already the ticket's headline; it is not said twice.
+    rows(d)
+  }</div>
   ${sums(d)}
 
   <div class="tail">

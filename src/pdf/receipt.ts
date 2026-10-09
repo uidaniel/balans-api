@@ -104,20 +104,29 @@ const CSS = `
 .slip .logo{justify-content:center}
 .slip .logo .biz{font-size:.92em;letter-spacing:-.01em}
 .slip .meta{margin-top:.5em;font-size:.55em;line-height:1.5;color:${ink(0.45)}}
+/* The moment itself: a panel of the green that means money has arrived,
+   with the tick, the word and the figure. */
+.hero{margin-top:1em;padding:1.1em 1em 1em;border-radius:.7em;background:rgba(63,143,95,.08)}
+.tick{display:grid;place-items:center;width:2.1em;height:2.1em;margin:0 auto .55em;border-radius:50%;background:${MOSS}}
+.tick svg{width:1.05em;height:1.05em;fill:none;stroke:#fff;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.hero .head{font-family:${DISPLAY};font-size:.78em;font-weight:700;letter-spacing:-.01em}
+/* The facts, each list on a soft panel of its own. */
+.panel{margin-top:.7em;padding:.55em .8em;border-radius:.55em;background:${ink(0.035)}}
+.panel .cap{margin:.2em 0 .25em;text-align:left}
 
 /* A row of dashes rather than a rule: the same mark a paper receipt uses to
    separate what it was from what it cost. */
 .cut{height:0;margin:1.15em 0;border-top:1px dashed ${ink(0.22)}}
 
 .stamp{
-  display:inline-flex;align-items:center;gap:.45em;
+  display:inline-flex;align-items:center;gap:.45em;margin-top:.5em;
   padding:.3em .75em;border-radius:999px;
-  background:rgba(63,143,95,.12);color:${MOSS};
+  background:#fff;color:${MOSS};
   font-size:.56em;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
 }
 .stamp svg{width:.9em;height:.9em;fill:none;stroke:${MOSS};stroke-width:2.4;
 stroke-linecap:round;stroke-linejoin:round}
-.big{margin-top:.45em;font-family:${DISPLAY};font-size:1.95em;font-weight:800;
+.big{margin-top:.4em;font-family:${DISPLAY};font-size:2.1em;font-weight:800;
 letter-spacing:-.045em;line-height:1.05;font-variant-numeric:tabular-nums}
 .on{margin-top:.45em;font-size:.62em;color:${ink(0.55)}}
 
@@ -132,7 +141,7 @@ letter-spacing:-.045em;line-height:1.05;font-variant-numeric:tabular-nums}
 .ln.sum .k{color:${INK};font-weight:600}
 .ln.owed .k,.ln.owed .v{color:${ink(0.55)};font-weight:600}
 
-.what{margin-top:.9em;text-align:left}
+.what{text-align:left}
 .what .cap{text-align:left}
 .foot{margin-top:1.1em;font-size:.6em;font-weight:600}
 /* The link carries a 32-character token, so it is allowed to break anywhere
@@ -192,26 +201,28 @@ export function renderReceiptHtml(d: DocumentData, opts: RenderOptions = {}): st
   <div class="top">${biz(d)}</div>
   ${bizMeta(d, ["address", "email", "tin"]) ? `<p class="meta">${bizMeta(d, ["address", "email", "tin"])}</p>` : ""}
 
-  <div class="cut"></div>
+  <div class="hero">
+    <span class="tick">${TICK}</span>
+    <p class="head">Payment received</p>
+    <p class="big">${money(paid)}</p>
+    ${r ? `<p class="on">${when(r.paidOn)}</p>` : ""}
+    ${
+      // Nothing watched this money arrive; the sender said it did. The client
+      // is owed knowing which kind of receipt they are holding.
+      r && r.method === "OFFLINE" ? `<p class="on">Payment received outside Balans, confirmed by ${esc(d.businessName)}</p>` : ""
+    }
+    <p class="stamp">${TICK}Paid</p>
+  </div>
 
-  <p class="stamp">${TICK}Paid</p>
-  <p class="big">${money(paid)}</p>
-  ${r ? `<p class="on">${when(r.paidOn)}</p>` : ""}
-  ${
-    // Nothing watched this money arrive; the sender said it did. The client
-    // is owed knowing which kind of receipt they are holding.
-    r && r.method === "OFFLINE" ? `<p class="on">Payment received outside Balans, confirmed by ${esc(d.businessName)}</p>` : ""
-  }
+  <div class="panel">
+    ${r ? line("Receipt", `#${r.number}`) : ""}
+    ${d.number === null ? "" : line("Invoice", `#${d.number}`)}
+    ${line("Paid by", esc(d.clientName), "wrap")}
+    ${r ? line("Method", esc(methodWords(r.method))) : ""}
+    ${r ? line("Reference", esc(r.reference), "wrap") : ""}
+  </div>
 
-  <div class="cut"></div>
-
-  ${r ? line("Receipt", `#${r.number}`) : ""}
-  ${d.number === null ? "" : line("Invoice", `#${d.number}`)}
-  ${line("Paid by", esc(d.clientName), "wrap")}
-  ${r ? line("Method", esc(methodWords(r.method))) : ""}
-  ${r ? line("Reference", esc(r.reference), "wrap") : ""}
-
-  ${what}
+  ${what ? `<div class="panel">${what}</div>` : ""}
 
   ${
     /*
@@ -221,7 +232,7 @@ export function renderReceiptHtml(d: DocumentData, opts: RenderOptions = {}): st
      * already says.
      */
     owed > 0
-      ? `<div class="what">
+      ? `<div class="panel what">
            ${line(`${d.variant === "quote" ? "Quote" : "Invoice"} total`, money(d.totalKobo), "sum")}
            ${line("Still owed", money(owed), "owed")}
          </div>`
