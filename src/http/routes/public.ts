@@ -638,7 +638,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
         verifierFor(p.provider),
       );
       if (outcome.kind === "confirmed") {
-        void notifyPaid({ ...outcome, provider: p.provider }, req.log);
+        void notifyPaid({ ...outcome, provider: p.provider }, req.log).catch((err: unknown) => req.log.error({ err }, "paid notice failed"));
         return reply
           .header("cache-control", "no-store")
           .send({ paidKobo: outcome.amountPaidKobo, fullyPaid: outcome.fullyPaid });

@@ -66,6 +66,12 @@ if (env.DATABASE_URL) {
   }
 }
 
+// A promise somebody forgot to await must not take the whole API down with
+// it (9 October 2026): logged, which reaches the alert emails, and survived.
+process.on("unhandledRejection", (err) => {
+  app.log.error({ err }, "unhandled rejection");
+});
+
 try {
   await app.listen({ port: env.PORT, host: "0.0.0.0" });
 } catch (e) {

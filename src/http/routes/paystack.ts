@@ -203,7 +203,7 @@ export async function paystackRoutes(app: FastifyInstance): Promise<void> {
         // make Paystack retry a payment that is already applied.
         // With the provider on it, so the message does not promise Monnify's
         // "tonight" about a card on somebody else's settlement schedule.
-        void notifyPaid({ ...outcome, provider: "paystack" }, req.log);
+        void notifyPaid({ ...outcome, provider: "paystack" }, req.log).catch((err: unknown) => req.log.error({ err }, "paid notice failed"));
         void recordCard(reference, req.log);
         return reply.send({ ok: true });
 
