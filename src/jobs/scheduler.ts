@@ -26,7 +26,10 @@ import { runDailyJobs } from "./overdue.ts";
  * this has to be distinctive enough not to collide with anything else that
  * might take one on the same database.
  */
-const LOCK_KEY = 0x62616c61; // "bala"
+const LOCK_KEY = 0x62616c61 + (env.DATABASE_SCHEMA ? 1 : 0); // "bala"
+// Staging shares the database in its own schema, and an advisory lock is
+// database-wide: on the same key, staging holding it made live skip its hour
+// (9 October 2026). Staging also has JOBS_ENABLED=false; this is the belt.
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;

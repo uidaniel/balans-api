@@ -197,6 +197,8 @@ export async function sendDueReminders(
        JOIN users u     ON u.id = d.user_id
        JOIN clients c   ON c.id = d.client_id
       WHERE r.status = 'pending' AND r.channel = 'whatsapp'
+        -- A suspended or deleted sender's clients are not chased.
+        AND u.status = 'active'
         -- Paid or cancelled since it was scheduled: F13 says each stops.
         AND d.status IN ('sent', 'viewed', 'overdue')
         AND d.total_kobo > d.amount_paid_kobo
@@ -215,94 +217,105 @@ export async function sendDueReminders(
     );
     if (claimed.rowCount === 0) continue;
 
-    const owed = r.total_kobo - r.amount_paid_kobo;
-    // Nothing paid yet on a dollar invoice: still owed in dollars. Part paid,
-    // the rest is only known in naira, which is what was charged.
-    const owedAgreed = r.currency !== "NGN" && r.amount_paid_kobo === 0 ? amountFor(r) : undefined;
-    const due: Civil = {
-      y: r.due_date.getFullYear(),
-      m: r.due_date.getMonth() + 1,
-      d: r.due_date.getDate(),
-    };
-    const link = r.public_token
-      ? `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/${r.public_token}`
-      : null;
-
     /*
-     * The client first, then the freelancer — told what already happened.
-     *
-     * The freelancer used to be handed a message to copy and forward
-     * ("Send them this"), which is the step that gets forgotten, and the
-     * reason reminders exist at all. Where Balans can reach the client
-     * itself it does, and the freelancer hears that it did. Only where it
-     * cannot — no address and no number, or a Free plan — are they still
-     * given the words to send.
-     *
-     * Each channel independent of the other: a bounced email must not stop
-     * the WhatsApp, and neither depends on the freelancer's phone.
+     * One reminder that throws must not end the hour (9 October 2026): it
+     * used to stay 'sending' for ever and take every job after it down too.
      */
-    const isToday = due.y === today.y && due.m === today.m && due.d === today.d;
-    const emailed = await emailReminderToClient(r.document_id, today, log).catch((err: unknown) => {
-      log.error({ err, documentId: r.document_id }, "client reminder email failed");
-      return false;
-    });
-    const whatsapped = await whatsappReminderToClient(
-      r.document_id,
-      isToday ? "today" : formatFriendly(due, today),
-      log,
-    ).catch((err: unknown) => {
-      log.error({ err, documentId: r.document_id }, "client reminder WhatsApp failed");
-      return { ok: false as const };
-    });
-    const reminded = { email: emailed, whatsapp: whatsapped.ok };
-    const how = remindedHow(reminded);
+    try {
+      const owed = r.total_kobo - r.amount_paid_kobo;
+      // Nothing paid yet on a dollar invoice: still owed in dollars. Part paid,
+      // the rest is only known in naira, which is what was charged.
+      const owedAgreed = r.currency !== "NGN" && r.amount_paid_kobo === 0 ? amountFor(r) : undefined;
+      const due: Civil = {
+        y: r.due_date.getFullYear(),
+        m: r.due_date.getMonth() + 1,
+        d: r.due_date.getDate(),
+      };
+      const link = r.public_token
+        ? `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/${r.public_token}`
+        : null;
 
-    const outcome = await send(
-      {
-        userId: r.user_id,
-        phone: r.wa_phone,
-        text: promptMessage({
-          number: r.number,
-          clientName: r.client_name,
-          businessName: r.business_name ?? "us",
-          owedKobo: owed,
-          due,
-          today,
-          link,
-          bank: await bankDetailsOf(r.document_id),
-          owedAgreed,
-          reminded,
-        }),
-        fallback: how
-          ? {
-              template: "client_reminded",
-              params: [
-                r.client_name,
-                r.number === null ? "" : String(r.number),
-                owedAgreed ?? formatNaira(owed),
-                how,
-              ],
-            }
-          : {
-              template: "invoice_overdue_prompt",
-              params: [
-                r.number === null ? "" : String(r.number),
-                owedAgreed ?? formatNaira(owed),
-                formatFriendly(due, today),
-                r.client_name,
-              ],
-            },
-      },
-      log,
-    );
+      /*
+       * The client first, then the freelancer — told what already happened.
+       *
+       * The freelancer used to be handed a message to copy and forward
+       * ("Send them this"), which is the step that gets forgotten, and the
+       * reason reminders exist at all. Where Balans can reach the client
+       * itself it does, and the freelancer hears that it did. Only where it
+       * cannot — no address and no number, or a Free plan — are they still
+       * given the words to send.
+       *
+       * Each channel independent of the other: a bounced email must not stop
+       * the WhatsApp, and neither depends on the freelancer's phone.
+       */
+      const isToday = due.y === today.y && due.m === today.m && due.d === today.d;
+      const emailed = await emailReminderToClient(r.document_id, today, log).catch((err: unknown) => {
+        log.error({ err, documentId: r.document_id }, "client reminder email failed");
+        return false;
+      });
+      const whatsapped = await whatsappReminderToClient(
+        r.document_id,
+        isToday ? "today" : formatFriendly(due, today),
+        log,
+      ).catch((err: unknown) => {
+        log.error({ err, documentId: r.document_id }, "client reminder WhatsApp failed");
+        return { ok: false as const };
+      });
+      const reminded = { email: emailed, whatsapp: whatsapped.ok };
+      const how = remindedHow(reminded);
 
-    await db().query(
-      `UPDATE reminders SET status = $2, sent_at = CASE WHEN $2 = 'sent' THEN now() ELSE NULL END
-        WHERE id = $1`,
-      [r.id, outcome.kind === "sent" ? "sent" : outcome.kind === "skipped" ? "skipped" : "failed"],
-    );
+      const outcome = await send(
+        {
+          userId: r.user_id,
+          phone: r.wa_phone,
+          text: promptMessage({
+            number: r.number,
+            clientName: r.client_name,
+            businessName: r.business_name ?? "us",
+            owedKobo: owed,
+            due,
+            today,
+            link,
+            bank: await bankDetailsOf(r.document_id),
+            owedAgreed,
+            reminded,
+          }),
+          fallback: how
+            ? {
+                template: "client_reminded",
+                params: [
+                  r.client_name,
+                  r.number === null ? "" : String(r.number),
+                  owedAgreed ?? formatNaira(owed),
+                  how,
+                ],
+              }
+            : {
+                template: "invoice_overdue_prompt",
+                params: [
+                  r.number === null ? "" : String(r.number),
+                  owedAgreed ?? formatNaira(owed),
+                  formatFriendly(due, today),
+                  r.client_name,
+                ],
+              },
+        },
+        log,
+      );
 
-    if (outcome.kind === "sent") sent += 1;
+      await db().query(
+        `UPDATE reminders SET status = $2, sent_at = CASE WHEN $2 = 'sent' THEN now() ELSE NULL END
+          WHERE id = $1`,
+        [r.id, outcome.kind === "sent" ? "sent" : outcome.kind === "skipped" ? "skipped" : "failed"],
+      );
+
+      if (outcome.kind === "sent") sent += 1;
+    } catch (err) {
+      log.error({ err, reminderId: r.id }, "reminder failed");
+      await db()
+        .query(`UPDATE reminders SET status = 'failed' WHERE id = $1 AND status = 'sending'`, [r.id])
+        .catch(() => undefined);
+    }
   }
 
   if (sent) log.info({ count: sent }, "reminders sent");
