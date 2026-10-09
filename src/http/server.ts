@@ -3,6 +3,7 @@
  * or the job queue (PRD section 3).
  */
 
+import rateLimit from "@fastify/rate-limit";
 import { captureLogError } from "../ops/alerts.ts";
 import { reportToSentry } from "../ops/sentry.ts";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
@@ -122,6 +123,34 @@ export function buildServer(): FastifyInstance {
       error: status >= 500 ? "internal_error" : err.code || "bad_request",
       requestId: req.id,
     });
+  });
+
+  /*
+   * Rate limits (9 October 2026), per visitor: Cloudflare's address for them,
+   * since every request reaches us through Cloudflare and Caddy. Webhooks,
+   * the Flow endpoint and health checks are left alone: Meta and Paystack
+   * send in bursts, and a webhook refused is a message or a payment missed.
+   * Tighter on what costs something per call: a Paystack checkout or lookup,
+   * a code, a PDF render.
+   */
+  const TIGHT: [RegExp, number][] = [
+    [/^\/i\/:token\/pay$/, 10],
+    [/^\/settings\/:token\/bank\//, 10],
+    [/^\/pro\/start$/, 10],
+    [/\/(pdf|receipt)$/, 30],
+  ];
+  app.addHook("onRoute", (opts) => {
+    const tight = TIGHT.find(([re]) => re.test(opts.url ?? ""));
+    if (tight) {
+      opts.config = { ...((opts.config as object | undefined) ?? {}), rateLimit: { max: tight[1], timeWindow: "1 minute" } };
+    }
+  });
+  app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: "1 minute",
+    keyGenerator: (req) => String(req.headers["cf-connecting-ip"] ?? req.ip),
+    allowList: (req) => /^\/(webhooks|health|ready|flows)(\/|$|\?)/.test(req.url),
   });
 
   app.register(healthRoutes);
