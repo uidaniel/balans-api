@@ -344,7 +344,8 @@ export function draftSummary(
   const planRows = planLines(draft, today);
   if (planRows.length) sections.push(planRows);
 
-  if (draft.passFeesToClient) sections.push([row("Fees", "Client pays the transaction fee")]);
+  // Only where there is a card fee to pass on: a naira transfer has none.
+  if (draft.passFeesToClient && draft.foreign) sections.push([row("Fees", "Client pays the transaction fee")]);
   if (draft.clientEmail) sections.push([row("Email to", draft.clientEmail)]);
   if (draft.clientPhone) sections.push([row("WhatsApp to", displayPhone(draft.clientPhone))]);
 

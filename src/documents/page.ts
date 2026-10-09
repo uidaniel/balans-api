@@ -20,7 +20,8 @@ import { agreedTotalMinor } from "../../core/exchange.ts";
 import { outstandingKobo, payable, payableLabel, payableNowKobo, type PublicDocument } from "./public.ts";
 import { logoAvailable, logoSvg, markSvg, processorLogo, type Processor } from "../brand/logo.ts";
 import { FONT, fontFacesForPage } from "../pdf/fonts.ts";
-import { env } from "../config.ts";
+import { defaults, env } from "../config.ts";
+import { DEFAULT_INTL_PROCESSOR, settle, withVat } from "../../core/fees.ts";
 
 /** HTML-escapes text. Also escapes quotes, for anything inside an attribute. */
 export function esc(s: string): string {
@@ -378,6 +379,25 @@ const money = (doc: PublicDocument, kobo: number, minor: number | null): string 
  * The rate is the one this invoice was priced at, worked back from its own
  * two figures, so it always agrees with them.
  */
+/**
+ * What the card is actually charged (9 October 2026). With fees passed to the
+ * client, Paystack is sent the grossed-up figure — the same sum the pay route
+ * does — so the page must say that figure, not the invoice's.
+ */
+function cardChargeKobo(doc: PublicDocument, amountKobo: number): number {
+  if (!doc.passFeesToClient) return amountKobo;
+  const p = defaults.plans[doc.plan];
+  return settle(
+    amountKobo,
+    { percentBps: p.feePercentBps, minKobo: p.feeMinKobo, capKobo: p.feeCapKobo },
+    {
+      passToClient: true,
+      paidBeforeKobo: doc.amountPaidKobo,
+      processor: withVat(DEFAULT_INTL_PROCESSOR, defaults.international.feeVatPercent),
+    },
+  ).clientPaysKobo;
+}
+
 function conversionStep(doc: PublicDocument, amountKobo: number): string {
   if (!doc.foreign) return "";
   const agreed = agreedTotalMinor(doc.foreign.amountMinor, doc.subtotalKobo, doc.vatKobo);
@@ -388,7 +408,7 @@ function conversionStep(doc: PublicDocument, amountKobo: number): string {
   return `<div class="mrows">
       ${whole ? `<div class="row"><span>${esc(LABEL[doc.type])} total</span><b>${formatMoney(agreed, doc.foreign.currency)}</b></div>` : ""}
       <div class="row"><span>Rate</span><b>${symbol}1 = ${rate}</b></div>
-      <div class="row"><span>You pay</span><b>${formatNaira(amountKobo)}</b></div>
+      <div class="row"><span>You pay</span><b>${formatNaira(cardChargeKobo(doc, amountKobo))}</b></div>
     </div>`;
 }
 
@@ -737,7 +757,7 @@ function payBlock(
             required maxlength="254" placeholder="you@company.com">
         </label>`
         }
-        <button class="pay-btn" type="submit">Pay ${formatNaira(amount)} by card${
+        <button class="pay-btn" type="submit">Pay ${formatNaira(cardChargeKobo(doc, amount))} by card${
           partLabel ? ` &middot; ${esc(partLabel)}` : ""
         }</button>
       </form>

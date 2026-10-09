@@ -563,6 +563,13 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
      * different number than the one the client agreed to and the freelancer
      * sent.
      */
+    // Paid to the sender's own details: no card of ours, even from a page
+    // left open since before it was changed (9 October 2026).
+    if (doc.paymentDetails) {
+      req.log.info({ documentId: doc.id }, "pay refused: paid to the sender's own details");
+      return again("unpayable");
+    }
+
     if (doc.foreign) {
       /*
        * Where the receipt goes. Paystack's checkout takes the email it is
