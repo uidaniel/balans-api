@@ -52,7 +52,7 @@ export function proOffer(used: number, price: ProPrice = NAIRA_PRICE, year?: Pro
  * price of ten, said as what it saves.
  */
 export function yearLine(year: ProPrice): string {
-  return `💡 Or ${b(year.label)} for a whole year — two months free. Reply ${b("yearly")}.`;
+  return `💡 Or ${b(year.label)} for a whole year — two months free. You choose on the next page.`;
 }
 
 /**
@@ -63,10 +63,12 @@ export function yearLine(year: ProPrice): string {
  * transfer, USSD and the rest are all on the page. At most 20 characters,
  * which Meta enforces by refusing the whole message.
  */
-export const proPayLabel = (price: ProPrice = NAIRA_PRICE): string => `Pay ${price.label}`;
+export const proPayLabel = (price: ProPrice = NAIRA_PRICE): string =>
+  // Monthly or yearly is chosen on the page it opens (10 October 2026); a
+  // year already chosen in the chat goes straight to its price.
+  price.term === "year" ? `Pay ${price.label}` : "Choose your plan";
 
 /** Under the button, at most 60 characters. */
-export const PRO_PAY_FOOTER = "Card, bank transfer or USSD, through Paystack";
 
 /** For "pay now" typed or tapped: the same button, with less to read above it. */
 export function proPayPrompt(price: ProPrice = NAIRA_PRICE): string {
@@ -74,7 +76,7 @@ export function proPayPrompt(price: ProPrice = NAIRA_PRICE): string {
     price.term === "year"
       ? `⭐ ${b(`A year of Pro is ${price.label}.`)} Twelve months for the price of ten.`
       : `⭐ ${b(`Pro is ${price.label} a month.`)}`,
-    chargedAs(price) ?? "Tap below to pay by card, bank transfer or USSD.",
+    chargedAs(price) ?? (price.term === "year" ? "Tap below to pay." : "Tap below to choose monthly or yearly."),
     i("Pro starts the moment it goes through, and your receipt comes here and to your email."),
   );
 }

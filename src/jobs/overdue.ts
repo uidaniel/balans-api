@@ -35,7 +35,7 @@ import {
   releaseProReminder,
   type ProStage,
 } from "../billing/subscription.ts";
-import { PRO_PAY_FOOTER, proEnded, proEndingSoon, proGraceEnding, proLapsed, proWinBack } from "../billing/messages.ts";
+import { proEnded, proEndingSoon, proGraceEnding, proLapsed, proWinBack } from "../billing/messages.ts";
 import { proStartToken, proStartUrl } from "../billing/pro-link.ts";
 import type { TemplateName } from "../whatsapp/window.ts";
 import { payBy } from "../documents/summary.ts";
@@ -484,7 +484,7 @@ async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<nu
         userId: r.userId,
         phone: r.waPhone,
         text: words.text,
-        cta: { label: words.label, url: proStartUrl(r.userId), footer: PRO_PAY_FOOTER },
+        cta: { label: words.label, url: proStartUrl(r.userId) },
         fallback: { template: words.template, params: words.params, urlSuffix: proStartToken(r.userId) },
       },
       log,

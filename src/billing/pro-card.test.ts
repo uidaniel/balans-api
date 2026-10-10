@@ -25,7 +25,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 
-import { PRO_PAY_FOOTER, proOffer, proPayLabel, proPayPrompt } from "./messages.ts";
+import { proOffer, proPayLabel, proPayPrompt } from "./messages.ts";
+import { NAIRA_YEAR_PRICE } from "./price.ts";
 import { LIMIT_CARD, UPGRADE_CARD, PRO_CARD } from "../conversation/machine.ts";
 import { defaults } from "../config.ts";
 import { availableTo } from "../pdf/templates.ts";
@@ -87,10 +88,12 @@ describe("the Pro message", () => {
     assert.match(words, /invoice designs/);
   });
 
-  it("carries one button, saying the price, within Meta's limits", () => {
-    assert.equal(proPayLabel(), `Pay ₦${(defaults.plans.pro.priceKobo / 100).toLocaleString("en-NG")}`);
+  it("carries one button, to the plan choice, within Meta's limits", () => {
+    // Monthly or yearly is chosen on the page (10 October 2026); a year
+    // already chosen in the chat says its price.
+    assert.equal(proPayLabel(), "Choose your plan");
+    assert.equal(proPayLabel(NAIRA_YEAR_PRICE), "Pay ₦30,000");
     assert.ok(proPayLabel().length <= 20, "Meta refuses a longer button");
-    assert.ok(PRO_PAY_FOOTER.length <= 60, "Meta refuses a longer footer");
   });
 });
 
@@ -180,14 +183,15 @@ describe("the Pay button", () => {
     const { NAIRA_YEAR_PRICE } = await import("./price.ts");
     const { proStartUrl } = await import("./pro-link.ts");
     assert.equal(NAIRA_YEAR_PRICE.chargeKobo, 30_000_00);
-    assert.match(proOffer(1, undefined, NAIRA_YEAR_PRICE), /₦30,000.*whole year.*yearly/s);
+    assert.match(proOffer(1, undefined, NAIRA_YEAR_PRICE), /₦30,000.*whole year.*next page/s);
     assert.match(proPayPrompt(NAIRA_YEAR_PRICE), /A year of Pro is ₦30,000/);
     assert.match(proStartUrl("00000000-0000-0000-0000-000000000000", "year"), /&term=year$/);
   });
 
-  it("says how it can be paid, and where the receipt goes", () => {
+  it("says what the button does, and where the receipt goes", () => {
     const words = proPayPrompt();
-    assert.match(words, /card, bank transfer or USSD/);
+    assert.match(words, /choose monthly or yearly/);
+    assert.doesNotMatch(words, /USSD/);
     assert.match(words, /receipt comes here and to your email/);
   });
 });

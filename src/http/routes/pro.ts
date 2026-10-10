@@ -14,7 +14,11 @@ import { db } from "../../db/pool.ts";
 import { env } from "../../config.ts";
 import { userForProToken } from "../../billing/pro-link.ts";
 import { openProCheckout } from "../../billing/pro-checkout.ts";
-import { renderNotFound, renderProUnavailable } from "../../documents/page.ts";
+import { chargedAs, proPriceFor } from "../../billing/price.ts";
+import { renewalOpen, stateOf } from "../../billing/subscription.ts";
+import { formatNaira } from "../../../core/totals.ts";
+import { defaults } from "../../config.ts";
+import { renderNotFound, renderProPlans, renderProUnavailable } from "../../documents/page.ts";
 
 const HTML = "text/html; charset=utf-8";
 
@@ -26,8 +30,47 @@ export async function proRoutes(app: FastifyInstance): Promise<void> {
     const userId = token ? userForProToken(token) : null;
     if (!userId) return reply.status(404).type(HTML).send(renderNotFound());
 
-    // "&term=year" from the yearly button; anything else is a month.
-    const opened = await openProCheckout(userId, req.log, req.query.term === "year" ? "year" : "month");
+    /*
+     * No plan named: the choice first (10 October 2026). Monthly or yearly,
+     * each with its price and the day Pro would run until; each links back
+     * here with its term, which goes on to Paystack.
+     */
+    const term = req.query.term === "year" ? "year" : req.query.term === "month" ? "month" : null;
+    if (!term) {
+      const state = await stateOf(userId);
+      reply.header("cache-control", "no-store");
+      if (state.plan === "pro" && !renewalOpen(state)) return reply.redirect(`${site()}/pro/success`, 303);
+      const [month, year] = await Promise.all([proPriceFor(userId, req.log), proPriceFor(userId, req.log, "year")]);
+      // From the end of what is paid, as the subscription itself counts it.
+      const now = new Date();
+      const from = state.periodEnd && state.periodEnd > now ? state.periodEnd : now;
+      const until = (months: number) => {
+        const d = new Date(from.getTime());
+        d.setMonth(d.getMonth() + months);
+        return new Intl.DateTimeFormat("en-GB", {
+          timeZone: defaults.behaviour.timezone,
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        }).format(d);
+      };
+      const base = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/pro/start?t=${encodeURIComponent(token)}`;
+      return reply.type(HTML).send(
+        renderProPlans({
+          monthLabel: month.label,
+          yearLabel: year.label,
+          yearPerMonth: year.abroad ? null : formatNaira(Math.round(year.chargeKobo / 12)),
+          monthUntil: until(1),
+          yearUntil: until(12),
+          monthUrl: `${base}&term=month`,
+          yearUrl: `${base}&term=year`,
+          renewing: state.plan === "pro",
+          note: chargedAs(month) ? "Charged in naira at today's rate. Your bank converts it, so your statement may differ slightly." : null,
+        }),
+      );
+    }
+
+    const opened = await openProCheckout(userId, req.log, term);
     reply.header("cache-control", "no-store");
     if (opened.kind === "already_pro") return reply.redirect(`${site()}/pro/success`, 303);
     if (opened.kind === "failed") return reply.status(502).type(HTML).send(renderProUnavailable());

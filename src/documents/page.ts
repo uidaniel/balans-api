@@ -1022,6 +1022,72 @@ export function renderProUnavailable(): string {
 </body></html>`;
 }
 
+/**
+ * Monthly or yearly, before Paystack (10 October 2026).
+ *
+ * Every Pro button in the chat opens this first: two plans, each with its
+ * price and the day Pro would run until, and a tap on one opens Paystack's
+ * checkout for exactly that. Somebody who would rather pay once a year is
+ * shown that they can, instead of being sent straight to a monthly charge.
+ */
+export function renderProPlans(o: {
+  monthLabel: string;
+  yearLabel: string;
+  /** "₦2,500": the year, a month at a time. Null abroad. */
+  yearPerMonth: string | null;
+  monthUntil: string;
+  yearUntil: string;
+  monthUrl: string;
+  yearUrl: string;
+  /** Renewing rather than starting: the heading says so. */
+  renewing: boolean;
+  /** Abroad: charged in naira at today's rate, said once under the plans. */
+  note: string | null;
+}): string {
+  const plan = (x: { name: string; price: string; per: string; sub: string; until: string; url: string; best?: boolean }) => `
+  <a class="plan${x.best ? " best" : ""}" href="${esc(x.url)}">
+    <span class="row1"><span class="name">${esc(x.name)}</span>${x.best ? `<span class="badge">2 months free</span>` : ""}</span>
+    <span class="price">${esc(x.price)}<small>/${esc(x.per)}</small></span>
+    ${x.sub ? `<span class="sub">${esc(x.sub)}</span>` : ""}
+    <span class="until">Pro until ${esc(x.until)}</span>
+    <span class="go">Pay ${esc(x.price)} &rarr;</span>
+  </a>`;
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="format-detection" content="telephone=no">
+<title>Balans Pro</title><meta name="robots" content="noindex,nofollow">
+<style>${CSS}
+.plans{display:grid;gap:12px;margin-top:22px}
+.plan{display:block;text-decoration:none;color:var(--ink);background:#fff;border:1.5px solid var(--ink-10);border-radius:18px;padding:18px 18px 16px}
+.plan:active{transform:scale(.99)}
+.plan.best{border-color:var(--ink);box-shadow:0 0 0 3px rgba(245,184,46,.35)}
+.plan .row1{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.plan .name{font-weight:700;font-size:16px}
+.plan .badge{background:var(--marigold);color:var(--ink);font-size:12px;font-weight:800;border-radius:999px;padding:4px 10px;white-space:nowrap}
+.plan .price{display:block;margin-top:8px;font-size:30px;font-weight:800;letter-spacing:-.02em}
+.plan .price small{font-size:14px;font-weight:600;color:var(--ink-50);margin-left:2px}
+.plan .sub{display:block;margin-top:2px;font-size:13px;color:var(--ink-65)}
+.plan .until{display:block;margin-top:10px;font-size:14px;color:var(--ink-80)}
+.plan .go{display:block;margin-top:14px;text-align:center;font-weight:700;border-radius:12px;padding:12px;background:var(--ink-6)}
+.plan.best .go{background:var(--marigold)}
+.note{margin-top:14px;font-size:13px;color:var(--ink-65)}
+</style></head><body>
+<div class="band" aria-hidden="true"></div>
+<div class="sheet"><div class="top">
+  <div class="brand">${logoAvailable() ? logoSvg("28px") : `<span class="dot"></span>balans`}</div>
+  <h1 style="margin-top:22px">${o.renewing ? "Renew Balans Pro" : "Choose your Pro plan"}</h1>
+  <p class="from">Pick one. The payment page opens next, for exactly that.</p>
+  <div class="plans">
+    ${plan({ name: "Monthly", price: o.monthLabel, per: "month", sub: "", until: o.monthUntil, url: o.monthUrl })}
+    ${plan({ name: "Yearly", price: o.yearLabel, per: "year", sub: o.yearPerMonth ? `${o.yearPerMonth} a month, paid once a year` : "Paid once a year", until: o.yearUntil, url: o.yearUrl, best: true })}
+  </div>
+  ${o.note ? `<p class="note">${esc(o.note)}</p>` : ""}
+</div></div>
+<p class="foot">${markSvg("16px")}<a href="https://balans.ng">balans.ng</a></p>
+</body></html>`;
+}
+
 /** A 404 that does not confirm whether the token was ever real. */
 export function renderNotFound(): string {
   return `<!doctype html>

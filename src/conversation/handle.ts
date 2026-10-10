@@ -100,7 +100,6 @@ import { raiseSecurityAlert } from "../settings/alerts.ts";
 import { openSubscription, stateOf } from "../billing/subscription.ts";
 import {
   deductChosen,
-  PRO_PAY_FOOTER,
   proPayLabel,
   proPayLink,
   proPayPrompt,
@@ -237,7 +236,6 @@ async function sendProButton(
     url: proStartUrl(userId, price.term),
     // The card has the naira price painted on it: not for a price abroad.
     ...(headerImage && !price.abroad ? { headerImage } : {}),
-    footer: PRO_PAY_FOOTER,
   });
   if (sent.ok) {
     await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
