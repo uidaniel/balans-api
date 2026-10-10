@@ -19,7 +19,7 @@ describe("the Pro price a person is shown and charged", () => {
     assert.equal(p.chargeKobo, 4_00 * 2000);
     assert.match(proOffer(1, p), /£4/);
     assert.match(proOffer(1, p), /Charged as ₦8,000/);
-    assert.equal(proPayLabel(p), "Choose your plan");
+    assert.equal(proPayLabel(p), "Pay £4");
   });
 
   it("falls back to the naira price when there is no rate", async () => {
@@ -33,6 +33,6 @@ describe("the Pro price a person is shown and charged", () => {
   });
 
   it("says the naira price when it was given nothing else", () => {
-    assert.equal(proPayLabel(), "Choose your plan");
+    assert.equal(proPayLabel(), `Pay ${NAIRA_PRICE.label}`);
   });
 });

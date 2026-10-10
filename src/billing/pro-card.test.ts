@@ -88,10 +88,9 @@ describe("the Pro message", () => {
     assert.match(words, /invoice designs/);
   });
 
-  it("carries one button, to the plan choice, within Meta's limits", () => {
-    // Monthly or yearly is chosen on the page (10 October 2026); a year
-    // already chosen in the chat says its price.
-    assert.equal(proPayLabel(), "Choose your plan");
+  it("carries one button, saying the price, within Meta's limits", () => {
+    // The plan page opens behind it; the button stays as it always was.
+    assert.equal(proPayLabel(), `Pay ₦${(defaults.plans.pro.priceKobo / 100).toLocaleString("en-NG")}`);
     assert.equal(proPayLabel(NAIRA_YEAR_PRICE), "Pay ₦30,000");
     assert.ok(proPayLabel().length <= 20, "Meta refuses a longer button");
   });
