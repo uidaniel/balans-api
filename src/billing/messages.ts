@@ -63,7 +63,8 @@ export function yearLine(year: ProPrice): string {
  * transfer, USSD and the rest are all on the page. At most 20 characters,
  * which Meta enforces by refusing the whole message.
  */
-export const proPayLabel = (price: ProPrice = NAIRA_PRICE): string => `Pay ${price.label}`;
+// "Pay Now" (10 October 2026): the price is chosen on the plan page it opens.
+export const proPayLabel = (_price: ProPrice = NAIRA_PRICE): string => "Pay Now";
 
 /** Under the button, at most 60 characters. */
 

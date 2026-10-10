@@ -89,9 +89,9 @@ describe("the Pro message", () => {
   });
 
   it("carries one button, saying the price, within Meta's limits", () => {
-    // The plan page opens behind it; the button stays as it always was.
-    assert.equal(proPayLabel(), `Pay ₦${(defaults.plans.pro.priceKobo / 100).toLocaleString("en-NG")}`);
-    assert.equal(proPayLabel(NAIRA_YEAR_PRICE), "Pay ₦30,000");
+    // The plan page opens behind it, where the price is chosen.
+    assert.equal(proPayLabel(), "Pay Now");
+    assert.equal(proPayLabel(NAIRA_YEAR_PRICE), "Pay Now");
     assert.ok(proPayLabel().length <= 20, "Meta refuses a longer button");
   });
 });
