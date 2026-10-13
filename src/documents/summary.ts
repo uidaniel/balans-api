@@ -84,6 +84,7 @@ export function planLines(
   draft: {
     totalKobo: number;
     depositPercent: number | null;
+    depositKobo?: number | null;
     instalments: number | null;
     dueDate: Civil | null;
     stageDueDates?: (Civil | null)[] | null;
@@ -149,6 +150,7 @@ export function payout(
   draft: {
     totalKobo: number;
     depositPercent: number | null;
+    depositKobo?: number | null;
     instalments: number | null;
     passFeesToClient: boolean;
     /** Set on an invoice priced abroad, which is charged by card, not transfer. */

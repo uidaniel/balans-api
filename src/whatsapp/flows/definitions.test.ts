@@ -340,8 +340,10 @@ describe("the payment plans a form can offer", () => {
     // and submitted, that then comes back as one payment without explanation.
     for (const plan of PLANS) {
       const split = splitForPlan(plan.id);
-      if (plan.id === "one") {
-        assert.equal(shapeFor(split, 100_000_00), null, "one payment is no split at all");
+      // "One payment", and "Custom deposit", whose figure is in the box
+      // under the list rather than in its id.
+      if (plan.id === "one" || plan.id === "deposit_custom") {
+        assert.equal(shapeFor(split, 100_000_00), null, `${plan.id} is no split by itself`);
         continue;
       }
       assert.notEqual(shapeFor(split, 100_000_00), null, `${plan.id} produced nothing`);
@@ -366,15 +368,22 @@ describe("the payment plans a form can offer", () => {
     assert.equal(planIdFor({}), "one");
   });
 
+  it("opens any other deposit on Custom deposit, with the figure in the box", () => {
+    // "35% deposit" came from a sentence and has no entry of its own; the
+    // Deposit box under the list holds it (13 October 2026).
+    assert.equal(planIdFor({ depositPercent: 35 }), "deposit_custom");
+    assert.equal(planIdFor({ depositKobo: 100_000_00 }), "deposit_custom");
+  });
+
   it("falls back to one payment for a split the list cannot say", () => {
-    // "35% deposit" came from a sentence and has no entry. Opening the form on
-    // "One payment" is honest; opening it on 25% would be a quiet edit.
-    assert.equal(planIdFor({ depositPercent: 35 }), "one");
+    // Opening the form on "One payment" is honest; opening it on 6 payments
+    // would be a quiet edit.
     assert.equal(planIdFor({ instalments: 7 }), "one");
   });
 
   it("round-trips every id it offers", () => {
     for (const plan of PLANS) {
+      if (plan.id === "deposit_custom") continue;
       assert.equal(planIdFor(splitForPlan(plan.id)), plan.id);
     }
   });

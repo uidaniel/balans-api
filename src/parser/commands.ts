@@ -83,6 +83,12 @@ const EXACT: [RegExp, Intent][] = [
   // Advertised on the landing page, so people will ask. Answered honestly
   // rather than steered into settings, which has nothing to do with it.
   [/^(templates?|invoice templates?|change (my )?(invoice |email )?templates?|design|invoice design)$/, "templates"],
+  // "change design" was answered "I only do quotes, invoices and payments"
+  // (13 October 2026).
+  [/^(designs|my designs?|(change|switch|pick|choose|select|update) (my |the |a |invoice )*(invoice )?(designs?|templates?|layouts?|styles?|look)|invoice (designs|styles?|layouts?|look))$/, "templates"],
+  // Their own account on the invoice. It is the payout account, which naira
+  // invoices already carry once it is set (13 October 2026).
+  [/^(just |please |pls |abeg |kindly |i want to |i wanna |can you |help me )*((add|put|include|update|change|set ?up|show|edit) (in )?(my |the )?(bank|account|acct|payout)( number| details| account| info)?( (on|to|in) (the |my )?(invoices?|pdf))?|(my )?(bank details|account number|acct number|payout account|bank account))$/, "settings"],
   // F21: offered in the words that confirm a logo was saved, so it has to work.
   [/^(remove|delete|clear) (my )?logo$/, "remove_logo"],
   // The signature page, and taking it off again. "/signature" because the

@@ -68,21 +68,69 @@ const SHEET_EM = 297 / EM_MM;
  * anything has to give, and what each row beyond that costs depends on how
  * the layout sets them — a numbered row is 1.5em, Atelier's serif leaders
  * with a quantity under them are nearer 2.4em. The floor is 58%, which is
- * around 8pt body text: below that a layout stops being worth preserving and
- * the document should be two pages instead.
+ * around 8pt body text.
  *
- * PRD-GAP: a document with more work on it than fits at 58% is still cut off.
- * The fix is a second page that repeats the header, which needs the renderer
- * to measure rather than estimate.
+ * This is an estimate, and it is only the first guess. The sheet is a fixed
+ * A4 box with overflow hidden, so anything an estimate misses is cut off the
+ * bottom of the PDF — which is what happened to a three-line invoice with a
+ * project title and a signature (13 October 2026): neither was counted, and
+ * "Pay online at" was sliced in half by the page edge. The PDF renderer now
+ * measures the page and sets the size itself (see `fitSheets` in chrome.ts,
+ * and `data-fit` below), so this matters for the picker's previews, which
+ * are sandboxed and cannot measure, and as the fallback if measuring fails.
+ * It still counts everything that adds height, so the fallback errs towards
+ * fitting.
  */
 export function sheetFontSize(d: DocumentData, rowEm = 1.5, logoEm = 0): string {
   const rows = Math.max(0, d.lines.length - 6) * rowEm;
-  const notes = d.notes ? 2 : 0;
+  // About 95 characters to a line of terms at .54em on the widest layouts,
+  // and each written line break starts a new one.
+  const notes = d.notes ? 1.4 + noteLines(d.notes, 95) * 0.84 : 0;
   const receipt = d.receipt ? 1.5 : 0;
   const logo = d.logoDataUri ? logoEm : 0;
-  const scale = Math.min(1, Math.max(0.58, SHEET_EM / (SHEET_EM + rows + notes + receipt + logo)));
+  // A project title is a label and a line of 1.32em type, twice when long.
+  const title = d.title ? 2.6 + (d.title.length > 45 ? 1.6 : 0) : 0;
+  // A ruled space for the pen, and the name and "Authorised signature" under it.
+  const sig = d.signatureDataUri ? 3.6 : 0;
+  const own = d.paymentDetails ? noteLines(d.paymentDetails, 60) * 0.8 : 0;
+  // The conversion sentence under the amount, and a Paid and Balance line.
+  const fx = d.foreign ? 1.4 : 0;
+  const part = d.amountPaidKobo > 0 && d.amountPaidKobo < d.totalKobo ? 1.2 : 0;
+  // The rows, notes and logo were always paid for in full; the rest only once
+  // they outgrow the white a layout keeps above its foot.
+  const extra = rows + notes + receipt + logo + Math.max(0, title + sig + own + fx + part - SLACK_EM);
+  const scale = Math.min(1, Math.max(FLOOR, SHEET_EM / (SHEET_EM + extra)));
   return `${(EM_MM * scale).toFixed(3)}mm`;
 }
+
+/** Lines a block of text takes at about `perLine` characters to the line. */
+const noteLines = (text: string, perLine: number): number =>
+  text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / perLine)), 0);
+
+/** The estimate's floor; see `sheetFontSize`. */
+const FLOOR = 0.58;
+
+/**
+ * Room a typical layout has to spare at full size with a few lines of work,
+ * before a title, a signature and the like have to be paid for by shrinking. Most of the
+ * twenty leave between three and nine ems of white above the foot.
+ */
+const SLACK_EM = 3;
+
+/**
+ * How small the renderer may set a sheet that does not fit, as a fraction of
+ * full size: 50% is about 7pt for the work. A document that does not fit even
+ * then is not shrunk further; the sheet grows onto a second page instead, so
+ * nothing is ever cut off.
+ */
+const FIT_FLOOR = 0.5;
+
+/**
+ * The size a document that needs more than one page is set at: about 10pt
+ * for the work. Once there is a second page anyway, there is no reason to
+ * keep it small.
+ */
+const FLOW = 0.75;
 
 /* -------------------------------------------------------------------------- */
 /* The shared stylesheet                                                      */
@@ -269,6 +317,15 @@ type SheetParts = {
   logoEm?: number;
 };
 
+/**
+ * The sizes the PDF renderer may set this sheet at — smallest, largest, and
+ * the size for a document long enough to need a second page — in
+ * millimetres to the em. It measures the page and picks the largest that
+ * leaves nothing cut off (see `fitSheets` in chrome.ts).
+ */
+const fitRange = (): string =>
+  `${(EM_MM * FIT_FLOOR).toFixed(3)} ${EM_MM.toFixed(3)} ${(EM_MM * FLOW).toFixed(3)}`;
+
 /** Wraps a layout's markup in a sheet, with only the typefaces it uses. */
 export function sheet(d: DocumentData, opts: RenderOptions, parts: SheetParts): string {
   const { css, body, fonts = ["sans", "display"], rowEm, logoEm } = parts;
@@ -283,7 +340,7 @@ export function sheet(d: DocumentData, opts: RenderOptions, parts: SheetParts): 
     `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">${link}
 <style>${fontFaces(fonts, opts.fonts ?? "embed")}${BASE}${css}${brandCss}</style></head>
-<body><div class="sheet" style="font-size:${sheetFontSize(d, rowEm, logoEm)}">
+<body><div class="sheet" style="font-size:${sheetFontSize(d, rowEm, logoEm)}" data-fit="${fitRange()}">
 ${d.variant === "sample" ? `<div class="mark">SAMPLE</div>` : ""}
 ${body}
 </div></body></html>`,
@@ -528,6 +585,15 @@ export function rows(d: DocumentData, opts: { head?: "bar" | "rule"; rate?: bool
   return `<div class="rows ${head}">${header}${body}</div>`;
 }
 
+/**
+ * Whether the document carries VAT at all.
+ *
+ * Without it there is no VAT line: "VAT (0%) ₦0" on an invoice nobody added
+ * VAT to reads as a tax the sender forgot, and the page the client opens has
+ * never printed it. Same rule as there.
+ */
+export const hasVat = (d: DocumentData): boolean => d.vatKobo > 0;
+
 /** Subtotal, VAT and what is left, for the Free layouts' wide totals block. */
 export function totals(d: DocumentData, opts: { accent?: "ink" | "marigold" } = {}): string {
   const gold = opts.accent === "marigold" ? " gold" : "";
@@ -539,7 +605,7 @@ export function totals(d: DocumentData, opts: { accent?: "ink" | "marigold" } = 
 
   return `<div class="totals">
     ${line("Subtotal", d.subtotalKobo)}
-    ${line(`VAT (${d.vatPercent ?? 0}%)`, d.vatKobo)}
+    ${hasVat(d) ? line(`VAT (${d.vatPercent ?? 0}%)`, d.vatKobo) : ""}
     ${
       // "Paid in full" on an invoice that is: Wordmark has no headline block,
       // so this line is the only place it can say so now the stamp is gone.
@@ -561,7 +627,7 @@ export function sums(d: DocumentData, className = ""): string {
 
   return `<div class="sums ${className}">
     <p><span>Subtotal</span><span class="tnum">${money(d.subtotalKobo)}</span></p>
-    <p><span>VAT (${d.vatPercent ?? 0}%)</span><span class="tnum">${money(d.vatKobo)}</span></p>
+    ${hasVat(d) ? `<p><span>VAT (${d.vatPercent ?? 0}%)</span><span class="tnum">${money(d.vatKobo)}</span></p>` : ""}
     ${part ? `<p><span>Paid</span><span class="tnum">&minus;${money(d.amountPaidKobo)}</span></p>` : ""}
     <p class="sum"><span>${part ? "Balance" : "Grand total"}</span><span class="tnum">${money(
       part ? owed : d.totalKobo,

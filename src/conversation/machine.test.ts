@@ -4,7 +4,7 @@ import { step, VOICE, type Context, type State } from "./machine.ts";
 import type { Parsed } from "../parser/schema.ts";
 import type { Civil } from "../../core/dates.ts";
 import type { Correction } from "../parser/corrections.ts";
-import { FLOWS, currencyOptions, payByOptions } from "../whatsapp/flows/definitions.ts";
+import { FLOWS, currencyOptions, designOptions, payByOptions } from "../whatsapp/flows/definitions.ts";
 import { readCorrection } from "../parser/corrections.ts";
 import { asCommand } from "../parser/commands.ts";
 import { settingsMenu } from "../settings/messages.ts";
@@ -647,9 +647,14 @@ describe("a tapped button", () => {
       due_date: "2026-10-08",
       today: "2026-09-23",
       plan: "deposit_50",
+      // Only a deposit the list cannot name goes in the box.
+      deposit: "",
       notes: "half now",
       title: "",
       vat: true,
+      // Free's list and the default; the caller puts in their own.
+      designs: designOptions(false),
+      design: "classic",
       /*
        * Naira, and no currency box. Both are the safe default, and both are
        * sent by this function rather than left out — the screen declares
@@ -1732,5 +1737,67 @@ describe("repricing one item of several", () => {
       ["Sole Capsule Website Development", 750_000_00],
       ["Sole Capsule SEO", 150_000_00],
     ]);
+  });
+});
+
+describe("a split with no date said (13 October 2026)", () => {
+  const drafted = (options: Partial<Parsed["options"]>, dueDate: Civil | null = null) => {
+    const out = doc("idle", {}, "Invoice Tunde 20k", {
+      parsed: parse({ dueDate, options: { ...parse({}).options, ...options } }),
+    });
+    const saved = out.effects.find((e) => e.type === "save_draft");
+    assert.ok(saved && saved.type === "save_draft");
+    return saved.doc;
+  };
+
+  it("puts no dates on the parts, and none on the invoice", () => {
+    // "3 payments" came back due today, Saturday and Tuesday: a week's
+    // default, spread over parts nobody dated.
+    assert.equal(drafted({ instalments: 3 }).dueDate, null);
+    assert.equal(drafted({ depositPercent: 50 }).dueDate, null);
+  });
+
+  it("keeps the date they did say", () => {
+    assert.deepEqual(drafted({ instalments: 3 }, { y: 2026, m: 10, d: 30 }).dueDate, { y: 2026, m: 10, d: 30 });
+  });
+
+  it("still gives one payment the days-to-pay default", () => {
+    const one = drafted({});
+    assert.deepEqual(one.dueDate, { y: 2026, m: 9, d: 30 });
+    assert.equal(one.dueDefaulted, true);
+  });
+
+  it("drops the default once a correction makes it a split", () => {
+    const one = drafted({});
+    const out = doc("awaiting_confirm", { doc: one, draftId: DRAFTED.draftId }, "3 payments", {
+      correction: { instalments: 3 } as Correction,
+    });
+    const saved = out.effects.find((e) => e.type === "save_draft");
+    assert.ok(saved && saved.type === "save_draft");
+    assert.equal(saved.doc.dueDate, null);
+  });
+
+  it("keeps a date said as a correction, even on a split", () => {
+    const split = drafted({ instalments: 3 });
+    const out = doc("awaiting_confirm", { doc: split, draftId: DRAFTED.draftId }, "due 30 October", {
+      correction: { dueDate: { y: 2026, m: 10, d: 30 } } as Correction,
+    });
+    const saved = out.effects.find((e) => e.type === "save_draft");
+    assert.ok(saved && saved.type === "save_draft");
+    assert.deepEqual(saved.doc.dueDate, { y: 2026, m: 10, d: 30 });
+  });
+});
+
+describe("asked for by name (13 October 2026)", () => {
+  it("opens the designs for 'change design'", () => {
+    for (const t of ["change design", "change my design", "designs", "pick a template"]) {
+      assert.equal(asCommand(t)?.intent, "templates", t);
+    }
+  });
+
+  it("opens settings for their account number", () => {
+    for (const t of ["add my account number", "just add in my account number", "add bank details", "account number", "add my account number to the invoice"]) {
+      assert.equal(asCommand(t)?.intent, "settings", t);
+    }
   });
 });

@@ -51,6 +51,7 @@ import {
   signature,
   sums,
   titleBlock,
+  hasVat,
   upperKind,
   when,
   type RenderOptions,
@@ -613,7 +614,7 @@ padding:.75em .85em;border:1px solid ${ink(0.15)}}
   </table>
   <table class="tot">
     ${tot("Subtotal", money(d.subtotalKobo))}
-    ${tot(`VAT (${d.vatPercent ?? 0}%)`, money(d.vatKobo))}
+    ${hasVat(d) ? tot(`VAT (${d.vatPercent ?? 0}%)`, money(d.vatKobo)) : ""}
     ${part ? tot("Paid", `&minus;${money(d.amountPaidKobo)}`) : ""}
     ${tot(h.label, h.display, "g")}
   </table>
@@ -845,6 +846,11 @@ letter-spacing:-.045em;font-variant-numeric:tabular-nums;white-space:nowrap}
 .slip .legal{text-align:center}
 .slip .made{justify-content:center;margin-top:.6em}
 .bot{margin-top:auto}
+/* Run across pages (see FIT_SHEETS in chrome.ts), a slip that is a flex item
+   is moved whole to the next page and leaves the first one blank. As a plain
+   block it breaks where the page does. */
+.sheet.flow .wrap{display:block}
+.sheet.flow .slip{display:block;margin:0 auto}
 `;
 
   const list = d.lines

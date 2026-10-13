@@ -34,7 +34,7 @@ import {
   type State,
   formValues,
 } from "./machine.ts";
-import { EXTRA_ITEMS, FRESH_WHO, currencyOptions, payByOptions, planIdFor, splitForPlan } from "../whatsapp/flows/definitions.ts";
+import { EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, payByOptions, planIdFor, splitForPlan } from "../whatsapp/flows/definitions.ts";
 import { VAT_PERCENT } from "../parser/extract.ts";
 import { forLog, type Parsed } from "../parser/schema.ts";
 import { b, i, lines, para, row } from "../whatsapp/format.ts";
@@ -112,7 +112,7 @@ import { settingsMenu, settingsList, bankChangeScheduled, deletionStarted } from
 import { settingsUrlFor } from "../settings/page-token.ts";
 import { sendCta, sendFlow, sendList } from "../whatsapp/client.ts";
 import { helpButtons } from "./menu.ts";
-import { TEMPLATES } from "../pdf/templates.ts";
+import { DEFAULT_TEMPLATE, TEMPLATES } from "../pdf/templates.ts";
 import { flowId } from "../whatsapp/flows/register.ts";
 
 /**
@@ -833,6 +833,9 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     context = rest;
   }
   if (outcome.editing) context = { ...context, editingId: outcome.editing.id, editingNumber: outcome.editing.number };
+  // A draft an effect wrote by itself (a sent invoice opened for changing):
+  // the machine never saw it, and a typed correction needs it.
+  if (outcome.doc) context = { ...context, doc: outcome.doc };
 
   // The effect owns the last message when it added lines, so its buttons win.
   // When an effect held or faulted, the machine's question was never asked and
@@ -941,6 +944,10 @@ type EffectOutcome = {
   clearDraft?: boolean;
   /** Set by edit_sent: the sent invoice the next draft goes into. */
   editing?: { id: string; number: number };
+  /** A form that could not be sent, so its words-only fallback went instead. */
+  flowFell?: true;
+  /** The draft an effect wrote on its own, for the next turn's corrections. */
+  doc?: PendingDoc;
   /**
    * Tappable answers for the last line this effect produced.
    *
@@ -1038,6 +1045,8 @@ async function runEffects(
   let buttonsImage: string | undefined;
   let clearDraft: boolean | undefined;
   let editing: { id: string; number: number } | undefined;
+  let flowFell: true | undefined;
+  let wroteDoc: PendingDoc | undefined;
 
   for (const effect of effects) {
     // Once something has held the conversation, the effects after it are acting
@@ -1194,6 +1203,7 @@ async function runEffects(
            */
           if (!id) {
             log.warn({ userId, key: effect.key }, "no published flow, asking in words");
+            flowFell = true;
             extra.push(effect.fallback?.line ?? VOICE.setupByHand);
             holdAt =
               effect.fallback?.holdAt ??
@@ -1203,6 +1213,7 @@ async function runEffects(
 
           if (!ctx.phone) {
             log.error({ userId }, "no phone on the effect context, cannot send a flow");
+            flowFell = true;
             extra.push(effect.fallback?.line ?? VOICE.setupByHand);
             holdAt = effect.fallback?.holdAt ?? "onboarding:business_name";
             break;
@@ -1240,6 +1251,7 @@ async function runEffects(
             await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
           } else {
             log.error({ userId, reason: sent.reason }, "flow send failed");
+            flowFell = true;
             extra.push(effect.fallback?.line ?? VOICE.setupByHand);
             holdAt =
               effect.fallback?.holdAt ??
@@ -1471,6 +1483,7 @@ async function runEffects(
             dueDate: doc.dueDate ?? null,
             vatPercent: doc.vatPercent ?? null,
             depositPercent: doc.depositPercent ?? null,
+            depositKobo: doc.depositKobo ?? null,
             stageDueDates: doc.stageDueDates ?? null,
             instalments: doc.instalments ?? null,
             passFeesToClient: doc.passFeesToClient ?? false,
@@ -1557,6 +1570,7 @@ async function runEffects(
             dueDate: sent.dueDate,
             vatPercent: sent.vatPercent,
             depositPercent: sent.depositPercent,
+            depositKobo: sent.depositKobo ?? null,
             instalments: sent.instalments,
             passFeesToClient: sent.passFeesToClient,
             notes: sent.notes,
@@ -1583,6 +1597,38 @@ async function runEffects(
             log,
             ctx,
           );
+          /*
+           * No form to open: the invoice as a draft instead (13 October 2026).
+           *
+           * The fallback used to be "What should I change?" with the
+           * conversation left idle, so whatever they typed next had no draft
+           * to land on and was answered "I only do quotes, invoices and
+           * payments". As a draft, a typed change works, "Change it" tries
+           * the form again, and Send updates the same invoice.
+           */
+          if (inner.flowFell) {
+            const drafted = await runEffects([{ type: "save_draft", doc }], userId, businessName, log, ctx);
+            if (drafted.draftId) {
+              extra.push(
+                lines(
+                  `✏️ ${b(`Invoice ${shown}, ready to change.`)}`,
+                  `Tell me what to change — ${b("make it 400k")}, ${b("due next Friday")}, ${b("client is Zenith Homes")}. When you send it, the same invoice is updated: same number, same link.`,
+                ),
+                ...drafted.lines,
+              );
+              draftId = drafted.draftId;
+              wroteDoc = doc;
+              buttons = drafted.buttons;
+              buttonsImage = drafted.buttonsImage;
+              holdAt = "awaiting_confirm";
+              editing = { id: found.id, number: found.number };
+              log.info({ userId, documentId: found.id }, "sent invoice opened as a draft for changing");
+              break;
+            }
+            extra.push(...drafted.lines);
+            if (drafted.holdAt) holdAt = drafted.holdAt;
+            break;
+          }
           extra.push(...inner.lines);
           if (inner.holdAt) holdAt = inner.holdAt;
           // Only once the form is out: at the Free limit the card goes instead.
@@ -2716,6 +2762,8 @@ async function runEffects(
     pendingBankChange,
     buttons,
     buttonsImage,
+    flowFell,
+    doc: wroteDoc,
   };
 }
 
@@ -3303,6 +3351,55 @@ async function handleInvoiceForm(
   }
 
   /*
+   * "Custom deposit": the Deposit box, as a percent or a sum (13 October
+   * 2026). Also when the list was left on one payment and the box filled
+   * in, which is somebody who skipped the list rather than somebody who
+   * wanted no deposit. A listed plan picked over a filled box wins.
+   */
+  const depositNote: string[] = [];
+  const typedDeposit = (fields.deposit ?? "").trim();
+  const plan = fields.plan ?? "";
+  if (plan === "deposit_custom" || (typedDeposit && (plan === "" || plan === "one"))) {
+    const read = readDeposit(typedDeposit);
+    const total = priced.foreign ? priced.foreign.amountMinor : totalsFor(priced.lines, priced.vatPercent ?? null).totalKobo;
+    priced.instalments = null;
+    priced.stageDueDates = null;
+    if (read?.percent != null) {
+      priced.depositPercent = read.percent;
+      priced.depositKobo = null;
+    } else if (read?.minor != null && read.minor < total) {
+      // Abroad the parts are worked out in naira, so a sum in dollars goes
+      // across as its share of the total; at home it stays the exact sum.
+      priced.depositPercent = priced.foreign ? Math.round((read.minor / total) * 10_000) / 100 : null;
+      priced.depositKobo = priced.foreign ? null : read.minor;
+    } else {
+      priced.depositPercent = null;
+      priced.depositKobo = null;
+      depositNote.push(
+        para(
+          `🤔 ${b(typedDeposit ? `"${typedDeposit}" is not a deposit I can use.` : "Custom deposit, with nothing in the Deposit box.")}`,
+          read?.minor != null
+            ? "It is the whole invoice or more, so this is one payment. Say *30% deposit* to add one."
+            : "So this is one payment. Say *30% deposit* to add one, or open the form again.",
+        ),
+      );
+    }
+  }
+
+  /*
+   * The design picked on the form, saved as theirs (13 October 2026), before
+   * the draft is drawn so the draft is in it. A Pro design on Free is greyed
+   * out in the list; checked here rather than trusted all the same.
+   */
+  const design = TEMPLATES.find((t) => t.ready && t.id === (fields.design ?? "").trim());
+  if (design && (!design.pro || (await planOf(userId)) === "pro")) {
+    await db().query(
+      `UPDATE users SET template_id = $2 WHERE id = $1 AND template_id IS DISTINCT FROM $2`,
+      [userId, design.id],
+    );
+  }
+
+  /*
    * "Custom payment details" chosen, and none saved: ask for them here, and
    * show the draft only once they are in (7 October 2026). It used to send
    * the draft anyway with a card link and a note saying so — a breakdown of
@@ -3348,9 +3445,28 @@ async function handleInvoiceForm(
     : phoneTyped && !clientPhone
       ? [para(`📵 ${b(`"${phoneTyped}" is not a number I can send to.`)}`, "The draft is below without it. Say *their number is 0803 123 4567* to add it.")]
       : [];
-  await reply(userId, phone, [...phoneNote, ...outcome.lines], log, outcome.buttons, outcome.buttonsImage);
+  await reply(userId, phone, [...phoneNote, ...depositNote, ...outcome.lines], log, outcome.buttons, outcome.buttonsImage);
 
   log.info({ userId, draftId: outcome.draftId, depositPercent, instalments }, "draft from a form");
+}
+
+/**
+ * The Deposit box: "30%", "30 %", "100000", "100,000", "₦100k", "1.5m".
+ * A percent, or a sum in minor units of the form's currency; null for
+ * anything else, including a percent that is not between 0 and 100.
+ */
+export function readDeposit(text: string): { percent?: number; minor?: number } | null {
+  const t = text.trim().toLowerCase().replace(/[,\s]/g, "").replace(/^[₦$£€]/, "");
+  const pct = /^(\d{1,2}(?:\.\d{1,2})?)%$/.exec(t);
+  if (pct) {
+    const p = Number(pct[1]);
+    return p > 0 && p < 100 ? { percent: p } : null;
+  }
+  const sum = /^(\d+(?:\.\d{1,2})?)(k|m)?$/.exec(t);
+  if (!sum) return null;
+  const n = Number(sum[1]) * (sum[2] === "k" ? 1_000 : sum[2] === "m" ? 1_000_000 : 1);
+  const minor = Math.round(n * 100);
+  return minor > 0 ? { minor } : null;
 }
 
 async function handleLogo(
@@ -3608,9 +3724,22 @@ async function openedForPlan(
         }
       : {};
 
+  /*
+   * The Design box opens on their own design, with the list their plan
+   * allows (13 October 2026). A Pro design kept from a lapsed plan opens on
+   * the default, which is what their invoices are drawn in now.
+   */
+  let designs = {};
+  if ("designs" in data) {
+    const { rows } = await db().query<{ t: string | null }>(`SELECT template_id AS t FROM users WHERE id = $1`, [userId]);
+    const mine = TEMPLATES.find((t) => t.ready && t.id === rows[0]?.t && (pro || !t.pro));
+    designs = { designs: designOptions(pro), design: mine?.id ?? DEFAULT_TEMPLATE };
+  }
+
   return {
     ...data,
     ...currency,
+    ...designs,
     ...(pro ? { can_whatsapp_client: true, phone_help: PHONE_PRO_HELP } : {}),
   };
 }

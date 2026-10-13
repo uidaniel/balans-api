@@ -73,6 +73,7 @@ import { PAY_METHODS } from "./pay-methods.ts";
 import { defaults, env } from "../../config.ts";
 import { formatNaira } from "../../../core/totals.ts";
 import { CURRENCIES, INFO, type Currency } from "../../../core/currency.ts";
+import { DEFAULT_TEMPLATE, TEMPLATES } from "../../pdf/templates.ts";
 
 /** The marketing site, which owns the legal documents. */
 const site = env.SITE_URL.replace(/[/]$/, "");
@@ -792,6 +793,9 @@ export const PLANS = [
   { id: "split_3", title: "3 equal payments" },
   { id: "split_4", title: "4 equal payments" },
   { id: "split_6", title: "6 equal payments" },
+  // Any deposit, as an amount or a percent, typed in the Deposit box under
+  // this list (13 October 2026). Last, so the common answers come first.
+  { id: "deposit_custom", title: "Custom deposit + balance" },
 ] as const;
 
 export type PlanId = (typeof PLANS)[number]["id"];
@@ -811,7 +815,11 @@ export function splitForPlan(id: string | null | undefined): {
 }
 
 /** The list id for a plan, so an edit form opens on the answer already given. */
-export function planIdFor(o: { depositPercent?: number | null; instalments?: number | null }): PlanId {
+export function planIdFor(o: {
+  depositPercent?: number | null;
+  depositKobo?: number | null;
+  instalments?: number | null;
+}): PlanId {
   const known = new Set<string>(PLANS.map((p) => p.id));
 
   if (o.depositPercent != null) {
@@ -820,7 +828,10 @@ export function planIdFor(o: { depositPercent?: number | null; instalments?: num
     // "One payment" rather than on a wrong answer, and the draft keeps its 35%
     // unless the user actually picks something else.
     if (known.has(id)) return id as PlanId;
+    // Any other percent goes in the Deposit box under the list.
+    if (o.depositPercent > 0 && o.depositPercent < 100) return "deposit_custom";
   }
+  if (o.depositKobo != null && o.depositKobo > 0) return "deposit_custom";
 
   if (o.instalments != null) {
     const id = `split_${o.instalments}`;
@@ -969,8 +980,18 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
   due_date: { type: "string", __example__: "" },
   plan: { type: "string", __example__: "one" },
   notes: { type: "string", __example__: "" },
+  // The Deposit box under "Custom deposit": "30%" or "100000". A string, as
+  // everything a form returns is.
+  deposit: { type: "string", __example__: "" },
   title: { type: "string", __example__: "" },
   vat: { type: "boolean", __example__: false },
+  /*
+   * The design list on the last screen, and the one it opens on: theirs.
+   * Built for whoever opens the form (`designOptions`), because Free sees
+   * the Pro designs greyed out (13 October 2026).
+   */
+  designs: CURRENCIES_SCHEMA,
+  design: { type: "string", __example__: "classic" },
   /*
    * Today, as the date picker's floor, so nobody can make an invoice due
    * last week by scrolling one notch too far. Set by whoever opens the form;
@@ -1061,7 +1082,10 @@ const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<str
   // before it is simply carrying them.
   plan: "${data.plan}",
   notes: "${data.notes}",
+  deposit: "${data.deposit}",
   vat: "${data.vat}",
+  design: "${data.design}",
+  designs: "${data.designs}",
   // Never typed by anybody: decided before the form opens, by who is opening
   // it and when, and every screen is only carrying them.
   today: "${data.today}",
@@ -1107,6 +1131,23 @@ export function payByOptions(x: { bank: string | null; details: string | null })
 }
 
 export type CurrencyOption = { id: string; title: string; description?: string; enabled?: boolean };
+
+/**
+ * Every design, for the Design box on the form's last screen.
+ *
+ * Free sees the Pro ones too, greyed out and saying so, for the reason the
+ * currency box does: a design nobody can see is one nobody upgrades for.
+ */
+export function designOptions(pro: boolean): CurrencyOption[] {
+  return TEMPLATES.filter((t) => t.ready).map((t) => ({
+    id: t.id,
+    title: t.name,
+    ...(t.pro ? { description: pro ? "Pro" : "Comes with Pro." } : {}),
+    enabled: pro || !t.pro,
+  }));
+}
+
+export { DEFAULT_TEMPLATE };
 
 const CURRENCY_TITLES: Record<Currency, string> = {
   NGN: "Naira (₦)",
@@ -1761,8 +1802,11 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           due_date: { type: "string", __example__: "" },
           plan: { type: "string", __example__: "one" },
           notes: { type: "string", __example__: "" },
+          deposit: { type: "string", __example__: "" },
           title: { type: "string", __example__: "" },
           vat: { type: "boolean", __example__: false },
+          designs: CURRENCIES_SCHEMA,
+          design: { type: "string", __example__: "classic" },
           today: { type: "string", __example__: "2026-09-26" },
           /*
            * A string for the same reason `amount` is one: it arrives out of a
@@ -1797,8 +1841,10 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
               name: "terms_form",
               "init-values": {
                 plan: "${data.plan}",
+                deposit: "${data.deposit}",
                 notes: "${data.notes}",
                 vat: "${data.vat}",
+                design: "${data.design}",
               },
               children: [
                 {
@@ -1807,6 +1853,22 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                   label: "Payment",
                   required: true,
                   "data-source": PLANS.map((p) => ({ id: p.id, title: p.title })),
+                },
+                /*
+                 * The deposit for "Custom deposit", as an amount or a percent
+                 * (13 October 2026). Always on the screen rather than shown by
+                 * the choice above: a field that comes and goes is the kind
+                 * that broke this form before (see EXTRA_ITEMS), and the
+                 * helper says when it counts.
+                 */
+                {
+                  type: "TextInput",
+                  name: "deposit",
+                  label: "Deposit",
+                  "helper-text": "For Custom deposit. An amount like 100000, or a percent like 30%.",
+                  required: false,
+                  "input-type": "text",
+                  "max-chars": 14,
                 },
                 /*
                  * Abroad: a Balans card link, or the sender's own details
@@ -1842,6 +1904,23 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                   required: false,
                   "max-length": 500,
                 },
+                /*
+                 * The design, chosen here as well as on the designs page
+                 * (13 October 2026): plenty of people never find that page,
+                 * and the form is where they are already deciding how the
+                 * invoice looks. It is their saved design, so it sticks.
+                 */
+                {
+                  type: "Dropdown",
+                  name: "design",
+                  label: "Design",
+                  required: false,
+                  "data-source": "${data.designs}",
+                },
+                {
+                  type: "TextCaption",
+                  text: "Your design stays for the invoices after this one. Reply designs to see them all.",
+                },
                 {
                   type: "Footer",
                   label: "See the draft",
@@ -1860,6 +1939,8 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       // submission that says this is not a naira invoice.
                       currency: "${data.currency}",
                       plan: "${form.plan}",
+                      deposit: "${form.deposit}",
+                      design: "${form.design}",
                       pay_by: "${form.pay_by}",
                       vat: "${form.vat}",
                       notes: "${form.notes}",

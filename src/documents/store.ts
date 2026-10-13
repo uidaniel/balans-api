@@ -39,6 +39,8 @@ export type DraftInput = {
   dueDate: Civil | null;
   vatPercent: number | null;
   depositPercent: number | null;
+  /** A deposit as a sum, in kobo: "Custom deposit" on the form. */
+  depositKobo?: number | null;
   /** Equal payments, when the work is billed in stages rather than up front. */
   instalments: number | null;
   /**
@@ -171,16 +173,21 @@ export async function findOrCreateClient(
 function splitOf(
   parts: Part[],
   totalKobo: number,
-): { depositPercent: number | null; instalments: number | null } {
+): { depositPercent: number | null; depositKobo: number | null; instalments: number | null } {
   if (parts.length < 2 || totalKobo <= 0) {
-    return { depositPercent: null, instalments: null };
+    return { depositPercent: null, depositKobo: null, instalments: null };
+  }
+
+  // A deposit as a sum is labelled plainly "Deposit", with no percent.
+  if (parts.length === 2 && parts[0]!.label === "Deposit" && parts[1]!.label === "Balance") {
+    return { depositPercent: null, depositKobo: parts[0]!.amountKobo, instalments: null };
   }
 
   if (parts.length === 2 && parts[1]!.label === "Balance") {
-    return { depositPercent: round1((parts[0]!.amountKobo / totalKobo) * 100), instalments: null };
+    return { depositPercent: round1((parts[0]!.amountKobo / totalKobo) * 100), depositKobo: null, instalments: null };
   }
 
-  return { depositPercent: null, instalments: parts.length };
+  return { depositPercent: null, depositKobo: null, instalments: parts.length };
 }
 
 /* -------------------------------------------------------------------------- */

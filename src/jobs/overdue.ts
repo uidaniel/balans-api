@@ -402,7 +402,6 @@ export function promptMessage(x: {
     return para(
       heading,
       `✅ ${b(`${x.clientName} has been reminded ${how}`)}, with the link to pay.`,
-      "Nothing for you to do. I will tell you the moment it is paid.",
       `Reply ${b(x.number === null ? "stop reminders" : `stop reminders ${x.number}`)} to turn these off for this invoice.`,
     );
   }

@@ -58,6 +58,7 @@ import {
   payInfo,
   notesBlock,
   titleBlock,
+  hasVat,
   rows,
   sheet,
   shortUrl,
@@ -619,7 +620,7 @@ line-height:1;font-variant-numeric:tabular-nums}
     ${cap(h.label)}
     <p class="amt">${h.display}</p>
     ${fxNote(d)}
-    <p class="sub">Subtotal ${money(d.subtotalKobo)} · VAT (${d.vatPercent ?? 0}%) ${money(d.vatKobo)}</p>
+    <p class="sub">Subtotal ${money(d.subtotalKobo)}${hasVat(d) ? ` · VAT (${d.vatPercent ?? 0}%) ${money(d.vatKobo)}` : ""}</p>
   </div>
 
   ${d.notes ? `<p class="terms">${esc(d.notes)}</p>` : ""}

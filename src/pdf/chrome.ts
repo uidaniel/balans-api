@@ -339,6 +339,130 @@ async function withLocalFonts(html: string): Promise<string> {
   return out;
 }
 
+/**
+ * Sets each invoice sheet at the largest size that leaves nothing cut off.
+ *
+ * A sheet is one A4 box with overflow hidden, so whatever does not fit is not
+ * moved to a second page, it is sliced off at the bottom edge. Its font size
+ * used to come only from an estimate in kit.ts, and an estimate cannot know
+ * how a long title wraps or how tall somebody's terms are: a three-line
+ * invoice with a project title and a signature lost its "Pay online at" line
+ * in half (13 October 2026).
+ *
+ * So the page is measured, in print media as it will be printed. A sheet that
+ * carries `data-fit="<min> <max> <flow>"` (mm to the em) is tried at full size, and
+ * if anything runs past the bottom — of the sheet, or of any box inside it
+ * that clips — the size is searched down to the largest that fits. Below the
+ * minimum the type would stop being worth reading, so a document that still
+ * does not fit there is given whole extra pages instead, set at the `flow`
+ * size, which is meant for reading rather than for fitting: the sheet grows
+ * to two (or more) A4 heights, and the browser paginates it.
+ *
+ * Plain JavaScript, sent to the tab as a string: it runs in the page.
+ */
+export const FIT_SHEETS = `(() => {
+  const out = [];
+  const bottomOf = (el) => {
+    let b = -Infinity;
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (n.nodeType === 3) {
+        if (!n.textContent.trim()) continue;
+        const r = document.createRange();
+        r.selectNodeContents(n);
+        for (const q of r.getClientRects()) if (q.height > 0) b = Math.max(b, q.bottom);
+      } else if (n.tagName === "IMG") b = Math.max(b, n.getBoundingClientRect().bottom);
+    }
+    return b;
+  };
+  for (const s of document.querySelectorAll(".sheet[data-fit]")) {
+    const [min, max, flow] = s.dataset.fit.split(" ").map(Number);
+    if (!(min > 0 && max >= min)) continue;
+    const set = (mm) => { s.style.fontSize = mm.toFixed(3) + "mm"; };
+    const fits = () => {
+      if (s.scrollHeight > s.clientHeight) return false;
+      // A box inside the sheet that clips (a ticket, a slip) can hide what
+      // runs past its own bottom without the sheet growing at all. Only the
+      // words and pictures count: a notch or a rule cut by a rounded corner
+      // is the design.
+      for (const el of s.querySelectorAll("*")) {
+        if (!(el instanceof HTMLElement) || el.clientHeight === 0) continue;
+        const cs = getComputedStyle(el);
+        if (cs.overflowY === "visible" || cs.whiteSpace === "nowrap") continue;
+        if (el.scrollHeight <= el.clientHeight + 1) continue;
+        if (bottomOf(el) > el.getBoundingClientRect().bottom + 1) return false;
+      }
+      return true;
+    };
+    set(max);
+    if (fits()) { out.push(max); continue; }
+    set(min);
+    if (!fits()) {
+      // Too much for one page even at the smallest size worth reading. More
+      // pages, then, and at a size meant for reading rather than for fitting.
+      // The sheet's height is let go — a floor of whole A4 heights, so the
+      // foot still sits at the bottom of the last page, and no ceiling, so
+      // nothing can be clipped — and the browser paginates it. A twentieth
+      // over each page is allowed for rows pushed past a page break.
+      const page = s.clientHeight;
+      // For a layout that has to be told it is running across pages.
+      s.classList.add("flow");
+      s.style.height = "auto";
+      s.style.overflow = "visible";
+      const pagesAt = (mm) => {
+        set(mm);
+        s.style.minHeight = "297mm";
+        return Math.max(2, Math.ceil((s.offsetHeight * 1.05) / page));
+      };
+      let size = flow > 0 ? flow : min;
+      let pages = pagesAt(size);
+      // A third page that would hold two lines is worse than slightly
+      // smaller type on two.
+      if (pages > 2 && pagesAt(min) < pages) {
+        let lo = min, hi = size;
+        for (let i = 0; i < 9; i++) {
+          const mid = (lo + hi) / 2;
+          if (pagesAt(mid) < pages) lo = mid; else hi = mid;
+        }
+        size = lo;
+        pages = pagesAt(lo);
+      }
+      set(size);
+      // In the paper's own inches, and short of whole pages: N sheets of
+      // 297mm are a fraction of a point taller than N pages of 11.69in, which
+      // is enough to start an empty page after the last, and a row pushed
+      // past each page break moves everything under it down by its height.
+      // The white above the foot takes up both, rather than a third page
+      // holding only the small print.
+      s.style.minHeight = "calc(" + pages + " * 11.69in - " + (pages - 1) * 5 + "em - 2px)";
+      // What is left of the last page under the sheet is the sheet's paper.
+      document.body.style.background = getComputedStyle(s).backgroundColor;
+      out.push(-pages);
+      continue;
+    }
+    let lo = min, hi = max;
+    for (let i = 0; i < 9; i++) {
+      const mid = (lo + hi) / 2;
+      set(mid);
+      if (fits()) lo = mid; else hi = mid;
+    }
+    set(lo);
+    out.push(lo);
+  }
+  return out;
+})()`;
+
+/** Measures and fits the sheets on the page; see `FIT_SHEETS`. Never throws. */
+async function fitSheets(t: Tab): Promise<void> {
+  try {
+    await t.send("Emulation.setEmulatedMedia", { media: "print" });
+    await t.send("Runtime.evaluate", { expression: FIT_SHEETS, returnByValue: true });
+  } catch {
+    // The estimate the sheet was written with still stands; a PDF set from
+    // the estimate is better than no PDF.
+  }
+}
+
 export type PageSize = { widthInches: number; heightInches: number };
 /** A4, which is what a Nigerian printer and a Nigerian accountant expect. */
 export const A4: PageSize = { widthInches: 8.27, heightInches: 11.69 };
@@ -356,6 +480,8 @@ export async function renderPdf(html: string, size: PageSize = A4): Promise<Buff
     await t.send("Emulation.clearDeviceMetricsOverride");
     await t.send("Page.setDocumentContent", { frameId: t.frameId, html: await withLocalFonts(html) });
     await settled(t);
+    // Nothing cut off the bottom: see FIT_SHEETS.
+    await fitSheets(t);
     const res = await t.send("Page.printToPDF", {
       printBackground: true,
       paperWidth: size.widthInches,
@@ -380,6 +506,8 @@ export async function renderPdf(html: string, size: PageSize = A4): Promise<Buff
  */
 export async function renderPng(html: string, width: number, height: number): Promise<Buffer> {
   return onTab(async (t) => {
+    // A tab that last printed a PDF was measuring in print media; a card is a screen.
+    await t.send("Emulation.setEmulatedMedia", { media: "" });
     // The viewport has to match, or the capture is padded or cropped.
     await t.send("Emulation.setDeviceMetricsOverride", {
       width,

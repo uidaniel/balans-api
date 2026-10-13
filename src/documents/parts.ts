@@ -117,10 +117,21 @@ export type Shape = { label: string; amountKobo: number }[];
 export function shapeFor(
   o: {
     depositPercent?: number | null;
+    depositKobo?: number | null;
     instalments?: number | null;
   },
   totalKobo: number,
 ): Shape | null {
+  // A deposit as a sum (13 October 2026). Not one that is the whole invoice,
+  // for the reason 100% is not a deposit below.
+  const sum = o.depositKobo;
+  if (sum != null && sum > 0 && sum < totalKobo) {
+    return [
+      { label: "Deposit", amountKobo: sum },
+      { label: "Balance", amountKobo: totalKobo - sum },
+    ];
+  }
+
   const deposit = o.depositPercent;
   if (deposit != null && deposit > 0 && deposit < 100) return depositShape(totalKobo, deposit);
 
@@ -245,6 +256,7 @@ export type Stage = { label: string; amountKobo: number; dueOn: Civil | null };
 export function stagesFor(
   o: {
     depositPercent?: number | null;
+    depositKobo?: number | null;
     instalments?: number | null;
     dueDate?: Civil | null;
     /** Dates set for particular parts, by position. See `scheduleFor`. */
@@ -270,6 +282,7 @@ export function stagesFor(
 export function dueDateWithStages(
   o: {
     depositPercent?: number | null;
+    depositKobo?: number | null;
     instalments?: number | null;
     dueDate?: Civil | null;
     stageDueDates?: (Civil | null | undefined)[] | null;

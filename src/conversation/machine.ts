@@ -35,7 +35,7 @@ import {
 import { formatNaira } from "../../core/totals.ts";
 import { resolveDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
-import { EXTRA_ITEMS, FRESH_WHO, currencyOptions, payByOptions, formScreenId, itemFields, planIdFor } from "../whatsapp/flows/definitions.ts";
+import { DEFAULT_TEMPLATE, EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, payByOptions, formScreenId, itemFields, planIdFor, PLANS } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION, draftButtons } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
 import { INFO, type Foreign } from "../../core/currency.ts";
@@ -203,8 +203,21 @@ export type PendingDoc = {
     fetchedAt: string;
   };
   dueDate?: Civil | null;
+  /**
+   * The due date above was filled in by `withDefaults`, not said by anybody.
+   *
+   * It matters once the invoice is split: a plan spreads its parts towards
+   * the due date, and a default spread that way puts dates on every part
+   * that nobody chose (13 October 2026). A said date clears it.
+   */
+  dueDefaulted?: boolean;
   vatPercent?: number | null;
   depositPercent?: number | null;
+  /**
+   * A deposit as a sum rather than a share: "Custom deposit", 100000 (13
+   * October 2026). In kobo, and it wins over a percent when both are set.
+   */
+  depositKobo?: number | null;
   /** Equal payments. Never set alongside `depositPercent`; see `shapeFor`. */
   instalments?: number | null;
   /**
@@ -2378,11 +2391,25 @@ function withDefaults(doc: PendingDoc, now: Civil): PendingDoc {
       ? defaults.behaviour.quoteValidDays
       : defaults.behaviour.defaultDueDays;
 
+  /*
+   * A split invoice with no date said has no dates at all (13 October 2026).
+   *
+   * The seven-day default spreads the parts across a week, so "3 payments"
+   * came back as due today, Saturday and Tuesday — dates somebody never
+   * gave, on an invoice their client reads. One payment keeps its default,
+   * which is the "days to pay" in their settings.
+   */
+  const said = doc.dueDate != null && !doc.dueDefaulted;
+  const split = doc.type === "invoice" && shapeFor(doc, 100) !== null;
+  const { dueDefaulted: _was, ...rest } = doc;
+  if (said) return { ...rest, lines, totalKobo: undefined };
+  if (split) return { ...rest, lines, totalKobo: undefined, dueDate: null };
   return {
-    ...doc,
+    ...rest,
     lines,
     totalKobo: undefined,
-    dueDate: doc.dueDate ?? addDaysTo(now, days),
+    dueDate: addDaysTo(now, days),
+    dueDefaulted: true,
   };
 }
 
@@ -2396,6 +2423,17 @@ function withDefaults(doc: PendingDoc, now: Civil): PendingDoc {
  * The date goes across as words rather than a calendar value: the field takes
  * words, and the same reader handles "8 October 2026" as handles "Friday".
  */
+/**
+ * What the Deposit box opens with: the custom deposit this draft has, if it
+ * has one the list cannot name. Empty for a listed plan.
+ */
+function depositText(doc: PendingDoc): string {
+  if (doc.depositKobo != null && doc.depositKobo > 0) return String(doc.depositKobo / 100);
+  const p = doc.depositPercent;
+  if (p != null && p > 0 && p < 100 && !PLANS.some((x) => x.id === `deposit_${p}`)) return `${p}%`;
+  return "";
+}
+
 /**
  * What an empty document form opens with.
  *
@@ -2483,8 +2521,14 @@ export function formValues(doc: PendingDoc, now: Civil): {
     qty: onEntry ? (first?.qty ?? 1) : qtyText(first),
     // What the date picker returns and takes: YYYY-MM-DD.
     due_date: doc.dueDate ? iso(doc.dueDate) : "",
-    today: iso(now),
-    plan: planIdFor({ depositPercent: doc.depositPercent, instalments: doc.instalments }),
+    /*
+     * The picker's floor, which is today — or the date already on an
+     * overdue invoice opened for changing, so the picker is never handed a
+     * starting value below its own floor (13 October 2026).
+     */
+    today: doc.dueDate && iso(doc.dueDate) < iso(now) ? iso(doc.dueDate) : iso(now),
+    plan: planIdFor({ depositPercent: doc.depositPercent, depositKobo: doc.depositKobo, instalments: doc.instalments }),
+    deposit: depositText(doc),
     notes: doc.notes ?? "",
     title: doc.title ?? "",
     vat: doc.vatPercent != null,
@@ -2506,6 +2550,9 @@ export function formValues(doc: PendingDoc, now: Civil): {
     show_currency: false,
     currencies: currencyOptions(false),
     pay_options: payByOptions({ bank: null, details: null }),
+    // Free's list and the default design; `openedForPlan` puts in theirs.
+    designs: designOptions(false),
+    design: DEFAULT_TEMPLATE,
     amount_help: NAIRA_HELP,
     ...PHONE_OFF,
   };
@@ -3025,7 +3072,10 @@ function applyIn(doc: PendingDoc, c: Correction): PendingDoc {
   // A number that is not one is left as it was rather than wiped.
   if (c.clientPhone === null) next.clientPhone = null;
   else if (c.clientPhone) next.clientPhone = normalisePhone(c.clientPhone) ?? next.clientPhone;
-  if (c.dueDate) next.dueDate = c.dueDate;
+  if (c.dueDate) {
+    next.dueDate = c.dueDate;
+    delete next.dueDefaulted;
+  }
 
   /*
    * A date for one part of the payment plan.
@@ -3052,6 +3102,7 @@ function applyIn(doc: PendingDoc, c: Correction): PendingDoc {
     // left alone, and the draft says nothing changed.
     if (count <= 1 && stage.which === "last") {
       next.dueDate = stage.date;
+      delete next.dueDefaulted;
       continue;
     }
     const at = stage.which === "first" ? 0 : stage.which === "last" ? count - 1 : stage.which - 1;
@@ -3063,7 +3114,10 @@ function applyIn(doc: PendingDoc, c: Correction): PendingDoc {
 
       // The last part IS the document's due date; they are one fact with two
       // names, and letting them drift apart puts two dates on one card.
-      if (at === count - 1) next.dueDate = stage.date;
+      if (at === count - 1) {
+        next.dueDate = stage.date;
+        delete next.dueDefaulted;
+      }
     }
   }
   if (c.passFeesToClient !== undefined) next.passFeesToClient = c.passFeesToClient;
