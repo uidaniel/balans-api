@@ -649,6 +649,7 @@ describe("a tapped button", () => {
       plan: "deposit_50",
       // Only a deposit the list cannot name goes in the box.
       deposit: "",
+      deposit_help: "An amount like 100000, or a percent like 30%.",
       notes: "half now",
       title: "",
       vat: true,

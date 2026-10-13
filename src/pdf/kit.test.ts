@@ -102,7 +102,7 @@ describe("fitting a document to the page", () => {
     const html = sheet(base, {}, { css: "", body: "" });
     const m = html.match(/data-fit="([\d.]+) ([\d.]+) ([\d.]+)"/);
     assert.ok(m, "every sheet carries its fitting range");
-    const [min, max, flow] = m!.slice(1).map(Number);
+    const [min, max, flow] = m!.slice(1).map(Number) as [number, number, number];
     assert.ok(min < flow && flow < max);
   });
 

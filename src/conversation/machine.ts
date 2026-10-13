@@ -2529,6 +2529,9 @@ export function formValues(doc: PendingDoc, now: Civil): {
     today: doc.dueDate && iso(doc.dueDate) < iso(now) ? iso(doc.dueDate) : iso(now),
     plan: planIdFor({ depositPercent: doc.depositPercent, depositKobo: doc.depositKobo, instalments: doc.instalments }),
     deposit: depositText(doc),
+    deposit_help: depositText(doc)
+      ? `Now ${depositText(doc)}. Leave empty to keep it, or type an amount or a percent.`
+      : "An amount like 100000, or a percent like 30%.",
     notes: doc.notes ?? "",
     title: doc.title ?? "",
     vat: doc.vatPercent != null,

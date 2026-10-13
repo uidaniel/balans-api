@@ -252,3 +252,21 @@ test("a paid invoice says so once, in its own place", async (t) => {
     });
   }
 });
+
+test("the gallery the invoice form links to", async (t) => {
+  const html = pickerPage({ token: null, plan: "pro", chosenId: null, sample: DOC });
+
+  await t.test("shows every ready layout", () => {
+    for (const spec of ready) assert.ok(html.includes(spec.name), `${spec.name} is shown`);
+  });
+
+  await t.test("has nothing to save, and says where to choose instead", () => {
+    assert.ok(!html.includes("<form"), "no form on a page that is everybody's");
+    assert.ok(html.includes("under Design"));
+  });
+
+  await t.test("marks no design as current", () => {
+    assert.ok(!/<button[^>]*aria-current="true"/.test(html));
+    assert.ok(!html.includes('class="card on"'));
+  });
+});

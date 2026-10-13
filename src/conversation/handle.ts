@@ -3359,8 +3359,22 @@ async function handleInvoiceForm(
   const depositNote: string[] = [];
   const typedDeposit = (fields.deposit ?? "").trim();
   const plan = fields.plan ?? "";
+  /*
+   * The box opens empty (it cannot be filled in from here; see the Flow), so
+   * an empty box on Custom deposit keeps the custom deposit the draft or the
+   * sent invoice already had.
+   */
+  const before = open?.id && !editId ? open : was;
+  const kept =
+    !typedDeposit && plan === "deposit_custom" && before
+      ? before.depositKobo
+        ? { minor: before.depositKobo }
+        : before.depositPercent
+          ? { percent: before.depositPercent }
+          : null
+      : null;
   if (plan === "deposit_custom" || (typedDeposit && (plan === "" || plan === "one"))) {
-    const read = readDeposit(typedDeposit);
+    const read = kept ?? readDeposit(typedDeposit);
     const total = priced.foreign ? priced.foreign.amountMinor : totalsFor(priced.lines, priced.vatPercent ?? null).totalKobo;
     priced.instalments = null;
     priced.stageDueDates = null;

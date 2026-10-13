@@ -158,6 +158,42 @@ async function sampleFor(owner: Owner): Promise<DocumentData> {
   };
 }
 
+/**
+ * The same believable invoice, for the public gallery the invoice form links
+ * to (13 October 2026). Nobody's details: the link is the same for everyone.
+ */
+function gallerySample(): DocumentData {
+  const today = todayIn(defaults.behaviour.timezone);
+  return {
+    variant: "invoice",
+    number: 14,
+    businessName: "Your business",
+    businessEmail: "you@business.ng",
+    businessAddress: null,
+    businessTin: null,
+    logoDataUri: null,
+    clientName: "Zenith Homes",
+    clientEmail: null,
+    lines: [
+      { description: "Exterior 3D render", qty: 1, unitAmountKobo: 250_000_00, amountKobo: 250_000_00 },
+      { description: "Interior stills", qty: 4, unitAmountKobo: 20_000_00, amountKobo: 80_000_00 },
+      { description: "Revision round", qty: 1, unitAmountKobo: 20_000_00, amountKobo: 20_000_00 },
+    ],
+    subtotalKobo: 350_000_00,
+    vatKobo: 0,
+    vatPercent: null,
+    totalKobo: 350_000_00,
+    amountPaidKobo: 0,
+    issueDate: today,
+    dueDate: addDays(today, 14),
+    notes: null,
+    publicUrl: "https://payment.balans.ng/i/…",
+    legalLines: legalLines(),
+    showMadeWith: true,
+    brandColor: null,
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 
 const CSS = `
@@ -443,7 +479,11 @@ addEventListener('resize', function () { if (at >= 0) size(); });
  * shows a Free user, and what it does not offer them, is the part worth a test.
  */
 export function pickerPage(opts: {
-  token: string;
+  /**
+   * Null for the gallery the invoice form links to: everyone's, so nothing
+   * on it can be saved, and each card says where to choose it instead.
+   */
+  token: string | null;
   plan: "free" | "pro";
   chosenId: string | null;
   sample: DocumentData;
@@ -478,7 +518,8 @@ export function pickerPage(opts: {
         renderTemplate(t.id, sample, { fonts: "link" }) ??
         renderDocumentHtml(sample, { fonts: "link" });
       const locked = !mine.has(t.id);
-      const on = t.id === chosen.id;
+      // The gallery is nobody's, so nothing on it is "current".
+      const on = opts.token !== null && t.id === chosen.id;
 
       return `<div class="card${on ? " on" : ""}" data-plan="${t.pro ? "pro" : "free"}" data-name="${esc(t.name)}">
       ${preview(html, t.name, locked)}
@@ -488,7 +529,9 @@ export function pickerPage(opts: {
         }</div>
         <div class="blurb">${esc(t.blurb)}</div>
         ${
-          locked
+          !opts.token
+            ? `<div class="locked">In the form, choose <b>${esc(t.name)}</b><br>under Design${t.pro ? " (Pro)" : ""}</div>`
+            : locked
             ? `<div class="locked">Reply <b>upgrade</b> on WhatsApp<br>to use this one</div>`
             : `<form method="post" action="/designs/${esc(opts.token)}${opts.back ? "?from=settings" : ""}">
                  <input type="hidden" name="id" value="${esc(t.id)}">
@@ -512,10 +555,16 @@ export function pickerPage(opts: {
 <style>${CSS}</style></head><body>
 <header class="top"><div class="in">
   ${opts.back ? `<a class="back" href="${esc(opts.back)}">${ARROW("M10 3.5 5.5 8l4.5 4.5")}Back to settings</a>` : ""}
-  <h1>Your invoice design</h1>
+  ${
+    opts.token
+      ? `<h1>Your invoice design</h1>
   <p>Every one below is filled with your own details. Pick one and your next invoice
      uses it &mdash; the ones you have already sent do not change.</p>
-  <p class="now"><i>${ARROW("M3.5 8.5 6.5 11.5 12.5 4.5")}</i>Current design <b>${esc(chosen.name)}</b></p>
+  <p class="now"><i>${ARROW("M3.5 8.5 6.5 11.5 12.5 4.5")}</i>Current design <b>${esc(chosen.name)}</b></p>`
+      : `<h1>Every invoice design</h1>
+  <p>Tap one to see it full size. Then go back to the form and choose it under
+     <b>Design</b> &mdash; it stays yours for the invoices after.</p>`
+  }
 </div></header>
 
 <main class="wrap">
@@ -529,8 +578,8 @@ export function pickerPage(opts: {
     .map(
       (t, i) =>
         `<button class="chip" type="button" data-go="${i}" data-plan="${t.pro ? "pro" : "free"}"${
-          t.id === chosen.id ? ` aria-current="true"` : ""
-        }>${t.id === chosen.id ? "<i></i>" : ""}${esc(t.name)}</button>`,
+          opts.token && t.id === chosen.id ? ` aria-current="true"` : ""
+        }>${opts.token && t.id === chosen.id ? "<i></i>" : ""}${esc(t.name)}</button>`,
     )
     .join("")}</div>
   <div class="grid">${cards}</div>
@@ -582,6 +631,19 @@ export async function templateRoutes(app: FastifyInstance): Promise<void> {
       .header("cache-control", "public, max-age=31536000, immutable")
       .send(await readFile(file));
   });
+
+  /*
+   * Every design, for the link on the invoice form (13 October 2026). A Flow
+   * link is fixed text, the same for everybody, so this page is too: nobody's
+   * details and nothing to save. The choice is made back in the form.
+   */
+  app.get("/designs/all", async (_req, reply) =>
+    reply
+      .type(HTML)
+      .header("cache-control", "public, max-age=600")
+      .header("x-robots-tag", "noindex")
+      .send(pickerPage({ token: null, plan: "pro", chosenId: null, sample: gallerySample() })),
+  );
 
   app.get<{ Params: { token: string }; Querystring: { saved?: string; from?: string } }>(
     "/designs/:token",

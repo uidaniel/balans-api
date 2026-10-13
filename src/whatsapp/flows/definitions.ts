@@ -983,6 +983,8 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
   // The Deposit box under "Custom deposit": "30%" or "100000". A string, as
   // everything a form returns is.
   deposit: { type: "string", __example__: "" },
+  // Under the Deposit box: what it takes, and the deposit the draft has now.
+  deposit_help: { type: "string", __example__: "An amount like 100000, or a percent like 30%." },
   title: { type: "string", __example__: "" },
   vat: { type: "boolean", __example__: false },
   /*
@@ -1083,6 +1085,7 @@ const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<str
   plan: "${data.plan}",
   notes: "${data.notes}",
   deposit: "${data.deposit}",
+  deposit_help: "${data.deposit_help}",
   vat: "${data.vat}",
   design: "${data.design}",
   designs: "${data.designs}",
@@ -1803,6 +1806,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           plan: { type: "string", __example__: "one" },
           notes: { type: "string", __example__: "" },
           deposit: { type: "string", __example__: "" },
+          deposit_help: { type: "string", __example__: "An amount like 100000, or a percent like 30%." },
           title: { type: "string", __example__: "" },
           vat: { type: "boolean", __example__: false },
           designs: CURRENCIES_SCHEMA,
@@ -1841,7 +1845,6 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
               name: "terms_form",
               "init-values": {
                 plan: "${data.plan}",
-                deposit: "${data.deposit}",
                 notes: "${data.notes}",
                 vat: "${data.vat}",
                 design: "${data.design}",
@@ -1855,20 +1858,30 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                   "data-source": PLANS.map((p) => ({ id: p.id, title: p.title })),
                 },
                 /*
-                 * The deposit for "Custom deposit", as an amount or a percent
-                 * (13 October 2026). Always on the screen rather than shown by
-                 * the choice above: a field that comes and goes is the kind
-                 * that broke this form before (see EXTRA_ITEMS), and the
-                 * helper says when it counts.
+                 * The deposit for "Custom deposit", as an amount or a percent,
+                 * on the screen only once that is the choice (13 October 2026).
+                 *
+                 * Named nowhere in `init-values`, because a field inside an
+                 * `If` that is not showing is not on the screen, and naming
+                 * one there is what broke this form before (see EXTRA_ITEMS).
+                 * So it opens empty, and an empty box on a draft that already
+                 * has a custom deposit keeps that deposit (handleInvoiceForm);
+                 * the helper says what it is now.
                  */
                 {
-                  type: "TextInput",
-                  name: "deposit",
-                  label: "Deposit",
-                  "helper-text": "For Custom deposit. An amount like 100000, or a percent like 30%.",
-                  required: false,
-                  "input-type": "text",
-                  "max-chars": 14,
+                  type: "If",
+                  condition: "${form.plan} == 'deposit_custom'",
+                  then: [
+                    {
+                      type: "TextInput",
+                      name: "deposit",
+                      label: "Deposit",
+                      "helper-text": "${data.deposit_help}",
+                      required: false,
+                      "input-type": "text",
+                      "max-chars": 14,
+                    },
+                  ],
                 },
                 /*
                  * Abroad: a Balans card link, or the sender's own details
@@ -1919,7 +1932,18 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                 },
                 {
                   type: "TextCaption",
-                  text: "Your design stays for the invoices after this one. Reply designs to see them all.",
+                  text: "Your design stays for the invoices after this one.",
+                },
+                /*
+                 * Every design, full size, in WhatsApp's own browser over the
+                 * form (13 October 2026). A Flow cannot hold a web page, and
+                 * its links are fixed text, so this is the same page for
+                 * everybody: it shows, and the choice is made back here.
+                 */
+                {
+                  type: "EmbeddedLink",
+                  text: "See every design",
+                  "on-click-action": { name: "open_url", url: `${env.PUBLIC_BASE_URL.replace(/[/]$/, "")}/designs/all` },
                 },
                 {
                   type: "Footer",
