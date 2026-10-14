@@ -110,6 +110,11 @@ const CASES: [string, Want][] = [
   ["help me", "talk"],
   ["good night", "talk"],
 
+  /* -- Dropping what the bot is working on -------------------------------- */
+  ["abeg forget am", "talk"],
+  ["i'm not sending invoice again bro", "talk"],
+  ["never mind", "talk"],
+
   /* -- Off topic ----------------------------------------------------------- */
   ["what's the weather today", "talk"],
   ["tell me a joke", "talk"],

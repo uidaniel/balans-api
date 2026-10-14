@@ -1910,6 +1910,7 @@ async function runEffects(
             today: ctx.today,
             businessName,
             memory: ctx.chat,
+            pending: effect.pending,
           });
           if (said.ok) {
             extra.push(said.reply);

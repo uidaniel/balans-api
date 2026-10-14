@@ -342,7 +342,15 @@ export type Effect =
    * is what to say when the assistant cannot: no key, over the day's cap, or
    * down.
    */
-  | { type: "chat"; fallback: string }
+  | {
+      type: "chat";
+      fallback: string;
+      /**
+       * Something they started and have not finished, in words, so the
+       * assistant can answer what was said and then say what is waiting.
+       */
+      pending?: string;
+    }
   | { type: "show_settings" }
   /** F24: the link to the design picker. */
   | { type: "show_designs" }
@@ -1196,6 +1204,12 @@ export const VOICE = {
   logoDeclined: para(
     `👍 ${b("Left it alone.")}`,
     "Your invoices are unchanged. Send it again any time if you change your mind.",
+  ),
+
+  /** Talk while a question is waiting, and the assistant could not answer. */
+  stillWaiting: lines(
+    `⏳ ${b("Something is still waiting.")}`,
+    `Answer the question above, or reply ${b("no")} to drop it.`,
   ),
 
   /** The assistant could not answer: no key, over the day's cap, or down. */
@@ -2689,6 +2703,65 @@ function addDaysTo(c: Civil, days: number): Civil {
 /* -------------------------------------------------------------------------- */
 
 /** The answer to a single question, and nothing else. */
+/**
+ * Words that put a person in a sentence. Client names do not have them, so
+ * "i'm not sending invoice again bro" is not a client called that.
+ */
+const TALKY = /\?|\b(i|i'm|im|i've|me|my|you|your|we|us|not|don't|dont|abeg|bro|pls|please|what|why|how|when|who|wetin|abi|sha)\b/i;
+
+/** What is waiting, in a sentence the assistant can repeat back. */
+function pendingNote(state: State, doc: PendingDoc): string {
+  const kind = doc.type === "quote" ? "quote" : doc.type === "payment_request" ? "payment request" : "invoice";
+  const who = doc.clientName ? ` for ${doc.clientName}` : "";
+  switch (state) {
+    case "awaiting_field:client_name":
+      return `They started a new ${kind} and the bot asked who it is for. It is waiting for the client's name.`;
+    case "awaiting_field:amount":
+      return `They started a ${kind}${who} and the bot asked how much it is for. It is waiting for the amount, like 350k.`;
+    case "awaiting_field:description":
+      return `They started a ${kind}${who} and the bot asked what it is for. It is waiting for a short description.`;
+    case "awaiting_field:due_date":
+      return `They started a ${kind}${who} and the bot asked when it is due. It is waiting for a date.`;
+    default:
+      return `A draft ${kind}${who} for ${formatNaira(totalOf(doc))} is on screen, waiting for them to tap Send, Change it or Discard.`;
+  }
+}
+
+/**
+ * Leaving a question the bot asked, rather than answering it (14 October
+ * 2026).
+ *
+ * Every waiting state used to take whatever came next as the answer: "yo?"
+ * was asked for the amount again, and "i'm not sending invoice again bro"
+ * became the client's name. Now a no drops the draft, and talk goes to the
+ * assistant with the draft described, so it answers what was said and says
+ * what is still waiting. The draft and the question both stay.
+ *
+ * `strict` is for the free-text answers — a description, a date — where an
+ * ordinary answer can contain "my" or "how": there only the model's own
+ * reading counts as talk.
+ */
+function walkAway(state: State, ctx: Context, msg: Inbound, strict: boolean): Step | null {
+  const doc = ctx.doc;
+  if (!doc) return null;
+  const intent = msg.parsed?.intent;
+  if (intent === "reject" && !msg.tapped) {
+    return { replies: [VOICE.draftDiscarded], next: "idle", context: forget(ctx), effects: [{ type: "discard_draft" }] };
+  }
+  const talk =
+    intent === "question" ||
+    intent === "social" ||
+    (intent === "help" && !asCommand(msg.text)) ||
+    (!strict && TALKY.test(msg.text));
+  if (!talk) return null;
+  return {
+    replies: [],
+    next: state,
+    context: ctx,
+    effects: [{ type: "chat", fallback: VOICE.stillWaiting, pending: pendingNote(state, doc) }],
+  };
+}
+
 function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound): Step {
   const doc = ctx.doc;
   if (!doc) {
@@ -2757,6 +2830,8 @@ function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound
       if (msg.parsed && isDocumentIntent(msg.parsed.intent) && msg.parsed.clientName) {
         return startDocument(msg.parsed, ctx, now, undefined, msg.text);
       }
+      const left = walkAway(state, ctx, msg, false);
+      if (left) return left;
 
       const name = answer.replace(/^(?:for|to)\s+/i, "").replace(/\s+/g, " ").trim();
       // A slash command is never a client's name. Anything we do not
@@ -2779,6 +2854,8 @@ function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound
     case "awaiting_field:amount": {
       const kobo = parseAmountToKobo(answer);
       if (kobo === null || kobo <= 0) {
+        const left = walkAway(state, ctx, msg, false);
+        if (left) return left;
         return {
           ...retry("awaiting_field:amount", ctx, askFor("amount", { clientName: doc.clientName })),
           buttons: [CHANGE_NAME],
@@ -2799,6 +2876,8 @@ function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound
 
     case "awaiting_field:description": {
       if (/^(skip|nothing|none|no)$/i.test(answer)) return buildOrAsk(doc, ctx, now);
+      const left = walkAway(state, ctx, msg, true);
+      if (left) return left;
       const description = answer.slice(0, 200).trim();
       if (!description) return retry("awaiting_field:description", ctx, askFor("description", {}));
       const total = totalOf(doc);
@@ -2814,7 +2893,11 @@ function takeMissingField(state: State, text: string, ctx: Context, msg: Inbound
         return buildOrAsk({ ...doc, dueDate: null }, ctx, now);
       }
       const resolved = resolveDueDate(answer, now);
-      if (!resolved) return retry("awaiting_field:due_date", ctx, askFor("due_date", {}));
+      if (!resolved) {
+        const left = walkAway(state, ctx, msg, false);
+        if (left) return left;
+        return retry("awaiting_field:due_date", ctx, askFor("due_date", {}));
+      }
       return buildOrAsk({ ...doc, dueDate: resolved.date }, ctx, now);
     }
 
@@ -3008,6 +3091,11 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
 
   const escape = commandEscape(msg, ctx, now);
   if (escape) return escape;
+
+  // A question with the draft on screen — "can I add VAT?" — is answered,
+  // and the draft stays where it is (14 October 2026).
+  const left = walkAway("awaiting_confirm", ctx, msg, true);
+  if (left) return left;
 
   return retry(
     "awaiting_confirm",

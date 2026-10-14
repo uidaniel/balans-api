@@ -1831,3 +1831,62 @@ describe("asked for by name (13 October 2026)", () => {
     }
   });
 });
+
+/*
+ * 14 October 2026: waiting for an amount, "yo?" was asked for the amount
+ * again and "i'm not sending invoice again bro" became the client's name.
+ */
+describe("walking away from a question the bot asked", () => {
+  const WAITING = { doc: { type: "invoice" as const, clientName: "Edidiong Uwak", lines: [] } };
+
+  it("answers talk instead of taking it as the amount, and keeps the draft", () => {
+    const out = doc("awaiting_field:amount", WAITING, "yo?", { parsed: parse({ intent: "social" }) });
+    assert.equal(out.next, "awaiting_field:amount");
+    assert.equal(out.context.doc?.clientName, "Edidiong Uwak");
+    const chat = out.effects[0] as { type: string; pending?: string };
+    assert.equal(chat.type, "chat");
+    assert.match(chat.pending!, /Edidiong Uwak.*amount/);
+  });
+
+  it("never takes a sentence about themselves as a client's name", () => {
+    const out = doc("awaiting_field:client_name", { doc: { type: "invoice" as const, lines: [] } }, "i'm not sending invoice again bro", {
+      parsed: parse({ intent: "unknown" }),
+    });
+    assert.equal(out.effects[0]?.type, "chat");
+    assert.equal(out.context.doc?.clientName, undefined);
+  });
+
+  it("drops the draft on a no", () => {
+    const out = doc("awaiting_field:amount", WAITING, "i'm not sending invoice again", { parsed: parse({ intent: "reject" }) });
+    assert.equal(out.next, "idle");
+    assert.deepEqual(out.effects, [{ type: "discard_draft" }]);
+    assert.deepEqual(out.replies, [VOICE.draftDiscarded]);
+  });
+
+  it("still takes real answers", () => {
+    const named = doc("awaiting_field:client_name", { doc: { type: "invoice" as const, lines: [] } }, "Joshua Uwak Photography", {
+      parsed: parse({ intent: "unknown" }),
+    });
+    assert.notEqual(named.effects[0]?.type, "chat");
+    assert.equal(named.context.doc?.clientName, "Joshua Uwak Photography");
+
+    const priced = doc("awaiting_field:amount", WAITING, "350k", { parsed: parse({ intent: "unknown" }) });
+    assert.notEqual(priced.effects[0]?.type, "chat");
+
+    // A description can say "my" and still be a description.
+    const described = doc(
+      "awaiting_field:description",
+      { doc: { type: "invoice" as const, clientName: "Tunde", lines: [], totalKobo: 20_000_00 } },
+      "logo for my brand",
+      { parsed: parse({ intent: "unknown" }) },
+    );
+    assert.notEqual(described.effects[0]?.type, "chat");
+  });
+
+  it("answers a question asked with a draft on screen, and leaves the draft there", () => {
+    const out = doc("awaiting_confirm", DRAFTED, "can I add VAT to this?", { parsed: parse({ intent: "question" }) });
+    assert.equal(out.next, "awaiting_confirm");
+    assert.deepEqual(out.context.doc, DRAFTED.doc);
+    assert.equal(out.effects[0]?.type, "chat");
+  });
+});
