@@ -34,7 +34,7 @@ import {
   parseAmountToKobo,
 } from "../../core/amount.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { resolveDueDate } from "../../core/dates.ts";
+import { resolveDueDate, saysNoDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
 import { DEFAULT_TEMPLATE, EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, payByOptions, formScreenId, itemFields, planIdFor, PLANS } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION, draftButtons } from "../documents/summary.ts";
@@ -214,6 +214,8 @@ export type PendingDoc = {
    * that nobody chose (13 October 2026). A said date clears it.
    */
   dueDefaulted?: boolean;
+  /** They said "no due date": the default must not fill one in. */
+  noDue?: boolean;
   vatPercent?: number | null;
   depositPercent?: number | null;
   /**
@@ -2292,11 +2294,13 @@ function startDocument(p: Parsed, ctx: Context, now: Civil, quote?: Quote, said?
     title: p.title ?? null,
     // "…pay by my paypal", "…use my details": the sender's own details, not a link.
     payBy: payByIn(said ?? ""),
+    // "…no due date": none, and the seven-day default must not add one.
+    ...(said && saysNoDueDate(said) ? { noDue: true, dueDate: null } : {}),
   };
 
   // They named a date we could not read. That is worth one question, because
   // they did say something and quietly defaulting would ignore them.
-  const unreadableDate = Boolean(p.dueDatePhrase) && !p.dueDate;
+  const unreadableDate = Boolean(p.dueDatePhrase) && !p.dueDate && !doc.noDue;
   const priced = p.money.kind === "foreign" && quote ? repriced(doc, quote) : doc;
 
   /*
@@ -2445,6 +2449,11 @@ function withDefaults(doc: PendingDoc, now: Civil): PendingDoc {
    * gave, on an invoice their client reads. One payment keeps its default,
    * which is the "days to pay" in their settings.
    */
+  const { noDue: _none, ...kept } = doc;
+  if (doc.noDue) {
+    const { dueDefaulted: _d, ...rest } = kept;
+    return { ...rest, noDue: true, lines, totalKobo: undefined, dueDate: null };
+  }
   const said = doc.dueDate != null && !doc.dueDefaulted;
   const split = doc.type === "invoice" && shapeFor(doc, 100) !== null;
   const { dueDefaulted: _was, ...rest } = doc;
@@ -3197,7 +3206,14 @@ function applyIn(doc: PendingDoc, c: Correction): PendingDoc {
   // A number that is not one is left as it was rather than wiped.
   if (c.clientPhone === null) next.clientPhone = null;
   else if (c.clientPhone) next.clientPhone = normalisePhone(c.clientPhone) ?? next.clientPhone;
+  if (c.noDueDate) {
+    next.dueDate = null;
+    next.noDue = true;
+    delete next.dueDefaulted;
+    delete next.stageDueDates;
+  }
   if (c.dueDate) {
+    delete next.noDue;
     next.dueDate = c.dueDate;
     delete next.dueDefaulted;
   }

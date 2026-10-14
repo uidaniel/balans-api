@@ -208,7 +208,7 @@ export const rawCorrection = z.object({
     .nullish()
     .transform((v) => v ?? null),
   clear: z
-    .array(z.enum(["vat", "deposit", "instalments", "email"]))
+    .array(z.enum(["vat", "deposit", "instalments", "email", "due_date"]))
     .max(4)
     .nullish()
     .transform((v) => v ?? []),
@@ -561,6 +561,7 @@ function asCorrection(
     if (field === "deposit") out.depositPercent = null;
     if (field === "instalments") out.instalments = null;
     if (field === "email") out.clientEmail = null;
+    if (field === "due_date") out.noDueDate = true;
   }
 
   return Object.keys(out).length ? out : null;

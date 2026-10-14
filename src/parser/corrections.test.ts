@@ -468,3 +468,17 @@ describe("a price for one line", () => {
     assert.equal(read("change the due date to friday")?.setLineAmount, undefined);
   });
 });
+
+describe("no due date, on a draft", () => {
+  // 14 October 2026: "remove the due date" was read as removing a line
+  // called "due date".
+  const T = { y: 2026, m: 10, d: 14 };
+  it("takes the date off however it is said", () => {
+    for (const t of ["no due date", "remove the due date", "no deadline", "make it no due date", "take off the due date"]) {
+      assert.deepEqual(readCorrection(t, T), { noDueDate: true }, t);
+    }
+  });
+  it("and reads what else was said with it", () => {
+    assert.deepEqual(readCorrection("no due date and make it 600k", T), { noDueDate: true, totalKobo: 600_000_00 });
+  });
+});

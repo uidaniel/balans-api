@@ -13,7 +13,7 @@
 
 import { parseAmountToKobo } from "../../core/amount.ts";
 import { parseAmountToMinor, type CurrencyRead } from "../../core/currency.ts";
-import { resolveDueDate, type Civil } from "../../core/dates.ts";
+import { resolveDueDate, type Civil, NO_DUE_DATE } from "../../core/dates.ts";
 import { COUNTED, SPREAD, countOf } from "./extract.ts";
 
 export type Correction = {
@@ -38,6 +38,8 @@ export type Correction = {
    * machine's job, because only the machine has the draft.
    */
   removeLine?: { position: number } | { match: string };
+  /** "no due date", "remove the due date": the draft has none. */
+  noDueDate?: true;
   /**
    * Rewording a line that is already there, keeping its price.
    *
@@ -826,6 +828,15 @@ export function readCorrection(
   money: CurrencyRead = { kind: "naira" },
 ): Correction | null {
   const text = plainly(raw);
+
+  // "remove the due date" was read as a line called "due date" to remove.
+  // Taken first, and whatever else they said with it read as usual.
+  if (NO_DUE_DATE.test(text)) {
+    const rest = text.replace(new RegExp(NO_DUE_DATE.source, "gi"), " ").replace(/^[\s,;]*(?:and\s+)?|[\s,;]+$/gi, "").trim();
+    const other = rest && !/^(?:make it|set it to|it should be|and)$/i.test(rest) ? readCorrection(rest, today, money) : null;
+    return { ...(other ?? {}), noDueDate: true };
+  }
+
   // How they pay, said on its own ("use my paypal details") or with other
   // changes; it is a whole-message reading, so it is taken before the rest.
   const payBy = payByIn(text);

@@ -417,3 +417,16 @@ export function formatDayMonth(c: Civil, today?: Civil): string {
  * becoming month thirteen.
  */
 export const firstOfNextMonth = (today: Civil): Civil => addMonths({ ...today, d: 1 }, 1);
+
+/**
+ * "No due date", said in any of the ways people say it (14 October 2026).
+ *
+ * "Invoice Joshua 500k for 3d motion design no due date" came back due in
+ * seven days: a date nobody gave appeared on the invoice their client reads.
+ * One pattern, used for a new invoice and for a correction to a draft, so
+ * the two cannot disagree about what counts.
+ */
+export const NO_DUE_DATE =
+  /\b(?:no|without(?: a| any)?|remove(?: the)?|take (?:off|out)(?: the)?|delete(?: the)?|clear(?: the)?|drop(?: the)?)\s+(?:due\s*date|deadline|date)\b|\bnot due\b|\bpay(?: me)? (?:whenever|any ?time)\b|\bno rush\b/i;
+
+export const saysNoDueDate = (text: string): boolean => NO_DUE_DATE.test(text);

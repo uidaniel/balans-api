@@ -1902,3 +1902,43 @@ describe("walking away from a question the bot asked", () => {
     assert.equal(out.effects[0]?.type, "chat");
   });
 });
+
+/*
+ * 14 October 2026: "Invoice Joshua Uwak 500k for 3d motion design no due
+ * date" came back due Wed, 21 Oct.
+ */
+describe("no due date, when they say so", () => {
+  const p = parse({
+    intent: "create_invoice",
+    clientName: "Joshua Uwak",
+    lineItems: [{ description: "3d motion design", qty: 1, unitAmountKobo: 500_000_00 }],
+  });
+
+  it("drafts with no date at all", () => {
+    for (const said of [
+      "Invoice Joshua Uwak 500k for 3d motion design no due date",
+      "invoice joshua 500k for motion design, without a due date",
+      "invoice joshua 500k motion design, no deadline",
+      "invoice joshua 500k motion design, he can pay whenever",
+    ]) {
+      const out = doc("idle", {}, said, { parsed: p });
+      assert.equal(out.context.doc?.dueDate, null, said);
+      assert.equal(out.context.doc?.noDue, true, said);
+    }
+  });
+
+  it("still gives the default when nothing was said", () => {
+    const out = doc("idle", {}, "Invoice Joshua Uwak 500k for 3d motion design", { parsed: p });
+    assert.ok(out.context.doc?.dueDate);
+  });
+
+  it("takes the date off a draft, and puts one back when asked", () => {
+    const off = doc("awaiting_confirm", DRAFTED, "remove the due date", { correction: { noDueDate: true } as Correction });
+    assert.equal(off.context.doc?.dueDate, null);
+    const back = doc("awaiting_confirm", { ...DRAFTED, doc: off.context.doc! }, "due friday", {
+      correction: { dueDate: { y: 2026, m: 9, d: 25 } } as Correction,
+    });
+    assert.deepEqual(back.context.doc?.dueDate, { y: 2026, m: 9, d: 25 });
+    assert.equal(back.context.doc?.noDue, undefined);
+  });
+});

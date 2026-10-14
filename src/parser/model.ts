@@ -187,9 +187,9 @@ const TOOL = {
           },
           clear: {
             type: ["array", "null"],
-            items: { type: "string", enum: ["vat", "deposit", "instalments", "email"] },
+            items: { type: "string", enum: ["vat", "deposit", "instalments", "email", "due_date"] },
             description:
-              'What to take OFF the draft: "no VAT" is ["vat"], "forget the deposit" is ["deposit"]. Null means nothing is being removed, which is not the same as removing nothing.',
+              'What to take OFF the draft: "no VAT" is ["vat"], "forget the deposit" is ["deposit"], "no due date" is ["due_date"]. Null means nothing is being removed, which is not the same as removing nothing.',
           },
         },
       },
