@@ -2745,7 +2745,9 @@ function walkAway(state: State, ctx: Context, msg: Inbound, strict: boolean): St
   const doc = ctx.doc;
   if (!doc) return null;
   const intent = msg.parsed?.intent;
-  if (intent === "reject" && !msg.tapped) {
+  // Typed or tapped: "Drop it" under the assistant's answer is a tapped "no",
+  // and it used to be ignored here and the amount asked for again.
+  if (intent === "reject") {
     return { replies: [VOICE.draftDiscarded], next: "idle", context: forget(ctx), effects: [{ type: "discard_draft" }] };
   }
   const talk =

@@ -1863,6 +1863,18 @@ describe("walking away from a question the bot asked", () => {
     assert.deepEqual(out.replies, [VOICE.draftDiscarded]);
   });
 
+  it("drops the draft when Drop it is tapped", () => {
+    // 14 October 2026: the tap arrives as "no" and was ignored as a tap.
+    const out = step(
+      "awaiting_field:amount",
+      WAITING,
+      { text: "no", today: NOW, parsed: parse({ intent: "reject" }), tapped: true },
+      V,
+    );
+    assert.equal(out.next, "idle");
+    assert.deepEqual(out.effects, [{ type: "discard_draft" }]);
+  });
+
   it("still takes real answers", () => {
     const named = doc("awaiting_field:client_name", { doc: { type: "invoice" as const, lines: [] } }, "Joshua Uwak Photography", {
       parsed: parse({ intent: "unknown" }),

@@ -175,6 +175,8 @@ const CASES: Case[] = [
   { q: "chase Zenith for me", mustNot: [DID_SOMETHING], button: ["resend invoice 5", "check invoice 5"] },
   { q: "how do I delete an invoice", must: [/cancel invoice/i], mustNot: [DID_SOMETHING] },
   { q: "hey bro", noTools: true, mustNot: [/any time/i], button: ["/invoice", "who owes me", "summary"] },
+  { q: "yo", noTools: true, mustNot: [/\b(dey|fit|wetin|abeg|una|wahala|bro|boss)\b/i] },
+  { q: "how far, wetin dey happen", mustNot: [/\bbro\b/i] },
   { q: "hwfa", noTools: true, button: ["/invoice", "who owes me", "summary"] },
   { q: "thanks boss, you too much", noTools: true, mustNot: [/I only help/i] },
   { q: "what can you do for me", button: ["/invoice", "who owes me", "summary"] },
