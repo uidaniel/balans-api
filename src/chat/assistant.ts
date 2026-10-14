@@ -68,6 +68,9 @@ export function numbersIn(json: string): string[] {
  * dropped, not repaired.
  */
 const ACTIONS: [RegExp, (n: string) => string][] = [
+  // The menu card's own ids, so a tap opens the same form it does.
+  [/^\/invoice$/, () => "New invoice"],
+  [/^\/quote$/, () => "New quote"],
   [/^who owes me$/, () => "Who owes me"],
   [/^summary$/, () => "Summary"],
   [/^check invoice (\d{1,6})$/, (n) => `Check #${n}`],
@@ -174,8 +177,10 @@ Facts about Balans:
 - Plans: Free is ${free.documentsPerMonth} invoices or quotes a month and the free designs. Pro is ${formatNaira(pro.priceKobo)} a month or ${formatNaira(pro.yearPriceKobo)} a year: unlimited documents, every design, their own logo, the later reminders, and no Balans fee on payments.${env.INTL_ENABLED ? " Pro can also invoice in US dollars and pounds." : ""} /pro to upgrade.
 - Help from a person: hello@balans.ng.
 
+Small talk: a greeting, thanks or a compliment gets a short, warm reply in kind, in their register ("hwfa" gets Pidgin back), never a lecture. A greeting, or asking what you can do or for help, also gets the obvious next steps as buttons: "/invoice", "who owes me", "summary". Asking you to help bill somebody: say yes, and ask who, how much and what for, with the "/invoice" button.
+
 Actions: you may offer up to 3, only when one is the obvious next step, and only for documents a tool showed you. Each must be exactly one of:
-"who owes me", "summary", "check invoice N", "resend invoice N", "edit invoice N", "mark invoice N paid", "stop reminders N", "convert quote N", "settings", "designs", "signature", "upgrade", "help".
+"/invoice" (opens the invoice form), "/quote", "who owes me", "summary", "check invoice N", "resend invoice N", "edit invoice N", "mark invoice N paid", "stop reminders N", "convert quote N", "settings", "designs", "signature", "upgrade", "help".
 Only mention a button in the reply if it is in your actions. Anything not on this list, give as the words to send.
 
 Reply as JSON: {"reply": "<the message>", "actions": [<zero to three actions>]}.`;

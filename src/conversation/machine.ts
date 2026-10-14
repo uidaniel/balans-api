@@ -1464,6 +1464,15 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       return { replies: [VOICE.moneySafe], next: state, context, effects: [] };
     }
 
+    /*
+     * The card is for somebody who typed "help", "menu" or "/". A sentence
+     * the model called help — "you fit help me invoice pesin right now?" —
+     * is a question, and got the menu in answer to it (14 October 2026).
+     */
+    if (state === "idle" && !HELP.test(text) && !asCommand(text)) {
+      return { replies: [], next: state, context, effects: [{ type: "chat", fallback: VOICE.helpIdle }] };
+    }
+
     return {
       replies: [],
       next: state,
@@ -1704,17 +1713,13 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
     }
 
     case "idle": {
+      /*
+       * Talking, not commanding (14 October 2026): "hey", "good morning", "hey
+       * bro", "hwfa" are answered by the assistant, in kind, with buttons to
+       * start something. The menu card is for "help", "menu" and "/".
+       */
       if (GREETING.test(text)) {
-        // "hey" is somebody opening the chat with nothing particular in mind.
-        // It deserves the same tappable menu as "/", for the same reason: the
-        // answer to "what is this" should be something you can act on rather
-        // than a list of words to retype.
-        return {
-          replies: [],
-          next: "idle",
-          context,
-          effects: [{ type: "show_help", fallback: VOICE.helpIdle }],
-        };
+        return { replies: [], next: "idle", context, effects: [{ type: "chat", fallback: VOICE.helpIdle }] };
       }
       // Answers to the Pro offer. Read here rather than by the model, because
       // "pay now" is a decision about money and its meaning is fixed.
@@ -2163,23 +2168,18 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
      * plain thank-you is the safest of the four: it acknowledges without
      * assuming the message was a greeting or a compliment.
      */
+    /*
+     * Somebody being a person: thanks, a greeting, a compliment, goodnight.
+     *
+     * Answered by the assistant (14 October 2026), which can reply to what was
+     * actually said. The fixed lines were right for the four kinds on the list
+     * and wrong for everything near them: "hey bro" got "👍 Any time." They
+     * are still what is said when the assistant cannot answer.
+     */
     case "social": {
-      const kind = socialKind(msg.text) ?? "thanks";
-
-      // A greeting opens the menu, which is what "hi" has always done and is
-      // a better answer than a sentence: something to tap rather than a list
-      // of words to retype. Routed here too so the model path and the
-      // pattern path cannot answer the same "good morning" differently.
-      if (kind === "greeting") {
-        return {
-          replies: [],
-          next: "idle",
-          context: ctx,
-          effects: [{ type: "show_help", fallback: VOICE.helpIdle }],
-        };
-      }
-
-      return { replies: [VOICE.social(kind)], next: "idle", context: ctx, effects: [] };
+      const kind = socialKind(msg.text);
+      const fallback = kind && kind !== "greeting" ? VOICE.social(kind) : VOICE.helpIdle;
+      return { replies: [], next: "idle", context: ctx, effects: [{ type: "chat", fallback }] };
     }
 
     // "Why has Tunde not paid?": answered in words (src/chat).

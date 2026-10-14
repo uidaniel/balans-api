@@ -116,14 +116,12 @@ describe("what it replies", () => {
     assert.match(reply, /Any time/);
   });
 
-  it("answers a greeting with the menu, not a sentence", async () => {
-    // "hi" has always opened the tappable menu, and that is a better answer
-    // than a line of prose: something to act on rather than words to retype.
-    // Routed through the same branch so the pattern path and the model path
-    // cannot answer the same "good morning" differently.
+  it("answers a greeting through the assistant, with the menu to fall back on", async () => {
+    // 14 October 2026: small talk is the assistant's, so "hey bro" and
+    // "good morning" are answered in kind, with buttons to start something.
     const out = await say("good morning");
     assert.deepEqual(out.replies, []);
-    assert.deepEqual(out.effects.map((e) => e.type), ["show_help"]);
+    assert.deepEqual(out.effects, [{ type: "chat", fallback: VOICE.helpIdle }]);
   });
 
   it("never answers a pleasantry with the out-of-scope line", () => {
@@ -133,16 +131,17 @@ describe("what it replies", () => {
     }
   });
 
-  it("reaches the user, through the machine, with nothing else happening", async () => {
+  it("reaches the assistant, with nothing else happening", async () => {
     const out = await say("thank you");
-    assert.deepEqual(out.replies, [VOICE.social("thanks")]);
+    assert.deepEqual(out.replies, []);
     assert.equal(out.next, "idle");
-    assert.deepEqual(out.effects, [], "a pleasantry does not do anything");
+    assert.deepEqual(out.effects, [{ type: "chat", fallback: VOICE.social("thanks") }], "a pleasantry does not do anything");
   });
 
-  it("answers each kind in its own words", async () => {
-    assert.match((await say("nice one")).replies[0]!, /Glad it is working/);
-    assert.match((await say("goodnight")).replies[0]!, /Talk soon/);
+  it("keeps each kind's own words for when the assistant cannot answer", async () => {
+    const fallback = async (t: string) => ((await say(t)).effects[0] as { fallback: string }).fallback;
+    assert.match(await fallback("nice one"), /Glad it is working/);
+    assert.match(await fallback("goodnight"), /Talk soon/);
   });
 
   it("gets there without asking a model", async () => {

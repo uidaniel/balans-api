@@ -52,6 +52,8 @@ describe("the buttons it may offer", () => {
     // A tapped button arrives as its id. Each must still read as the command
     // it stands for, or the tap lands on "I could not read that".
     const expect: [string, string][] = [
+      ["/invoice", "create_invoice"],
+      ["/quote", "create_quote"],
       ["who owes me", "debtors"],
       ["summary", "summary"],
       ["check invoice 4", "status"],

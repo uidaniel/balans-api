@@ -170,6 +170,11 @@ const CASES: Case[] = [
   { q: "what reminders has Tunde gotten", must: [/7 Oct/, /10 Oct/] },
   { q: "remind Mrs Okafor about her invoice", mustNot: [DID_SOMETHING] },
   { q: "cancel the Tunde one", mustNot: [DID_SOMETHING], must: [/cancel invoice 4/i] },
+  { q: "you fit help me invoice pesin right now?", must: [/who|how much/i], button: ["/invoice"] },
+  { q: "hey bro", noTools: true, mustNot: [/any time/i], button: ["/invoice", "who owes me", "summary"] },
+  { q: "hwfa", noTools: true, button: ["/invoice", "who owes me", "summary"] },
+  { q: "thanks boss, you too much", noTools: true, mustNot: [/I only help/i] },
+  { q: "what can you do for me", button: ["/invoice", "who owes me", "summary"] },
   { q: "e be like say na only free plan I dey use, wetin I go gain if I pay", must: [/Pro/, /logo|unlimited|design/i] },
 ];
 

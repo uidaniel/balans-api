@@ -105,7 +105,22 @@ describe("everything that offers the menu offers the tappable one", () => {
    * a reply. Anything that puts VOICE.helpIdle in `replies` has skipped the
    * list, whatever else it got right.
    */
-  for (const text of ["hey", "hi", "how far", "help", "menu", "what can you do"]) {
+  /*
+   * A greeting is answered by the assistant since 14 October 2026, with
+   * buttons to start something. The typed menu is still only ever its
+   * fallback, never a reply.
+   */
+  for (const text of ["hey", "hi", "how far"]) {
+    it(`"${text}" is greeted back, with the menu as the fallback`, () => {
+      const out = ask(text);
+      const effect = out.effects.find((e) => e.type === "chat");
+      assert.ok(effect, `"${text}" was not answered`);
+      assert.equal(effect.fallback, VOICE.helpIdle);
+      assert.ok(!out.replies.some((r) => r === VOICE.helpIdle));
+    });
+  }
+
+  for (const text of ["help", "menu", "what can you do"]) {
     it(`"${text}" asks for the list`, () => {
       const out = ask(text);
 

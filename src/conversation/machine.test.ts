@@ -1104,6 +1104,19 @@ describe("a tapped button", () => {
     assert.deepEqual(out.effects, [{ type: "chat", fallback: VOICE.outOfScope }]);
   });
 
+  it("answers a greeting it has no fixed reply for, rather than saying any time", () => {
+    // 14 October 2026: "hey bro" got "👍 Any time."
+    const out = doc("idle", {}, "hey bro", { parsed: parse({ intent: "social" }) });
+    assert.deepEqual(out.effects, [{ type: "chat", fallback: VOICE.helpIdle }]);
+  });
+
+  it("answers a sentence asking for help, and keeps the card for the word itself", () => {
+    const asked = doc("idle", {}, "you fit help me invoice pesin right now?", { parsed: parse({ intent: "help" }) });
+    assert.deepEqual(asked.effects, [{ type: "chat", fallback: VOICE.helpIdle }]);
+    const typed = doc("idle", {}, "help", { parsed: parse({ intent: "help" }) });
+    assert.deepEqual(typed.effects, [{ type: "show_help", fallback: VOICE.helpIdle }]);
+  });
+
   it("answers a question in words", () => {
     const out = doc("idle", {}, "why has Tunde not paid?", { parsed: parse({ intent: "question" }) });
     assert.deepEqual(out.effects, [{ type: "chat", fallback: VOICE.cannotAnswer }]);

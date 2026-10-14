@@ -139,12 +139,13 @@ describe("the commands still being commands", () => {
     }
   });
 
-  it("still opens the menu on a greeting, including the words people add", () => {
+  it("still greets back, including the words people add", () => {
+    // Answered by the assistant since 14 October 2026.
     for (const text of ["hi", "hello", "hey there", "good morning sir", "how far"]) {
       const out = at("idle", text);
       assert.deepEqual(
         out.effects.map((e) => e.type),
-        ["show_help"],
+        ["chat"],
         `"${text}" should greet`,
       );
     }
@@ -153,7 +154,7 @@ describe("the commands still being commands", () => {
   it("does not read a name as a greeting", () => {
     assert.notDeepEqual(
       at("idle", "Hi-Tech Solutions").effects.map((e) => e.type),
-      ["show_help"],
+      ["chat"],
     );
   });
 });
