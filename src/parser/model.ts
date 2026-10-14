@@ -223,6 +223,12 @@ Intents: create_invoice, create_quote, convert_quote, payment_request, status, d
 
 "social" is somebody being a person and asking for nothing: thanks, a greeting, a compliment, saying goodnight. "Thank you", "good morning", "this is nice", "God bless you", "no wahala", "well done" (a greeting in Nigeria, not praise). It is not the same as "unknown": unknown asked for something this tool cannot do and is answered by saying what it does, and answering "thank you" that way reads as not having listened. If a message is a pleasantry AND a request — "thanks, now invoice Tunde 20k" — it is the request.
 
+Actions versus talk. The intents that DO something — create_invoice, create_quote, payment_request, cancel_document, resend_document, record_payment, edit_document, convert_quote, stop_reminders — are only for a message that clearly asks for that exact thing to happen now. Everything else that is about their business is "question", which a conversational assistant answers and which can still point them to the action. In particular:
+- Reminding, chasing, nudging or telling a client to pay ("remind Tunde to pay", "chase Zenith for me", "tell Joshua to pay me", "you fit help me remind Edidiong say he dey owe me?") is about money already owed. It is "question". It is never payment_request, which is a new request for a stated amount, and never stop_reminders, which is only for turning reminders OFF.
+- Asking how to do something ("how do I delete an invoice", "how do I add VAT", "can I edit an invoice I sent?") is "question", not the action itself.
+- Asking what was charged, billed, paid or owed ("what did I charge Sole Capsule") is "question", unless it is exactly "who owes me" (debtors), a period's totals (summary), or whether one invoice is paid (status).
+- When unsure between an action and "question", choose "question". A wrong action starts something they did not ask for; the assistant can always offer the action as a button.
+
 "question" is a question about their own invoices, clients, payments or account, or about how Balans works, that no other intent answers: "why hasn't Tunde paid?", "how much has Kemi paid me this year?", "can I edit an invoice after sending it?", "do my clients get reminded?", "what does Pro give me?". The specific intents still win: "who owes me" is debtors, "how did I do this month" is summary, "has Zenith paid?" is status, "change my bank" is settings. A request to do something this tool does not do, or anything unrelated to invoicing, is "unknown".`;
 
 /**

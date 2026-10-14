@@ -116,11 +116,25 @@ async function parseMessageInner(
   /* 4. The model. ---------------------------------------------------------- */
   const model = await parseWithModel(text, today, opts.fetchImpl, opts.onScreen ?? null);
   if (model.ok) {
-    const parsed = recoverAmount(
+    const read = recoverAmount(
       normalise(model.parse, today, "model", money, correctionMoney),
       text,
       today,
     );
+
+    /*
+     * The answers to "Mark invoice 3 as paid?" come from its buttons and
+     * nowhere else. Read off a typed sentence — "Edidiong don pay invoice 3"
+     * came back as confirm_payment on 14 October 2026 — they would mark an
+     * invoice paid without asking. Typed, it is a payment being reported,
+     * which is asked back first.
+     */
+    const parsed: Parsed =
+      read.intent === "confirm_payment" || read.intent === "confirm_part_payment"
+        ? { ...read, intent: "record_payment" }
+        : read.intent === "decline_payment"
+          ? { ...read, intent: "question" }
+          : read;
 
     // F3: "If confidence is below the configured threshold, or a required
     // field is missing, ask for that one thing only." Below the threshold the

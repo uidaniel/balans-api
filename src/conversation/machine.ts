@@ -2189,6 +2189,14 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
     // A stray "yes" with nothing to confirm, and everything unrecognised.
     case "confirm":
     case "reject":
+      /*
+       * Typed, it is conversation: "ok", "no", "alright" after something the
+       * assistant said, which it remembers (14 October 2026). Tapped, it is a
+       * button under a draft that has gone, and that is what to say.
+       */
+      if (!msg.tapped) {
+        return { replies: [], next: "idle", context: ctx, effects: [{ type: "chat", fallback: VOICE.nothingPending }] };
+      }
       return {
         replies: [VOICE.nothingPending],
         buttons: VOICE.helpButton(),

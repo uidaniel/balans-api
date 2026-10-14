@@ -81,7 +81,7 @@ describe("answering it", () => {
     // Belt and braces: a "yes" with nothing held must not reach the saver
     // with an empty id.
     const out = await answering("yes", {});
-    assert.deepEqual(out.effects, []);
+    assert.ok(!out.effects.some((e) => e.type === "save_logo"));
   });
 });
 

@@ -1363,9 +1363,16 @@ describe("a new command still wins (section 5)", () => {
 });
 
 describe("nothing is drafted out of nothing", () => {
-  it("a stray yes with no draft says so", () => {
+  it("a typed yes with no draft goes to the assistant, which remembers what it asked", () => {
+    // 14 October 2026: "ok" after the assistant's own question is an answer
+    // to it. "There is no draft waiting" is the fallback.
     const out = doc("idle", {}, "yes", { parsed: parse({ intent: "confirm" }) });
     assert.equal(out.next, "idle");
+    assert.deepEqual(out.effects, [{ type: "chat", fallback: VOICE.nothingPending }]);
+  });
+
+  it("a tapped yes with no draft still says so", () => {
+    const out = step("idle", {}, { text: "yes", today: NOW, parsed: parse({ intent: "confirm" }), tapped: true }, V);
     assert.equal(out.effects.length, 0);
     assert.match(out.replies[0]!, /no draft/i);
   });
