@@ -322,7 +322,9 @@ Label the message above.`;
       },
       body: JSON.stringify({
         model: env.PARSER_MODEL,
-        max_tokens: 1024,
+        // Haiku 5.5 counts the same text as about 30% more tokens than 4.5
+        // did, and a long invoice is a long tool call.
+        max_tokens: 2048,
         system: onScreen ? SYSTEM + DRAFT_RULES : SYSTEM,
         tools: [toolFor(onScreen)],
         // Forced, so there is always exactly one tool call and never prose.

@@ -144,7 +144,7 @@ const schema = z.object({
    *
    * Haiku, and the reason is the credit balance rather than the design. On a
    * parse of about 2,000 tokens in and 200 out, $4 of credit buys roughly
-   * 1,300 messages on Haiku, 440 on Sonnet and 88 on Opus. Running out is not
+   * 13,000 messages on Haiku 5.5 (1,300 on Haiku 4.5) and 650 on Sonnet 5.5. Running out is not
    * a slower bot — it is a bot that cannot read a sentence at all, because
    * the model is the last resort behind the command and pattern readers.
    *
@@ -154,9 +154,15 @@ const schema = z.object({
    * reply to "Send it?" arriving with no idea what was on screen.
    *
    * It is one environment variable when the credits are there:
-   *   PARSER_MODEL=claude-sonnet-5   in /opt/balans/.env, then restart.
+   *   PARSER_MODEL=claude-sonnet-5-5   in /opt/balans/.env, then restart.
+   *
+   * Haiku 5.5 since 14 October 2026: a tenth of Haiku 4.5's price ($0.10 /
+   * $0.50 per million tokens against $1 / $5), and on the same 24 sample
+   * messages it agreed with 4.5 or did better — "Kemi paid invoice 4" came
+   * back from 4.5 as the answer to a question nobody had asked
+   * (confirm_payment), and from 5.5 as record_payment, which asks first.
    */
-  PARSER_MODEL: z.string().default("claude-haiku-4-5-20251001"),
+  PARSER_MODEL: z.string().default("claude-haiku-5-5"),
   /** Below this, a document intent is treated as unknown rather than drafted. */
   PARSER_CONFIDENCE_MIN: z.coerce.number().min(0).max(1).default(0.7),
   /** F3: longer inputs are rejected with a short message. */
