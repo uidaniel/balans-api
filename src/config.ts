@@ -163,6 +163,18 @@ const schema = z.object({
    * (confirm_payment), and from 5.5 as record_payment, which asks first.
    */
   PARSER_MODEL: z.string().default("claude-haiku-5-5"),
+  /**
+   * The assistant that answers questions no script covers (src/chat).
+   *
+   * Haiku for the same reason as the parser: about ₦1–3 an answer. The caps
+   * are answers per person per Lagos day, so a chatty account is a known
+   * cost; at the cap they still have every command and button.
+   */
+  CHAT_MODEL: z.string().default("claude-haiku-5-5"),
+  CHAT_DAILY_FREE: int(20),
+  CHAT_DAILY_PRO: int(100),
+  /** Several lookups can sit behind one answer, so longer than the parser's. */
+  CHAT_TIMEOUT_MS: int(20000),
   /** Below this, a document intent is treated as unknown rather than drafted. */
   PARSER_CONFIDENCE_MIN: z.coerce.number().min(0).max(1).default(0.7),
   /** F3: longer inputs are rejected with a short message. */

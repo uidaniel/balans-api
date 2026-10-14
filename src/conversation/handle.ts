@@ -85,6 +85,7 @@ import {
   summaryMessage,
 } from "../documents/reports.ts";
 import { defaultPeriod, readPeriod } from "../../core/period.ts";
+import { converse, type ChatMemory } from "../chat/assistant.ts";
 import { renderDocumentPdf } from "../documents/pdf.ts";
 import { deliverPaidToClient, receiptForDocument } from "../email/paid-delivery.ts";
 import { emailDocumentToClient } from "../email/client-delivery.ts";
@@ -804,6 +805,7 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     changing: saved.context.changing as never,
     editingId: saved.context.editingId,
     editingNumber: saved.context.editingNumber,
+    chat: saved.context.chat,
   });
 
   // An effect can refuse to let the conversation move on: a wrong code must not
@@ -836,6 +838,7 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   // A draft an effect wrote by itself (a sent invoice opened for changing):
   // the machine never saw it, and a typed correction needs it.
   if (outcome.doc) context = { ...context, doc: outcome.doc };
+  if (outcome.chat) context = { ...context, chat: outcome.chat };
 
   // The effect owns the last message when it added lines, so its buttons win.
   // When an effect held or faulted, the machine's question was never asked and
@@ -948,6 +951,8 @@ type EffectOutcome = {
   flowFell?: true;
   /** The draft an effect wrote on its own, for the next turn's corrections. */
   doc?: PendingDoc;
+  /** The conversation so far with the assistant, for the next question. */
+  chat?: ChatMemory;
   /**
    * Tappable answers for the last line this effect produced.
    *
@@ -1016,6 +1021,8 @@ async function runEffects(
     /** A sent invoice being changed (9 October 2026). */
     editingId?: string;
     editingNumber?: number;
+    /** The last few questions and answers (src/chat). */
+    chat?: ChatMemory;
     /** A bank change resolved on the previous turn, waiting on a yes (F17). */
     changing?: {
       bankCode: string;
@@ -1047,6 +1054,7 @@ async function runEffects(
   let editing: { id: string; number: number } | undefined;
   let flowFell: true | undefined;
   let wroteDoc: PendingDoc | undefined;
+  let chat: ChatMemory | undefined;
 
   for (const effect of effects) {
     // Once something has held the conversation, the effects after it are acting
@@ -1887,6 +1895,37 @@ async function runEffects(
           }
 
           extra.push(words);
+          break;
+        }
+
+        /*
+         * A question no script answers (14 October 2026). The assistant's
+         * buttons are commands, so a tap comes back through the scripted
+         * path like anything typed.
+         */
+        case "chat": {
+          const said = await converse({
+            userId,
+            text: ctx.text ?? "",
+            today: ctx.today,
+            businessName,
+            memory: ctx.chat,
+          });
+          if (said.ok) {
+            extra.push(said.reply);
+            if (said.buttons.length) buttons = said.buttons;
+            chat = said.memory;
+            break;
+          }
+          log.warn({ userId, reason: said.reason }, "assistant did not answer");
+          extra.push(
+            said.reason === "limit"
+              ? para(
+                  `🌙 ${b("That is all my answers for today.")}`,
+                  `Everything else still works. Reply ${b("help")} for the menu, or ask me again tomorrow.`,
+                )
+              : effect.fallback,
+          );
           break;
         }
 
@@ -2764,6 +2803,7 @@ async function runEffects(
     buttonsImage,
     flowFell,
     doc: wroteDoc,
+    chat,
   };
 }
 

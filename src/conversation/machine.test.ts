@@ -1095,10 +1095,19 @@ describe("a tapped button", () => {
     assert.deepEqual(out.replies, []);
   });
 
-  it("still says it only does invoices to something it really cannot read", () => {
+  it("hands anything else to the assistant, with the old answer as its fallback", () => {
     // The guard on the fix: it must not swallow the case it sits in front of.
+    // Since 14 October 2026 the assistant answers it (src/chat), and
+    // outOfScope is what is said when the assistant cannot.
     const out = doc("idle", {}, "what is the weather", { parsed: parse({ intent: "unknown" }) });
-    assert.deepEqual(out.replies, [VOICE.outOfScope]);
+    assert.deepEqual(out.replies, []);
+    assert.deepEqual(out.effects, [{ type: "chat", fallback: VOICE.outOfScope }]);
+  });
+
+  it("answers a question in words", () => {
+    const out = doc("idle", {}, "why has Tunde not paid?", { parsed: parse({ intent: "question" }) });
+    assert.deepEqual(out.effects, [{ type: "chat", fallback: VOICE.cannotAnswer }]);
+    assert.equal(out.next, "idle");
   });
 
   it("does not mistake a sentence about changing for the button", () => {

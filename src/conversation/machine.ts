@@ -24,6 +24,7 @@ import { isDocumentIntent, type Parsed } from "../parser/schema.ts";
 import type { Correction } from "../parser/corrections.ts";
 import { shapeFor } from "../documents/parts.ts";
 import { asCommand, faqKind, socialKind, type FaqKind, type SocialKind } from "../parser/commands.ts";
+import type { ChatMemory } from "../chat/assistant.ts";
 import { SETTINGS_ROW_IDS } from "../settings/messages.ts";
 
 type SettingsRowId = (typeof SETTINGS_ROW_IDS)[number];
@@ -101,6 +102,8 @@ export type Context = {
   email?: string;
   /** Wrong answers in a row on the current step. */
   attempts?: number;
+  /** The last few questions and answers, for "and last month?" (src/chat). */
+  chat?: ChatMemory;
 
   /**
    * The instruction somebody opened with, kept until setup is done.
@@ -334,6 +337,12 @@ export type Effect =
   | { type: "discard_draft" }
   | { type: "show_debtors" }
   | { type: "show_summary" }
+  /**
+   * A question no script answers, answered in words (src/chat). The fallback
+   * is what to say when the assistant cannot: no key, over the day's cap, or
+   * down.
+   */
+  | { type: "chat"; fallback: string }
   | { type: "show_settings" }
   /** F24: the link to the design picker. */
   | { type: "show_designs" }
@@ -1187,6 +1196,12 @@ export const VOICE = {
   logoDeclined: para(
     `👍 ${b("Left it alone.")}`,
     "Your invoices are unchanged. Send it again any time if you change your mind.",
+  ),
+
+  /** The assistant could not answer: no key, over the day's cap, or down. */
+  cannotAnswer: para(
+    `🤔 ${b("I could not answer that one just now.")}`,
+    lines(`Reply ${b("help")} to see what I can do,`, "or write to hello@balans.ng."),
   ),
 
   outOfScope: para(
@@ -2167,6 +2182,10 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
       return { replies: [VOICE.social(kind)], next: "idle", context: ctx, effects: [] };
     }
 
+    // "Why has Tunde not paid?": answered in words (src/chat).
+    case "question":
+      return { replies: [], next: "idle", context: ctx, effects: [{ type: "chat", fallback: VOICE.cannotAnswer }] };
+
     // A stray "yes" with nothing to confirm, and everything unrecognised.
     case "confirm":
     case "reject":
@@ -2210,7 +2229,12 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
       };
       }
 
-      return { replies: [VOICE.outOfScope], next: "idle", context: ctx, effects: [] };
+      /*
+       * Anything else goes to the assistant (14 October 2026), which can say
+       * what this does in answer to what was actually asked. outOfScope is
+       * what it says when the assistant cannot.
+       */
+      return { replies: [], next: "idle", context: ctx, effects: [{ type: "chat", fallback: VOICE.outOfScope }] };
   }
 }
 

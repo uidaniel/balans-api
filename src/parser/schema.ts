@@ -75,6 +75,12 @@ export const INTENTS = [
    * reads as a machine that was not listening.
    */
   "social",
+  /**
+   * A question about their own books or about Balans that no other intent
+   * answers: "why has Tunde not paid?", "can I edit an invoice after sending
+   * it?". Answered in words by src/chat (14 October 2026).
+   */
+  "question",
   "unknown",
 ] as const;
 

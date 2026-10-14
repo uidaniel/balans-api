@@ -216,12 +216,14 @@ A payment split is either a deposit or a set of equal instalments, never both: "
 
 Nigerian usage you will see: "350k" is 350,000. "1.2m" is 1,200,000. "5h" is 500. Light Pidgin is normal — "abeg bill Tunde 20k for logo" is create_invoice for Tunde. "Who dey owe me" is debtors. "Na so" is confirm.
 
-Intents: create_invoice, create_quote, convert_quote, payment_request, status, debtors, summary, edit_document, correct_draft, cancel_document, resend_document, record_payment, settings, upgrade, referral, stop_reminders, templates, help, confirm, reject, social, unknown.
+Intents: create_invoice, create_quote, convert_quote, payment_request, status, debtors, summary, edit_document, correct_draft, cancel_document, resend_document, record_payment, settings, upgrade, referral, stop_reminders, templates, help, confirm, reject, social, question, unknown.
 
 
 "settings" means the user's own account: business name, payout bank, due days, closing the account. Adding or changing their bank or account number, including "add my account number to the invoice", is "settings". A question about how an invoice or an email LOOKS is "templates", not "settings". Anything you cannot place is "unknown" — guessing the nearest intent sends somebody into a menu that cannot answer them.
 
-"social" is somebody being a person and asking for nothing: thanks, a greeting, a compliment, saying goodnight. "Thank you", "good morning", "this is nice", "God bless you", "no wahala", "well done" (a greeting in Nigeria, not praise). It is not the same as "unknown": unknown asked for something this tool cannot do and is answered by saying what it does, and answering "thank you" that way reads as not having listened. If a message is a pleasantry AND a request — "thanks, now invoice Tunde 20k" — it is the request.`;
+"social" is somebody being a person and asking for nothing: thanks, a greeting, a compliment, saying goodnight. "Thank you", "good morning", "this is nice", "God bless you", "no wahala", "well done" (a greeting in Nigeria, not praise). It is not the same as "unknown": unknown asked for something this tool cannot do and is answered by saying what it does, and answering "thank you" that way reads as not having listened. If a message is a pleasantry AND a request — "thanks, now invoice Tunde 20k" — it is the request.
+
+"question" is a question about their own invoices, clients, payments or account, or about how Balans works, that no other intent answers: "why hasn't Tunde paid?", "how much has Kemi paid me this year?", "can I edit an invoice after sending it?", "do my clients get reminded?", "what does Pro give me?". The specific intents still win: "who owes me" is debtors, "how did I do this month" is summary, "has Zenith paid?" is status, "change my bank" is settings. A request to do something this tool does not do, or anything unrelated to invoicing, is "unknown".`;
 
 /**
  * The correction rules, sent only when there is a draft to correct.
