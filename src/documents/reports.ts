@@ -303,8 +303,8 @@ export function cannotConvertMessage(quoteNumber: number, why: string): string {
 export function remindersStoppedMessage(count: number, number: number | null): string {
   if (count === 0) {
     return number === null
-      ? "🔕 There were no reminders waiting to stop."
-      : `🔕 There were no reminders waiting to stop for ${b(`invoice #${number}`)}.`;
+      ? "🔕 There are no reminders left to stop. Any due have already gone out, and no more are coming."
+      : `🔕 There are no reminders left to stop for ${b(`invoice #${number}`)}. Any due have already gone out, and no more are coming.`;
   }
   return number === null
     ? "🔕 Reminders are off for all your open invoices."

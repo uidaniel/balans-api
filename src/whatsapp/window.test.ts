@@ -9,7 +9,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { costOf, MESSAGE_COST_KOBO, TEMPLATES, type TemplateName } from "./window.ts";
-import { withinQuietHours, promptMessage, remindedHow } from "../jobs/overdue.ts";
+import { withinQuietHours, promptMessage, remindedHow, isLastReminder } from "../jobs/overdue.ts";
 
 describe("the templates we register with Meta", () => {
   const names = Object.keys(TEMPLATES) as TemplateName[];
@@ -167,6 +167,31 @@ describe("a reminder Balans sent for them", () => {
       promptMessage({ ...base, reminded: { email: true, whatsapp: true } }),
       /reminded by email and on WhatsApp/,
     );
+  });
+
+  /*
+   * 14 October 2026: the 7-day reminder said "Reply stop reminders 1 to turn
+   * these off", and replying got "There were no reminders waiting to stop",
+   * because it was the last one.
+   */
+  it("does not offer to stop reminders on the last one", () => {
+    const late = { ...base, today: { y: 2026, m: 10, d: 4 } };
+    const last = promptMessage({ ...late, reminded: { email: true, whatsapp: true }, last: true });
+    assert.doesNotMatch(last, /stop reminders/);
+    assert.match(last, /last reminder/);
+    const forward = promptMessage({ ...late, reminded: { email: false, whatsapp: false }, last: true });
+    assert.doesNotMatch(forward, /stop reminders/);
+    const earlier = promptMessage({ ...late, reminded: { email: true, whatsapp: true } });
+    assert.match(earlier, /Reply \*stop reminders 3\*/);
+    assert.match(promptMessage({ ...late, reminded: { email: false, whatsapp: false } }), /Or reply \*stop reminders 3\*/);
+  });
+
+  it("knows which reminder is the last for each plan", () => {
+    assert.equal(isLastReminder("late_7", "pro"), true);
+    assert.equal(isLastReminder("late_3", "pro"), false);
+    assert.equal(isLastReminder("due", "pro"), false);
+    // Free gets the due-date one only.
+    assert.equal(isLastReminder("due", "free"), true);
   });
 
   it("falls back to the words to forward when neither could go", () => {

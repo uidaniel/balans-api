@@ -115,6 +115,20 @@ export const SCHEDULE: { kind: string; daysAfterDue: number; proOnly: boolean }[
 ];
 
 /**
+ * True when no later reminder in SCHEDULE will go out for this plan.
+ *
+ * The 7-day reminder (Free: the due-date one) used to end with "Reply stop
+ * reminders 1 to turn these off". On 14 October 2026 a sender did, and was
+ * told there were no reminders waiting to stop — because there were none
+ * left. The last one now says it is the last instead.
+ */
+export function isLastReminder(kind: string, plan: string): boolean {
+  const at = SCHEDULE.find((s) => s.kind === kind);
+  if (!at) return false;
+  return !SCHEDULE.some((s) => s.daysAfterDue > at.daysAfterDue && (!s.proOnly || plan === "pro"));
+}
+
+/**
  * Writes the reminder rows that are due, without sending anything.
  *
  * Scheduling and sending are separate so a send failure does not lose the
@@ -187,8 +201,9 @@ export async function sendDueReminders(
     vat_kobo: number;
     currency: string;
     original_amount_minor: number | null;
+    plan: string;
   }>(
-    `SELECT r.id, r.kind, d.id AS document_id, d.user_id, u.wa_phone,
+    `SELECT r.id, r.kind, d.id AS document_id, d.user_id, u.wa_phone, u.plan,
             d.number, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token,
             d.subtotal_kobo, d.vat_kobo, d.currency, d.original_amount_minor,
             c.name AS client_name, u.business_name
@@ -279,6 +294,7 @@ export async function sendDueReminders(
             bank: await bankDetailsOf(r.document_id),
             owedAgreed,
             reminded,
+            last: isLastReminder(r.kind, r.plan),
           }),
           fallback: how
             ? {
@@ -357,6 +373,8 @@ export function promptMessage(x: {
   owedAgreed?: string;
   /** How Balans reached the client itself, if it did. */
   reminded?: { email: boolean; whatsapp: boolean };
+  /** No reminder comes after this one, so there is nothing to stop. */
+  last?: boolean;
 }): string {
   const which = x.number === null ? "INVOICE" : `INVOICE #${x.number}`;
   const when = formatFriendly(x.due, x.today);
@@ -367,6 +385,9 @@ export function promptMessage(x: {
    * had missed a date they still had hours to meet, and handed them a
    * message saying the same to the client.
    */
+  const stop = x.last
+    ? "That was the last reminder for this invoice."
+    : `Reply ${b(x.number === null ? "stop reminders" : `stop reminders ${x.number}`)} to turn these off for this invoice.`;
   const today =
     x.due.y === x.today.y && x.due.m === x.today.m && x.due.d === x.today.d;
 
@@ -402,7 +423,7 @@ export function promptMessage(x: {
     return para(
       heading,
       `✅ ${b(`${x.clientName} has been reminded ${how}`)}, with the link to pay.`,
-      `Reply ${b(x.number === null ? "stop reminders" : `stop reminders ${x.number}`)} to turn these off for this invoice.`,
+      stop,
     );
   }
 
@@ -422,7 +443,7 @@ export function promptMessage(x: {
     // naming what to copy.
     `${b("Send them this")} \u2014 copy the message below:`,
     forward,
-    `Or reply ${b(x.number === null ? "stop reminders" : `stop reminders ${x.number}`)} to turn these off for this invoice.`,
+    x.last ? stop : `Or ${stop.charAt(0).toLowerCase()}${stop.slice(1)}`,
   );
 }
 
