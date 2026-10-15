@@ -18,7 +18,7 @@
 
 import { env } from "../config.ts";
 import { formatISO, type Civil } from "../../core/dates.ts";
-import { INTENTS, rawParse, type RawParse } from "./schema.ts";
+import { COMMAND_ONLY, INTENTS, rawParse, type RawParse } from "./schema.ts";
 
 const ENDPOINT = "https://api.anthropic.com/v1/messages";
 const API_VERSION = "2023-06-01";
@@ -31,7 +31,7 @@ const TOOL = {
   input_schema: {
     type: "object",
     properties: {
-      intent: { type: "string", enum: [...INTENTS] },
+      intent: { type: "string", enum: INTENTS.filter((i) => !COMMAND_ONLY.includes(i)) },
       client_name: { type: ["string", "null"], description: "Who is being billed. Null if not named." },
       client_email: { type: ["string", "null"] },
       line_items: {

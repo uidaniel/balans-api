@@ -84,6 +84,19 @@ describe("a payment request carries no PDF", () => {
     }
   });
 
+  it("is not attached on WhatsApp, under words saying the invoice is", () => {
+    // The PDF template says "The invoice is attached" and points its header
+    // at the /pdf route, which refuses a request. A request takes the plain one.
+    const wa = read("./client-whatsapp.ts");
+    assert.match(wa, /d\.type === "payment_request"\s*\?\s*null\s*:/);
+    assert.match(wa, /const withPdf = pdfName !== null &&/);
+  });
+
+  it("is not attached to the receipt emails, which do not mention one", () => {
+    const paid = read("../email/paid-delivery.ts");
+    assert.equal(paid.match(/request \? null : renderDocumentPdf\(documentId, log\)/g)?.length, 2);
+  });
+
   it("still renders one for an invoice and a quote", () => {
     // The distinction only means something if the other two keep theirs.
     const handle = read("../conversation/handle.ts");

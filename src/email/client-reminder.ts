@@ -47,6 +47,8 @@ export function reminderEmail(x: {
   businessEmail: string | null;
   /** What the client reads, "0019": see documents/client-number.ts. */
   number: number | string | null;
+  /** documents.type. A payment request is reminded about as one, not as an invoice. */
+  type?: string;
   owedKobo: number;
   /** The same, said in dollars or pounds on an invoice priced in them. */
   owedAgreed?: string;
@@ -57,7 +59,8 @@ export function reminderEmail(x: {
   /** The sender's own brand. Reminders are Pro, so this is nearly always set. */
   brand?: ClientBrand | null;
 }): ReminderEmail {
-  const which = x.number === null ? "the invoice" : `invoice #${x.number}`;
+  const word = x.type === "payment_request" ? "payment request" : "invoice";
+  const which = x.number === null ? `the ${word}` : `${word} #${x.number}`;
   const owed = x.owedAgreed ?? formatNaira(x.owedKobo);
   const when = formatFriendly(x.due, x.today);
   // Sent on the due date first, when nothing is late yet. See promptMessage.
@@ -151,6 +154,7 @@ export async function emailReminderToClient(
     business: d.business_name ?? "A Balans user",
     businessEmail: d.business_email,
     number: d.number,
+    type: d.type,
     owedKobo: d.total_kobo - d.amount_paid_kobo,
     // A dollar invoice nobody has paid into yet is still owed in dollars. Part
     // paid, the rest is only known in naira, which is what was charged.

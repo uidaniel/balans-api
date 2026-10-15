@@ -365,7 +365,8 @@ export type Effect =
   | { type: "show_referral" }
   /** A picture they have confirmed is their logo. */
   | { type: "save_logo"; mediaId: string }
-  | { type: "document_action"; intent: Parsed["intent"]; number: number | null }
+  /** `numbers` is the list on "cancel invoices 1 3 4" and its confirmation. */
+  | { type: "document_action"; intent: Parsed["intent"]; number: number | null; numbers?: number[] }
   /* -- Settings (F17) ---------------------------------------------------- */
   | { type: "set_business_name"; name: string }
   | { type: "set_due_days"; days: number }
@@ -1105,6 +1106,9 @@ export const VOICE = {
     "🗑️ Dropped that one.",
     `Send me another whenever you are ready — like ${b("Invoice Tunde 20k for logo")}.`,
   ),
+
+  /** "Keep them", under "Cancel 6 invoices?" (14 October 2026). */
+  keptDocuments: `👍 Okay, ${b("nothing was cancelled")}.`,
 
   nothingPending: lines(
     "📭 There is no draft waiting.",
@@ -2156,6 +2160,25 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
     // "edit invoice 3": open it in the form, filled in (9 October 2026).
     case "edit_document":
       return { replies: [], next: "idle", context: ctx, effects: [{ type: "edit_sent", number: p.documentNumber }] };
+
+    /*
+     * Several invoices at once (14 October 2026). Asked back first with the
+     * list, like stopping reminders: the effect looks them up, and only the
+     * button under that question cancels anything.
+     */
+    case "cancel_documents":
+    case "confirm_cancel_documents":
+      if (!p.documentNumbers?.length) {
+        return { replies: [], next: "idle", context: ctx, effects: [{ type: "document_action", intent: "cancel_document", number: null }] };
+      }
+      return {
+        replies: [],
+        next: "idle",
+        context: ctx,
+        effects: [{ type: "document_action", intent: p.intent, number: null, numbers: p.documentNumbers }],
+      };
+    case "keep_documents":
+      return { replies: [VOICE.keptDocuments], next: "idle", context: ctx, effects: [] };
 
     case "status":
     case "stop_reminders":
@@ -3398,7 +3421,7 @@ function commandEscape(msg: Inbound, ctx: Context, now: Civil): Step | null {
   // missing, which meant /design could not get out of any pending question —
   // it was answered as if it were the answer, over and over.
   const leaves = ["debtors", "summary", "settings", "templates", "upgrade", "referral", "status",
-                  "stop_reminders", "cancel_document", "resend_document", "convert_quote"];
+                  "stop_reminders", "cancel_document", "cancel_documents", "resend_document", "convert_quote"];
   if (!leaves.includes(intent)) return null;
 
   const step = fromParsed(msg, forget(ctx), now);

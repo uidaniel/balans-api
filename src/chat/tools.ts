@@ -147,8 +147,17 @@ async function listDocuments(userId: string, today: Civil, which: string, client
   const day = when(today);
   const filter = WHICH[which] ?? WHICH.recent!;
   const params = [userId, client ?? "", formatISO(today)];
+  /*
+   * `$3::date IS NOT NULL` is there so every query names all three
+   * parameters. Only "owed" and "overdue" use today's date in the filter, and
+   * Postgres refuses a parameter a query never mentions ("could not determine
+   * data type of parameter $3") — which failed the totals for "recent" and
+   * "paid", and with them the snapshot sent with every question, from launch
+   * until 14 October 2026. The assistant answered "I couldn't reach your
+   * invoice records".
+   */
   const base = `FROM documents d JOIN clients c ON c.id = d.client_id
-     WHERE d.user_id = $1 AND d.type <> 'sample' AND ${filter}
+     WHERE d.user_id = $1 AND $3::date IS NOT NULL AND d.type <> 'sample' AND ${filter}
        AND ($2 = '' OR lower(c.name) LIKE '%' || lower(btrim($2)) || '%')`;
 
   const [{ rows }, { rows: sums }] = await Promise.all([

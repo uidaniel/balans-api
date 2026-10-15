@@ -23,7 +23,7 @@ import { asCommand } from "./commands.ts";
 import { extractDocument, readAmount } from "./extract.ts";
 import { readTemplate } from "./template.ts";
 import { modelConfigured, parseWithModel } from "./model.ts";
-import { normalise, isDocumentIntent, type Parsed, type RawParse } from "./schema.ts";
+import { COMMAND_ONLY, normalise, isDocumentIntent, type Parsed, type RawParse } from "./schema.ts";
 
 export type ParseOutcome =
   | { ok: true; parsed: Parsed; latencyMs: number }
@@ -100,7 +100,9 @@ async function parseMessageInner(
   if (command) {
     const raw = empty(command.intent, 1);
     raw.document_number = command.documentNumber ?? null;
-    return { ok: true, parsed: normalise(raw, today, "command", money), latencyMs: since() };
+    const parsed = normalise(raw, today, "command", money);
+    if (command.documentNumbers) parsed.documentNumbers = command.documentNumbers;
+    return { ok: true, parsed, latencyMs: since() };
   }
 
   /* 2. The form, filled in and sent back. ---------------------------------- */
@@ -127,12 +129,13 @@ async function parseMessageInner(
      * nowhere else. Read off a typed sentence — "Edidiong don pay invoice 3"
      * came back as confirm_payment on 14 October 2026 — they would mark an
      * invoice paid without asking. Typed, it is a payment being reported,
-     * which is asked back first.
+     * which is asked back first. The bulk cancel is never offered to the
+     * model, and is not taken from it if it says so anyway.
      */
     const parsed: Parsed =
       read.intent === "confirm_payment" || read.intent === "confirm_part_payment"
         ? { ...read, intent: "record_payment" }
-        : read.intent === "decline_payment"
+        : read.intent === "decline_payment" || COMMAND_ONLY.includes(read.intent)
           ? { ...read, intent: "question" }
           : read;
 

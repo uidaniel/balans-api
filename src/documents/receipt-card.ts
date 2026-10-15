@@ -94,9 +94,31 @@ const CLOCK = `<svg viewBox="0 0 24 24" width="38" height="38" fill="none" strok
 /** Two arrows passing, for "this converts to that". Drawn, not a font glyph. */
 const SWAP = `<svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="#10231c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg>`;
 
+/**
+ * What the card calls the document, in each place it names it.
+ *
+ * It said "Invoice" on everything that was not a quote, so a payment request
+ * was drawn as an "Invoice breakdown" with an INVOICE tag, directly above a
+ * summary calling it a payment request (14 October 2026). A request is
+ * money asked for, so its figure is "Amount requested" rather than a
+ * borrowed "Request amount".
+ */
+const WORDS: Record<Draft["type"], { tag: string; heading: string; amount: string; more: string }> = {
+  invoice: { tag: "Invoice", heading: "Invoice breakdown", amount: "Invoice amount", more: "on the invoice" },
+  quote: { tag: "Quote", heading: "Quote breakdown", amount: "Quote amount", more: "on the quote" },
+  payment_request: {
+    tag: "Payment request",
+    heading: "Payment request breakdown",
+    amount: "Amount requested",
+    more: "on the request",
+  },
+  sample: { tag: "Invoice", heading: "Invoice breakdown", amount: "Invoice amount", more: "on the invoice" },
+};
+
 export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): string {
   const money = payout(draft, plan);
   const quote = draft.type === "quote";
+  const words = WORDS[draft.type] ?? WORDS.invoice;
 
   const line =
     draft.lines.length === 1
@@ -136,7 +158,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
         .slice(0, SHOWN)
         .map((l) => itemRow(l.description, l.qty, itemAmount(l)))
         .join("")}
-      ${draft.lines.length > SHOWN ? `<div class="more">+ ${draft.lines.length - SHOWN} more on the invoice</div>` : ""}
+      ${draft.lines.length > SHOWN ? `<div class="more">+ ${draft.lines.length - SHOWN} more ${words.more}</div>` : ""}
     </div>`
     : "";
 
@@ -315,10 +337,10 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
       <div class="mark">${
         logoAvailable() ? logoSvg("58px") : `<span class="word">bala<i>n</i>s</span>`
       }</div>
-      <span class="tag">${quote ? "Quote" : "Invoice"}${draft.number ? ` · No. ${esc(String(draft.number))}` : ""}</span>
+      <span class="tag">${words.tag}${draft.number ? ` · No. ${esc(String(draft.number))}` : ""}</span>
     </div>
 
-    <h1>${quote ? "Quote" : "Invoice"} breakdown</h1>
+    <h1>${words.heading}</h1>
     <p class="sub"><span class="av">${esc(initials(draft.clientName))}</span><span>For ${esc(draft.clientName)} · ${esc(draft.title || line)}</span></p>
 
     <div class="band">
@@ -335,14 +357,14 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
          */
         draft.foreign
           ? `<div class="pair">
-               <div class="side"><div class="cap">${quote ? "Quote" : "Invoice"} amount</div>
+               <div class="side"><div class="cap">${esc(words.amount)}</div>
                  <div class="amount">${esc(formatMoney(agreedTotalMinor(draft.foreign.amountMinor, draft.subtotalKobo, draft.vatKobo), draft.foreign.currency))}</div></div>
                <div class="swap">${SWAP}</div>
                <div class="side r"><div class="cap">Naira amount</div>
                  <div class="amount naira">${formatNaira(draft.totalKobo)}</div></div>
              </div>
              <div class="rate">${INFO[draft.foreign.currency].symbol}1 → ${formatNaira(Math.round(draft.foreign.rate * 100))}</div>`
-          : `<div class="cap">${quote ? "Quote" : "Invoice"} amount</div>
+          : `<div class="cap">${esc(words.amount)}</div>
              <div class="amount">${formatNaira(draft.totalKobo)}</div>`
       }
       ${

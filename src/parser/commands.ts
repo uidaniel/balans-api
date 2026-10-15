@@ -20,6 +20,8 @@ import type { Intent } from "./schema.ts";
 export type Command = {
   intent: Intent;
   documentNumber?: number;
+  /** Several at once: "cancel invoices 1, 3, 4" (14 October 2026). */
+  documentNumbers?: number[];
   social?: SocialKind;
   /** Which question, when the intent is `help` and it was a specific one. */
   faq?: FaqKind;
@@ -248,6 +250,76 @@ const NUMBERED: [RegExp, Intent][] = [
 ];
 
 /**
+ * Several invoices cancelled in one message (14 October 2026).
+ *
+ * People clearing out old invoices sent "cancel invoice 1 3 6 7 8", or pasted
+ * "cancel invoice 4" on six lines, and only the first was acted on — or none,
+ * because the whole thing went to the model as a sentence. Read here instead,
+ * whole or not at all: every number has to be in the list, and every line of
+ * a pasted message has to be a cancel, or it is not this.
+ *
+ * Two or more different numbers are `cancel_documents`, which asks once
+ * before anything happens. One number is `cancel_document`, exactly as
+ * before. The list is capped at twenty, which is more than one question can
+ * show without becoming a scroll.
+ */
+export const MAX_CANCEL = 20;
+
+const NOUN = "(?:invoices?|invs?|quotes?|requests?|docs?|documents?)";
+const NUM = "#?\\d{1,6}";
+const SEP = "(?:\\s*,\\s*(?:and\\s+)?|\\s*&\\s*|\\s+and\\s+|\\s+)";
+const LIST = `${NUM}(?:${SEP}${NUM})*`;
+const CANCEL_LIST = new RegExp(`^cancel (?:(${NOUN}) )?(${LIST})$`);
+// The button under the question, and the same words typed back.
+const CONFIRM_LIST = new RegExp(`^yes,? cancel (?:(?:the |these |those )?${NOUN} )?(${LIST})$`);
+const KEEP_LIST = /^(?:no,? )?keep (?:the |these |those |all |all the )?(?:invoices|documents|quotes)$/;
+
+function numbersIn(list: string): number[] {
+  const seen: number[] = [];
+  for (const m of list.matchAll(/\d{1,6}/g)) {
+    const n = Number(m[0]);
+    if (n > 0 && !seen.includes(n)) seen.push(n);
+  }
+  return seen.slice(0, MAX_CANCEL);
+}
+
+function asCancelList(raw: string): Command | null {
+  const rows = raw
+    .toLowerCase()
+    .split(/\r?\n/)
+    .map((l) => l.trim().replace(/[.!,]+$/, "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  if (!rows.length) return null;
+
+  if (rows.length === 1) {
+    const s = rows[0]!;
+    const yes = CONFIRM_LIST.exec(s);
+    // One number is allowed here: only one of a list may have been cancellable.
+    if (yes) {
+      const numbers = numbersIn(yes[1]!);
+      return numbers.length ? { intent: "confirm_cancel_documents", documentNumbers: numbers } : null;
+    }
+    if (KEEP_LIST.test(s)) return { intent: "keep_documents" };
+  }
+
+  // Each line a cancel of its own, or the one line a cancel of several.
+  const found: number[] = [];
+  let named = false;
+  for (const row of rows) {
+    const m = CANCEL_LIST.exec(row);
+    if (!m) return null;
+    if (m[1]) named = true;
+    found.push(...numbersIn(m[2]!));
+  }
+  const numbers = numbersIn(found.join(" "));
+  if (numbers.length >= 2) return { intent: "cancel_documents", documentNumbers: numbers };
+  // "cancel invoice 4", or the same one pasted twice: the single cancel. A bare
+  // "cancel 4" was never a command and is still left to the model.
+  if (numbers.length === 1 && named) return { intent: "cancel_document", documentNumber: numbers[0]! };
+  return null;
+}
+
+/**
  * Reads a message as a command, or returns null to send it on to the model.
  *
  * Deliberately strict: it matches the whole message, trimmed and stripped of
@@ -255,6 +327,13 @@ const NUMBERED: [RegExp, Intent][] = [
  * not a confirmation, and treating it as one would send the wrong document.
  */
 export function asCommand(text: string): Command | null {
+  // Before the length cap below: twenty invoice numbers, or six pasted lines,
+  // are longer than any other command and still exactly one.
+  if (text.length <= 600) {
+    const list = asCancelList(text);
+    if (list) return list;
+  }
+
   const s = text
     .toLowerCase()
     .trim()

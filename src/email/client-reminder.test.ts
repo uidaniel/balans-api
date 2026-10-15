@@ -38,3 +38,13 @@ it("says a dollar invoice in dollars", () => {
   assert.match(m.subject, /\$500\.00/);
   assert.match(m.html, /Pay \$500\.00/);
 });
+
+it("reminds about a payment request as one", () => {
+  // It went out as "invoice #16" whatever the document was (14 October 2026).
+  const m = reminderEmail({ ...base, type: "payment_request", bankTransfer: true });
+  assert.match(m.subject, /Reminder: payment request #16 from Kemi Adeyemi Studio/);
+  assert.match(m.text, /payment request #16 from/);
+  assert.doesNotMatch(m.subject + m.text, /invoice/i);
+  assert.match(reminderEmail({ ...base, type: "payment_request", number: null, bankTransfer: true }).text, /the payment request from/);
+  assert.match(reminderEmail({ ...base, type: "invoice", bankTransfer: true }).subject, /Reminder: invoice #16/);
+});

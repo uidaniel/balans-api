@@ -82,6 +82,57 @@ export async function cancelDocument(
   return { ok: true, value: { number, type: doc.type, clientName: doc.client_name } };
 }
 
+/**
+ * What "cancel invoices 3 4 6" would do, before it does it (14 October 2026).
+ *
+ * The same rows, and the same reasons, as `cancelDocument` reads, so the
+ * question never offers one it would then refuse. A payment can still land
+ * between the question and the tap; the cancel itself checks again, and the
+ * answer says so.
+ */
+export type CancelPreview =
+  | { number: number; ok: true; type: string; clientName: string; totalKobo: number; currency: string; amountMinor: number | null }
+  | { number: number; ok: false; why: string };
+
+export async function previewCancel(userId: string, numbers: number[]): Promise<CancelPreview[]> {
+  if (!numbers.length) return [];
+  const { rows } = await db().query<{
+    number: number;
+    status: string;
+    type: string;
+    amount_paid_kobo: number;
+    total_kobo: number;
+    currency: string | null;
+    original_amount_minor: number | null;
+    client_name: string;
+  }>(
+    `SELECT DISTINCT ON (d.number)
+            d.number, d.status, d.type, d.amount_paid_kobo, d.total_kobo,
+            d.currency, d.original_amount_minor, c.name AS client_name
+       FROM documents d JOIN clients c ON c.id = d.client_id
+      WHERE d.user_id = $1 AND d.number = ANY($2::int[]) AND d.status <> 'draft'
+      ORDER BY d.number, d.created_at DESC`,
+    [userId, numbers],
+  );
+
+  const byNumber = new Map(rows.map((r) => [Number(r.number), r]));
+  return numbers.map((number): CancelPreview => {
+    const d = byNumber.get(number);
+    if (!d) return { number, ok: false, why: "not_found" };
+    if (d.status === "cancelled") return { number, ok: false, why: "already_cancelled" };
+    if (d.status === "paid" || Number(d.amount_paid_kobo) > 0) return { number, ok: false, why: "has_payment" };
+    return {
+      number,
+      ok: true,
+      type: d.type,
+      clientName: d.client_name,
+      totalKobo: Number(d.total_kobo),
+      currency: d.currency ?? "NGN",
+      amountMinor: d.original_amount_minor === null ? null : Number(d.original_amount_minor),
+    };
+  });
+}
+
 /* -------------------------------------------------------------------------- */
 /* Resend (F6)                                                                */
 /* -------------------------------------------------------------------------- */

@@ -179,6 +179,36 @@ describe("what the receipt says", () => {
     assert.match(receiptHtml(draft({ type: "quote" }), "free", today), /<h1>Quote breakdown</);
   });
 
+  it("calls a payment request a payment request, everywhere on it", () => {
+    // It was drawn as an "Invoice breakdown" with an INVOICE tag, above a
+    // summary that called it a payment request (14 October 2026).
+    for (const over of [{}, ABROAD]) {
+      const html = receiptHtml(draft({ type: "payment_request", ...over }), "free", today);
+      assert.match(html, /<h1>Payment request breakdown<[/]h1>/);
+      assert.match(html, /<span class="tag">Payment request · No\. 7<[/]span>/);
+      assert.match(html, /Amount requested/);
+      assert.doesNotMatch(html, />[^<]*Invoice[^<]*</, "no visible word calls it an invoice");
+    }
+  });
+
+  it("names a quote's figure as the quote's, and leaves an invoice as it was", () => {
+    const quote = receiptHtml(draft({ type: "quote" }), "free", today);
+    assert.match(quote, /<span class="tag">Quote · No\. 7</);
+    assert.match(quote, /Quote amount/);
+    assert.doesNotMatch(quote, />[^<]*Invoice[^<]*</);
+
+    const invoice = receiptHtml(draft({}), "free", today);
+    assert.match(invoice, /<span class="tag">Invoice · No\. 7</);
+    assert.match(invoice, /Invoice amount/);
+  });
+
+  it("says where the items it leaves off are, in the document's own name", () => {
+    const lines = [1, 2, 3, 4, 5].map((i) => ({ description: `item ${i}`, qty: 1, unitAmountKobo: N(1_000) }));
+    assert.match(receiptHtml(draft({ lines }), "free", today), /\+ 2 more on the invoice/);
+    assert.match(receiptHtml(draft({ type: "payment_request", lines }), "free", today), /\+ 2 more on the request/);
+    assert.match(receiptHtml(draft({ type: "quote", lines }), "free", today), /\+ 2 more on the quote/);
+  });
+
   it("carries the logo above the heading", () => {
     const html = receiptHtml(draft({}), "free", today);
     const mark = html.indexOf('class="mark"');

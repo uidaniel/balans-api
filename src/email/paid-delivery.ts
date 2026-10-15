@@ -134,7 +134,14 @@ export async function emailPaidToClient(
 
     const business = d.business_name ?? "A Balans user";
     const shown = clientNumber(d.ref, d.number);
-    const label = shown === null ? "Invoice" : `Invoice #${shown}`;
+    /*
+     * A payment request is receipted as one (14 October 2026). It has no
+     * PDF (F8), so nothing is attached for it but the receipt, and nothing
+     * here says a "paid invoice" came with it.
+     */
+    const request = d.type === "payment_request";
+    const word = request ? "payment request" : "invoice";
+    const label = `${request ? "Payment request" : "Invoice"}${shown === null ? "" : ` #${shown}`}`;
     const link = d.public_token
       ? `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/${d.public_token}`
       : null;
@@ -146,7 +153,7 @@ export async function emailPaidToClient(
      */
     const full = d.amount_paid_kobo >= d.total_kobo;
     const paidShown = full ? amountFor(d) : formatNaira(d.last_paid_kobo ?? d.amount_paid_kobo);
-    const rest = full ? "" : ` ${formatNaira(d.total_kobo - d.amount_paid_kobo)} remains on this invoice.`;
+    const rest = full ? "" : ` ${formatNaira(d.total_kobo - d.amount_paid_kobo)} remains on this ${word}.`;
 
     /*
      * Both documents, because they are not the same document.
@@ -157,7 +164,7 @@ export async function emailPaidToClient(
      * question, and neither of them wants to email anybody to get it.
      */
     const [invoice, receipt] = await Promise.all([
-      renderDocumentPdf(documentId, log),
+      request ? null : renderDocumentPdf(documentId, log),
       receiptForDocument(documentId, log),
     ]);
 
@@ -178,13 +185,17 @@ export async function emailPaidToClient(
           : `This confirms that your payment to ${esc(business)} has been received.${esc(rest)}`,
       ),
       amount("Amount paid", paidShown, when ? formatFriendly(when) : undefined),
-      link ? button("View the invoice", link) : "",
-      paragraph(
-        receipt
-          ? "Your receipt and the paid invoice are attached for your records."
-          : "The paid invoice is attached for your records.",
-        true,
-      ),
+      link ? button(`View the ${word}`, link) : "",
+      request
+        ? receipt
+          ? paragraph("Your receipt is attached for your records.", true)
+          : ""
+        : paragraph(
+            receipt
+              ? "Your receipt and the paid invoice are attached for your records."
+              : "The paid invoice is attached for your records.",
+            true,
+          ),
       paragraph(`Thank you for your business.`, true),
       // A Free sender's client only; never under a Pro sender's name.
       d.plan === "pro"
@@ -233,7 +244,7 @@ export async function emailPaidToClient(
             when ? ` on ${formatFriendly(when)}` : ""
           }.${rest}`,
           "",
-          link ? `View the invoice: ${link}` : "",
+          link ? `View the ${word}: ${link}` : "",
           "",
           "Thank you for your business.",
           d.plan === "pro" ? "" : `
@@ -278,14 +289,16 @@ export async function emailPaidToUser(
     const d = await paidRow(documentId);
     if (!d?.business_email) return { ok: false };
 
-    const label = d.number === null ? "your invoice" : `invoice #${d.number}`;
+    const request = d.type === "payment_request";
+    const word = request ? "payment request" : "invoice";
+    const label = d.number === null ? `your ${word}` : `${word} #${d.number}`;
     const when = d.paid_at ? civil(d.paid_at) : null;
     const link = d.public_token
       ? `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/${d.public_token}`
       : null;
 
     const [invoice, receipt] = await Promise.all([
-      renderDocumentPdf(documentId, log),
+      request ? null : renderDocumentPdf(documentId, log),
       receiptForDocument(documentId, log),
     ]);
 
@@ -300,13 +313,17 @@ export async function emailPaidToUser(
           : `${esc(d.client_name)} has paid part of ${esc(label)}. ${formatNaira(d.total_kobo - d.amount_paid_kobo)} is still to come.`,
       ),
       amount("Paid to you", got, when ? formatFriendly(when) : undefined),
-      link ? button("See the invoice", link) : "",
-      paragraph(
-        receipt
-          ? "The paid invoice and the receipt are attached. Your client has been sent the same."
-          : "The paid invoice is attached. Your client has been sent the same.",
-        true,
-      ),
+      link ? button(`See the ${word}`, link) : "",
+      request
+        ? receipt
+          ? paragraph("The receipt is attached. Your client has been sent the same.", true)
+          : ""
+        : paragraph(
+            receipt
+              ? "The paid invoice and the receipt are attached. Your client has been sent the same."
+              : "The paid invoice is attached. Your client has been sent the same.",
+            true,
+          ),
     ]
       .filter(Boolean)
       .join("\n");
@@ -336,7 +353,7 @@ export async function emailPaidToUser(
             when ? ` on ${formatFriendly(when)}` : ""
           }.`,
           "",
-          link ? `See the invoice: ${link}` : "",
+          link ? `See the ${word}: ${link}` : "",
         ]
           .filter(Boolean)
           .join("\n"),

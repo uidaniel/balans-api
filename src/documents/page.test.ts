@@ -463,3 +463,58 @@ describe("a card invoice with no Monnify subaccount", () => {
     assert.equal(payable(doc({ foreign: card, subAccountCode: null, hasPayoutAccount: false })).ok, false);
   });
 });
+
+describe("the order a phone reads the page in", () => {
+  /*
+   * How to pay comes straight after what is owed, before the list of items
+   * (14 October 2026). The account sat under every line item, and a client
+   * who came to pay had to scroll past the list to find it. On a wide screen
+   * the grid puts the paying in its own column whatever the markup's order.
+   */
+  const bank = { bankName: "GTBank", accountName: "DANNY CODES LTD", accountNumber: "0123456789", last4: "6789" };
+  const order = (html: string, first: string) => {
+    const summary = html.indexOf('<section class="card summary">');
+    const pay = html.indexOf(first);
+    const items = html.indexOf('<section class="card items">');
+    assert.ok(summary > -1 && pay > -1 && items > -1, `all three are on the page (${first})`);
+    assert.ok(summary < pay && pay < items, `${first} sits between the summary and the items`);
+  };
+
+  it("puts the bank transfer details before what it is for", () => {
+    const html = render(doc({ type: "payment_request", bank }));
+    order(html, "Pay by bank transfer");
+    order(html, "Copy account number");
+    assert.ok(html.indexOf("Copy account number") < html.indexOf("What it is for"));
+  });
+
+  it("does the same for a card payment abroad", () => {
+    const html = renderDocument(
+      doc({
+        foreign: { currency: "USD", amountMinor: 50_000, rate: 1_500 },
+      }),
+      TODAY,
+      { token: "a".repeat(32), cardReady: true },
+    );
+    order(html, "Continue to payment");
+  });
+
+  it("and for a page with nothing left to pay", () => {
+    order(render(doc({ status: "paid", amountPaidKobo: 350_000_00 })), "Paid in full. Nothing more to do.");
+    order(render(doc({ status: "cancelled" })), "was cancelled and cannot be paid");
+    order(render(doc({ type: "quote" })), "This is a quote, not an invoice.");
+  });
+
+  it("keeps the paying in its own column on a wide screen", () => {
+    const html = render(doc({ bank }));
+    assert.match(html, /\.side\{grid-column:2;grid-row:1 \/ span 2;/);
+    assert.match(html, /\.items\{grid-column:1;grid-row:2\}/);
+  });
+
+  it("calls a payment request one beside the account", () => {
+    const html = render(doc({ type: "payment_request", bank }));
+    assert.match(html, /This payment request is paid straight/);
+    assert.doesNotMatch(html, /This invoice is paid/);
+    // No PDF and no receipt yet: no download row, and no empty one either.
+    assert.doesNotMatch(html, /class="files"/);
+  });
+});

@@ -53,10 +53,12 @@ body{background:var(--cream);color:var(--ink);font-family:var(--sans);font-size:
 -webkit-font-smoothing:antialiased;line-height:1.5;padding:0 0 56px}
 /*
  * The page, as a hosted payment page is laid out: a band of colour across
- * the top, and the cards rising out of it. On a phone the cards stack in the
- * order somebody reads them — what is owed, what it was for, how to pay it.
- * From 920px the paying sits in its own column and stays put while the
- * details scroll beside it.
+ * the top, and the cards rising out of it. On a phone the cards stack as
+ * what is owed, how to pay it, then what it was for: the account to pay
+ * into sat under every line item, and a client who came to pay had to
+ * scroll past the list to find it (14 October 2026). From 920px the paying
+ * sits in its own column and stays put while the details scroll beside it;
+ * the grid places it there whatever its order in the markup.
  */
 .band{height:208px;background:var(--ink);position:relative;overflow:hidden}
 .band::after{content:"";position:absolute;inset:auto 0 0;height:1px;background:rgba(246,241,231,.08)}
@@ -506,6 +508,30 @@ function renderDocumentPage(
     ${partsBlock(doc, today)}
   </section>
 
+  <aside class="side">
+    ${payBlock(doc, can, payableNowKobo(doc), opts, payableLabel(doc))}
+    ${trustBlock(doc)}
+    ${
+      // F8: a payment request is "a lightweight payable with no PDF". There is
+      // nothing itemised to render, and offering one implies there is. With
+      // no receipt either there is nothing to download, and no empty row is
+      // drawn under a rule.
+      doc.type === "payment_request" && doc.amountPaidKobo === 0
+        ? ""
+        : `<div class="files">
+      ${
+        doc.type === "payment_request"
+          ? ""
+          : `<a href="${opts.base ?? "/i"}/${esc(opts.token)}/pdf">${DOWNLOAD}Download ${label.toLowerCase()} (PDF)</a>`
+      }
+      ${
+        doc.amountPaidKobo > 0
+          ? `<a href="/i/${esc(opts.token)}/receipt">${DOWNLOAD}Download receipt</a>`
+          : ""
+      }
+    </div>`
+    }
+  </aside>
 
   <section class="card items">
     <p class="sect"><span>What it is for</span><span>${doc.lines.length} item${doc.lines.length === 1 ? "" : "s"}</span></p>
@@ -538,25 +564,6 @@ function renderDocumentPage(
     </div>
     ${doc.notes ? `<div class="note">${esc(doc.notes)}</div>` : ""}
   </section>
-
-  <aside class="side">
-    ${payBlock(doc, can, payableNowKobo(doc), opts, payableLabel(doc))}
-    ${trustBlock(doc)}
-    <div class="files">
-      ${
-        // F8: a payment request is "a lightweight payable with no PDF". There is
-        // nothing itemised to render, and offering one implies there is.
-        doc.type === "payment_request"
-          ? ""
-          : `<a href="${opts.base ?? "/i"}/${esc(opts.token)}/pdf">${DOWNLOAD}Download ${label.toLowerCase()} (PDF)</a>`
-      }
-      ${
-        doc.amountPaidKobo > 0
-          ? `<a href="/i/${esc(opts.token)}/receipt">${DOWNLOAD}Download receipt</a>`
-          : ""
-      }
-    </div>
-  </aside>
 </main>
 ${doc.plan === "pro" ? "" : footer(doc)}
 ${doc.bank && can.ok === false ? `<script>${COPY_JS}</script>` : ""}
@@ -872,7 +879,11 @@ function ownDetailsBlock(doc: PublicDocument, amount: number, partLabel: string 
     <p class="own-amt">${esc(agreed)} to ${esc(doc.businessName)}</p>
     <div class="own-details">${esc(doc.paymentDetails ?? "").replace(/\n/g, "<br>")}</div>
     <p class="tsmall">Pay ${esc(doc.businessName)} directly using the details above, and put
-      ${esc(clientNumber(doc.ref, doc.number) ? `invoice ${clientNumber(doc.ref, doc.number)}` : "the invoice number")} in the reference.
+      ${esc(
+        clientNumber(doc.ref, doc.number)
+          ? `${LABEL[doc.type].toLowerCase()} ${clientNumber(doc.ref, doc.number)}`
+          : `the ${LABEL[doc.type].toLowerCase()} number`,
+      )} in the reference.
       ${esc(doc.businessName)} will confirm when it arrives.</p>
   </div>`;
 }
@@ -938,7 +949,7 @@ function trustBlock(doc: PublicDocument): string {
   </div>`;
     }
     return `<div class="trust">
-    <p class="tsmall">${doc.plan === "pro" ? "" : "Balans is not a bank and does not hold your money. "}This invoice is paid straight
+    <p class="tsmall">${doc.plan === "pro" ? "" : "Balans is not a bank and does not hold your money. "}This ${LABEL[doc.type].toLowerCase()} is paid straight
       to the bank account of <b>${esc(doc.businessName)}</b>.</p>
   </div>`;
   }

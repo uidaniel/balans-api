@@ -37,6 +37,33 @@ const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /**
+ * What the email calls the document: subject, heading and opening line.
+ *
+ * Named as what it is. A payment request went out as "Invoice #0012 from …"
+ * and "has sent you an invoice" (14 October 2026), to a client who then went
+ * looking for an invoice there never was. Exported so the words can be tested
+ * without a database.
+ */
+export function documentWords(x: {
+  type: string;
+  number: string | null;
+  title: string | null;
+  business: string;
+  price: string;
+  updated: boolean;
+}): { label: string; subject: string; heading: string; sentYou: string } {
+  const label = x.type === "quote" ? "Quote" : x.type === "payment_request" ? "Payment request" : "Invoice";
+  const named = `${label}${x.number === null ? "" : ` #${x.number}`}${x.title ? `: ${x.title}` : ""}`;
+  return {
+    label,
+    subject: `${x.updated ? "Updated: " : ""}${named} from ${x.business} — ${x.price}`,
+    heading: `${x.updated ? "Updated: " : ""}${named}`,
+    // "an invoice", "a quote", "a payment request"
+    sentYou: `${x.business} has sent you ${label === "Invoice" ? "an" : "a"} ${label.toLowerCase()}.`,
+  };
+}
+
+/**
  * The last line of the email — where to find it, and whether a file came with it.
  *
  * Its own function because it is the one sentence in here that can lie. A
@@ -138,7 +165,6 @@ export async function emailDocumentToClient(
   if (!d) return { ok: false, why: "not_found" };
   if (!d.client_email) return { ok: false, why: "no_client_email" };
 
-  const label = d.type === "quote" ? "Quote" : "Invoice";
   /*
    * The price in what it was agreed in, VAT and all. A client billed $500
    * reads "$500.00" here, not the naira the card is charged; the page they
@@ -147,6 +173,15 @@ export async function emailDocumentToClient(
   const price = amountFor(d);
   const own = d.delivery_type === "own_details";
   const business = d.business_name ?? "A Balans user";
+  const words = documentWords({
+    type: d.type,
+    number: d.number,
+    title: d.title,
+    business,
+    price,
+    updated: updatedFrom !== null,
+  });
+  const label = words.label;
   const link = d.public_token
     ? documentLink(d.type, d.public_token)
     : null;
@@ -164,11 +199,11 @@ export async function emailDocumentToClient(
     paragraph(`${esc(d.client_name)},`),
     updatedFrom
       ? paragraph(
-          `${esc(business)} has updated ${d.type === "quote" ? "this quote" : "this invoice"}. It replaces the version sent on ${esc(
+          `${esc(business)} has updated this ${label.toLowerCase()}. It replaces the version sent on ${esc(
             updatedFrom.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "Africa/Lagos" }),
           )}; the number and the link are the same. Please use this one.`,
         )
-      : paragraph(`${esc(business)} has sent you ${d.type === "quote" ? "a quote" : "an invoice"}.`),
+      : paragraph(esc(words.sentYou)),
     amount(
       d.type === "quote" ? "Quoted" : "Amount due",
       price,
@@ -214,24 +249,20 @@ export async function emailDocumentToClient(
       images: as.images,
       // And a question about the invoice should reach the person who sent it.
       replyTo: d.business_email ?? undefined,
-      subject:
-        (updatedFrom ? "Updated: " : "") +
-        (d.number === null
-          ? `${label}${d.title ? `: ${d.title}` : ""} from ${business} — ${price}`
-          : `${label} #${d.number}${d.title ? `: ${d.title}` : ""} from ${business} — ${price}`),
+      subject: words.subject,
       html: layout({
         preheader: `${price}${when ? `, ${dateWord.toLowerCase()} ${formatFriendly(when)}` : ""}.`,
         // Who it is from, over what it is: the two things a client checks
         // before deciding whether this is a message they have to deal with.
         eyebrow: business,
-        heading: `${updatedFrom ? "Updated: " : ""}${label}${d.number === null ? "" : ` #${d.number}`}${d.title ? `: ${d.title}` : ""}`,
+        heading: words.heading,
         body,
         ...(brand ? { brand } : {}),
       }),
       text: [
         `${d.client_name},`,
         "",
-        `${business} has sent you ${d.number === null ? (d.type === "quote" ? "a quote" : "an invoice") : `${label.toLowerCase()} #${d.number}`} for ${price}${
+        `${business} has sent you ${d.number === null ? (label === "Invoice" ? "an invoice" : `a ${label.toLowerCase()}`) : `${label.toLowerCase()} #${d.number}`} for ${price}${
           when ? `, ${dateWord.toLowerCase()} ${formatFriendly(when)}` : ""
         }.`,
         "",

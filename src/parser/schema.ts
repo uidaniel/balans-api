@@ -31,6 +31,14 @@ export const INTENTS = [
   "summary",
   "edit_document",
   "cancel_document",
+  /**
+   * Several at once, "cancel invoices 1, 3, 4", and the two answers to the
+   * one question it asks (14 October 2026). Read by `commands.ts` only: the
+   * model is never offered these (see `COMMAND_ONLY`).
+   */
+  "cancel_documents",
+  "confirm_cancel_documents",
+  "keep_documents",
   "resend_document",
   "record_payment",
   /** The answers to "Mark invoice 16 as paid?". */
@@ -85,6 +93,15 @@ export const INTENTS = [
 ] as const;
 
 export type Intent = (typeof INTENTS)[number];
+
+/**
+ * Intents that only ever come from an exact command, never from the model.
+ *
+ * Cancelling a list of invoices is not undoable, and the list has to be the
+ * numbers the person typed. A model that read "cancel the old ones" as a list
+ * would be guessing which (14 October 2026).
+ */
+export const COMMAND_ONLY: readonly Intent[] = ["cancel_documents", "confirm_cancel_documents", "keep_documents"];
 
 /** The intents that produce a document, and so must pass draft-and-confirm. */
 export const DOCUMENT_INTENTS: readonly Intent[] = [
@@ -282,6 +299,8 @@ export type Parsed = {
   /** The phrase the date came from, so a confirmation can echo their words. */
   dueDatePhrase: string | null;
   documentNumber: number | null;
+  /** Only on `cancel_documents` and its confirmation, and only from a command. */
+  documentNumbers?: number[];
   options: {
     depositPercent: number | null;
     instalments: number | null;

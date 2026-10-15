@@ -71,6 +71,8 @@ import {
   summarise,
 } from "../documents/queries.ts";
 import {
+  cancelManyAsk,
+  cancelledManyMessage,
   cancelledMessage,
   cannotCancelMessage,
   cannotConvertMessage,
@@ -90,7 +92,7 @@ import { renderDocumentPdf } from "../documents/pdf.ts";
 import { deliverPaidToClient, receiptForDocument } from "../email/paid-delivery.ts";
 import { emailDocumentToClient } from "../email/client-delivery.ts";
 import { whatsappDocumentToClient } from "../documents/client-whatsapp.ts";
-import { cancelDocument, convertQuote, findForResend, openForReminders, stopReminders } from "../documents/actions.ts";
+import { cancelDocument, convertQuote, findForResend, openForReminders, previewCancel, stopReminders } from "../documents/actions.ts";
 import {
   accountInForce,
   cancelPendingChange,
@@ -1001,7 +1003,7 @@ const NEEDS_PARSE = new Set<State>([
 /** Intents that mean "forget the draft and do this instead". */
 const ACTIONS = new Set([
   "confirm", "reject", "debtors", "summary", "settings", "upgrade", "referral",
-  "status", "cancel_document", "resend_document", "convert_quote",
+  "status", "cancel_document", "cancel_documents", "resend_document", "convert_quote",
   "create_invoice", "create_quote",
 ]);
 
@@ -2642,6 +2644,39 @@ async function runEffects(
             break;
           }
 
+          /*
+           * Several at once (14 October 2026): one question listing what can
+           * go and what cannot, with the same two buttons stopping reminders
+           * has. Nothing is cancelled here.
+           */
+          if (effect.intent === "cancel_documents") {
+            const ask = cancelManyAsk(await previewCancel(userId, effect.numbers ?? []));
+            if (!ask.yesId) { extra.push(ask.body); break; }
+            if (ctx.phone) {
+              const sent = await sendButtons(ctx.phone, { body: ask.body, buttons: ask.buttons });
+              if (sent.ok) {
+                await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+                break;
+              }
+            }
+            extra.push(lines(ask.body, `Reply ${b(ask.yesId)} to confirm.`));
+            break;
+          }
+
+          // The "yes" under that question: each one checked again as it goes,
+          // because a payment can land in between.
+          if (effect.intent === "confirm_cancel_documents") {
+            const done: number[] = [];
+            const failed: { number: number; why: string }[] = [];
+            for (const n of effect.numbers ?? []) {
+              const r = await cancelDocument(userId, n);
+              if (r.ok) done.push(n);
+              else failed.push({ number: n, why: r.why });
+            }
+            extra.push(cancelledManyMessage(done, failed));
+            break;
+          }
+
           if (effect.intent === "cancel_document") {
             if (!number) { extra.push(notFoundMessage({})); break; }
             const done = await cancelDocument(userId, number);
@@ -3885,7 +3920,7 @@ async function priceAbroad(
  * empty answer, because a command says what to do and nothing about a
  * document.
  */
-function commandAsParsed(c: { intent: Parsed["intent"]; documentNumber?: number }): Parsed {
+function commandAsParsed(c: { intent: Parsed["intent"]; documentNumber?: number; documentNumbers?: number[] }): Parsed {
   return {
     intent: c.intent,
     correction: null,
@@ -3896,6 +3931,7 @@ function commandAsParsed(c: { intent: Parsed["intent"]; documentNumber?: number 
     dueDate: null,
     dueDatePhrase: null,
     documentNumber: c.documentNumber ?? null,
+    ...(c.documentNumbers ? { documentNumbers: c.documentNumbers } : {}),
     options: {
       depositPercent: null,
       instalments: null,

@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { asCommand } from "../parser/commands.ts";
+import { documentWords } from "../email/client-delivery.ts";
 
 describe("changing a sent invoice", () => {
   it("reads 'edit invoice 3' and its cousins", () => {
@@ -57,7 +58,10 @@ describe("the client is told it is an update", () => {
   const wa = readFileSync(new URL("../documents/client-whatsapp.ts", import.meta.url), "utf8");
   const handle = readFileSync(new URL("./handle.ts", import.meta.url), "utf8");
   it("says Updated in the email subject and names the version it replaces", () => {
-    assert.match(email, /\(updatedFrom \? "Updated: " : ""\)/);
+    const words = documentWords({ type: "invoice", number: "0008", title: null, business: "Kemi", price: "₦1", updated: true });
+    assert.match(words.subject, /^Updated: Invoice #0008 from Kemi/);
+    assert.match(words.heading, /^Updated: /);
+    assert.match(email, /updated: updatedFrom !== null/);
     assert.match(email, /It replaces the version sent on/);
   });
   it("uses the updated template on WhatsApp once Meta approves it", () => {

@@ -16,6 +16,8 @@ import { b, block, BULLET, i, lines, para, row } from "../whatsapp/format.ts";
 import { bucketOf, type Bucket, type Debtors, type DocumentStatus, type Summary } from "./queries.ts";
 import { payBy } from "./summary.ts";
 import type { BankDetails } from "./bank-details.ts";
+import type { CancelPreview } from "./actions.ts";
+import { formatMoney, type Currency } from "../../core/currency.ts";
 
 const BUCKET_TITLE: Record<Bucket, string> = {
   late_30_plus: "Over 30 days late",
@@ -252,6 +254,89 @@ export function cannotCancelMessage(number: number, why: string): string {
   return lines(
     `🔍 I cannot find ${b(`invoice ${number}`)}.`,
     `Reply ${b("who owes me")} to see what is outstanding.`,
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Cancelling several at once (14 October 2026)                               */
+/* -------------------------------------------------------------------------- */
+
+/** Why one of a list cannot be cancelled, in the fewest plain words. */
+const CANNOT_CANCEL: Record<string, string> = {
+  has_payment: "paid",
+  already_cancelled: "already cancelled",
+  not_found: "not found",
+};
+const whyNot = (why: string) => CANNOT_CANCEL[why] ?? "not found";
+
+const count = (n: number) => (n === 1 ? "1 invoice" : `${n} invoices`);
+
+type Cancellable = Extract<CancelPreview, { ok: true }>;
+type NotCancellable = Extract<CancelPreview, { ok: false }>;
+
+/**
+ * The one question before a list is cancelled, and the buttons under it.
+ *
+ * Only the ones that can go are on the "yes" button's id, so a tap cannot
+ * cancel something the question did not show. With nothing cancellable there
+ * is nothing to confirm: it says why for each, and has no buttons. Titles are
+ * kept well under Meta's twenty characters ("Yes, cancel 20" is fourteen).
+ */
+export function cancelManyAsk(preview: CancelPreview[]): {
+  body: string;
+  buttons: { id: string; title: string }[];
+  yesId: string | null;
+} {
+  const ok = preview.filter((p): p is Cancellable => p.ok);
+  const cannot = preview
+    .filter((p): p is NotCancellable => !p.ok)
+    .map((p) => `${BULLET}#${p.number} — ${whyNot(p.why)}`);
+
+  if (!ok.length) {
+    return {
+      body: lines(`⚠️ ${b(preview.length === 1 ? "That one cannot be cancelled." : "None of those can be cancelled.")}`, ...cannot),
+      buttons: [],
+      yesId: null,
+    };
+  }
+
+  const yesId = `yes cancel invoices ${ok.map((p) => p.number).join(" ")}`;
+  const one = ok.length === 1;
+  const body = para(
+    lines(
+      `⚠️ ${b(one ? `Cancel invoice #${ok[0]!.number}?` : `Cancel ${count(ok.length)}?`)}`,
+      ...ok.map((p) => `${b(`#${p.number}`)} ${p.clientName} — ${amountOf(p)}${p.type === "quote" ? " (quote)" : ""}`),
+    ),
+    cannot.length ? lines("Can't cancel:", ...cannot) : null,
+    `Their clients will not be reminded again and cannot pay ${one ? "it" : "them"}. This can't be undone.`,
+  );
+  return {
+    body,
+    buttons: [
+      { id: yesId, title: one ? "Yes, cancel it" : `Yes, cancel ${ok.length}` },
+      { id: "keep invoices", title: one ? "Keep it" : "Keep them" },
+    ],
+    yesId,
+  };
+}
+
+function amountOf(p: Cancellable): string {
+  if (p.currency !== "NGN" && p.amountMinor !== null) return formatMoney(p.amountMinor, p.currency as Currency);
+  return formatNaira(p.totalKobo);
+}
+
+/** The one answer after "yes cancel invoices 3 4 6": what went, and what did not. */
+export function cancelledManyMessage(done: number[], failed: { number: number; why: string }[]): string {
+  const not = failed.map((f) => `${BULLET}#${f.number} — ${whyNot(f.why)}`);
+  if (!done.length) {
+    return lines(`⚠️ ${b("Nothing was cancelled.")}`, ...not);
+  }
+  return para(
+    lines(
+      `🚫 ${b(`Cancelled ${count(done.length)}:`)} ${done.map((n) => `#${n}`).join(", ")}`,
+      `Their clients cannot pay ${done.length === 1 ? "it" : "them"} now, and the ${done.length === 1 ? "page says" : "pages say"} so.`,
+    ),
+    not.length ? lines("Could not cancel:", ...not) : null,
   );
 }
 

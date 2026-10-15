@@ -137,10 +137,18 @@ export async function whatsappDocumentToClient(
     updated && d.type === "invoice" && (await templateApproved(TEMPLATES.client_invoice_updated.name))
       ? TEMPLATES.client_invoice_updated.name
       : null;
+  /*
+   * Never the PDF version for a payment request (14 October 2026). It has no
+   * PDF (F8), so the header would point at a /pdf link that refuses it, under
+   * a body saying "The invoice is attached". The plain template names it as
+   * "a payment request" and links to the page.
+   */
   const pdfName =
-    updatedName ?? (d.type === "quote" ? TEMPLATES.client_quote_pdf.name : TEMPLATES.client_invoice_pdf.name);
-  const withPdf = await templateApproved(pdfName);
-  const template = withPdf ? pdfName : plain.template;
+    d.type === "payment_request"
+      ? null
+      : (updatedName ?? (d.type === "quote" ? TEMPLATES.client_quote_pdf.name : TEMPLATES.client_invoice_pdf.name));
+  const withPdf = pdfName !== null && (await templateApproved(pdfName));
+  const template = withPdf && pdfName ? pdfName : plain.template;
   const label = d.type === "quote" ? "Quote" : d.type === "payment_request" ? "Payment request" : "Invoice";
   const base = env.PUBLIC_BASE_URL.replace(/\/$/, "");
   const sent = await sendTemplate(d.client_phone, template, plain.params, {
