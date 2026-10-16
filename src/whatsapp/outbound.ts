@@ -43,7 +43,7 @@ export type Outbound = {
      * refused at send until Meta approves it; without this, that wait is a
      * notice that never arrives.
      */
-    orElse?: { template: TemplateName; params: string[] };
+    orElse?: OrElse | OrElse[];
   };
   /**
    * A button under the words that opens a link, inside the window. Words and
@@ -65,6 +65,8 @@ export type Outbound = {
    */
   image?: string;
 };
+
+type OrElse = { template: TemplateName; params: string[] };
 
 export type SendOutcome =
   | { kind: "sent"; inWindow: boolean; template?: TemplateName }
@@ -112,11 +114,13 @@ export async function send(msg: Outbound, log: FastifyBaseLogger): Promise<SendO
       ...urlSuffix,
     });
     let used = spec;
-    const orElse = msg.fallback.orElse;
-    if (!res.ok && orElse && TEMPLATES[orElse.template].params.length === orElse.params.length) {
+    // Newest first: each is tried only if the one before it was refused.
+    for (const orElse of [msg.fallback.orElse ?? []].flat()) {
+      if (res.ok) break;
+      if (TEMPLATES[orElse.template].params.length !== orElse.params.length) continue;
       log.warn(
-        { userId: msg.userId, template: spec.name, reason: res.reason },
-        "template refused; sending the approved version",
+        { userId: msg.userId, template: used.name, reason: res.reason },
+        "template refused; sending the version before it",
       );
       used = TEMPLATES[orElse.template];
       res = await sendTemplate(msg.phone, used.name, orElse.params, { language: TEMPLATE_LANGUAGE, ...urlSuffix });

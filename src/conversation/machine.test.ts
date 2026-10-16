@@ -609,6 +609,19 @@ describe("a tapped button", () => {
     assert.match(flow.fallback?.line ?? "", /what should i change/i);
   });
 
+  it("opens the form when Change it is typed rather than tapped", () => {
+    // 14 October 2026: typing the button's words brought no form.
+    for (const said of ["change it", "Change it", "edit", "i want to change it", "abeg change am", "can i edit the invoice?", "fix it please"]) {
+      const out = doc("awaiting_confirm", DRAFTED, said, { parsed: parse({ intent: "edit_document" }), correction: null });
+      assert.ok(out.effects.find((e) => e.type === "send_flow"), said);
+    }
+  });
+
+  it("still reads a change that says what, as a correction", () => {
+    const out = doc("awaiting_confirm", DRAFTED, "change it to 400k please", { parsed: parse({ intent: "unknown" }), correction: null });
+    assert.ok(!out.effects.find((e) => e.type === "send_flow"));
+  });
+
   it("carries every field into the form, including the second screen", () => {
     // A value that is not carried is a value the edit silently clears, and
     // somebody who loses their VAT by opening a form to fix a name will never

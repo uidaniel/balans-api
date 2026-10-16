@@ -5,7 +5,7 @@ The Balans backend: the WhatsApp bot, documents, and payments.
 Balans lets Nigerian freelancers and service businesses quote, invoice and get
 paid in one WhatsApp chat. You type one line — *"Invoice Zenith Homes 350k for
 duplex 3D render, due Friday"* — and get back a branded PDF and a payment link.
-When the client pays, the money settles to your own bank account.
+Your client pays straight into your own bank account, and you mark it paid.
 
 The marketing site and invoice pages live in a separate repository.
 
@@ -13,12 +13,16 @@ The marketing site and invoice pages live in a separate repository.
 
 These come from the platform PRD, and everything here is shaped by them.
 
-**1. Balans never holds user money.** Funds move through provider subaccounts
-and splits. Nothing is ever routed through a Balans balance or a transfers API.
+**1. Balans never holds user money.** A naira invoice carries the sender's own
+bank account and the client transfers to it directly. A card payment from
+abroad goes through a Paystack subaccount that settles to that same account.
+Nothing is ever routed through a Balans balance or a transfers API.
 
 **2. The language model never does money maths, and never marks anything paid.**
-It only turns a sentence into structured fields. Deterministic code computes
-every amount, and only a verified payment event changes a payment's status.
+It turns a sentence into structured fields, and the assistant answers
+questions from read-only lookups. Deterministic code computes every amount.
+A payment's status changes only on a verified Paystack event or when the user
+confirms they were paid.
 
 ## Running it
 
@@ -60,14 +64,21 @@ npm run migrate -- --baseline
 ## Layout
 
 ```
-core/         Money rules shared with the web app. See the warning below.
+core/          Money and date rules shared with the web app. See the warning below.
 src/
-  config.ts   Everything that changes without a deploy (PRD section 14)
-  db/         Pool, migration runner, and the schema as plain .sql
-  http/       Fastify server and routes
-  whatsapp/   Cloud API client, inbound envelope parsing
-  conversation/  The state machine (PRD section 5)
-  lib/        Encryption, signature checking
+  config.ts    Everything that changes without a deploy (PRD section 14)
+  db/          Pool, migration runner, and the schema as plain .sql
+  http/        Fastify server: webhooks, the pay page, settings, admin
+  whatsapp/    Cloud API client, templates, Flows (the in-chat forms)
+  conversation/  The state machine (machine.ts, pure) and its effects (handle.ts)
+  parser/      Commands, patterns, then the model, in that order
+  chat/        The assistant for questions; knowledge.ts is what it knows
+  documents/   Invoices, quotes, payment requests, and the pay page
+  pdf/         The 20 invoice designs, rendered with headless Chrome
+  payments/    Paystack: Pro checkout and card payments from abroad
+  billing/     Pro: plans, renewals and their reminders
+  jobs/        Reminders, Pro notices, summaries, health checks
+  email/       Resend: welcome, receipts, client delivery and reminders
 ```
 
 ## `core/` and the web app
@@ -110,13 +121,18 @@ database, `number` in TypeScript, never a float and never a decimal string.
 `core/amount.ts` parses shorthand through `BigInt` for the same reason:
 `1.2 * 1_000_000 * 100` is not exactly `120000000` in floating point.
 
-## Status
+## Checks that cost money
 
-Built: project skeleton, configuration, schema and migrations, WhatsApp webhook
-in and out, conversation state machine.
+Not part of `npm test`, because they call the model. Run them after changing
+the parser, the assistant's instructions or its knowledge:
 
-Not yet: the parser, onboarding side effects, documents and PDFs, payments,
-the fee engine, reminders, reconciliation.
+```bash
+node --env-file=.env.local --experimental-strip-types src/parser/route-eval.ts   # where messages go
+INTL_ENABLED=true node --env-file=.env.local --experimental-strip-types src/chat/eval.ts   # the assistant's answers
+```
 
-The payment provider is Monnify. Anything in here still naming Paystack is
-stale and migrates separately.
+## Deploying
+
+Pushing `main` deploys production; a watcher on the server picks it up about
+a minute later (`deploy/`). New message templates and changed Flows are sent
+to Meta at boot. The admin's Health page shows every dependency.

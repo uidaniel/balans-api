@@ -187,6 +187,7 @@ export async function sendDueReminders(
   const { rows } = await db().query<{
     id: string;
     kind: string;
+    type: string;
     document_id: string;
     user_id: string;
     wa_phone: string;
@@ -203,7 +204,7 @@ export async function sendDueReminders(
     original_amount_minor: number | null;
     plan: string;
   }>(
-    `SELECT r.id, r.kind, d.id AS document_id, d.user_id, u.wa_phone, u.plan,
+    `SELECT r.id, r.kind, d.type, d.id AS document_id, d.user_id, u.wa_phone, u.plan,
             d.number, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token,
             d.subtotal_kobo, d.vat_kobo, d.currency, d.original_amount_minor,
             c.name AS client_name, u.business_name
@@ -284,6 +285,7 @@ export async function sendDueReminders(
           userId: r.user_id,
           phone: r.wa_phone,
           text: promptMessage({
+            type: r.type,
             number: r.number,
             clientName: r.client_name,
             businessName: r.business_name ?? "us",
@@ -298,22 +300,25 @@ export async function sendDueReminders(
           }),
           fallback: how
             ? {
-                template: "client_reminded_v2",
+                template: "client_reminded_doc",
                 params: [
                   r.client_name,
-                  r.number === null ? "" : String(r.number),
+                  `${r.type === "payment_request" ? "payment request" : "invoice"}${r.number === null ? "" : ` ${r.number}`}`,
                   owedAgreed ?? formatNaira(owed),
                   how,
                 ],
-                orElse: {
-                  template: "client_reminded",
-                  params: [
-                    r.client_name,
-                    r.number === null ? "" : String(r.number),
-                    owedAgreed ?? formatNaira(owed),
-                    how,
-                  ],
-                },
+                // Until Meta approves it. Both say "invoice", which is right
+                // for all but a payment request.
+                orElse: [
+                  {
+                    template: "client_reminded_v2",
+                    params: [r.client_name, r.number === null ? "" : String(r.number), owedAgreed ?? formatNaira(owed), how],
+                  },
+                  {
+                    template: "client_reminded",
+                    params: [r.client_name, r.number === null ? "" : String(r.number), owedAgreed ?? formatNaira(owed), how],
+                  },
+                ],
               }
             : {
                 template: "invoice_overdue_prompt",
@@ -369,6 +374,8 @@ export function remindedHow(r: { email: boolean; whatsapp: boolean }): string | 
  * reminder costs a client relationship worth more than the invoice.
  */
 export function promptMessage(x: {
+  /** documents.type: a payment request is called one, not an invoice. */
+  type?: string;
   number: number | null;
   clientName: string;
   businessName: string;
@@ -385,7 +392,8 @@ export function promptMessage(x: {
   /** No reminder comes after this one, so there is nothing to stop. */
   last?: boolean;
 }): string {
-  const which = x.number === null ? "INVOICE" : `INVOICE #${x.number}`;
+  const word = x.type === "payment_request" ? "payment request" : "invoice";
+  const which = x.number === null ? word.toUpperCase() : `${word.toUpperCase()} #${x.number}`;
   const when = formatFriendly(x.due, x.today);
   const owed = x.owedAgreed ?? formatNaira(x.owedKobo);
   /*
@@ -395,8 +403,8 @@ export function promptMessage(x: {
    * message saying the same to the client.
    */
   const stop = x.last
-    ? "That was the last reminder for this invoice."
-    : `Reply ${b(x.number === null ? "stop reminders" : `stop reminders ${x.number}`)} to turn these off for this invoice.`;
+    ? `That was the last reminder for this ${word}.`
+    : `Reply ${b(x.number === null ? "stop reminders" : `stop reminders ${x.number}`)} to turn these off for this ${word}.`;
   const today =
     x.due.y === x.today.y && x.due.m === x.today.m && x.due.d === x.today.d;
 
@@ -438,8 +446,8 @@ export function promptMessage(x: {
 
   const forward = para(
     today
-      ? `Hi ${x.clientName} — a quick note that the invoice${from} for ${owed} is due today.`
-      : `Hi ${x.clientName} — a quick note that the invoice${from} for ${owed} was due ${when}.`,
+      ? `Hi ${x.clientName} — a quick note that the ${word}${from} for ${owed} is due today.`
+      : `Hi ${x.clientName} — a quick note that the ${word}${from} for ${owed} was due ${when}.`,
     x.bank ? payBy(x.link, x.bank) : x.link ? `Pay here: ${x.link}` : "",
     "Thank you.",
   );

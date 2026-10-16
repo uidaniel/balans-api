@@ -82,8 +82,10 @@ export type TemplateName =
   | "client_invoice_updated"
   | "client_quote"
   | "client_reminder"
+  | "client_reminder_doc"
   | "client_reminded"
   | "client_reminded_v2"
+  | "client_reminded_doc"
   | "launch_setup"
   | "pro_ending_pay"
   | "pro_ending_pay_v2"
@@ -404,6 +406,25 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
   },
 
   /*
+   * The same reminder, naming what it is about, so a payment request can be
+   * reminded about on WhatsApp too. The first version said "the invoice",
+   * which is why payment requests only had email (16 October 2026).
+   */
+  client_reminder_doc: {
+    name: "client_reminder_doc",
+    category: "UTILITY",
+    body: "Hello {{1}}, a reminder about the {{2}} from {{3}} for {{4}}, due {{5}}. Tap below to see it and pay.",
+    params: ["client", "what, e.g. invoice or payment request", "business", "amount still owed", "due date, e.g. today or Mon, 28 Sep"],
+    example: ["Tunde", "payment request", "Kemi Studio", "₦200,000", "today"],
+    footer: "Sent with Balans",
+    button: {
+      text: "View and pay",
+      url: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/{{1}}`,
+      example: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/i/1256e3fd1f1fb85572609f61607c3fa6`,
+    },
+  },
+
+  /*
    * Telling the freelancer their client was reminded, outside the window.
    *
    * `invoice_overdue_prompt` asks them to reply and send a reminder
@@ -441,6 +462,19 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
    * transfer straight into the sender's own account, which Balans cannot
    * see, so the promise was one we could not keep (16 October 2026).
    */
+  /*
+   * The same, naming what it was: "about invoice 14" or "about payment
+   * request 3". The versions above put "invoice" in the wording, and said it
+   * of payment requests too (16 October 2026).
+   */
+  client_reminded_doc: {
+    name: "client_reminded_doc",
+    category: "UTILITY",
+    body: "We reminded {{1}} about {{2}} for {{3}}, {{4}}, with the link to pay. When the money reaches your bank account, reply here to mark it paid.",
+    params: ["client", "what, e.g. invoice 14 or payment request 3", "amount", "how, e.g. by email"],
+    example: ["Zenith Homes", "invoice 14", "₦350,000", "by email and on WhatsApp"],
+  },
+
   client_reminded_v2: {
     name: "client_reminded_v2",
     category: "UTILITY",

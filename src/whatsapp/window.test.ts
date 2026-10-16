@@ -25,8 +25,10 @@ describe("the templates we register with Meta", () => {
         "client_quote",
         "client_quote_pdf",
         "client_reminded",
+        "client_reminded_doc",
         "client_reminded_v2",
         "client_reminder",
+        "client_reminder_doc",
         "invoice_overdue_prompt",
         "invoice_viewed",
         "invoice_viewed_v2",
@@ -163,6 +165,13 @@ describe("a reminder Balans sent for them", () => {
     assert.match(out, /Joshua Uwak has been reminded by email/);
     assert.doesNotMatch(out, /Send them this/, "still asking them to forward it");
     assert.doesNotMatch(out, /Hi Joshua Uwak/, "the client's message is still in the freelancer's chat");
+  });
+
+  it("calls a payment request one, in the heading, the stop line and the words to forward", () => {
+    const out = promptMessage({ ...base, type: "payment_request" });
+    assert.match(out, /PAYMENT REQUEST #\d+ IS (LATE|DUE TODAY)/);
+    assert.match(out, /the payment request/);
+    assert.doesNotMatch(out, /invoice/i);
   });
 
   it("names WhatsApp when that is how it went, and both when both did", () => {

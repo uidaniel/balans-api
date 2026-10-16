@@ -175,10 +175,11 @@ export async function whatsappDocumentToClient(
 /**
  * The due-date reminder, to the client's WhatsApp.
  *
- * Pro, like the invoice itself on this channel, and only for an invoice with
- * something still owed. It uses `client_reminder`, which Meta has to approve
- * before it will send; until then this fails, says so, and the reminder
- * still goes by email if there is an address.
+ * Pro, like the invoice itself on this channel, and only for an invoice or
+ * payment request with something still owed. It uses `client_reminder_doc`,
+ * which names which of the two it is; until Meta approves that, an invoice
+ * falls back to `client_reminder`, and a payment request — which that one
+ * would call an invoice — goes by email alone, as it always did.
  */
 export async function whatsappReminderToClient(
   documentId: string,
@@ -187,6 +188,7 @@ export async function whatsappReminderToClient(
 ): Promise<WhatsAppDelivery> {
   const { rows } = await db().query<{
     user_id: string;
+    type: string;
     total_kobo: number;
     amount_paid_kobo: number;
     subtotal_kobo: number;
@@ -198,13 +200,13 @@ export async function whatsappReminderToClient(
     client_phone: string | null;
     business_name: string | null;
   }>(
-    `SELECT d.user_id, d.total_kobo, d.amount_paid_kobo, d.subtotal_kobo, d.vat_kobo, d.currency,
+    `SELECT d.user_id, d.type, d.total_kobo, d.amount_paid_kobo, d.subtotal_kobo, d.vat_kobo, d.currency,
             d.original_amount_minor, d.public_token,
             c.name AS client_name, c.phone AS client_phone, u.business_name
        FROM documents d
        JOIN clients c ON c.id = d.client_id
        JOIN users u   ON u.id = d.user_id
-      WHERE d.id = $1 AND d.type = 'invoice'`,
+      WHERE d.id = $1 AND d.type IN ('invoice', 'payment_request')`,
     [documentId],
   );
 
@@ -218,12 +220,14 @@ export async function whatsappReminderToClient(
   const owed =
     d.currency !== "NGN" && d.amount_paid_kobo === 0 ? amountFor(d) : formatNaira(d.total_kobo - d.amount_paid_kobo);
 
-  const sent = await sendTemplate(
-    d.client_phone,
-    "client_reminder",
-    [firstName(d.client_name), d.business_name ?? "A Balans user", owed, due],
-    { language: TEMPLATE_LANGUAGE, urlSuffix: d.public_token },
-  );
+  const who = firstName(d.client_name);
+  const business = d.business_name ?? "A Balans user";
+  const word = d.type === "payment_request" ? "payment request" : "invoice";
+  const opts = { language: TEMPLATE_LANGUAGE, urlSuffix: d.public_token };
+  let sent = await sendTemplate(d.client_phone, "client_reminder_doc", [who, word, business, owed, due], opts);
+  if (!sent.ok && d.type === "invoice") {
+    sent = await sendTemplate(d.client_phone, "client_reminder", [who, business, owed, due], opts);
+  }
 
   if (!sent.ok) {
     log.error({ documentId, reason: sent.reason }, "could not send the reminder to the client's WhatsApp");

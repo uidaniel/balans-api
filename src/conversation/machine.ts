@@ -2285,6 +2285,18 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
   }
 }
 
+/**
+ * "change it", typed rather than tapped, with nothing said about what.
+ *
+ * Only the button's id opened the form, so typing the words on the button
+ * went to the correction reader, found nothing to correct, and no form came
+ * ("when i say change it, button to open flow is not there", 14 October
+ * 2026). Whole-message only: "change it to 400k" says what, and stays a
+ * correction.
+ */
+const ASKS_TO_CHANGE =
+  /^(?:(?:i\s+)?(?:want|wan|need|would like)\s+(?:to\s+)?|let\s+me\s+|abeg\s+|pls\s+|please\s+|can\s+i\s+)?(?:change|edit|modify|update|fix|correct|adjust)(?:\s+(?:it|this|that|am|something|some things|the\s+(?:invoice|quote|draft|details)))?(?:\s+(?:abeg|please|pls))?\s*[.!?]*$/i;
+
 /** The three answers to "Send it?", by id. Tapped long after the draft has gone. */
 const DRAFT_BUTTONS = new Set(draftButtons().map((b) => b.id));
 
@@ -3059,7 +3071,7 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
    * typed sentence that happens to contain the word "change" still goes to the
    * correction parser where it belongs.
    */
-  if (/^change something$/i.test(text.trim())) {
+  if (/^change something$/i.test(text.trim()) || ASKS_TO_CHANGE.test(text.trim())) {
     /*
      * The form, opened on what is already there.
      *
