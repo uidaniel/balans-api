@@ -6,7 +6,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { renewalOpen, type SubscriptionState } from "./subscription.ts";
-import { proEnded, proEndingSoon, proGraceEnding, proLapsed, proRenewOffer, proWinBack } from "./messages.ts";
+import { onDayWords, proEnded, proEndingSoon, proGraceEnding, proLapsed, proRenewOffer, proWinBack } from "./messages.ts";
 
 const now = new Date("2026-09-28T10:00:00Z");
 const days = (n: number) => new Date(now.getTime() + n * 86_400_000);
@@ -57,5 +57,35 @@ describe("the reminders around the end of a month", () => {
 
   it("never says Pro renews by itself", () => {
     for (const m of all) assert.doesNotMatch(m, /renews on|automatically/i, m);
+  });
+});
+
+describe("when, as somebody reads it", () => {
+  // 16 October 2026, 09:50 in Lagos: the morning the notice said "on 17 October".
+  const morning = new Date("2026-10-16T08:50:00Z");
+
+  it("says tomorrow for tomorrow, and today for today", () => {
+    assert.equal(onDayWords(new Date("2026-10-17T07:00:00Z"), morning), "tomorrow");
+    assert.equal(onDayWords(new Date("2026-10-16T22:00:00Z"), morning), "today");
+  });
+
+  it("goes by the day in Lagos, not the server's", () => {
+    // 23:30 UTC on the 16th is half past midnight on the 17th in Lagos.
+    assert.equal(onDayWords(new Date("2026-10-16T23:30:00Z"), morning), "tomorrow");
+  });
+
+  it("names the date further off", () => {
+    assert.equal(onDayWords(new Date("2026-10-20T10:00:00Z"), morning), "on 20 October");
+  });
+
+  it("says the last day of the grace week is tomorrow", () => {
+    const ended = new Date("2026-10-10T09:00:00Z");
+    const m = proGraceEnding(ended, undefined, morning);
+    assert.match(m, /stop tomorrow/);
+    assert.doesNotMatch(m, /17 October/);
+  });
+
+  it("says Pro ends tomorrow the day before", () => {
+    assert.match(proEndingSoon(new Date("2026-10-17T09:00:00Z"), undefined, morning), /ends tomorrow/);
   });
 });

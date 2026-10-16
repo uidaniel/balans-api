@@ -37,6 +37,13 @@ export type Outbound = {
     params: string[];
     /** The end of the template's link button, for a template that has one. */
     urlSuffix?: string;
+    /**
+     * The version Meta already approved, sent if this one is refused. A
+     * template with new wording is a new template, submitted at boot and
+     * refused at send until Meta approves it; without this, that wait is a
+     * notice that never arrives.
+     */
+    orElse?: { template: TemplateName; params: string[] };
   };
   /**
    * A button under the words that opens a link, inside the window. Words and
@@ -99,26 +106,37 @@ export async function send(msg: Outbound, log: FastifyBaseLogger): Promise<SendO
       return { kind: "failed", reason };
     }
 
-    const res = await sendTemplate(msg.phone, spec.name, msg.fallback.params, {
+    const urlSuffix = msg.fallback.urlSuffix ? { urlSuffix: msg.fallback.urlSuffix } : {};
+    let res = await sendTemplate(msg.phone, spec.name, msg.fallback.params, {
       language: TEMPLATE_LANGUAGE,
-      ...(msg.fallback.urlSuffix ? { urlSuffix: msg.fallback.urlSuffix } : {}),
+      ...urlSuffix,
     });
+    let used = spec;
+    const orElse = msg.fallback.orElse;
+    if (!res.ok && orElse && TEMPLATES[orElse.template].params.length === orElse.params.length) {
+      log.warn(
+        { userId: msg.userId, template: spec.name, reason: res.reason },
+        "template refused; sending the approved version",
+      );
+      used = TEMPLATES[orElse.template];
+      res = await sendTemplate(msg.phone, used.name, orElse.params, { language: TEMPLATE_LANGUAGE, ...urlSuffix });
+    }
 
     const outcome: SendOutcome = res.ok
-      ? { kind: "sent", inWindow: false, template: spec.name }
+      ? { kind: "sent", inWindow: false, template: used.name }
       : { kind: "failed", reason: res.reason };
 
     if (!res.ok) {
       log.error(
-        { userId: msg.userId, template: spec.name, reason: res.reason, code: res.code },
+        { userId: msg.userId, template: used.name, reason: res.reason, code: res.code },
         "template send failed",
       );
     }
 
     await record(msg.userId, outcome, {
       inWindow: false,
-      template: spec.name,
-      category: spec.category,
+      template: used.name,
+      category: used.category,
       waMessageId: res.ok ? res.waMessageId : null,
     });
     return outcome;

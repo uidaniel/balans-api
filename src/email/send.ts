@@ -281,11 +281,11 @@ export function welcomeEmail(opts: {
       "1. Send the job and the amount",
       `   Type something like "${example}". You get back an invoice and a payment link to send your client.`,
       "",
-      "2. Your client pays by bank transfer",
-      "   The link gives them an account for that invoice alone. The money settles to your own bank account; Balans never holds it.",
+      "2. Your client pays straight into your bank account",
+      "   The link shows them your account and the amount. Balans never holds your money.",
       "",
-      "3. You hear the moment it lands",
-      "   We message you on WhatsApp as soon as a payment comes in, with the receipt attached.",
+      "3. Mark it paid, and they get a receipt",
+      "   When the money is in your bank, tell Balans in the chat. Your client gets a receipt.",
       "",
       `You are on the Free plan: ${free} documents a month.`,
       chat ? `Open the chat: ${chat}` : "",
@@ -313,12 +313,14 @@ export function welcomeEmail(opts: {
             text: `Type something like <em>${esc(example)}</em>. You get back an invoice and a payment link to send your client.`,
           },
           {
-            title: "Your client pays by bank transfer",
-            text: "The link gives them an account for that invoice alone. The money settles to your own bank account; Balans never holds it.",
+            title: "Your client pays straight into your bank account",
+            text: "The link shows them your account and the amount. Balans never holds your money.",
           },
           {
-            title: "You hear the moment it lands",
-            text: "We message you on WhatsApp as soon as a payment comes in, with the receipt attached.",
+            // Not "you hear the moment it lands": a transfer into their own
+            // account is one Balans cannot see (16 October 2026).
+            title: "Mark it paid, and they get a receipt",
+            text: "When the money is in your bank, tell Balans in the chat. Your client gets a receipt.",
           },
         ]),
         detailCard([
@@ -389,7 +391,7 @@ export function proEmail(opts: {
     // Card, transfer or USSD, all through the one checkout.
     { label: "Paid through", value: "Paystack" },
   ];
-  const renewal = `We will message you on WhatsApp three days before it ends. Reply settings in the chat to change or cancel it.`;
+  const renewal = `It does not renew by itself, so there is nothing to cancel. We will message you on WhatsApp three days before it ends.`;
   const footer = [
     "",
     "—",

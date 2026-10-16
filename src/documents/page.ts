@@ -576,9 +576,19 @@ export function renderDocument(...args: Parameters<typeof renderDocumentPage>): 
   const doc = args[0];
   if (doc.plan !== "pro") return html;
   // The band across the top wears their colour too: it is the first thing
-  // on the page, and on Pro the page is theirs.
+  // on the page, and on Pro the page is theirs. So does the page behind the
+  // cards, in a pale wash of it, and the panel the account number is copied
+  // from, in a deep shade of it: on our cream and our ink, a purple brand's
+  // page still read as Balans green (16 October 2026).
   const k = brandTokens(doc.brandColor);
-  const band = k ? html.replace("</head>", `<style>.band{background:${k.c}}</style></head>`) : html;
+  const band = k
+    ? html.replace(
+        "</head>",
+        `<style>.band{background:${k.c}}body{background:${k.page}}` +
+          `.tcard{background:${k.night}}.tbox{background:${k.night2}}` +
+          `.note,.side .banner:not(.paid),.side .trybalans,.mrows,.pay.own .own-details{background:${k.page}}</style></head>`,
+      )
+    : html;
   return applyBrand(band, doc.brandColor);
 }
 

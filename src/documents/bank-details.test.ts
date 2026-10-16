@@ -58,6 +58,27 @@ describe("the page a naira invoice's link opens", () => {
   });
 });
 
+describe("the page in the sender's brand colour", () => {
+  const today = { y: 2026, m: 9, d: 25 };
+  const branded = renderDocument(doc({ brandColor: "#5B4BA5" }), today, { token: "a".repeat(32) });
+
+  it("puts a pale wash of it behind the cards, and a deep shade of it under the account", () => {
+    // 16 October 2026: a purple brand's page was still cream, with the
+    // account number on Balans green.
+    assert.match(branded, /body\{background:#EFEDF6\}/);
+    assert.match(branded, /\.tcard\{background:#262045\}/);
+  });
+
+  it("leaves a page with no brand colour, and a Free one, in ours", () => {
+    for (const html of [
+      renderDocument(doc(), today, { token: "a".repeat(32) }),
+      renderDocument(doc({ brandColor: "#5B4BA5", plan: "free" }), today, { token: "a".repeat(32) }),
+    ]) {
+      assert.doesNotMatch(html, /\.tcard\{background:#/);
+    }
+  });
+});
+
 describe("the messages", () => {
   it("keeps the link, and says what it opens", () => {
     assert.match(payBy("https://payment.balans.ng/i/abc", bank), /account to pay into:\nhttps:\/\/payment\.balans\.ng\/i\/abc/);

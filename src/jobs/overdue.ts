@@ -35,7 +35,7 @@ import {
   releaseProReminder,
   type ProStage,
 } from "../billing/subscription.ts";
-import { proEnded, proEndingSoon, proGraceEnding, proLapsed, proWinBack } from "../billing/messages.ts";
+import { onDayWords, proEnded, proEndingSoon, proGraceEnding, proLapsed, proWinBack } from "../billing/messages.ts";
 import { proStartToken, proStartUrl } from "../billing/pro-link.ts";
 import type { TemplateName } from "../whatsapp/window.ts";
 import { payBy } from "../documents/summary.ts";
@@ -298,13 +298,22 @@ export async function sendDueReminders(
           }),
           fallback: how
             ? {
-                template: "client_reminded",
+                template: "client_reminded_v2",
                 params: [
                   r.client_name,
                   r.number === null ? "" : String(r.number),
                   owedAgreed ?? formatNaira(owed),
                   how,
                 ],
+                orElse: {
+                  template: "client_reminded",
+                  params: [
+                    r.client_name,
+                    r.number === null ? "" : String(r.number),
+                    owedAgreed ?? formatNaira(owed),
+                    how,
+                  ],
+                },
               }
             : {
                 template: "invoice_overdue_prompt",
@@ -474,12 +483,19 @@ async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<nu
     const p = await proPriceForPhone(r.waPhone, log);
     const price = p.label;
     const free = String(defaults.plans.free.documentsPerMonth);
-    const words: { text: string; label: string; template: TemplateName; params: string[] } = {
+    const words: {
+      text: string;
+      label: string;
+      template: TemplateName;
+      params: string[];
+      orElse?: { template: TemplateName; params: string[] };
+    } = {
       ending_soon: {
         text: proEndingSoon(r.expiresAt, p),
         label: "Renew Pro",
-        template: "pro_ending_pay" as TemplateName,
-        params: [dayOf(r.expiresAt), price],
+        template: "pro_ending_pay_v2" as TemplateName,
+        params: [onDayWords(r.expiresAt), price],
+        orElse: { template: "pro_ending_pay" as TemplateName, params: [dayOf(r.expiresAt), price] },
       },
       ended: {
         text: proEnded(r.expiresAt, p),
@@ -490,8 +506,9 @@ async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<nu
       grace_ending: {
         text: proGraceEnding(r.expiresAt, p),
         label: "Keep Pro",
-        template: "pro_last_day_pay" as TemplateName,
-        params: [dayOf(graceEnds), price],
+        template: "pro_last_day_pay_v2" as TemplateName,
+        params: [onDayWords(graceEnds), price],
+        orElse: { template: "pro_last_day_pay" as TemplateName, params: [dayOf(graceEnds), price] },
       },
       lapsed: { text: proLapsed(p), label: "Get Pro back", template: "pro_free_pay" as TemplateName, params: [free, price] },
       win_back: { text: proWinBack(p), label: "Get Pro back", template: "pro_free_pay" as TemplateName, params: [free, price] },
@@ -505,7 +522,12 @@ async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<nu
         phone: r.waPhone,
         text: words.text,
         cta: { label: words.label, url: proStartUrl(r.userId) },
-        fallback: { template: words.template, params: words.params, urlSuffix: proStartToken(r.userId) },
+        fallback: {
+          template: words.template,
+          params: words.params,
+          urlSuffix: proStartToken(r.userId),
+          ...(words.orElse ? { orElse: words.orElse } : {}),
+        },
       },
       log,
     );

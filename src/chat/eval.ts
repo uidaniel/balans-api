@@ -83,6 +83,14 @@ const ACCOUNT = {
   invoice_design: "Classic", default_due_days: 7, member_since: "Tue, 1 Sep",
 };
 
+/** On Pro, a week past the end of the month: the last day of the grace week is tomorrow. */
+const IN_GRACE = {
+  ...ACCOUNT, plan: "pro", monthly_limit: "unlimited", documents_left_this_month: "unlimited", logo: true,
+  pro_paid_until: "Wed, 7 Oct, already passed", in_grace_week: true,
+  pro_features_stop: "Thu, 15 Oct (tomorrow), unless they renew. Then the account moves to Free.",
+};
+let account: Record<string, unknown> = ACCOUNT;
+
 function fixture(name: string, input: Record<string, unknown>): unknown {
   const show = ({ kind: _k, owed: _o, late: _l, lines: _li, payment_plan: _p, payments_received: _r, reminders_sent: _s, ...row }: Doc) => row;
   switch (name) {
@@ -112,7 +120,7 @@ function fixture(name: string, input: Record<string, unknown>): unknown {
       return SUMMARIES[key];
     }
     case "get_account":
-      return ACCOUNT;
+      return account;
     default:
       return { error: "no such tool" };
   }
@@ -137,6 +145,8 @@ type Case = {
   /** A list was asked for, so length is fine. */
   long?: boolean;
   maxChars?: number;
+  /** The account as this question sees it, when it is not the usual one. */
+  account?: Record<string, unknown>;
 };
 
 const DID_SOMETHING = /\b(I(?:'ve| have)? (?:sent|resent|reminded|marked|cancelled|deleted|updated|changed|upgraded|converted)|(?<!nothing |not |n't )(?:has|have) been (?:sent|reminded|marked|cancelled|deleted|updated|upgraded))\b/i;
@@ -195,6 +205,15 @@ const CASES: Case[] = [
   { q: "thanks boss, you too much", noTools: true, mustNot: [/I only help/i] },
   { long: true, q: "what can you do for me", button: ["/invoice", "who owes me", "summary"] },
   { long: true, q: "e be like say na only free plan I dey use, wetin I go gain if I pay", must: [/Pro/, /logo|unlimited|design/i] },
+  // 16 October 2026: "USD or GBP" when there are nine; "1 to 2 business days".
+  { long: true, q: "which currencies can I invoice in?", must: [/euro|EUR/i, /Canadian|CAD/i, /cedi|GHS/i, /rand|ZAR/i, /dirham|AED/i] },
+  { long: true, q: "how long does it take for international payments to arrive in my bank account and what currencies can i be paid in???", must: [/24.{0,3}48/, /euro|EUR/i] },
+  { q: "can my client in the UK pay me through paypal?", must: [/details|PayPal/i], mustNot: [/not yet|can't|cannot/i] },
+  // "I don't have a reliable answer" about a logo on links already sent.
+  { q: "i wanna change my brand and add my logo would that reflect on my payment link immediately that already has been created?", must: [/yes|will show|shows/i], mustNot: [/reliable answer|hello@balans\.ng/i] },
+  // The end of the month given as the day Pro stopped, with a week to go.
+  { q: "when does my pro end", account: IN_GRACE, must: [/tomorrow/i] },
+  { q: "i'm not paying the balans pro plan", account: IN_GRACE, must: [/tomorrow|15 Oct/i], mustNot: [/ending Wed, 7 Oct/i] },
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -220,6 +239,8 @@ let before: string[] = [];
 const failures: string[] = [];
 
 for (const c of CASES) {
+  account = c.account ?? ACCOUNT;
+  const snap = { ...SNAPSHOT, account };
   const seen: string[] = [];
   const tools: string[] = [];
   const started = Date.now();
@@ -234,9 +255,9 @@ for (const c of CASES) {
         return r;
       },
       usedToday: async () => 0,
-      plan: async () => "free",
+      plan: async () => (account.plan === "pro" ? "pro" : "free"),
       record: async () => undefined,
-      snapshot: async () => (c.failLookups ? null : SNAPSHOT),
+      snapshot: async () => (c.failLookups ? null : snap),
     },
   );
   const ms = Date.now() - started;
@@ -252,7 +273,7 @@ for (const c of CASES) {
     // to one question should not.
     if (!c.long && out.reply.length > (c.maxChars ?? 300)) problems.push(`too long (${out.reply.length} characters)`);
     memory = out.memory;
-    const lookedUp = [JSON.stringify(SNAPSHOT), ...seen, ...(c.followUp ? followed : [])].join(" ");
+    const lookedUp = [JSON.stringify(snap), ...seen, ...(c.followUp ? followed : [])].join(" ");
     for (const m of out.reply.match(MONEY) ?? []) if (!lookedUp.includes(m) && !KNOWN.includes(m)) problems.push(`made-up amount ${m}`);
     for (const d of out.reply.match(DATE) ?? []) if (!lookedUp.includes(d)) problems.push(`made-up date ${d}`);
     if (/\b(he|she|him|her|his|hers)\b/i.test(out.reply)) problems.push("guessed a gender");

@@ -68,6 +68,7 @@ export async function windowFor(userId: string, now = Date.now()): Promise<Windo
 export type TemplateName =
   | "payment_received"
   | "invoice_viewed"
+  | "invoice_viewed_v2"
   | "invoice_overdue_prompt"
   | "monthly_summary_ready"
   | "pro_renewal"
@@ -82,10 +83,13 @@ export type TemplateName =
   | "client_quote"
   | "client_reminder"
   | "client_reminded"
+  | "client_reminded_v2"
   | "launch_setup"
   | "pro_ending_pay"
+  | "pro_ending_pay_v2"
   | "pro_ended_pay"
   | "pro_last_day_pay"
+  | "pro_last_day_pay_v2"
   | "pro_free_pay";
 
 export type TemplateSpec = {
@@ -135,6 +139,19 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
     name: "invoice_viewed",
     category: "UTILITY",
     body: "Good news: {{1}} has opened Invoice {{2}}. Nothing to do — we will tell you the moment it is paid.",
+    params: ["client", "invoice number"],
+    example: ["Zenith Homes", "14"],
+  },
+
+  /*
+   * Without "we will tell you the moment it is paid", for the reason given at
+   * client_reminded_v2: a transfer into the sender's own account is one
+   * Balans cannot see (16 October 2026). Send this one, not the first.
+   */
+  invoice_viewed_v2: {
+    name: "invoice_viewed_v2",
+    category: "UTILITY",
+    body: "Good news: {{1}} has opened Invoice {{2}}. When the money reaches your bank account, reply here to mark it paid.",
     params: ["client", "invoice number"],
     example: ["Zenith Homes", "14"],
   },
@@ -202,6 +219,31 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
     params: ["date", "price"],
     example: ["1 October", "₦3,000"],
     button: { text: "Renew Pro", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
+  },
+
+  /*
+   * The two below say when as somebody reads it: "tomorrow", or "on 17
+   * October" further off. The first versions put a bare date after "on", and
+   * a notice sent on the 16th said Pro stopped "on 17 October" (16 October
+   * 2026). Approved wording cannot change, so these are new templates; until
+   * Meta approves them the first versions still go (`orElse` in outbound.ts).
+   */
+  pro_ending_pay_v2: {
+    name: "pro_ending_pay_v2",
+    category: "UTILITY",
+    body: "Your Balans Pro ends {{1}}. It does not renew by itself. Tap below to pay {{2}} for another month, starting when this one ends.",
+    params: ["when, e.g. tomorrow or on 1 October", "price"],
+    example: ["tomorrow", "₦3,000"],
+    button: { text: "Renew Pro", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
+  },
+
+  pro_last_day_pay_v2: {
+    name: "pro_last_day_pay_v2",
+    category: "UTILITY",
+    body: "Your Balans Pro features stop {{1}}, and your account moves to the Free plan. Tap below to keep Pro for {{2}} a month.",
+    params: ["when, e.g. tomorrow or on 5 October", "price"],
+    example: ["tomorrow", "₦3,000"],
+    button: { text: "Keep Pro", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
   },
 
   pro_ended_pay: {
@@ -390,6 +432,19 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
     name: "client_reminded",
     category: "UTILITY",
     body: "We reminded {{1}} about invoice {{2}} for {{3}}, {{4}}. Nothing for you to do. We will tell you the moment it is paid.",
+    params: ["client", "invoice number", "amount", "how, e.g. by email"],
+    example: ["Zenith Homes", "14", "₦350,000", "by email and on WhatsApp"],
+  },
+
+  /*
+   * Without "we will tell you the moment it is paid". Most clients pay by
+   * transfer straight into the sender's own account, which Balans cannot
+   * see, so the promise was one we could not keep (16 October 2026).
+   */
+  client_reminded_v2: {
+    name: "client_reminded_v2",
+    category: "UTILITY",
+    body: "We reminded {{1}} about invoice {{2}} for {{3}}, {{4}}, with the link to pay. When the money reaches your bank account, reply here to mark it paid.",
     params: ["client", "invoice number", "amount", "how, e.g. by email"],
     example: ["Zenith Homes", "14", "₦350,000", "by email and on WhatsApp"],
   },

@@ -12,12 +12,19 @@
  * Questions about their own records are answered by looking them up, not by
  * a command.
  *
+ * Corrected again on 16 October 2026: it said invoices abroad were "USD or
+ * GBP" (there are nine currencies), gave the end of a Pro month as the day
+ * Pro stopped (there is a grace week), and could not say whether a new logo
+ * reaches links already sent (it does, on the page).
+ *
  * Kept as plain text in the system prompt, which is cached, so its length
  * costs almost nothing per answer. Change it here, then run src/chat/eval.ts.
  */
 
 import { defaults, env } from "../config.ts";
 import { formatNaira } from "../../core/totals.ts";
+import { FOREIGN, INFO, formatMoney } from "../../core/currency.ts";
+import { GRACE_DAYS } from "../billing/subscription.ts";
 
 export function knowledge(): string {
   const free = defaults.plans.free;
@@ -26,22 +33,29 @@ export function knowledge(): string {
   const year = formatNaira(pro.yearPriceKobo);
   const saving = formatNaira(pro.priceKobo * 12 - pro.yearPriceKobo);
   const abroad = env.INTL_ENABLED;
+  const intl = defaults.international;
+  // From the code's own lists, so a currency added there is one the
+  // assistant knows about: it said "USD or GBP" when there were nine.
+  const currencies = FOREIGN.map((c) => `${INFO[c].many} (${c})`).join(", ").replace(/, ([^,]*)$/, " and $1");
+  const caps = FOREIGN.map((c) => formatMoney(intl.invoiceCapMinor[c], c)).join(", ");
+  const fee = `${intl.feePercentBps / 100}% plus ${formatNaira(intl.feeFlatKobo)}`;
 
   return `## About Balans
 Q: What is Balans? A: A WhatsApp invoicing tool for Nigerian freelancers and small businesses. Type an invoice the way you'd say it, in English, Pidgin or shorthand, and get a proper invoice back. You approve a draft before anything is sent.
 Q: Who made Balans? A: Balans is a product of MOTX Studios.
 Q: Is Balans a bank? A: No. Balans sends invoices and tracks payments. It never holds money and is not a bank.
-Q: Does it work outside Nigeria? A: It is built for freelancers in Nigeria. Clients can be anywhere.${abroad ? " On Pro, clients abroad can pay by card." : ""}
+Q: Does it work outside Nigeria? A: It is built for freelancers in Nigeria. Clients can be anywhere.${abroad ? " On Pro you can invoice clients abroad in their own currency." : ""}
 Q: Is there a web or app version? A: Not yet. Balans works on WhatsApp. A web dashboard is planned.
 Q: Can I talk to a real person? A: Yes: hello@balans.ng. We reply every day, within 24 hours.
 
 ## Plans and pricing
 Q: How much does it cost? A: Free gives you ${free.documentsPerMonth} invoices or quotes a month. Pro is ${month} a month, or ${year} a year, which saves ${saving}.
 Q: What happens when I hit the Free limit? A: You're told when you reach it. Upgrade to Pro for unlimited, or wait until the 1st of next month, when the count resets.
-Q: What's in Pro? A: Unlimited invoices and quotes, your own logo, all 20 invoice designs (Free has 2), reminders sent to your client by email and WhatsApp on the due date and 3 and 7 days late, the invoice sent to your client on WhatsApp${abroad ? ", and invoices in US dollars and pounds for clients abroad" : ""}.
+Q: What's in Pro? A: Unlimited invoices and quotes, your own logo, all 20 invoice designs (Free has 2), reminders sent to your client by email and WhatsApp on the due date and 3 and 7 days late, the invoice sent to your client on WhatsApp${abroad ? `, and invoices in ${FOREIGN.length} foreign currencies for clients abroad` : ""}.
 Q: Does Free have reminders? A: On Free, Balans reminds you on the due date and gives you a message to forward. Reminders sent to your client directly are Pro.
 Q: How do I pay for Pro? A: Send "upgrade" (or /pro) and pay through Paystack: card, bank transfer and the other methods Paystack offers. Choose monthly or yearly there.
 Q: Does Pro renew automatically? A: No. You're reminded before it ends, and you pay again to keep it. Nothing is charged automatically.
+Q: When does my Pro end? A: Look it up. When a Pro month runs out, every Pro feature carries on for a ${GRACE_DAYS}-day grace week, and the account moves to Free after that. Give the day Pro features stop, not only the day the month ended.
 Q: Can I cancel Pro? A: There is nothing to cancel. Pro ends when the period you paid for runs out.
 Q: What happens when Pro ends? A: You go back to Free: ${free.documentsPerMonth} a month, and the client reminders, logo and Pro designs stop. Your invoices and history stay.
 Q: Can I switch to yearly? A: Send "upgrade" and choose yearly. Questions about credit for a monthly plan already paid: hello@balans.ng.
@@ -75,12 +89,13 @@ Q: Discounts or late fees? A: Not supported.
 Q: What if I don't give a due date? A: Your default days to pay are used (7 unless you changed it in settings). Say "no due date" for none; an invoice with no due date gets no reminders.
 Q: Can I add notes? A: Yes, in the form's notes box.
 Q: Can I take a deposit or split the payment? A: Yes: a deposit (a percent or an amount) and the balance, or 2 to 4 equal instalments. Choose Payment plan in the form, or say "50% deposit" or "3 instalments".
-Q: Can I invoice in dollars or pounds? A: ${abroad ? "On Pro, yes. Clients abroad pay by card in USD or GBP, and the money lands in your bank account in naira." : "Not yet. Invoices are in naira."}
-Q: Other currencies, like euros or cedis? A: Not yet.
+Q: Which currencies can I invoice in? A: ${abroad ? `Naira on every plan. On Pro, also ${currencies}. Just write the amount with its sign or name, like "Invoice Acme $500 for logo design", or pick the currency in the invoice form.` : "Naira only, for now."}
+${abroad ? `Q: How does a client abroad pay? A: Two ways, your choice. (1) A card payment link: the client pays by card, Paystack charges the naira equivalent at the rate locked when the invoice was sent, and the money lands in your bank account in naira. (2) Your own payment details (PayPal, Wise, a domiciliary account): the client pays you directly in their currency, and you mark the invoice paid when it arrives. Set your details and which one is the default in settings, or say "pay by my details" when you make the invoice.\n` : ""}Q: Other currencies, like yen or CFA? A: Not yet. ${abroad ? "Only the ones listed." : "Naira only, for now."}
 Q: Recurring invoices? A: Not yet. They're on the roadmap.
 Q: How does the invoice reach my client? A: When you tap Send, you get the invoice and its link to share. If you gave the client's email, Balans emails it to them on every plan. On Pro, Balans can also send it to their WhatsApp.
 Q: Can I choose a design? A: Yes. Send "designs" to see all 20. Two are on Free; the rest are Pro. You can also pick one in the invoice form.
 Q: Can I add my logo? A: On Pro: send the image here and confirm it.
+Q: If I change my logo, business name or brand colour, do links already sent change? A: Yes. The payment page always shows your current logo, name and colour (on Pro), so links already sent show the new ones when opened again. A PDF already made keeps the old logo.
 Q: Can I add my signature? A: Yes, on every plan. Send "signature".
 Q: Can I change the next invoice number? A: Yes, in settings. Numbers then go up in order from there.
 
@@ -101,14 +116,14 @@ Q: Can I change a sent quote? A: Not by command yet. Send a new quote, and let y
 
 ## Payments
 Q: How do I get paid? A: Your client pays by transfer straight into your bank account. Balans never holds your money.
-Q: How long until the money lands? A: Naira payments go straight from your client to your bank account, so it depends on when they pay.${abroad ? " Card payments from abroad usually settle to your bank account within 1 to 2 business days." : ""}
+Q: How long until the money lands? A: Naira payments go straight from your client to your bank account, so it depends on when they pay.${abroad ? ` A card payment from abroad: ${intl.settlementText.replace(/^Usually/, "usually")} Paid to your own details (PayPal, Wise): as fast as that service pays.` : ""}
 Q: Does Balans know when my client has paid? A: Not for transfers into your bank account. Check your bank app, then send "mark invoice 12 paid" (or "Kemi paid invoice 12") and confirm. Your client gets a receipt.
 Q: My client says they paid but I don't see it. A: Check your bank app. If it's there, mark it paid. If not, ask your client for their transfer reference.
 Q: I marked it paid by mistake. A: Email hello@balans.ng and we'll help.
 Q: Cash, cheque, POS or USSD? A: Balans doesn't process those, but you can take payment however you like and mark the invoice paid yourself.
 Q: Can my client pay by card? A: Naira invoices are paid by bank transfer.${abroad ? " Clients abroad pay by card on Pro." : ""}
-Q: Which countries can I receive money from? A: Clients in Nigeria pay by bank transfer in naira.${abroad ? " On Pro, clients abroad can pay by card in USD or GBP, if Paystack accepts their card." : ""} For a specific country, email hello@balans.ng.
-${abroad ? `Q: International limits and fees? A: Up to $1,000 an invoice and $2,000 a day. Paystack charges 3.9% plus ₦100 per card payment; Balans adds nothing on Pro.\n` : ""}Q: Does Balans take a cut? A: No fee on naira invoices paid by transfer to your bank account.
+Q: Which countries can I receive money from? A: Clients in Nigeria pay by bank transfer in naira.${abroad ? " On Pro, a client in any country can pay a card link, as long as Paystack accepts their card, or pay your own details directly." : ""} For a specific country, email hello@balans.ng.
+${abroad ? `Q: International limits and fees? A: Card links: up to about $1,000 an invoice (exactly: ${caps}), and twice that a day in each currency. Paystack charges ${fee} per card payment; Balans adds nothing on Pro. You can pass the fee to your client in the invoice form. Payments to your own details have no Balans limit or fee.\n` : ""}Q: Does Balans take a cut? A: No fee on naira invoices paid by transfer to your bank account.
 Q: Who pays the transfer fee? A: Your client pays their own bank's fee.
 Q: Crypto, or dollars into a dollar account? A: No.
 

@@ -411,6 +411,16 @@ export function formatDayMonth(c: Civil, today?: Civil): string {
 }
 
 /**
+ * "today", "tomorrow" or "yesterday" for a date that close, and null for any
+ * other. A deadline a day away reads as "tomorrow": "your Pro stops on 17
+ * October", sent on the 16th, made somebody work out that it meant tomorrow.
+ */
+export function nearDay(c: Civil, today: Civil): "today" | "tomorrow" | "yesterday" | null {
+  const n = Math.round(compare(c, today) / DAY_MS);
+  return n === 0 ? "today" : n === 1 ? "tomorrow" : n === -1 ? "yesterday" : null;
+}
+
+/**
  * The 1st of next month, which is when anything counted per month comes back.
  *
  * Through `addMonths`, so December rolls into the next year rather than

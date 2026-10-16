@@ -78,6 +78,23 @@ export function tint(hex: string, amount: number): string {
   return toHex(r + (255 - r) * amount, g + (255 - g) * amount, b + (255 - b) * amount);
 }
 
+/**
+ * The colour, darkened until light text reads on it as on our ink (9:1):
+ * the panel a client copies the account number from, in their colour.
+ * Mixed toward black rather than greyed, so a purple stays a purple.
+ */
+export function night(hex: string): string {
+  let [r, g, b] = rgb(hex).map((v) => v * 0.42) as [number, number, number];
+  let out = toHex(r, g, b);
+  for (let i = 0; i < 20 && contrast(out, WHITE) < 9; i++) {
+    r *= 0.88;
+    g *= 0.88;
+    b *= 0.88;
+    out = toHex(r, g, b);
+  }
+  return out;
+}
+
 /** Everything a layout needs to wear a brand colour. */
 export type BrandTokens = {
   /** The colour itself, for fills and rules. */
@@ -88,11 +105,19 @@ export type BrandTokens = {
   deep: string;
   /** A pale wash of it, for a large area behind ink text. */
   wash: string;
+  /** Paler still, for a whole page behind white cards. */
+  page: string;
+  /** A deep shade of it, in place of our ink under light text. */
+  night: string;
+  /** A step lighter than `night`, for a box inside it. */
+  night2: string;
 };
 
 export function brandTokens(hex: string | null | undefined): BrandTokens | null {
   const c = normaliseHex(hex);
-  return c ? { c, on: onColour(c), deep: deepen(c), wash: tint(c, 0.86) } : null;
+  if (!c) return null;
+  const dark = night(c);
+  return { c, on: onColour(c), deep: deepen(c), wash: tint(c, 0.86), page: tint(c, 0.9), night: dark, night2: tint(dark, 0.07) };
 }
 
 /**

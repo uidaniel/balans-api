@@ -15,11 +15,12 @@
  */
 
 import { db } from "../db/pool.ts";
-import { formatFriendly, formatISO, type Civil } from "../../core/dates.ts";
+import { formatFriendly, formatISO, nearDay, todayIn, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { readPeriod } from "../../core/period.ts";
 import { documentsThisMonth, planOf, summarise } from "../documents/queries.ts";
 import { defaults } from "../config.ts";
+import { GRACE_DAYS } from "../billing/subscription.ts";
 import { TEMPLATES } from "../pdf/templates.ts";
 
 export type ToolSpec = {
@@ -80,7 +81,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     name: "get_account",
     description:
-      "The user's own account: business name, plan and when it renews, how many documents they have used this month, payout bank, email, logo, signature, invoice design and default due days.",
+      "The user's own account: business name, plan and when Pro ends (grace week included), how many documents they have used this month, payout bank, email, logo, signature, invoice design and default due days.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ];
@@ -130,9 +131,21 @@ const money = (kobo: number | string | null | undefined): string => formatNaira(
 /**
  * Dates written out, weekday and all, so the model never works one out: asked
  * for the weekday of 7 October 2026 it said Monday, and it was a Wednesday.
+ * And "today", "tomorrow" or "yesterday" written in, so a deadline a day away
+ * is said that way: "Sat, 17 Oct (tomorrow)".
+ *
+ * A moment is read in Lagos. A DATE column arrives as midnight on the server,
+ * which is already the day it names.
  */
-const when = (today: Civil) => (d: Date | null): string | null =>
-  d ? formatFriendly({ y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() }, today) : null;
+const when = (today: Civil) => (d: Date | null): string | null => {
+  if (!d) return null;
+  const dateOnly = d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0;
+  const c = dateOnly
+    ? { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() }
+    : todayIn(defaults.behaviour.timezone, d);
+  const near = nearDay(c, today);
+  return `${formatFriendly(c, today)}${near ? ` (${near})` : ""}`;
+};
 
 const WHICH: Record<string, string> = {
   owed: `d.type IN ('invoice', 'payment_request') AND d.status IN ('sent', 'viewed', 'overdue', 'part_paid') AND d.total_kobo > d.amount_paid_kobo`,
@@ -326,7 +339,7 @@ async function getAccount(userId: string, today: Civil) {
   return {
     business_name: u.business_name,
     plan,
-    ...(plan === "pro" && u.plan_expires_at ? { pro_renews_or_ends: day(u.plan_expires_at) } : {}),
+    ...proDates(plan, u.plan_expires_at, day),
     documents_this_month: used,
     monthly_limit: limit ?? "unlimited",
     // Worked out here: asked how many were left, the model said "2 of 3"
@@ -340,6 +353,29 @@ async function getAccount(userId: string, today: Civil) {
     invoice_design: TEMPLATES.find((t) => t.id === u.template_id)?.name ?? "Classic",
     default_due_days: u.default_due_days,
     member_since: day(u.created_at),
+  };
+}
+
+/**
+ * When Pro ends, grace week included.
+ *
+ * A Pro month that has run out keeps every Pro feature for a week more. The
+ * assistant was given only the month's end, and told somebody whose Pro
+ * features ran to 17 October that Pro ended on 10 October (16 October 2026).
+ */
+function proDates(plan: string, expires: Date | null, day: (d: Date | null) => string | null) {
+  if (plan !== "pro" || !expires) return {};
+  const graceEnds = new Date(expires.getTime() + GRACE_DAYS * 86_400_000);
+  if (Date.now() <= expires.getTime()) {
+    return {
+      pro_paid_until: day(expires),
+      if_not_renewed: `Pro features carry on for a ${GRACE_DAYS}-day grace week, until ${day(graceEnds)}, then the account moves to Free.`,
+    };
+  }
+  return {
+    pro_paid_until: `${day(expires)}, already passed`,
+    in_grace_week: true,
+    pro_features_stop: `${day(graceEnds)}, unless they renew. Then the account moves to Free.`,
   };
 }
 

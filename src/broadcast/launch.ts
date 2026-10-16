@@ -60,7 +60,7 @@ export const LAUNCH = {
       },
       {
         title: "Get paid straight to your bank",
-        text: "Your client pays into your own account, and you hear about it on WhatsApp the moment it lands.",
+        text: "Your client pays into your own account. Mark it paid in the chat and they get a receipt.",
       },
     ],
     button: "Set me up on WhatsApp",

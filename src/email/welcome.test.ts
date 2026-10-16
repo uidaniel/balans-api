@@ -39,7 +39,7 @@ describe("the welcome email", () => {
 
   it("says the money is never ours to hold, in both parts", () => {
     const m = welcomeEmail(base);
-    assert.match(m.html!, /Balans never holds it/);
-    assert.match(m.text, /Balans never holds it/);
+    assert.match(m.html!, /Balans never holds your money/);
+    assert.match(m.text, /Balans never holds your money/);
   });
 });

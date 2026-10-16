@@ -4,7 +4,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { applyBrand, contrast, deepen, normaliseHex, onColour } from "./colour.ts";
+import { applyBrand, contrast, deepen, night, normaliseHex, onColour } from "./colour.ts";
 
 describe("brand colour", () => {
   it("takes the ways people write a colour, and refuses the rest", () => {
@@ -25,6 +25,14 @@ describe("brand colour", () => {
     const d = deepen("#FFE600");
     assert.ok(contrast(d, "#FFFFFF") >= 3, d);
     assert.equal(deepen("#0B1F4B"), "#0B1F4B", "a dark colour is left alone");
+  });
+
+  it("deepens any colour until light text reads on it, keeping its hue", () => {
+    for (const c of ["#5B4BA5", "#F5B82E", "#FFE600", "#F0F0F0", "#22C55E"]) {
+      assert.ok(contrast(night(c), "#FFFFFF") >= 9, `${c} → ${night(c)}`);
+    }
+    const [r, , b] = [1, 3, 5].map((i) => parseInt(night("#5B4BA5").slice(i, i + 2), 16)) as [number, number, number];
+    assert.ok(b > r, "a purple stays a purple");
   });
 
   it("swaps marigold for the brand, in any case, and nothing else", () => {

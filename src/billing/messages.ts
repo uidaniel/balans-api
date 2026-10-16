@@ -7,6 +7,7 @@
  */
 
 import { formatNaira } from "../../core/totals.ts";
+import { nearDay, todayIn } from "../../core/dates.ts";
 import { defaults, env } from "../config.ts";
 import { availableTo } from "../pdf/templates.ts";
 import { b, i, lines, para } from "../whatsapp/format.ts";
@@ -170,10 +171,23 @@ const day = (d: Date) =>
 
 const graceEnd = (end: Date) => new Date(end.getTime() + GRACE_DAYS * 86_400_000);
 
+/**
+ * When, as somebody reads it: "tomorrow", "today", or "on 17 October" further
+ * off. A notice sent on the 16th that said Pro stopped "on 17 October" made
+ * them work out that it meant tomorrow (16 October 2026).
+ */
+export function onDayWords(d: Date, now = new Date()): string {
+  const tz = defaults.behaviour.timezone;
+  return nearDay(todayIn(tz, d), todayIn(tz, now)) ?? `on ${day(d)}`;
+}
+
+/** The same after "until": "until tomorrow", "until 17 October". */
+const untilWords = (d: Date, now = new Date()): string => onDayWords(d, now).replace(/^on /, "");
+
 /** Three days before. It does not renew by itself, so this says how to. */
-export function proEndingSoon(end: Date, price: ProPrice = NAIRA_PRICE): string {
+export function proEndingSoon(end: Date, price: ProPrice = NAIRA_PRICE, now = new Date()): string {
   return para(
-    `⭐ ${b(`Your Balans Pro ends on ${day(end)}.`)}`,
+    `⭐ ${b(`Your Balans Pro ends ${onDayWords(end, now)}.`)}`,
     lines(
       "It does not renew by itself.",
       `Tap below to pay ${price.label} for another month. It starts when this one ends, so renewing early costs you nothing.`,
@@ -182,22 +196,22 @@ export function proEndingSoon(end: Date, price: ProPrice = NAIRA_PRICE): string 
 }
 
 /** The day it ends. The grace week has started. */
-export function proEnded(end: Date, price: ProPrice = NAIRA_PRICE): string {
+export function proEnded(end: Date, price: ProPrice = NAIRA_PRICE, now = new Date()): string {
   return para(
     `⏳ ${b("Your Balans Pro ended today.")}`,
     lines(
-      `You keep every Pro feature until ${day(graceEnd(end))}.`,
+      `You keep every Pro feature until ${untilWords(graceEnd(end), now)}.`,
       `Tap below to renew for ${price.label} a month.`,
     ),
   );
 }
 
 /** The last day of the grace week. */
-export function proGraceEnding(end: Date, price: ProPrice = NAIRA_PRICE): string {
+export function proGraceEnding(end: Date, price: ProPrice = NAIRA_PRICE, now = new Date()): string {
   return para(
-    `⏳ ${b("Last day of Pro.")}`,
+    `⏳ ${b(`Your Pro features stop ${onDayWords(graceEnd(end), now)}.`)}`,
     lines(
-      `Tomorrow your account moves to Free: ${free.documentsPerMonth} invoices a month, and no logo on them.`,
+      `Your account then moves to Free: ${free.documentsPerMonth} invoices a month, and no logo on them.`,
       `Tap below to keep Pro for ${price.label}.`,
     ),
   );
@@ -236,8 +250,8 @@ export function proRenewOffer(state: SubscriptionState, price: ProPrice = NAIRA_
     `⭐ ${b("Renew Balans Pro")} — ${b(price.label)} for another month.`,
     end
       ? state.inGrace
-        ? lines(`Your Pro ended on ${day(end)}. You keep it until ${day(graceEnd(end))}.`)
-        : lines(`Your Pro ends on ${day(end)}. The new period starts then, so nothing is lost.`)
+        ? lines(`Your Pro ended ${onDayWords(end)}. You keep it until ${untilWords(graceEnd(end))}.`)
+        : lines(`Your Pro ends ${onDayWords(end)}. The new period starts then, so nothing is lost.`)
       : "",
     year ? yearLine(year) : "",
   );
