@@ -303,8 +303,8 @@ export async function markClientEmailInvalid(
   log: FastifyBaseLogger,
 ): Promise<{ userId: string; clientName: string }[]> {
   const { rows } = await db().query<{ user_id: string; name: string }>(
-    `UPDATE clients SET email_status = 'invalid'
-      WHERE lower(email) = lower($1) AND email_status <> 'invalid'
+    `UPDATE clients SET email_status = 'bounced'
+      WHERE lower(email) = lower($1) AND email_status <> 'bounced'
       RETURNING user_id, name`,
     [email],
   );

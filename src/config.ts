@@ -315,6 +315,13 @@ export const defaults = {
      * nothing to do with Paystack.
      */
     settlementText: "Usually in your bank within 24–48 hours.",
+    /**
+     * The same window in working days, for a payment that has landed: paid
+     * on a Friday is "between Monday and Tuesday" (17 October 2026). Paystack
+     * does not pay out at weekends. Public holidays are not counted, so
+     * the sentence keeps its "usually".
+     */
+    settlementWorkingDays: [1, 2] as [number, number],
   },
   limits: {
     minInvoiceKobo: 1_000_00,

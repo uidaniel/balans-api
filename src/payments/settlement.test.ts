@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 import { defaults } from "../config.ts";
-import { arrivalLine, lagosHour, settlesTonight, SETTLEMENT_HOUR } from "./settlement.ts";
+import { arrivalLine, cardArrivalLine, lagosHour, settlesTonight, SETTLEMENT_HOUR } from "./settlement.ts";
 
 /** An instant, given as the hour and minute in Lagos. Lagos is UTC+1. */
 const lagos = (hour: number, minute = 0) =>
@@ -75,12 +75,18 @@ describe("a card, which is somebody else's schedule entirely", () => {
     }
   });
 
-  it("says what the configuration says, so it changes without a deploy", () => {
-    // One value, to be corrected the day Paystack answers section 16's third
-    // question. Not computed from anything, because inventing precision here
-    // would be inventing it about the reader's own money.
-    assert.equal(arrivalLine(lagos(15), "paystack"), defaults.international.settlementText);
-    assert.match(defaults.international.settlementText, /24–48 hours/);
+  it("names the working days, from the day it was paid (17 October 2026)", () => {
+    // Lagos dates; Lagos is UTC+1. 16 October 2026 is a Friday.
+    const at = (d: number, h = 15) => new Date(Date.UTC(2026, 9, d, h - 1, 0));
+    assert.equal(arrivalLine(at(16), "paystack"), "Usually in your bank between Monday 19 Oct and Tuesday 20 Oct.");
+    assert.equal(cardArrivalLine(at(17)), "Usually in your bank between Monday 19 Oct and Tuesday 20 Oct.", "Saturday");
+    assert.equal(cardArrivalLine(at(18)), "Usually in your bank between Monday 19 Oct and Tuesday 20 Oct.", "Sunday");
+    assert.equal(cardArrivalLine(at(19)), "Usually in your bank between Tuesday 20 Oct and Wednesday 21 Oct.", "Monday");
+    assert.equal(cardArrivalLine(at(15)), "Usually in your bank between Friday 16 Oct and Monday 19 Oct.", "Thursday");
+    // 00:30 Saturday in Lagos is still Friday evening UTC: Lagos decides.
+    assert.equal(cardArrivalLine(new Date(Date.UTC(2026, 9, 16, 23, 30))), "Usually in your bank between Monday 19 Oct and Tuesday 20 Oct.");
+    // Across a month end.
+    assert.equal(cardArrivalLine(at(30)), "Usually in your bank between Monday 2 Nov and Tuesday 3 Nov.", "Friday 30 Oct");
   });
 
   it("leaves a transfer exactly as it was", () => {

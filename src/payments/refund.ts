@@ -113,11 +113,14 @@ export async function reversePayment(
     // has seen it. It is owed again, not unmade.
     const status = paid === 0 ? "sent" : "part_paid";
 
+    // $2 cast both times: bare, Postgres read it as bigint in one place and
+    // integer in the other and refused the statement, so no refund was ever
+    // recorded (17 October 2026).
     await c.query(
       `UPDATE documents
-          SET amount_paid_kobo = $2,
+          SET amount_paid_kobo = $2::bigint,
               status = $3,
-              paid_at = CASE WHEN $2 = 0 THEN NULL ELSE paid_at END
+              paid_at = CASE WHEN $2::bigint = 0 THEN NULL ELSE paid_at END
         WHERE id = $1`,
       [payment.document_id, paid, status],
     );

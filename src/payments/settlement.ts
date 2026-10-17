@@ -63,12 +63,12 @@ export function arrivalLine(at: Date, provider: "monnify" | "paystack" = "monnif
    * yet — so the sentence comes from configuration and can be changed the day
    * they do, without a deploy and without hunting for it.
    *
-   * It deliberately does not compute anything from the clock. "Tonight" is a
-   * claim we can make about Monnify because we know the hour of their payout
-   * run; about this we know only what they publish, and inventing precision
-   * would be inventing it about the reader's own money.
+   * Never "tonight": we know the hour of Monnify's run, not Paystack's. What
+   * we do know is that it pays out on working days only, so the window is
+   * named in days (17 October 2026): "24–48 hours" on a Friday left the
+   * reader to work out that it meant Monday or Tuesday.
    */
-  if (provider === "paystack") return defaults.international.settlementText;
+  if (provider === "paystack") return cardArrivalLine(at);
 
   return settlesTonight(at)
     ? "Arrives in your bank tonight."
@@ -97,4 +97,41 @@ export function settlesLine(at: Date, provider: "monnify" | "paystack" = "monnif
   return settlesTonight(at)
     ? `Settles tonight by ${hour}pm`
     : `Settles tomorrow by ${hour}pm`;
+}
+
+const WEEKDAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** The Lagos calendar day of an instant, as midnight UTC of that date. */
+function lagosDay(at: Date): Date {
+  const local = new Date(at.getTime() + LAGOS_OFFSET_MINUTES * 60_000);
+  return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()));
+}
+
+/** `n` working days after `day`, Saturdays and Sundays skipped. */
+function workingDaysAfter(day: Date, n: number): Date {
+  const d = new Date(day);
+  let left = n;
+  while (left > 0) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const w = d.getUTCDay();
+    if (w !== 0 && w !== 6) left -= 1;
+  }
+  return d;
+}
+
+const dayName = (d: Date) => `${WEEKDAY[d.getUTCDay()]} ${d.getUTCDate()} ${MONTH[d.getUTCMonth()]}`;
+
+/**
+ * When a card payment that landed at `at` reaches the bank, as two named
+ * days: paid on Friday 16 Oct, "between Monday 19 Oct and Tuesday 20 Oct".
+ */
+export function cardArrivalLine(at: Date): string {
+  const [first, last] = defaults.international.settlementWorkingDays;
+  const day = lagosDay(at);
+  const from = workingDaysAfter(day, first);
+  const to = workingDaysAfter(day, last);
+  return from.getTime() === to.getTime()
+    ? `Usually in your bank on ${dayName(from)}.`
+    : `Usually in your bank between ${dayName(from)} and ${dayName(to)}.`;
 }

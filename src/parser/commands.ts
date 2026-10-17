@@ -273,6 +273,19 @@ const CANCEL_LIST = new RegExp(`^cancel (?:(${NOUN}) )?(${LIST})$`);
 // The button under the question, and the same words typed back.
 const CONFIRM_LIST = new RegExp(`^yes,? cancel (?:(?:the |these |those )?${NOUN} )?(${LIST})$`);
 const KEEP_LIST = /^(?:no,? )?keep (?:the |these |those |all |all the )?(?:invoices|documents|quotes)$/;
+/*
+ * Narrowing the list (17 October 2026). Asked "Cancel 2 invoices? #14 #12",
+ * somebody typed "remove only 14", which went to the model and came back as
+ * "edit invoice 14": the form opened on the invoice they wanted gone. "only"
+ * or "just", or remove/delete with the noun, is a cancel; it is asked again
+ * with just those, never done on the spot. A bare "remove 2" is left alone,
+ * because on a draft it is a line coming off.
+ */
+const VERB = "(?:cancel|remove|delete)";
+const NARROW_LIST = new RegExp(
+  `^(?:(?:only|just) ${VERB} (?:(?:the )?${NOUN} )?|${VERB} (?:only|just) (?:(?:the )?${NOUN} )?|(?:remove|delete) (?:the )?${NOUN} )(${LIST})(?: only)?$`,
+);
+const ONLY_AFTER = new RegExp(`^${VERB} (?:(?:the )?${NOUN} )?(${LIST}) only$`);
 
 function numbersIn(list: string): number[] {
   const seen: number[] = [];
@@ -300,6 +313,11 @@ function asCancelList(raw: string): Command | null {
       return numbers.length ? { intent: "confirm_cancel_documents", documentNumbers: numbers } : null;
     }
     if (KEEP_LIST.test(s)) return { intent: "keep_documents" };
+    const narrow = NARROW_LIST.exec(s) ?? ONLY_AFTER.exec(s);
+    if (narrow) {
+      const numbers = numbersIn(narrow[1]!);
+      return numbers.length ? { intent: "cancel_documents", documentNumbers: numbers } : null;
+    }
   }
 
   // Each line a cancel of its own, or the one line a cancel of several.

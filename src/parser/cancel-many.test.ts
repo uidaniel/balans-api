@@ -70,6 +70,28 @@ describe("one number is the single cancel, as before", () => {
   });
 });
 
+describe("narrowing the list: asked again with just those (17 October 2026)", () => {
+  const asks = (text: string, numbers: number[]) =>
+    assert.deepEqual(asCommand(text), { intent: "cancel_documents", documentNumbers: numbers }, text);
+  it("remove only 14, and the ways it gets typed", () => {
+    asks("remove only 14", [14]);
+    asks("Remove only 14.", [14]);
+    asks("only cancel 14", [14]);
+    asks("just cancel invoice 14", [14]);
+    asks("cancel only #14", [14]);
+    asks("cancel 14 only", [14]);
+    asks("delete invoice 14", [14]);
+    asks("remove only 14 and 12", [14, 12]);
+  });
+  it("never the edit form", () => {
+    assert.notEqual(asCommand("remove only 14")?.intent, "edit_document");
+  });
+  it("a bare remove is left for the draft", () => {
+    assert.equal(asCommand("remove 2"), null);
+    assert.equal(asCommand("delete 2"), null);
+  });
+});
+
 describe("the answers to the question", () => {
   it("reads the yes button, with one number or several", () => {
     assert.deepEqual(asCommand("yes cancel invoices 3 4 6"), {

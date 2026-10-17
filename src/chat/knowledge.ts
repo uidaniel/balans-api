@@ -116,7 +116,7 @@ Q: Can I change a sent quote? A: Not by command yet. Send a new quote, and let y
 
 ## Payments
 Q: How do I get paid? A: Your client pays by transfer straight into your bank account. Balans never holds your money.
-Q: How long until the money lands? A: Naira payments go straight from your client to your bank account, so it depends on when they pay.${abroad ? ` A card payment from abroad: ${intl.settlementText.replace(/^Usually/, "usually")} Paid to your own details (PayPal, Wise): as fast as that service pays.` : ""}
+Q: How long until the money lands? A: Naira payments go straight from your client to your bank account, so it depends on when they pay.${abroad ? ` A card payment from abroad: one to two working days after it is paid, no payouts at weekends, so paid on a Friday it usually lands on the Monday or Tuesday; the "PAID" message names the days. Paid to your own details (PayPal, Wise): as fast as that service pays.` : ""}
 Q: Does Balans know when my client has paid? A: Not for transfers into your bank account. Check your bank app, then send "mark invoice 12 paid" (or "Kemi paid invoice 12") and confirm. Your client gets a receipt.
 Q: My client says they paid but I don't see it. A: Check your bank app. If it's there, mark it paid. If not, ask your client for their transfer reference.
 Q: I marked it paid by mistake. A: Email hello@balans.ng and we'll help.
