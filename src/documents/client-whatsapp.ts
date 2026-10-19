@@ -24,7 +24,7 @@ import { formatNaira } from "../../core/totals.ts";
 import { formatMoney, type Currency } from "../../core/currency.ts";
 import { agreedTotalMinor } from "../../core/exchange.ts";
 import { sendTemplate } from "../whatsapp/client.ts";
-import { planOf } from "./queries.ts";
+import { documentPlan } from "./queries.ts";
 import { TEMPLATES, TEMPLATE_LANGUAGE } from "../whatsapp/window.ts";
 import { renderReceiptPdf } from "./pdf.ts";
 import { env } from "../config.ts";
@@ -125,7 +125,7 @@ export async function whatsappDocumentToClient(
   const d = rows[0];
   if (!d || !d.public_token) return { ok: false, why: "not_found" };
   if (!d.client_phone) return { ok: false, why: "no_client_phone" };
-  if ((await planOf(d.user_id)) !== "pro") return { ok: false, why: "not_pro" };
+  if ((await documentPlan(documentId)) !== "pro") return { ok: false, why: "not_pro" };
 
   const plain = clientMessage({ ...d, amount: amountFor(d) });
   /*
@@ -213,7 +213,7 @@ export async function whatsappReminderToClient(
   const d = rows[0];
   if (!d || !d.public_token || d.total_kobo <= d.amount_paid_kobo) return { ok: false, why: "not_found" };
   if (!d.client_phone) return { ok: false, why: "no_client_phone" };
-  if ((await planOf(d.user_id)) !== "pro") return { ok: false, why: "not_pro" };
+  if ((await documentPlan(documentId)) !== "pro") return { ok: false, why: "not_pro" };
 
   // Nothing paid on a dollar invoice: still owed in dollars. Part paid, the
   // rest is only known in naira, which is what was charged.

@@ -14,7 +14,6 @@
 import { randomBytes } from "node:crypto";
 import { db } from "../db/pool.ts";
 import type { SummaryData } from "./summary-page.ts";
-import { GRACE_DAYS } from "../billing/subscription.ts";
 import { formatISO, type Civil } from "../../core/dates.ts";
 import type { Period } from "../../core/period.ts";
 import type { Foreign } from "../../core/currency.ts";
@@ -302,20 +301,37 @@ export async function documentsEverSent(userId: string): Promise<number> {
   return Number(rows[0]?.n ?? 0);
 }
 
-export async function documentsThisMonth(userId: string, today: Civil): Promise<number> {
-  const from = formatISO({ ...today, d: 1 });
-  const { rows } = await db().query<{ n: string }>(
-    // A change to a sent invoice counts as one more (migration 0043).
-    `SELECT (SELECT COUNT(*) FROM documents
-              WHERE user_id = $1
-                AND type <> 'sample'
-                AND status <> 'draft' AND status <> 'cancelled'
-                AND issue_date >= $2::date)
-          + (SELECT COUNT(*) FROM document_edits
-              WHERE user_id = $1 AND created_at >= $2::date) AS n`,
-    [userId, from],
+/**
+ * The trial (19 October 2026): every account's first three sent documents
+ * carry every Pro feature, and after that a new one needs Pro. Counted from
+ * `documents.trial`, cancelled ones included, so cancel-and-resend cannot
+ * make it unlimited (migration 0045, which holds the rule in SQL).
+ */
+export type Trial = {
+  /** Paying, or in the grace week after a paid month. */
+  paid: boolean;
+  used: number;
+  allowance: number;
+  left: number;
+};
+
+export async function trialOf(userId: string): Promise<Trial> {
+  const { rows } = await db().query<{ paid: boolean; used: number; allowance: number }>(
+    `SELECT balans_paid(u) AS paid, balans_trial_used(u.id) AS used, u.trial_documents AS allowance
+       FROM users u WHERE u.id = $1`,
+    [userId],
   );
-  return Number(rows[0]?.n ?? 0);
+  const r = rows[0] ?? { paid: false, used: 0, allowance: 0 };
+  return { paid: r.paid, used: r.used, allowance: r.allowance, left: Math.max(0, r.allowance - r.used) };
+}
+
+/** Whether one document gets Pro treatment: made on the trial, or the account is paying. */
+export async function documentPlan(documentId: string): Promise<"free" | "pro"> {
+  const { rows } = await db().query<{ pro: boolean }>(
+    `SELECT balans_doc_pro(d, u) AS pro FROM documents d JOIN users u ON u.id = d.user_id WHERE d.id = $1`,
+    [documentId],
+  );
+  return rows[0]?.pro ? "pro" : "free";
 }
 
 /**
@@ -368,17 +384,11 @@ export async function foreignInvoicedToday(
  * like between being activated and its first period end.
  */
 export async function planOf(userId: string): Promise<"free" | "pro"> {
-  const { rows } = await db().query<{ plan: "free" | "pro"; expired: boolean }>(
-    `SELECT plan,
-            (plan_expires_at IS NOT NULL
-             AND plan_expires_at < now() - ($2 || ' days')::interval) AS expired
-       FROM users WHERE id = $1`,
-    [userId, String(GRACE_DAYS)],
-  );
-  const r = rows[0];
-  if (!r) return "free";
-  // An expired subscription is the free plan, whatever the column says.
-  return r.expired ? "free" : r.plan;
+  // Paying, or trial documents left: migration 0045's balans_pro.
+  const { rows } = await db().query<{ pro: boolean }>(`SELECT balans_pro(u) AS pro FROM users u WHERE u.id = $1`, [
+    userId,
+  ]);
+  return rows[0]?.pro ? "pro" : "free";
 }
 
 /* -------------------------------------------------------------------------- */

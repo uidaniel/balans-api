@@ -14,10 +14,32 @@ import { b, i, lines, para } from "../whatsapp/format.ts";
 import { GRACE_DAYS, type SubscriptionState } from "./subscription.ts";
 import { chargedAs, NAIRA_PRICE, type ProPrice } from "./price.ts";
 
-const free = defaults.plans.free;
 const pro = defaults.plans.pro;
 
-export function proOffer(used: number, price: ProPrice = NAIRA_PRICE, year?: ProPrice): string {
+/**
+ * Where somebody stands on the trial, said above the offer (19 October
+ * 2026): how many of their free documents are left, or that they are used.
+ */
+export function trialLine(t: { used: number; allowance: number }): string {
+  const left = Math.max(0, t.allowance - t.used);
+  if (left === 0) return `You have used your ${t.allowance} free documents. Pro keeps you sending.`;
+  return `You have ${left} of your ${t.allowance} free documents left, with every Pro feature. After that, new invoices need Pro.`;
+}
+
+/** Under a document just sent on the trial. */
+export function trialSentLine(t: { used: number; allowance: number }): string {
+  const left = Math.max(0, t.allowance - t.used);
+  if (left === 0) {
+    return `🎁 That was your last free document. To send the next one, reply ${b("upgrade")} for Pro, monthly or yearly.`;
+  }
+  return `🎁 That was ${Math.min(t.used, t.allowance)} of your ${t.allowance} free documents. ${left} left, with every Pro feature.`;
+}
+
+export function proOffer(
+  trial: { used: number; allowance: number },
+  price: ProPrice = NAIRA_PRICE,
+  year?: ProPrice,
+): string {
   /*
    * Ticks rather than bullets.
    *
@@ -30,8 +52,9 @@ export function proOffer(used: number, price: ProPrice = NAIRA_PRICE, year?: Pro
   return para(
     `⭐ ${b("Balans Pro")} — ${b(price.label)} a month.`,
     chargedAs(price) ?? "",
+    trialLine(trial),
     lines(
-      `✅ Unlimited invoices (Free stops at ${free.documentsPerMonth}; you have used ${used})`,
+      `✅ Unlimited invoices, quotes and payment requests`,
       // No fee line any more. Naira invoices are paid straight into the
       // user's own account on every plan, so there is no fee for Pro to
       // remove, and saying "no transaction fee" would sell the absence of
@@ -207,22 +230,34 @@ export function proEnded(end: Date, price: ProPrice = NAIRA_PRICE, now = new Dat
 }
 
 /** The last day of the grace week. */
-export function proGraceEnding(end: Date, price: ProPrice = NAIRA_PRICE, now = new Date()): string {
+/**
+ * What happens to new invoices once Pro is gone. Somebody who paid before
+ * the trial began (19 October 2026) still has their three free ones.
+ */
+const afterPro = (left: number): string =>
+  left > 0
+    ? `After that you have ${left} free ${left === 1 ? "document" : "documents"} left, then new invoices need Pro.`
+    : "After that, new invoices need Pro.";
+
+export function proGraceEnding(end: Date, price: ProPrice = NAIRA_PRICE, now = new Date(), left = 0): string {
   return para(
     `⏳ ${b(`Your Pro features stop ${onDayWords(graceEnd(end), now)}.`)}`,
     lines(
-      `Your account then moves to Free: ${free.documentsPerMonth} invoices a month, and no logo on them.`,
+      `${afterPro(left)} Everything you have sent stays, and your clients can still pay.`,
       `Tap below to keep Pro for ${price.label}.`,
     ),
   );
 }
 
 /** The day they move to Free. */
-export function proLapsed(price: ProPrice = NAIRA_PRICE): string {
+export function proLapsed(price: ProPrice = NAIRA_PRICE, left = 0): string {
   return para(
-    `📋 ${b("You are on Free now.")}`,
+    `📋 ${b("Your Pro has ended.")}`,
     lines(
-      `${free.documentsPerMonth} invoices a month. Your logo and settings are saved for when you come back.`,
+      left > 0
+        ? `You have ${left} free ${left === 1 ? "document" : "documents"} left, then new invoices need Pro.`
+        : "New invoices need Pro.",
+      "Everything you have sent stays, and your logo and settings are saved for when you come back.",
       `Tap below to get Pro back for ${price.label} a month.`,
     ),
   );

@@ -263,7 +263,7 @@ export function welcomeEmail(opts: {
   waNumber: string | null;
 }): Omit<Email, "to"> {
   const business = opts.businessName?.trim() || null;
-  const free = defaults.plans.free.documentsPerMonth;
+  const free = defaults.plans.free.trialDocuments;
   const chat = opts.waNumber ? `https://wa.me/${opts.waNumber}` : null;
   const example = "Invoice Tunde 150k for logo design, due Friday";
 
@@ -287,7 +287,7 @@ export function welcomeEmail(opts: {
       "3. Mark it paid, and they get a receipt",
       "   When the money is in your bank, tell Balans in the chat. Your client gets a receipt.",
       "",
-      `You are on the Free plan: ${free} documents a month.`,
+      `Your first ${free} documents are free, with every Pro feature: your logo, every design and reminders sent to your clients. After that, Pro is monthly or yearly.`,
       chat ? `Open the chat: ${chat}` : "",
       "",
       `Questions? Reply to this email, or write to ${env.SUPPORT_EMAIL}.`,
@@ -325,7 +325,7 @@ export function welcomeEmail(opts: {
         ]),
         detailCard([
           ...(business ? [{ label: "Business", value: business }] : []),
-          { label: "Plan", value: `Free, ${free} documents a month` },
+          { label: "Plan", value: `First ${free} documents free, every feature included` },
           { label: "Account email", value: opts.email },
         ]),
         chat ? button("Open Balans in WhatsApp", chat) : "",

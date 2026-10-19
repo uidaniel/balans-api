@@ -2160,7 +2160,7 @@ const consent: FlowDefinition = {
               type: "TextBody",
               // From the config, so the screen somebody agrees to cannot
               // disagree with the limit that is actually enforced.
-              text: `Free covers ${defaults.plans.free.documentsPerMonth} documents a month. Pro is ${formatNaira(defaults.plans.pro.priceKobo)} a month for unlimited documents, your logo and every design. Balans takes no fee on what your clients pay you. Cancel any time \u2014 your invoices and records stay where they are.`,
+              text: `Your first ${defaults.plans.free.trialDocuments} documents are free, with every feature. After that, Pro is ${formatNaira(defaults.plans.pro.priceKobo)} a month or ${formatNaira(defaults.plans.pro.yearPriceKobo)} a year for unlimited documents. Balans takes no fee on what your clients pay you. Nothing renews by itself \u2014 your invoices and records stay where they are.`,
             },
             {
               type: "TextBody",

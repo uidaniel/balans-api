@@ -135,7 +135,7 @@ export async function emailReminderToClient(
     `SELECT d.user_id, COALESCE(LPAD(d.number::text, GREATEST(4, length(d.number::text)), '0'), substring(d.ref from 4)) AS number, d.type, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token, d.delivery_type,
             d.subtotal_kobo, d.vat_kobo, d.currency, d.original_amount_minor,
             c.name AS client_name, c.email AS client_email, c.email_status,
-            u.business_name, u.email AS business_email, u.plan
+            u.business_name, u.email AS business_email, (CASE WHEN balans_doc_pro(d, u) THEN 'pro' ELSE 'free' END) AS plan
        FROM documents d
        JOIN clients c ON c.id = d.client_id
        JOIN users u   ON u.id = d.user_id
@@ -164,7 +164,7 @@ export async function emailReminderToClient(
     link: documentLink(d.type, d.public_token),
     // Paid by transfer to the sender, here or abroad: the page says how.
     bankTransfer: d.delivery_type === "bank_details" || d.delivery_type === "own_details",
-    brand: await clientBrandFor(d.user_id),
+    brand: await clientBrandFor(d.user_id, d.plan),
   });
 
   const sent = await sendEmail(mail, log);

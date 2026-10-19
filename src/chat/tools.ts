@@ -18,7 +18,7 @@ import { db } from "../db/pool.ts";
 import { formatFriendly, formatISO, nearDay, todayIn, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { readPeriod } from "../../core/period.ts";
-import { documentsThisMonth, planOf, summarise } from "../documents/queries.ts";
+import { summarise, trialOf } from "../documents/queries.ts";
 import { defaults } from "../config.ts";
 import { GRACE_DAYS } from "../billing/subscription.ts";
 import { TEMPLATES } from "../pdf/templates.ts";
@@ -313,7 +313,7 @@ async function moneySummary(userId: string, today: Civil, words: string) {
 
 async function getAccount(userId: string, today: Civil) {
   const day = when(today);
-  const [{ rows }, plan, used, { rows: banks }] = await Promise.all([
+  const [{ rows }, trial, { rows: banks }] = await Promise.all([
     db().query<{
       business_name: string | null; email: string | null; email_verified_at: Date | null; plan_expires_at: Date | null;
       logo_url: string | null; signature_url: string | null; template_id: string | null; default_due_days: number; created_at: Date;
@@ -323,8 +323,7 @@ async function getAccount(userId: string, today: Civil) {
          FROM users WHERE id = $1`,
       [userId],
     ),
-    planOf(userId),
-    documentsThisMonth(userId, today),
+    trialOf(userId),
     db().query<{ bank_name: string; account_last4: string; account_name: string; status: string; effective_at: Date | null }>(
       `SELECT bank_name, account_last4, account_name, status, effective_at FROM bank_accounts
         WHERE user_id = $1 AND status IN ('active', 'pending') ORDER BY status`,
@@ -333,18 +332,18 @@ async function getAccount(userId: string, today: Civil) {
   ]);
   const u = rows[0];
   if (!u) return { error: "No account." };
-  const limit = defaults.plans[plan].documentsPerMonth;
   const active = banks.find((x) => x.status === "active");
   const pending = banks.find((x) => x.status === "pending");
   return {
     business_name: u.business_name,
-    plan,
-    ...proDates(plan, u.plan_expires_at, day),
-    documents_this_month: used,
-    monthly_limit: limit ?? "unlimited",
+    // "pro" is paying or still on the free documents; paying is the subscription.
+    plan: trial.paid ? "Pro (paid)" : trial.left > 0 ? "Free documents, with every Pro feature" : "No plan: free documents used, needs Pro for new invoices",
+    ...proDates(trial.paid ? "pro" : "free", u.plan_expires_at, day),
     // Worked out here: asked how many were left, the model said "2 of 3"
     // rather than subtract, which is the rule doing its job.
-    documents_left_this_month: limit == null ? "unlimited" : Math.max(0, limit - used),
+    free_documents_used: `${Math.min(trial.used, trial.allowance)} of ${trial.allowance}, in total (they do not reset monthly)`,
+    free_documents_left: trial.left,
+    can_send_new_invoices: trial.paid || trial.left > 0,
     payout_account: active ? `${active.bank_name} ····${active.account_last4} (${active.account_name})` : "none set",
     ...(pending ? { payout_change_pending: `${pending.bank_name} ····${pending.account_last4}, takes effect ${day(pending.effective_at)}` } : {}),
     email: u.email ? (u.email_verified_at ? "set and verified" : "set, not verified") : "none",
@@ -369,13 +368,13 @@ function proDates(plan: string, expires: Date | null, day: (d: Date | null) => s
   if (Date.now() <= expires.getTime()) {
     return {
       pro_paid_until: day(expires),
-      if_not_renewed: `Pro features carry on for a ${GRACE_DAYS}-day grace week, until ${day(graceEnds)}, then the account moves to Free.`,
+      if_not_renewed: `Pro features carry on for a ${GRACE_DAYS}-day grace week, until ${day(graceEnds)}, then new invoices need Pro again.`,
     };
   }
   return {
     pro_paid_until: `${day(expires)}, already passed`,
     in_grace_week: true,
-    pro_features_stop: `${day(graceEnds)}, unless they renew. Then the account moves to Free.`,
+    pro_features_stop: `${day(graceEnds)}, unless they renew. Then new invoices need Pro again.`,
   };
 }
 

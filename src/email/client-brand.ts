@@ -13,15 +13,20 @@ import { db } from "../db/pool.ts";
 import { get as getFile } from "../storage/files.ts";
 import type { ClientBrand, InlineImage } from "./layout.ts";
 
-export async function clientBrandFor(userId: string): Promise<ClientBrand | null> {
+/**
+ * `plan` is the document's (19 October 2026): a trial invoice keeps its
+ * branding after the trial is used, and a paid month's invoices keep it
+ * while the account is paying. Each caller has it from its own query.
+ */
+export async function clientBrandFor(userId: string, plan: string): Promise<ClientBrand | null> {
+  if (plan !== "pro") return null;
   const { rows } = await db().query<{
-    plan: "free" | "pro";
     business_name: string | null;
     logo_url: string | null;
     brand_color: string | null;
-  }>(`SELECT plan, business_name, logo_url, brand_color FROM users WHERE id = $1`, [userId]);
+  }>(`SELECT business_name, logo_url, brand_color FROM users WHERE id = $1`, [userId]);
   const u = rows[0];
-  if (!u || u.plan !== "pro") return null;
+  if (!u) return null;
 
   let logo: InlineImage | null = null;
   if (u.logo_url) {

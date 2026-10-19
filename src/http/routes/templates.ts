@@ -73,8 +73,10 @@ async function ownerOf(token: string): Promise<Owner | null> {
     logo_url: string | null;
     brand_color: string | null;
   }>(
-    `SELECT id, business_name, email, address, tin, plan, template_id, logo_url, brand_color
-       FROM users WHERE picker_token = $1 AND status <> 'closed'`,
+    `SELECT u.id, u.business_name, u.email, u.address, u.tin,
+            (CASE WHEN balans_pro(u) THEN 'pro' ELSE 'free' END) AS plan,
+            u.template_id, u.logo_url, u.brand_color
+       FROM users u WHERE picker_token = $1 AND status <> 'closed'`,
     [token],
   );
   const r = rows[0];

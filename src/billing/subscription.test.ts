@@ -11,7 +11,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { deductionFor, MAX_CHARGE_SHARE_BPS } from "./subscription.ts";
+import { deductionFor, GRACE_DAYS, MAX_CHARGE_SHARE_BPS } from "./subscription.ts";
 
 const N = (naira: number) => naira * 100;
 
@@ -147,19 +147,18 @@ describe("every way Pro is switched on", () => {
     const queries = readFileSync(new URL("../documents/queries.ts", import.meta.url), "utf8");
     const planOf = queries.slice(queries.indexOf("export async function planOf"));
     assert.ok(planOf.startsWith("export async function planOf"), "planOf has moved");
+    assert.match(planOf, /balans_pro\(u\)/, "planOf asks the database's rule, which counts the grace week");
 
     /*
-     * A plain substring, not a pattern. What matters is the exact
-     * comparison: the date Pro is measured against has to be the end of
-     * the grace week, not the end of the paid period. Looking for the
-     * constant alone is not enough — its name survives in the parameter
-     * list while the comparison cuts somebody off seven days early.
+     * Since 19 October 2026 the rule is SQL (migration 0045). A plain
+     * substring: the date Pro is measured against has to be the end of the
+     * grace week, not the end of the paid period.
      */
+    const sql = readFileSync(new URL("../db/migrations/0045_lifetime_trial.sql", import.meta.url), "utf8");
     assert.ok(
-      planOf.includes("plan_expires_at < now() - ($2 || ' days')::interval"),
-      "planOf cuts Pro off at the period end, ignoring the grace period",
+      sql.includes(`u.plan_expires_at >= now() - interval '${GRACE_DAYS} days'`),
+      "balans_paid cuts Pro off at the period end, ignoring the grace period",
     );
-    assert.ok(planOf.includes("String(GRACE_DAYS)"));
     assert.match(source, /inGrace = expired && now <= graceEnds/);
   });
 });

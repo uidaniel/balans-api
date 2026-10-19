@@ -85,7 +85,7 @@ const messages: [string, () => string][] = [
   ["not found by client", () => reports.notFoundMessage({ clientName: "Tunde" })],
   ["summary", () => reports.summaryMessage({ period, invoicedKobo: 5000000, documents: 4, paidKobo: 2000000, outstandingKobo: 3000000, overdueKobo: 1000000, topClients: [{ name: "Zenith", paidKobo: 2000000 }] } as never)],
   ["summary, a quiet month", () => reports.summaryMessage({ period, invoicedKobo: 0, documents: 0, paidKobo: 0, outstandingKobo: 0, overdueKobo: 0, topClients: [] } as never)],
-  ["plan limit reached", () => reports.limitReachedMessage(3, 3, { y: 2026, m: 9, d: 23 })],
+  ["plan limit reached", () => reports.limitReachedMessage(3)],
   ["cancelled", () => reports.cancelledMessage({ number: 3, type: "invoice", clientName: "Zenith" })],
   ["cannot cancel", () => reports.cannotCancelMessage(3, "paid")],
   ["cancel several, asked", () => reports.cancelManyAsk([{ number: 3, ok: true, type: "invoice", clientName: "Zenith", totalKobo: 5000000, currency: "NGN", amountMinor: null }, { number: 4, ok: false, why: "has_payment" }]).body],
@@ -119,7 +119,7 @@ const messages: [string, () => string][] = [
   ["bank change scheduled", () => settings.bankChangeScheduled({ bankName: "GTBank", accountName: "ADA", accountNumber: "0123456789" }, new Date("2026-09-22T14:20:00Z"))],
   ["account closed", () => settings.deletionStarted()],
 
-  ["pro offer", () => billing.proOffer(3)],
+  ["pro offer", () => billing.proOffer({ used: 3, allowance: 3 })],
   ["pro, deducting", () => billing.deductChosen()],
   ["pro pay prompt", () => billing.proPayPrompt()],
   ["pro started", () => billing.proStarted()],

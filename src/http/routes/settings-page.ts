@@ -16,6 +16,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { env, defaults } from "../../config.ts";
 import { db } from "../../db/pool.ts";
+import { trialOf } from "../../documents/queries.ts";
 import { addDays, todayIn } from "../../../core/dates.ts";
 import { esc } from "../../documents/page.ts";
 import { legalLines } from "../../documents/pdf.ts";
@@ -65,7 +66,7 @@ type Row = {
 async function load(userId: string): Promise<Row> {
   const { rows } = await db().query<Row>(
     `SELECT u.business_name, u.email, u.email_verified_at IS NOT NULL AS email_verified, u.address, u.tin,
-            u.plan, u.logo_url, u.brand_color, u.signature_url, u.default_due_days,
+            (CASE WHEN balans_pro(u) THEN 'pro' ELSE 'free' END) AS plan, u.logo_url, u.brand_color, u.signature_url, u.default_due_days,
             u.invoice_number_start, u.template_id, u.payment_details, u.abroad_pay_by, u.payment_method, u.wa_phone,
             GREATEST(
               COALESCE((SELECT MAX(d.number) FROM documents d WHERE d.user_id = u.id AND d.type <> 'sample'), 0) + 1,
@@ -79,16 +80,21 @@ async function load(userId: string): Promise<Row> {
 
 /** Everything the page shows, in one read. */
 async function state(userId: string) {
-  const [u, account, sub, designs, signature] = await Promise.all([
+  const [u, account, sub, designs, signature, trial] = await Promise.all([
     load(userId),
     accountInForce(userId),
     stateOf(userId),
     pickerUrlFor(userId, base()),
     issueSignatureToken(userId),
+    trialOf(userId),
   ]);
   const design = TEMPLATES.find((t) => t.id === u.template_id) ?? TEMPLATES[0]!;
   return {
-    plan: sub.plan,
+    // The features (paying, or free documents left), which is what the
+    // brand and logo controls follow; `paid` is the subscription itself.
+    plan: u.plan,
+    paid: sub.plan === "pro",
+    trial: { left: trial.left, allowance: trial.allowance },
     proUntil: sub.plan === "pro" ? (sub.periodEnd?.toISOString() ?? null) : null,
     inGrace: sub.inGrace,
     canRenew: renewalOpen(sub),
@@ -579,9 +585,9 @@ const initials = (n) => (n || '').split(/\\s+/).filter(Boolean).slice(0, 2).map(
 function fill() {
   $('title').textContent = S.business.name || 'Your settings';
   $('av').textContent = initials(S.business.name);
-  $('plan-name').textContent = S.plan === 'pro' ? 'Balans Pro' : 'Balans Free';
+  $('plan-name').textContent = S.paid ? 'Balans Pro' : S.trial.left > 0 ? 'Free documents' : 'Balans';
   $('plan-incl').textContent = S.plan === 'pro' ? 'Included' : 'Pro adds';
-  $('plan').textContent = S.plan === 'pro' ? 'Pro' : 'Free';
+  $('plan').textContent = S.paid ? 'Pro' : S.trial.left > 0 ? 'Trial' : 'No plan';
   $('plan').className = 'pill' + (S.plan === 'pro' ? ' pro' : '');
   $('b-name').value = S.business.name; $('b-address').value = S.business.address; $('b-tin').value = S.business.tin;
   $('b-email').value = S.business.email ? S.business.email + (S.business.emailVerified ? '' : ' (not verified)') : 'None';
@@ -608,17 +614,19 @@ function fill() {
     $('bank-now').querySelector('b').textContent = S.bank.accountName;
     $('bank-now').querySelector('span').textContent = S.bank.bankName + ' \\u2022\\u2022' + S.bank.last4;
   }
-  const pro = S.plan === 'pro';
+  const pro = S.plan === 'pro', paid = S.paid;
   $('brand-pro').classList.toggle('hidden', !pro);
   $('brand-free').classList.toggle('hidden', pro);
   $('brand-up').href = S.links.pro;
   const until = S.proUntil ? new Date(S.proUntil).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
-  $('plan-text').textContent = pro
+  $('plan-text').textContent = paid
     ? (S.inGrace ? 'Your Pro month has ended. You keep Pro until the end of the grace week.' : 'Pro until ' + until + '.')
-    : 'Free: 3 invoices a month.';
-  $('plan-btn').classList.toggle('hidden', pro && !S.canRenew);
+    : S.trial.left > 0
+      ? S.trial.left + ' of your ' + S.trial.allowance + ' free documents left, with every Pro feature.'
+      : 'Your ' + S.trial.allowance + ' free documents are used. Get Pro to keep sending invoices.';
+  $('plan-btn').classList.toggle('hidden', paid && !S.canRenew);
   $('plan-btn').href = S.links.pro;
-  $('plan-btn').textContent = pro ? 'Renew Pro' : 'Upgrade to Pro';
+  $('plan-btn').textContent = paid ? 'Renew Pro' : 'Get Pro';
   if (pro) { showLogo(); pickColour(S.brand.colour || '', false); }
   snapshot();
 }

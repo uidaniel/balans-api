@@ -44,20 +44,22 @@ export function knowledge(): string {
 Q: What is Balans? A: A WhatsApp invoicing tool for Nigerian freelancers and small businesses. Type an invoice the way you'd say it, in English, Pidgin or shorthand, and get a proper invoice back. You approve a draft before anything is sent.
 Q: Who made Balans? A: Balans is a product of MOTX Studios.
 Q: Is Balans a bank? A: No. Balans sends invoices and tracks payments. It never holds money and is not a bank.
-Q: Does it work outside Nigeria? A: It is built for freelancers in Nigeria. Clients can be anywhere.${abroad ? " On Pro you can invoice clients abroad in their own currency." : ""}
+Q: Does it work outside Nigeria? A: It is built for freelancers in Nigeria. Clients can be anywhere.${abroad ? " You can invoice clients abroad in their own currency." : ""}
 Q: Is there a web or app version? A: Not yet. Balans works on WhatsApp. A web dashboard is planned.
 Q: Can I talk to a real person? A: Yes: hello@balans.ng. We reply every day, within 24 hours.
 
 ## Plans and pricing
-Q: How much does it cost? A: Free gives you ${free.documentsPerMonth} invoices or quotes a month. Pro is ${month} a month, or ${year} a year, which saves ${saving}.
-Q: What happens when I hit the Free limit? A: You're told when you reach it. Upgrade to Pro for unlimited, or wait until the 1st of next month, when the count resets.
-Q: What's in Pro? A: Unlimited invoices and quotes, your own logo, all 20 invoice designs (Free has 2), reminders sent to your client by email and WhatsApp on the due date and 3 and 7 days late, the invoice sent to your client on WhatsApp${abroad ? `, and invoices in ${FOREIGN.length} foreign currencies for clients abroad` : ""}.
-Q: Does Free have reminders? A: On Free, Balans reminds you on the due date and gives you a message to forward. Reminders sent to your client directly are Pro.
+Q: How much does it cost? A: Your first ${free.trialDocuments} documents (invoices, quotes or payment requests) are free, with every feature included. After that, Pro is ${month} a month, or ${year} a year, which saves ${saving}. There is no monthly free allowance.
+Q: What counts as one of the ${free.trialDocuments} free documents? A: Every invoice, quote or payment request you send. A cancelled one still counts. Changing a sent invoice does not, and neither does turning a quote into an invoice.
+Q: Do the free documents reset every month? A: No. It is ${free.trialDocuments} in total, not ${free.trialDocuments} a month. Look up how many are left.
+Q: What happens when I've used the ${free.trialDocuments}? A: New invoices need Pro, monthly or yearly. Everything already sent keeps working, and clients can still pay.
+Q: What's in Pro? A: Unlimited invoices, quotes and payment requests, your own logo and brand colour, all 20 invoice designs, reminders sent to your client by email and WhatsApp on the due date and 3 and 7 days late, the invoice sent to your client on WhatsApp${abroad ? `, and invoices in ${FOREIGN.length} foreign currencies for clients abroad` : ""}. Your ${free.trialDocuments} free documents include all of it.
+Q: Do my free documents get reminders? A: Yes. They get everything Pro does, including reminders sent to your client, for as long as they're unpaid.
 Q: How do I pay for Pro? A: Send "upgrade" (or /pro) and pay through Paystack: card, bank transfer and the other methods Paystack offers. Choose monthly or yearly there.
 Q: Does Pro renew automatically? A: No. You're reminded before it ends, and you pay again to keep it. Nothing is charged automatically.
-Q: When does my Pro end? A: Look it up. When a Pro month runs out, every Pro feature carries on for a ${GRACE_DAYS}-day grace week, and the account moves to Free after that. Give the day Pro features stop, not only the day the month ended.
+Q: When does my Pro end? A: Look it up. When a Pro month runs out, every Pro feature carries on for a ${GRACE_DAYS}-day grace week. After that, new invoices need Pro again. Give the day Pro features stop, not only the day the month ended.
 Q: Can I cancel Pro? A: There is nothing to cancel. Pro ends when the period you paid for runs out.
-Q: What happens when Pro ends? A: You go back to Free: ${free.documentsPerMonth} a month, and the client reminders, logo and Pro designs stop. Your invoices and history stay.
+Q: What happens when Pro ends? A: New invoices need Pro again, unless free documents are left (look it up). Sent invoices stay payable; client reminders on invoices from paid months stop.
 Q: Can I switch to yearly? A: Send "upgrade" and choose yearly. Questions about credit for a monthly plan already paid: hello@balans.ng.
 Q: Discounts, student or NGO pricing? A: Not right now. Email hello@balans.ng if you have a reason to ask.
 Q: Team access? A: Not yet. It is planned with a Business plan. Each person needs their own account for now.
@@ -72,7 +74,7 @@ Q: Can I get a receipt for Pro? A: Email hello@balans.ng with the payment date. 
 ## Getting started
 Q: How do I start? A: Send your first invoice in one line, like "Invoice Tunde 150k for logo design, due Friday", or send /invoice for a form. You see a draft before anything is sent.
 Q: Do I need an app or to download anything? A: No. Balans works entirely in WhatsApp, including WhatsApp Business.
-Q: What does set-up need? A: Your business name and the bank account your clients pay into. Your logo is optional (Pro).
+Q: What does set-up need? A: Your business name and the bank account your clients pay into. Your logo is optional.
 Q: Do I need a business name? A: No. Your own name works.
 Q: How do I change my business name, address, TIN or days to pay? A: Send "settings" and open the page. Your TIN and address print on invoices when you add them.
 Q: More than one business, or one account on two numbers? A: Not yet. Each WhatsApp number is one account.
@@ -89,14 +91,14 @@ Q: Discounts or late fees? A: Not supported.
 Q: What if I don't give a due date? A: Your default days to pay are used (7 unless you changed it in settings). Say "no due date" for none; an invoice with no due date gets no reminders.
 Q: Can I add notes? A: Yes, in the form's notes box.
 Q: Can I take a deposit or split the payment? A: Yes: a deposit (a percent or an amount) and the balance, or 2 to 4 equal instalments. Choose Payment plan in the form, or say "50% deposit" or "3 instalments".
-Q: Which currencies can I invoice in? A: ${abroad ? `Naira on every plan. On Pro, also ${currencies}. Just write the amount with its sign or name, like "Invoice Acme $500 for logo design", or pick the currency in the invoice form.` : "Naira only, for now."}
+Q: Which currencies can I invoice in? A: ${abroad ? `Naira, and also ${currencies}. Just write the amount with its sign or name, like "Invoice Acme $500 for logo design", or pick the currency in the invoice form.` : "Naira only, for now."}
 ${abroad ? `Q: How does a client abroad pay? A: Two ways, your choice. (1) A card payment link: the client pays by card, Paystack charges the naira equivalent at the rate locked when the invoice was sent, and the money lands in your bank account in naira. (2) Your own payment details (PayPal, Wise, a domiciliary account): the client pays you directly in their currency, and you mark the invoice paid when it arrives. Set your details and which one is the default in settings, or say "pay by my details" when you make the invoice.\n` : ""}Q: Other currencies, like yen or CFA? A: Not yet. ${abroad ? "Only the ones listed." : "Naira only, for now."}
 Q: Recurring invoices? A: Not yet. They're on the roadmap.
-Q: How does the invoice reach my client? A: When you tap Send, you get the invoice and its link to share. If you gave the client's email, Balans emails it to them on every plan. On Pro, Balans can also send it to their WhatsApp.
-Q: Can I choose a design? A: Yes. Send "designs" to see all 20. Two are on Free; the rest are Pro. You can also pick one in the invoice form.
-Q: Can I add my logo? A: On Pro: send the image here and confirm it.
-Q: If I change my logo, business name or brand colour, do links already sent change? A: Yes. The payment page always shows your current logo, name and colour (on Pro), so links already sent show the new ones when opened again. A PDF already made keeps the old logo.
-Q: Can I add my signature? A: Yes, on every plan. Send "signature".
+Q: How does the invoice reach my client? A: When you tap Send, you get the invoice and its link to share. If you gave the client's email, Balans emails it to them. If you add their WhatsApp number, Balans sends it there too.
+Q: Can I choose a design? A: Yes. Send "designs" to see all 20, every one included. You can also pick one in the invoice form.
+Q: Can I add my logo? A: Yes: send the image here and confirm it.
+Q: If I change my logo, business name or brand colour, do links already sent change? A: Yes. The payment page always shows your current logo, name and colour, so links already sent show the new ones when opened again. A PDF already made keeps the old logo.
+Q: Can I add my signature? A: Yes. Send "signature".
 Q: Can I change the next invoice number? A: Yes, in settings. Numbers then go up in order from there.
 
 ## After sending
@@ -109,7 +111,7 @@ Q: Can I see if my client opened it? A: Yes. Ask me about the invoice and I'll t
 Q: Can I see my invoices, a client's history or what someone paid? A: Ask me in your own words, like "show Zenith's invoices" or "what has Kemi paid this year?". "who owes me" lists what's unpaid.
 
 ## Quotes
-Q: Can I send a quote? A: Yes, on every plan: "Quote Zenith Homes 350k for duplex 3D render", or /quote.
+Q: Can I send a quote? A: Yes: "Quote Zenith Homes 350k for duplex 3D render", or /quote.
 Q: My client accepted a quote. A: Send "convert quote 3" to turn it into an invoice. The quote stays as it was.
 Q: Do quotes expire? A: A quote is valid for 14 days unless you set another date.
 Q: Can I change a sent quote? A: Not by command yet. Send a new quote, and let your client know.
@@ -121,14 +123,14 @@ Q: Does Balans know when my client has paid? A: Not for transfers into your bank
 Q: My client says they paid but I don't see it. A: Check your bank app. If it's there, mark it paid. If not, ask your client for their transfer reference.
 Q: I marked it paid by mistake. A: Email hello@balans.ng and we'll help.
 Q: Cash, cheque, POS or USSD? A: Balans doesn't process those, but you can take payment however you like and mark the invoice paid yourself.
-Q: Can my client pay by card? A: Naira invoices are paid by bank transfer.${abroad ? " Clients abroad pay by card on Pro." : ""}
-Q: Which countries can I receive money from? A: Clients in Nigeria pay by bank transfer in naira.${abroad ? " On Pro, a client in any country can pay a card link, as long as Paystack accepts their card, or pay your own details directly." : ""} For a specific country, email hello@balans.ng.
-${abroad ? `Q: International limits and fees? A: Card links: up to about $1,000 an invoice (exactly: ${caps}), and twice that a day in each currency. Paystack charges ${fee} per card payment; Balans adds nothing on Pro. You can pass the fee to your client in the invoice form. Payments to your own details have no Balans limit or fee.\n` : ""}Q: Does Balans take a cut? A: No fee on naira invoices paid by transfer to your bank account.
+Q: Can my client pay by card? A: Naira invoices are paid by bank transfer.${abroad ? " Clients abroad can pay by card." : ""}
+Q: Which countries can I receive money from? A: Clients in Nigeria pay by bank transfer in naira.${abroad ? " A client in any country can pay a card link, as long as Paystack accepts their card, or pay your own details directly." : ""} For a specific country, email hello@balans.ng.
+${abroad ? `Q: International limits and fees? A: Card links: up to about $1,000 an invoice (exactly: ${caps}), and twice that a day in each currency. Paystack charges ${fee} per card payment; Balans adds nothing. You can pass the fee to your client in the invoice form. Payments to your own details have no Balans limit or fee.\n` : ""}Q: Does Balans take a cut? A: No fee on naira invoices paid by transfer to your bank account.
 Q: Who pays the transfer fee? A: Your client pays their own bank's fee.
 Q: Crypto, or dollars into a dollar account? A: No.
 
 ## Reminders
-Q: Does Balans send reminders? A: Yes. On the due date Balans tells you. On Pro it also reminds your client by email and WhatsApp on the due date and 3 and 7 days late, from your business name.
+Q: Does Balans send reminders? A: Yes. On the due date Balans tells you. It also reminds your client by email and WhatsApp on the due date and 3 and 7 days late, from your business name, on your free documents and on Pro.
 Q: No due date? A: No reminders are sent for it.
 Q: Can I turn reminders off? A: Send "stop reminders 12" for that invoice.
 Q: Can I remind a client right now, or write my own reminder? A: Not on demand, and the message is standard. To nudge a client now, send "resend invoice 12" and forward what comes back.

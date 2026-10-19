@@ -152,7 +152,7 @@ export async function emailDocumentToClient(
     `SELECT d.user_id, COALESCE(LPAD(d.number::text, GREATEST(4, length(d.number::text)), '0'), substring(d.ref from 4)) AS number, d.type, d.total_kobo, d.due_date, d.valid_until,
             d.public_token, d.notes,
             c.name AS client_name, c.email AS client_email,
-            u.business_name, u.email AS business_email, u.plan,
+            u.business_name, u.email AS business_email, (CASE WHEN balans_doc_pro(d, u) THEN 'pro' ELSE 'free' END) AS plan,
             d.currency, d.original_amount_minor, d.subtotal_kobo, d.vat_kobo, d.delivery_type, d.title
        FROM documents d
        JOIN clients c ON c.id = d.client_id
@@ -236,7 +236,7 @@ export async function emailDocumentToClient(
       : null;
 
   // Pro: from the business alone, in its colours (email/client-brand.ts).
-  const brand = await clientBrandFor(d.user_id);
+  const brand = await clientBrandFor(d.user_id, d.plan);
   const as = sentAs(business, brand);
 
   const sent = await sendEmail(

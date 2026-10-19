@@ -69,7 +69,7 @@ export async function checkSubaccounts(log: FastifyBaseLogger, fetchImpl: typeof
   if (env.INTL_ENABLED) {
     const { rows: missing } = await db().query<{ user_id: string }>(
       `SELECT b.user_id FROM bank_accounts b JOIN users u ON u.id = b.user_id
-        WHERE u.plan = 'pro' AND u.status = 'active' AND b.status = 'active'
+        WHERE balans_pro(u) AND u.status = 'active' AND b.status = 'active'
           AND (b.effective_at IS NULL OR b.effective_at <= now())
           AND b.paystack_subaccount_code IS NULL`,
     );

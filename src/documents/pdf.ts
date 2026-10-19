@@ -259,7 +259,7 @@ async function loadForRender(
             d.public_token, d.current_version,
             d.currency, d.original_amount_minor,
             u.business_name, u.email AS business_email, u.address, u.tin, u.logo_url,
-            u.signature_url, u.plan, u.template_id, u.brand_color,
+            u.signature_url, (CASE WHEN balans_doc_pro(d, u) THEN 'pro' ELSE 'free' END) AS plan, u.template_id, u.brand_color,
             d.delivery_type, d.payment_details,
             c.name AS client_name, c.email AS client_email
        FROM documents d

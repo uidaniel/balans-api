@@ -40,12 +40,15 @@ export function proPoints(): string[] {
 }
 
 export function proCardHtml(kind: "limit" | "upgrade"): string {
-  const limit = defaults.plans.free.documentsPerMonth ?? 0;
+  const limit = defaults.plans.free.trialDocuments;
   const price = formatNaira(defaults.plans.pro.priceKobo);
   // "Three done." is a fact about the reader, so it is only on the card sent
   // to somebody who has used them all. See pro-card.test.ts.
   const headline = kind === "limit" ? [`${Cap(word(limit))} done.`, "Go unlimited."] : ["Upgrade", "to Pro."];
-  const sub = `The free plan covers ${word(limit)} documents a month. Pro takes the limit off.`;
+  const sub =
+    kind === "limit"
+      ? `Your ${word(limit)} free documents are used. Pro keeps you sending, monthly or yearly.`
+      : `Your first ${word(limit)} documents are free. Pro takes the limit off.`;
   const tick =
     `<svg viewBox="0 0 24 24" width="58" height="58" aria-hidden="true"><path d="M4.5 12.5 9.5 17.5 19.5 6.5" ` +
     `fill="none" stroke="#f5b82e" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;

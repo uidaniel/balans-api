@@ -17,8 +17,8 @@ describe("the Pro price a person is shown and charged", () => {
     assert.equal(p.abroad, true);
     assert.equal(p.label, "£4");
     assert.equal(p.chargeKobo, 4_00 * 2000);
-    assert.match(proOffer(1, p), /£4/);
-    assert.match(proOffer(1, p), /Charged as ₦8,000/);
+    assert.match(proOffer({ used: 1, allowance: 3 }, p), /£4/);
+    assert.match(proOffer({ used: 1, allowance: 3 }, p), /Charged as ₦8,000/);
     assert.equal(proPayLabel(p), "Pay Now");
   });
 

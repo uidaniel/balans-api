@@ -37,6 +37,7 @@ describe("the templates we register with Meta", () => {
         "payment_received",
         "payout_paid",
         "pro_active",
+        "pro_back_pay",
         "pro_ended_pay",
         "pro_ending_pay",
         "pro_ending_pay_v2",

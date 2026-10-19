@@ -26,7 +26,7 @@ describe("deposits and milestones", () => {
   });
 
   it("are not sold as Pro", () => {
-    assert.doesNotMatch(proOffer(1), /Deposits and milestone/);
+    assert.doesNotMatch(proOffer({ used: 1, allowance: 3 }), /Deposits and milestone/);
     assert.ok(!proPoints().some((p) => /deposit|milestone/i.test(p)));
   });
 });

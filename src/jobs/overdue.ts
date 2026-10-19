@@ -19,6 +19,7 @@ import { checkSubaccounts, emailUnverifiedDigest } from "../payments/subaccount-
 import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
 import { refreshAll } from "../fx/rate.ts";
+import { trialOf } from "../documents/queries.ts";
 import { defaults, env } from "../config.ts";
 import { formatFriendly, formatISO, todayIn, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
@@ -150,8 +151,10 @@ export async function scheduleReminders(today: Civil, log: FastifyBaseLogger): P
           AND d.due_date IS NOT NULL
           AND d.due_date + ($3 || ' days')::interval <= $1::date
           AND u.status = 'active'
-          -- Free plan gets the prompt at the due date only (F13).
-          AND ($4::boolean = false OR u.plan = 'pro')
+          -- Only the due-date prompt without Pro (F13). Pro here is the
+          -- document's: made on the trial, or the account is paying, so a
+          -- lapsed Pro's old invoices stop being chased (19 October 2026).
+          AND ($4::boolean = false OR balans_doc_pro(d, u))
           AND NOT EXISTS (
             SELECT 1 FROM reminders r
              WHERE r.document_id = d.id AND r.kind = $2 AND r.channel = 'whatsapp'
@@ -204,7 +207,7 @@ export async function sendDueReminders(
     original_amount_minor: number | null;
     plan: string;
   }>(
-    `SELECT r.id, r.kind, d.type, d.id AS document_id, d.user_id, u.wa_phone, u.plan,
+    `SELECT r.id, r.kind, d.type, d.id AS document_id, d.user_id, u.wa_phone, (CASE WHEN balans_doc_pro(d, u) THEN 'pro' ELSE 'free' END) AS plan,
             d.number, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token,
             d.subtotal_kobo, d.vat_kobo, d.currency, d.original_amount_minor,
             c.name AS client_name, u.business_name
@@ -490,7 +493,8 @@ async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<nu
     // Their own price outside Nigeria (billing/price.ts).
     const p = await proPriceForPhone(r.waPhone, log);
     const price = p.label;
-    const free = String(defaults.plans.free.documentsPerMonth);
+    // Free documents still to send, for somebody who paid before the trial began.
+    const left = stage === "grace_ending" || stage === "lapsed" ? (await trialOf(r.userId)).left : 0;
     const words: {
       text: string;
       label: string;
@@ -512,14 +516,15 @@ async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<nu
         params: [dayOf(r.expiresAt), dayOf(graceEnds), price],
       },
       grace_ending: {
-        text: proGraceEnding(r.expiresAt, p),
+        text: proGraceEnding(r.expiresAt, p, new Date(), left),
         label: "Keep Pro",
         template: "pro_last_day_pay_v2" as TemplateName,
         params: [onDayWords(graceEnds), price],
         orElse: { template: "pro_last_day_pay" as TemplateName, params: [dayOf(graceEnds), price] },
       },
-      lapsed: { text: proLapsed(p), label: "Get Pro back", template: "pro_free_pay" as TemplateName, params: [free, price] },
-      win_back: { text: proWinBack(p), label: "Get Pro back", template: "pro_free_pay" as TemplateName, params: [free, price] },
+      // pro_free_pay said "the Free plan, with 3 invoices a month", which stopped being true on 19 October 2026.
+      lapsed: { text: proLapsed(p, left), label: "Get Pro back", template: "pro_back_pay" as TemplateName, params: [price] },
+      win_back: { text: proWinBack(p), label: "Get Pro back", template: "pro_back_pay" as TemplateName, params: [price] },
     }[stage];
 
     // The same signed link the chat's Pay button opens: a fresh Paystack

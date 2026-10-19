@@ -238,12 +238,18 @@ export function require_(...keys: (keyof typeof env)[]): void {
  * published text proves nothing about what somebody agreed to. It said
  * "2026-09-draft-1" while the site said 3.1 until 27 September 2026.
  */
-export const legalConsentVersion = process.env.LEGAL_CONSENT_VERSION ?? "3.1";
+export const legalConsentVersion = process.env.LEGAL_CONSENT_VERSION ?? "3.2";
 
 export const defaults = {
   plans: {
+    /*
+     * The trial (19 October 2026): the first three sent documents, ever, with
+     * every Pro feature; after that a new one needs Pro. It replaced three a
+     * month without them. The number is also users.trial_documents' default
+     * (migration 0045), and trial.test.ts holds the two together.
+     */
     free: {
-      documentsPerMonth: 3,
+      trialDocuments: 3,
       feePercentBps: 100, // 1%
       feeMinKobo: 100_00,
       feeCapKobo: 1_000_00,
@@ -267,7 +273,6 @@ export const defaults = {
       priceKobo: 3_000_00, // ₦4,000 until 26 September 2026
       // A year for the price of ten months (9 October 2026): ₦30,000, not ₦36,000.
       yearPriceKobo: 30_000_00,
-      documentsPerMonth: null,
       feePercentBps: 0,
       feeMinKobo: 0,
       feeCapKobo: 0,

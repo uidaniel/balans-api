@@ -29,9 +29,12 @@ describe("changing a sent invoice", () => {
     assert.match(handle, /ctx\.editingId\s*\? await applyEdit\(userId, draft\.id, ctx\.editingId\)\s*: await confirmDraft\(userId, draft\.id\)/);
   });
 
-  it("counts a change towards the month", () => {
-    const queries = readFileSync(new URL("../documents/queries.ts", import.meta.url), "utf8");
-    assert.match(queries, /FROM document_edits/);
+  it("uses none of the free documents, and is not stopped when they are gone (19 October 2026)", () => {
+    const handle = readFileSync(new URL("./handle.ts", import.meta.url), "utf8");
+    assert.match(handle, /ctx\.editingId\s*\? \(\{ stop: false, plan: await documentPlan\(ctx\.editingId\) \}/);
+    const sql = readFileSync(new URL("../db/migrations/0045_lifetime_trial.sql", import.meta.url), "utf8");
+    const used = sql.slice(sql.indexOf("CREATE FUNCTION balans_trial_used"), sql.indexOf("CREATE FUNCTION balans_pro"));
+    assert.doesNotMatch(used, /document_edits/);
   });
 
   it("refuses anything paid or cancelled", () => {

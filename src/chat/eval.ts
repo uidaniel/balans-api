@@ -78,16 +78,17 @@ const SUMMARIES: Record<string, Record<string, unknown>> = {
 };
 
 const ACCOUNT = {
-  business_name: "Danny Codes", plan: "free", documents_this_month: 2, monthly_limit: 3, documents_left_this_month: 1,
+  business_name: "Danny Codes", plan: "Free documents, with every Pro feature",
+  free_documents_used: "1 of 3, in total (they do not reset monthly)", free_documents_left: 2, can_send_new_invoices: true,
   payout_account: "GTBank ····1234 (Daniel Uwak)", email: "set and verified", logo: false, signature: false,
   invoice_design: "Classic", default_due_days: 7, member_since: "Tue, 1 Sep",
 };
 
 /** On Pro, a week past the end of the month: the last day of the grace week is tomorrow. */
 const IN_GRACE = {
-  ...ACCOUNT, plan: "pro", monthly_limit: "unlimited", documents_left_this_month: "unlimited", logo: true,
+  ...ACCOUNT, plan: "Pro (paid)", free_documents_used: "3 of 3, in total (they do not reset monthly)", free_documents_left: 0, logo: true,
   pro_paid_until: "Wed, 7 Oct, already passed", in_grace_week: true,
-  pro_features_stop: "Thu, 15 Oct (tomorrow), unless they renew. Then the account moves to Free.",
+  pro_features_stop: "Thu, 15 Oct (tomorrow), unless they renew. Then new invoices need Pro again.",
 };
 let account: Record<string, unknown> = ACCOUNT;
 
@@ -205,9 +206,14 @@ const CASES: Case[] = [
   { q: "thanks boss, you too much", noTools: true, mustNot: [/I only help/i] },
   { long: true, q: "what can you do for me", button: ["/invoice", "who owes me", "summary"] },
   { long: true, q: "e be like say na only free plan I dey use, wetin I go gain if I pay", must: [/Pro/, /logo|unlimited|design/i] },
+  // The trial (19 October 2026): three ever, not three a month.
+  { q: "how many free invoices do I have left?", must: [/\b2\b|two/i], mustNot: [/this month|next month|resets on/i] },
+  { q: "do my free invoices reset next month?", must: [/\bno\b|not|don't|do not/i], mustNot: [/yes, they reset|resets on/i] },
+  { q: "what happens after my 3 free invoices?", must: [/Pro/], mustNot: [/wait until|next month/i] },
+  { q: "if I cancel an invoice do I get my free one back?", must: [/\bno\b|not|still counts/i] },
   // 16 October 2026: "USD or GBP" when there are nine; "1 to 2 business days".
   { long: true, q: "which currencies can I invoice in?", must: [/euro|EUR/i, /Canadian|CAD/i, /cedi|GHS/i, /rand|ZAR/i, /dirham|AED/i] },
-  { long: true, q: "how long does it take for international payments to arrive in my bank account and what currencies can i be paid in???", must: [/24.{0,3}48/, /euro|EUR/i] },
+  { long: true, q: "how long does it take for international payments to arrive in my bank account and what currencies can i be paid in???", must: [/working day|Monday or Tuesday|24.{0,3}48/i, /euro|EUR/i] },
   { q: "can my client in the UK pay me through paypal?", must: [/details|PayPal/i], mustNot: [/not yet|can't|cannot/i] },
   // "I don't have a reliable answer" about a logo on links already sent.
   { q: "i wanna change my brand and add my logo would that reflect on my payment link immediately that already has been created?", must: [/yes|will show|shows/i], mustNot: [/reliable answer|hello@balans\.ng/i] },
@@ -255,7 +261,7 @@ for (const c of CASES) {
         return r;
       },
       usedToday: async () => 0,
-      plan: async () => (account.plan === "pro" ? "pro" : "free"),
+      plan: async () => (account.can_send_new_invoices === false ? "free" : "pro"),
       record: async () => undefined,
       snapshot: async () => (c.failLookups ? null : snap),
     },

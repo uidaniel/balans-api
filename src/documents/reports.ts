@@ -10,7 +10,7 @@
  * one: the user is not a bank, and the people who owe them are their clients.
  */
 
-import { formatFriendly, formatDayMonth, firstOfNextMonth, type Civil } from "../../core/dates.ts";
+import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { b, block, BULLET, i, lines, para, row } from "../whatsapp/format.ts";
 import { bucketOf, type Bucket, type Debtors, type DocumentStatus, type Summary } from "./queries.ts";
@@ -178,50 +178,33 @@ export function summaryMessage(s: Summary): string {
 /* -------------------------------------------------------------------------- */
 
 /**
- * F6: when the Free limit is hit, say so and offer Pro.
+ * The trial is used up (19 October 2026): three sent documents, ever, and
+ * the next one needs Pro. There is no reset date to name any more.
  *
  * The words-only version, used when the card cannot be sent. It has to carry
  * the offer itself, because there is no picture behind it and no button under
- * it — so it names the price and says what to reply.
+ * it — so it says what to reply.
  */
-export function limitReachedMessage(used: number, limit: number, today: Civil): string {
+export function limitReachedMessage(allowance: number): string {
   return para(
-    `🛑 That is your ${b(`${limit} documents`)} for this month.`,
-    lines(
-      `You have sent ${used}. The count resets on ${resetDay(today)}.`,
-      `Reply ${b("upgrade")} for unlimited documents, your logo and every design.`,
-    ),
+    `🛑 ${b(`You have used your ${allowance} free documents.`)}`,
+    `Reply ${b("upgrade")} to keep sending invoices, monthly or yearly.`,
     i("Invoices already sent still work, and you still get paid."),
   );
 }
 
 /**
- * When the count comes back, named.
- *
- * "The 1st" is the kind of thing that is obvious to whoever wrote it and not
- * to the person reading it on the 23rd of a month they have lost track of.
- * Naming the month answers the actual question — how long am I stuck —
- * without making them work it out.
- */
-const resetDay = (today: Civil): string =>
-  formatDayMonth(firstOfNextMonth(today), today);
-
-/**
  * The same thing, under the Pro card.
  *
- * Shorter, because the card above it already lists what Pro removes and what
- * it costs, and a button under it already says how to start. Repeating either
- * one in the caption would be the message arguing with itself.
- *
- * What is left is the part the picture cannot know: how many they have sent,
- * when the count resets, and that nothing they have already sent is affected.
- * That last line matters most — somebody who has just been stopped mid-invoice
- * will wonder whether the money they are already owed is at risk.
+ * Shorter, because the card above it already says what Pro is and the
+ * button under it says how to start. What is left is the part the picture
+ * cannot know, and that nothing already sent is affected: somebody stopped
+ * mid-invoice will wonder whether money they are owed is at risk.
  */
-export function limitReachedCaption(used: number, limit: number, today: Civil): string {
+export function limitReachedCaption(allowance: number): string {
   return para(
-    `🛑 That is your ${b(`${limit} documents`)} for this month.`,
-    `You have sent ${used}. The count resets on ${resetDay(today)}.`,
+    `🛑 ${b(`You have used your ${allowance} free documents.`)}`,
+    "Get Pro to keep sending invoices, monthly or yearly.",
     i("Invoices already sent still work, and you still get paid."),
   );
 }

@@ -91,6 +91,7 @@ export type TemplateName =
   | "pro_ending_pay_v2"
   | "pro_ended_pay"
   | "pro_last_day_pay"
+  | "pro_back_pay"
   | "pro_last_day_pay_v2"
   | "pro_free_pay";
 
@@ -264,6 +265,15 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
     params: ["date", "price"],
     example: ["5 October", "₦3,000"],
     button: { text: "Keep Pro", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
+  },
+
+  pro_back_pay: {
+    name: "pro_back_pay",
+    category: "UTILITY",
+    body: "Your Balans Pro has ended. Everything you sent is saved, and your clients can still pay. Your logo and settings are kept for when you come back. Tap below to get Pro back for {{1}} a month.",
+    params: ["price"],
+    example: ["₦3,000"],
+    button: { text: "Get Pro back", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
   },
 
   pro_free_pay: {

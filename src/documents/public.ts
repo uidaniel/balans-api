@@ -164,7 +164,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
             d.currency, d.original_amount_minor, d.fx_rate,
             d.delivery_type, d.payment_details, d.bank_details_bank_name, d.bank_details_account_name,
             d.bank_details_account_last4, d.bank_details_account_number_encrypted,
-            u.business_name, u.plan, u.logo_url, u.brand_color,
+            u.business_name, (CASE WHEN balans_doc_pro(d, u) THEN 'pro' ELSE 'free' END) AS plan, u.logo_url, u.brand_color,
             c.name AS client_name,
             -- Whether there is one, never what it is: this page is public.
             (c.email IS NOT NULL AND c.email <> '') AS client_has_email,

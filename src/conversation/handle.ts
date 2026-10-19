@@ -64,7 +64,8 @@ import {
   debtors,
   issueSummaryToken,
   documentsEverSent,
-  documentsThisMonth,
+  documentPlan,
+  trialOf,
   findDocument,
   foreignInvoicedToday,
   planOf,
@@ -108,6 +109,7 @@ import {
   proPayPrompt,
   proActive,
   proOffer,
+  trialSentLine,
   proRenewOffer,
 } from "../billing/messages.ts";
 import { renewalOpen } from "../billing/subscription.ts";
@@ -182,30 +184,28 @@ async function sendMenu(
 async function limitCard(
   userId: string,
   phone: string | undefined,
-  today: Civil,
   log: FastifyBaseLogger,
 ): Promise<{ stop: false; plan: "free" | "pro" } | { stop: true; words: string | null }> {
-  // Independent of each other, and both are needed. One round trip, not two.
-  const [plan, used] = await Promise.all([planOf(userId), documentsThisMonth(userId, today)]);
-  const limit = defaults.plans[plan].documentsPerMonth;
+  /*
+   * Paying, or trial documents left (19 October 2026): go ahead, with every
+   * Pro feature. The plan is handed back rather than asked again, because
+   * the draft summary has to say what the user will be paid and a second
+   * query is a second answer, which is how a summary ends up disagreeing
+   * with the gate that let it through.
+   */
+  const trial = await trialOf(userId);
+  if (trial.paid || trial.left > 0) return { stop: false, plan: "pro" };
 
-  // Handed back rather than thrown away: the draft summary has to say what
-  // the user will be paid, and that is the plan's fee. Asking again would be
-  // a second query for something already in hand — and a second query is a
-  // second answer, which is how a summary ends up disagreeing with the gate
-  // that let it through.
-  if (limit === null || used < limit) return { stop: false, plan };
-
-  log.info({ userId, used, limit, plan }, "monthly document limit reached");
-  const words = limitReachedMessage(used, limit, today);
+  log.info({ userId, used: trial.used, allowance: trial.allowance }, "trial used up");
+  const words = limitReachedMessage(trial.allowance);
   if (!phone) return { stop: true, words };
 
   const sent = await sendButtons(phone, {
     headerImage: LIMIT_CARD,
-    body: limitReachedCaption(used, limit, today),
+    body: limitReachedCaption(trial.allowance),
     // The id is the word the parser already reads, so tapping this and typing
     // "upgrade" are the same message arriving by different routes.
-    buttons: [{ id: "upgrade", title: "Upgrade to Pro" }],
+    buttons: [{ id: "upgrade", title: "Get Pro" }],
   });
 
   if (sent.ok) {
@@ -1192,7 +1192,7 @@ async function runEffects(
            * below does not invite a document that cannot be created either.
            */
           if (effect.key === "invoice" || effect.key === "quote" || effect.key === "request") {
-            const gate = await limitCard(userId, ctx.phone, ctx.today, log);
+            const gate = await limitCard(userId, ctx.phone, log);
             if (gate.stop) {
               if (gate.words) extra.push(gate.words);
               holdAt = "idle";
@@ -1410,7 +1410,14 @@ async function runEffects(
             break;
           }
 
-          const gate = await limitCard(userId, ctx.phone, ctx.today, log);
+          /*
+           * A change to a sent document is not a new one and uses none of the
+           * trial (19 October 2026), so it is not stopped when the three are
+           * gone; it keeps the treatment the document already has.
+           */
+          const gate = ctx.editingId
+            ? ({ stop: false, plan: await documentPlan(ctx.editingId) } as const)
+            : await limitCard(userId, ctx.phone, log);
           if (gate.stop) {
             if (gate.words) extra.push(gate.words);
             holdAt = "idle";
@@ -1789,6 +1796,18 @@ async function runEffects(
             ? [{ id: `mark invoice ${confirmed.number} as paid`, title: "Mark as paid" }]
             : [];
 
+          /*
+           * Where the free documents stand (19 October 2026), on its own line
+           * after the invoice: the caption is forwarded to the client, and
+           * this is not theirs to read. Not after a change, which uses none.
+           */
+          const trialNote = async (): Promise<void> => {
+            if (ctx.editingId || confirmed.updatedFrom) return;
+            const t = await trialOf(userId);
+            if (t.paid) return;
+            extra.push(trialSentLine(t));
+          };
+
           const offerDesigns = async (): Promise<void> => {
             if (!ctx.phone || (await hasChosenTemplate(userId))) return;
             if ((await documentsEverSent(userId)) > DESIGN_OFFER_LIMIT) return;
@@ -1832,6 +1851,7 @@ async function runEffects(
                 await toClient();
                 await offerQuoteActions();
                 await offerDesigns();
+                await trialNote();
                 break;
               }
               log.error({ userId, reason: sent.reason }, "could not send the document");
@@ -1847,6 +1867,7 @@ async function runEffects(
           await toClient();
           await offerQuoteActions();
           await offerDesigns();
+          await trialNote();
           break;
         }
 
@@ -2393,7 +2414,7 @@ async function runEffects(
             extra.push(proActive(state));
             break;
           }
-          const used = await documentsThisMonth(userId, ctx.today);
+          const trial = await trialOf(userId);
 
           /*
            * The upgrade card, for anybody who asks.
@@ -2410,8 +2431,8 @@ async function runEffects(
            * billing/pro-checkout.ts). Card, transfer, USSD, all on one page
            * people already know, instead of an account number to copy.
            */
-          if (!(await sendProButton(userId, ctx.phone, proOffer(used, price, year), UPGRADE_CARD, log, price))) {
-            extra.push(proPayLink(proOffer(used, price, year), proStartUrl(userId)));
+          if (!(await sendProButton(userId, ctx.phone, proOffer(trial, price, year), UPGRADE_CARD, log, price))) {
+            extra.push(proPayLink(proOffer(trial, price, year), proStartUrl(userId)));
           }
           break;
         }

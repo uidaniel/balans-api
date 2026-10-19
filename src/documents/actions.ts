@@ -282,10 +282,13 @@ export async function convertQuote(
       `INSERT INTO documents
          (user_id, client_id, type, number, status, subtotal_kobo, vat_kobo, total_kobo,
           pass_fees_to_client, notes, parent_id, public_token, issue_date, due_date, sent_at,
-          currency, original_amount_minor, fx_rate, fx_source, fx_fetched_at)
+          currency, original_amount_minor, fx_rate, fx_source, fx_fetched_at, trial)
        VALUES ($1, $2, 'invoice', $3, 'sent', $4, $5, $6, $7, $8, $9, $10,
                CURRENT_DATE, $11::date, now(),
-               $12, $13, $14, $15, $16)
+               $12, $13, $14, $15, $16,
+               -- The quote's treatment. Not a free document of its own: the
+               -- count leaves out anything with a parent (migration 0045).
+               (SELECT q.trial FROM documents q WHERE q.id = $9))
        RETURNING id`,
       [
         userId,

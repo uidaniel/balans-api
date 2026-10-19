@@ -25,6 +25,7 @@
 import { ensureSubaccountEarly } from "../payments/subaccount-verification.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { db, tx } from "../db/pool.ts";
+import { planOf } from "../documents/queries.ts";
 import { encrypt } from "../lib/crypto.ts";
 
 /** No delay: a change is in force as soon as it is confirmed. */
@@ -198,8 +199,7 @@ export async function scheduleBankChange(
 
   // A new account is a new Paystack subaccount, which starts unverified.
   // Made now for a Pro user, so it can be verified before a client pays.
-  const { rows: planRows } = await db().query<{ plan: string }>(`SELECT plan FROM users WHERE id = $1`, [userId]);
-  if (planRows[0]?.plan === "pro") ensureSubaccountEarly(userId, log);
+  if ((await planOf(userId)) === "pro") ensureSubaccountEarly(userId, log);
 
   return effectiveAt;
 }

@@ -103,7 +103,7 @@ async function paidRow(documentId: string): Promise<Row | null> {
               WHERE p.document_id = d.id AND p.status = 'success'
               ORDER BY p.created_at DESC LIMIT 1)::int AS last_paid_kobo,
             c.name AS client_name, c.email AS client_email,
-            u.business_name, u.email AS business_email, u.plan
+            u.business_name, u.email AS business_email, (CASE WHEN balans_doc_pro(d, u) THEN 'pro' ELSE 'free' END) AS plan
        FROM documents d
        JOIN clients c ON c.id = d.client_id
        JOIN users u   ON u.id = d.user_id
@@ -213,7 +213,7 @@ export async function emailPaidToClient(
       ...(receipt ? [{ filename: receipt.filename, content: receipt.bytes }] : []),
     ];
 
-    const brand = await clientBrandFor(d.user_id);
+    const brand = await clientBrandFor(d.user_id, d.plan);
     const as = sentAs(business, brand);
 
     const sent = await sendEmail(

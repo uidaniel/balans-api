@@ -226,9 +226,11 @@ export async function createDraft(
       `INSERT INTO documents
          (user_id, client_id, type, status, subtotal_kobo, vat_kobo, total_kobo,
           pass_fees_to_client, due_date, valid_until, notes,
-          currency, original_amount_minor, fx_rate, fx_source, fx_fetched_at, pay_by, title)
+          currency, original_amount_minor, fx_rate, fx_source, fx_fetched_at, pay_by, title, trial)
        VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, $9, $10,
-               $11, $12, $13, $14, $15, $16, $17)
+               $11, $12, $13, $14, $15, $16, $17,
+               -- One of the free documents unless the account is paying (migration 0045).
+               (SELECT NOT balans_paid(u) FROM users u WHERE u.id = $1))
        RETURNING id`,
       [
         userId,
