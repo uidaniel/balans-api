@@ -11,7 +11,7 @@
  * the PDFs, so changing a price is a command, not a redraw.
  *
  * The layout is the original's: ink ground, a marigold pill, the headline in
- * Geist, a checklist, the price at the foot and the mark beside it.
+ * Wix Madefor Display, a checklist, the price at the foot and the mark beside it.
  */
 
 import { writeFileSync } from "node:fs";

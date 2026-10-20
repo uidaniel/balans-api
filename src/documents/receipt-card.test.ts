@@ -227,13 +227,13 @@ describe("what the receipt says", () => {
      */
     const html = receiptHtml(draft({}), "free", today);
     assert.match(html, /@font-face/);
-    assert.match(html, /font-family:"Geist"/);
+    assert.match(html, /font-family:"Wix Madefor Display"/);
     assert.match(html, /data:font\/ttf;base64,/);
-    assert.match(html, /font-family:"Geist","Instrument Sans"/, "Geist leads the stack");
+    assert.match(html, /font-family:"Wix Madefor Display","DejaVu Sans"/, "Wix Madefor leads the stack");
   });
 
   it("has a text weight to be set in, not just headline weights", () => {
-    // Geist carried only 700 and 800 while it was a headline face. Asking for
+    // The display face once carried only 700 and 800. Asking for
     // 400 from a family with none would have been answered by Bold, and every
     // word on the card would have come out heavy.
     assert.match(fontFaces(["display"]), /font-weight:400/);

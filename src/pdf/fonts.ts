@@ -7,9 +7,10 @@
  * look like the templates on balans.ng: the layouts were close, the type was
  * a different typeface at a different weight.
  *
- * So the faces travel with the repository. Instrument Sans for text and Geist
- * for the display numbers, which is exactly the pairing the web app loads;
- * Instrument Serif for Atelier, the one layout set in serif.
+ * So the faces travel with the repository. Wix Madefor Display for everything
+ * (20 October 2026; it replaced Instrument Sans for text and Geist for the
+ * figures), which is what the web app loads; Instrument Serif for Atelier,
+ * the one layout set in serif.
  *
  * Two ways to reach them, because the two callers have opposite constraints:
  *
@@ -21,8 +22,8 @@
  *     once, and eight copies of the embedded bytes is several megabytes over
  *     a phone connection for the same eight files.
  *
- * Amounts are the one place a fallback still shows: neither Geist nor
- * Instrument Sans carries ₦ (U+20A6), so the sign comes from DejaVu, which is
+ * Amounts are the one place a fallback still shows: Wix Madefor Display does
+ * not carry ₦ (U+20A6), so the sign comes from DejaVu, which is
  * installed in the image for exactly this reason. The browser does that per
  * glyph, so only the sign changes face — the digits beside it do not. The web
  * app falls back the same way, which is why the two match.
@@ -36,28 +37,23 @@ const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../asset
 
 type Face = { family: string; weight: number; style: "normal" | "italic"; file: string };
 
+/*
+ * One family for text and figures. `sans` and `display` stay apart as names,
+ * because every sheet asks for them by role, and a role can move to another
+ * face again without touching a layout.
+ */
+const WIX: Face[] = [
+  { family: "Wix Madefor Display", weight: 400, style: "normal", file: "WixMadeforDisplay-Regular.ttf" },
+  { family: "Wix Madefor Display", weight: 500, style: "normal", file: "WixMadeforDisplay-Medium.ttf" },
+  { family: "Wix Madefor Display", weight: 600, style: "normal", file: "WixMadeforDisplay-SemiBold.ttf" },
+  { family: "Wix Madefor Display", weight: 700, style: "normal", file: "WixMadeforDisplay-Bold.ttf" },
+  { family: "Wix Madefor Display", weight: 800, style: "normal", file: "WixMadeforDisplay-ExtraBold.ttf" },
+];
+
 /** The faces, grouped by the part of a sheet that needs them. */
 const FACES = {
-  sans: [
-    { family: "Instrument Sans", weight: 400, style: "normal", file: "InstrumentSans-Regular.ttf" },
-    { family: "Instrument Sans", weight: 600, style: "normal", file: "InstrumentSans-SemiBold.ttf" },
-    { family: "Instrument Sans", weight: 700, style: "normal", file: "InstrumentSans-Bold.ttf" },
-  ],
-  /*
-   * Geist carried only its two heavy weights while it was used for headlines
-   * and amounts alone. The draft receipt is set in Geist throughout, so the
-   * text weight is here too — without it, a request for 400 would be answered
-   * by the nearest face in the family, which is Bold, and every word on the
-   * card would have come out heavy.
-   *
-   * Nothing already drawn changes: every existing use of this stack asks for
-   * 700 or 800 explicitly.
-   */
-  display: [
-    { family: "Geist", weight: 400, style: "normal", file: "Geist-Regular.ttf" },
-    { family: "Geist", weight: 700, style: "normal", file: "Geist-Bold.ttf" },
-    { family: "Geist", weight: 800, style: "normal", file: "Geist-ExtraBold.ttf" },
-  ],
+  sans: WIX,
+  display: WIX,
   serif: [
     { family: "Instrument Serif", weight: 400, style: "normal", file: "InstrumentSerif-Regular.ttf" },
     { family: "Instrument Serif", weight: 400, style: "italic", file: "InstrumentSerif-Italic.ttf" },
@@ -81,8 +77,8 @@ export const FONT_FILES: Record<string, string> = Object.fromEntries(
  * readable invoice — it just is not ours.
  */
 export const FONT = {
-  sans: `"Instrument Sans","DejaVu Sans","Segoe UI",-apple-system,"Helvetica Neue",Arial,sans-serif`,
-  display: `"Geist","Instrument Sans","DejaVu Sans","Segoe UI",-apple-system,Arial,sans-serif`,
+  sans: `"Wix Madefor Display","DejaVu Sans","Segoe UI",-apple-system,"Helvetica Neue",Arial,sans-serif`,
+  display: `"Wix Madefor Display","DejaVu Sans","Segoe UI",-apple-system,Arial,sans-serif`,
   serif: `"Instrument Serif","DejaVu Serif",Georgia,"Times New Roman",serif`,
 };
 
@@ -99,6 +95,9 @@ function dataUri(file: string): string {
   return uri;
 }
 
+/** The faces of these sets, each once: `sans` and `display` share a family. */
+const facesOf = (sets: FontSet[]): Face[] => [...new Set(sets.flatMap((set) => FACES[set]))];
+
 const face = (f: Face, src: string, display: "block" | "swap" = "block"): string =>
   `@font-face{font-family:"${f.family}";font-style:${f.style};font-weight:${f.weight};` +
   `font-display:${display};src:url("${src}") format("truetype")}`;
@@ -111,15 +110,14 @@ const face = (f: Face, src: string, display: "block" | "swap" = "block"): string
  */
 export function fontFaces(sets: FontSet[], mode: "embed" | "link" = "embed"): string {
   if (mode === "link") return "";
-  return sets
-    .flatMap((set) => FACES[set].map((f) => face(f, dataUri(f.file))))
+  return facesOf(sets)
+    .map((f) => face(f, dataUri(f.file)))
     .join("");
 }
 
 /** The same rules as a stylesheet, for pages that can fetch one. */
 export function fontStylesheet(base = "/designs/fonts"): string {
-  return Object.values(FACES)
-    .flat()
+  return facesOf(Object.keys(FACES) as FontSet[])
     .map((f) => face(f, `${base}/${f.file}`))
     .join("\n");
 }
@@ -134,7 +132,7 @@ export function fontStylesheet(base = "/designs/fonts"): string {
  * actually uses on that page.
  */
 export function fontFacesForPage(sets: FontSet[], base = "/designs/fonts"): string {
-  return sets.flatMap((set) => FACES[set].map((f) => face(f, `${base}/${f.file}`, "swap"))).join("");
+  return facesOf(sets).map((f) => face(f, `${base}/${f.file}`, "swap")).join("");
 }
 
 /**

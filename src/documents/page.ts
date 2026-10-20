@@ -35,7 +35,7 @@ export function esc(s: string): string {
 
 /* Brand tokens, copied from the web app's globals.css. Duplicated on purpose:
    this page must render from a cold server with no shared stylesheet. The
-   faces are the site's too — Instrument Sans for reading, Geist for the
+   face is the site's too — Wix Madefor Display, for reading and for the
    figures — served by this API and inlined as rules, so the only requests
    are for the few files a phone actually uses. */
 const CSS = `

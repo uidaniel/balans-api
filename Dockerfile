@@ -21,7 +21,7 @@ ENV NODE_ENV=production \
     CHROME_PATH=/usr/bin/chromium
 
 # Chromium, plus fonts. The invoice layouts carry their own typefaces in
-# assets/fonts, but not the naira sign: neither Instrument Sans nor Geist has
+# assets/fonts, but not the naira sign: Wix Madefor Display does not have
 # ₦ (U+20A6), so it comes from the host and every amount on every invoice
 # renders as a box without one. DejaVu carries it.
 RUN apt-get update \

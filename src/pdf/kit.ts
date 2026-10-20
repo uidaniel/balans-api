@@ -11,7 +11,7 @@
  *   - Every length is in `em`, as on the web, so one `font-size` on the sheet
  *     scales a whole document. A4 is 28.33em wide there (a 340px preview at
  *     12px), which is 7.41mm per em on a 210mm page.
- *   - The type is the web app's own — Instrument Sans and Geist, carried in
+ *   - The type is the web app's own — Wix Madefor Display, carried in
  *     the repository rather than borrowed from the host. See `fonts.ts`.
  *   - Where a marketing sheet showed something a real document does not have
  *     — an invented project name, a drawn signature — the shape is kept and

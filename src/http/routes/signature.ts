@@ -48,7 +48,7 @@ const CSS = `
 :root{--ink:#10231C;--cream:#F6F1E7;--paper:#FFFFFF;--gold:#F5B82E;--line:rgba(16,35,28,.12);--faint:rgba(16,35,28,.55);
 --lift:0 0 0 1px rgba(16,35,28,.06),0 1px 2px rgba(16,35,28,.05),0 14px 34px -18px rgba(16,35,28,.25)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--cream);color:var(--ink);font-family:"Instrument Sans","Geist",system-ui,sans-serif;
+body{background:var(--cream);color:var(--ink);font-family:"Wix Madefor Display",system-ui,sans-serif;
   -webkit-font-smoothing:antialiased;min-height:100dvh;padding:0 0 48px}
 /* The head on ink, the card rising out of it: the same shape as the pay
    page, the designs and the settings this is opened from. */
@@ -57,9 +57,9 @@ body{background:var(--cream);color:var(--ink);font-family:"Instrument Sans","Gei
 .back{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px 0 10px;border-radius:999px;margin-bottom:20px;
 background:rgba(246,241,231,.08);color:var(--cream);font-weight:600;font-size:13.5px;text-decoration:none}
 .back svg{width:15px;height:15px}
-.brand{display:flex;align-items:center;gap:8px;font-family:"Geist",sans-serif;font-weight:700;letter-spacing:-.02em;color:var(--cream)}
+.brand{display:flex;align-items:center;gap:8px;font-family:"Wix Madefor Display",sans-serif;font-weight:700;letter-spacing:-.02em;color:var(--cream)}
 .brand svg{width:22px;height:22px}
-h1{margin-top:22px;font-family:"Geist",sans-serif;font-weight:800;font-size:32px;line-height:1.05;letter-spacing:-.04em}
+h1{margin-top:22px;font-family:"Wix Madefor Display",sans-serif;font-weight:800;font-size:32px;line-height:1.05;letter-spacing:-.04em}
 .lead{margin-top:10px;font-size:15.5px;line-height:1.55;color:rgba(246,241,231,.66);max-width:44ch}
 .wrap{padding:0 14px;margin-top:-70px;position:relative}
 .card{background:var(--paper);border-radius:24px;padding:18px;box-shadow:var(--lift)}
@@ -76,7 +76,7 @@ h1{margin-top:22px;font-family:"Geist",sans-serif;font-weight:800;font-size:32px
 .pad canvas{display:block;width:100%;height:210px;border-radius:18px;cursor:crosshair;touch-action:none;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .pad .base{position:absolute;left:46px;right:24px;bottom:54px;border-top:1.5px solid rgba(16,35,28,.18);pointer-events:none}
-.pad .x{position:absolute;left:22px;bottom:50px;font:600 18px/1 "Geist",sans-serif;color:rgba(16,35,28,.3);pointer-events:none}
+.pad .x{position:absolute;left:22px;bottom:50px;font:600 18px/1 "Wix Madefor Display",sans-serif;color:rgba(16,35,28,.3);pointer-events:none}
 .pad .hint{position:absolute;left:0;right:0;top:40%;text-align:center;font-size:15px;color:rgba(16,35,28,.38);pointer-events:none}
 .row{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:13.5px;color:var(--faint)}
 .link{border:0;background:none;font:inherit;font-weight:600;color:var(--ink);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
