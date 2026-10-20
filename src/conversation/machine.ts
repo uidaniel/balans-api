@@ -319,6 +319,8 @@ export type Effect =
     }
   | { type: "verify_email_code"; email: string; code: string }
   | { type: "record_consent"; version: string }
+  /** After setup: one optional invitation to brand their invoices. */
+  | { type: "offer_branding" }
   | {
       type: "show_help";
       /**
@@ -3777,6 +3779,7 @@ function takeConsent(text: string, ctx: Context, version: string, now: Civil): S
           // has to carry the example the card was showing.
           fallback: { line: VOICE.done, holdAt: "idle" },
         },
+        { type: "offer_branding" },
       ],
     };
   }

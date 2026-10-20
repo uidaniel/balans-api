@@ -92,6 +92,16 @@ export async function renderDocumentPdf(
 
 const recent = new Map<string, Promise<Rendered | null>>();
 
+/**
+ * A document's sheet as HTML, in the sender's own design, logo and colour:
+ * for drawing it as a picture (billing/limit-card.ts) rather than printing it.
+ */
+export async function documentSheetHtml(documentId: string): Promise<string | null> {
+  const data = await loadForRender(documentId);
+  if (!data) return null;
+  return renderTemplate(data.templateId, data.doc) ?? renderDocumentHtml(data.doc);
+}
+
 async function drawDocument(
   documentId: string,
   doc: DocumentData,

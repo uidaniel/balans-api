@@ -88,6 +88,15 @@ export async function proPriceFor(userId: string, log?: FastifyBaseLogger, term:
   return proPriceForPhone(rows[0]?.wa_phone, log, currentRate, term);
 }
 
+/**
+ * A year, said a month at a time: "₦2,500" for ₦30,000 (20 October 2026).
+ * The yearly plan leads now, and a monthly figure is the one people compare.
+ * Null abroad, where the year is charged in naira at a rate that moves and a
+ * per-month figure would be a second number to drift.
+ */
+export const perMonthOf = (year: ProPrice): string | null =>
+  year.term === "year" && !year.abroad ? formatNaira(Math.round(year.chargeKobo / 12)) : null;
+
 /** Said under a price abroad, so the naira on Paystack's page is no surprise. */
 export const chargedAs = (p: ProPrice): string | null =>
   p.abroad

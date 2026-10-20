@@ -14,9 +14,8 @@ import { db } from "../../db/pool.ts";
 import { env } from "../../config.ts";
 import { userForProToken } from "../../billing/pro-link.ts";
 import { openProCheckout } from "../../billing/pro-checkout.ts";
-import { chargedAs, proPriceFor } from "../../billing/price.ts";
+import { chargedAs, perMonthOf, proPriceFor } from "../../billing/price.ts";
 import { renewalOpen, stateOf } from "../../billing/subscription.ts";
-import { formatNaira } from "../../../core/totals.ts";
 import { defaults } from "../../config.ts";
 import { renderNotFound, renderProPlans, renderProUnavailable } from "../../documents/page.ts";
 
@@ -59,7 +58,7 @@ export async function proRoutes(app: FastifyInstance): Promise<void> {
         renderProPlans({
           monthLabel: month.label,
           yearLabel: year.label,
-          yearPerMonth: year.abroad ? null : formatNaira(Math.round(year.chargeKobo / 12)),
+          yearPerMonth: perMonthOf(year),
           monthUntil: until(1),
           yearUntil: until(12),
           monthUrl: `${base}&term=month`,

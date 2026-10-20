@@ -13,6 +13,8 @@
  * the `reminders` row is claimed before the message goes out.
  */
 
+import { purgeParserText, sendTrialNotices } from "./trial-notices.ts";
+import { purgeExpiredCodes } from "../lib/codes.ts";
 import { tellPayouts } from "../payments/payouts.ts";
 import { proPriceForPhone } from "../billing/price.ts";
 import { checkSubaccounts, emailUnverifiedDigest } from "../payments/subaccount-verification.ts";
@@ -583,6 +585,15 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
     await sendProReminders(log);
     await expireLapsedSubscriptions(log);
     await sendLapsedReminders(log);
+    // Free documents used, then quiet for two days: one email (20 October 2026).
+    await sendTrialNotices(log);
+
+    // What the privacy policy promises: typed text gone after 30 days, and
+    // used email codes not kept past a day after they expire.
+    const purged = await purgeParserText(defaults.behaviour.parserTextRetentionDays);
+    if (purged) log.info({ count: purged }, "message text purged");
+    const codes = await purgeExpiredCodes();
+    if (codes) log.info({ count: codes }, "expired codes purged");
 
     // F15. Returns early on every day but the 1st.
     await sendMonthlySummaries(today, log);

@@ -32,6 +32,7 @@ export function knowledge(): string {
   const month = formatNaira(pro.priceKobo);
   const year = formatNaira(pro.yearPriceKobo);
   const saving = formatNaira(pro.priceKobo * 12 - pro.yearPriceKobo);
+  const perMonth = formatNaira(Math.round(pro.yearPriceKobo / 12));
   const abroad = env.INTL_ENABLED;
   const intl = defaults.international;
   // From the code's own lists, so a currency added there is one the
@@ -49,7 +50,7 @@ Q: Is there a web or app version? A: Not yet. Balans works on WhatsApp. A web da
 Q: Can I talk to a real person? A: Yes: hello@balans.ng. We reply every day, within 24 hours.
 
 ## Plans and pricing
-Q: How much does it cost? A: Your first ${free.trialDocuments} documents (invoices, quotes or payment requests) are free, with every feature included. After that, Pro is ${month} a month, or ${year} a year, which saves ${saving}. There is no monthly free allowance.
+Q: How much does it cost? A: Your first ${free.trialDocuments} documents (invoices, quotes or payment requests) are free, with every feature included. After that, Pro is ${perMonth} a month on the yearly plan (${year} once, which saves ${saving}), or ${month} month to month. There is no monthly free allowance.
 Q: What counts as one of the ${free.trialDocuments} free documents? A: Every invoice, quote or payment request you send. A cancelled one still counts. Changing a sent invoice does not, and neither does turning a quote into an invoice.
 Q: Do the free documents reset every month? A: No. It is ${free.trialDocuments} in total, not ${free.trialDocuments} a month. Look up how many are left.
 Q: What happens when I've used the ${free.trialDocuments}? A: New invoices need Pro, monthly or yearly. Everything already sent keeps working, and clients can still pay.
@@ -125,7 +126,7 @@ Q: I marked it paid by mistake. A: Email hello@balans.ng and we'll help.
 Q: Cash, cheque, POS or USSD? A: Balans doesn't process those, but you can take payment however you like and mark the invoice paid yourself.
 Q: Can my client pay by card? A: Naira invoices are paid by bank transfer.${abroad ? " Clients abroad can pay by card." : ""}
 Q: Which countries can I receive money from? A: Clients in Nigeria pay by bank transfer in naira.${abroad ? " A client in any country can pay a card link, as long as Paystack accepts their card, or pay your own details directly." : ""} For a specific country, email hello@balans.ng.
-${abroad ? `Q: International limits and fees? A: Card links: up to about $1,000 an invoice (exactly: ${caps}), and twice that a day in each currency. Paystack charges ${fee} per card payment; Balans adds nothing. You can pass the fee to your client in the invoice form. Payments to your own details have no Balans limit or fee.\n` : ""}Q: Does Balans take a cut? A: No fee on naira invoices paid by transfer to your bank account.
+${abroad ? `Q: International limits and fees? A: Card links: up to about ${formatMoney(intl.invoiceCapMinor.USD, "USD").replace(/\.00$/, "")} an invoice (exactly: ${caps}). The day's limit is twice that, across all currencies together. Paystack charges ${fee} per card payment, and Balans takes a flat ${formatNaira(intl.balansFeeKobo)} per card payment, both out of what you receive. You can pass Paystack's fee to your client in the invoice form; the ${formatNaira(intl.balansFeeKobo)} is always yours. Payments to your own details have no Balans limit or fee.\n` : ""}Q: Does Balans take a cut? A: No fee on naira invoices paid by transfer to your bank account.${abroad ? ` A card payment from abroad carries a flat ${formatNaira(intl.balansFeeKobo)} Balans fee.` : ""}
 Q: Who pays the transfer fee? A: Your client pays their own bank's fee.
 Q: Crypto, or dollars into a dollar account? A: No.
 

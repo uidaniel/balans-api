@@ -22,6 +22,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { draftSummary, payout } from "./summary.ts";
+import { cardFeeKobo } from "../payments/card-fee.ts";
 import type { Draft } from "./store.ts";
 
 const N = (naira: number) => naira * 100;
@@ -209,11 +210,13 @@ ${m}`);
     assert.ok(!m.includes("PS:"), `the sample should not talk about fees:\n${m}`);
   });
 
-  it("tells a Pro user their own number, not the free one", () => {
-    // The gate that lets a draft through already knows the plan. If this ever
-    // falls back to a default, a Pro user is shown a fee they do not pay.
+  it("tells everybody the same figure abroad: the card fee and Balans's flat ₦1,000", () => {
+    // Since 20 October 2026 a card from abroad carries one flat Balans fee
+    // a payment, whatever the plan (payments/card-fee.ts).
     const figure = (plan: "free" | "pro") =>
       /PS: you receive \*(₦[\d,.]+)\*/.exec(draftSummary(draft(ABROAD), today, plan))![1];
-    assert.notEqual(figure("pro"), figure("free"));
+    assert.equal(figure("pro"), figure("free"));
+    // ₦0 until the fee starts on its announced date, then ₦1,000.
+    assert.equal(payout(draft(ABROAD), "pro").balansFeeKobo, cardFeeKobo());
   });
 });

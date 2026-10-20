@@ -129,7 +129,7 @@ border-top:.16em solid ${INK};padding-top:.8em}
 .work{margin-top:1.8em}
 .money{margin-top:1.4em;display:grid;grid-template-columns:1fr 1fr;gap:1.4em;align-items:end;
 border-top:1px solid ${ink(0.15)};padding-top:1em}
-.money .sums{width:12em}
+.money .sums{min-width:12em;width:max-content}
 .money .due{text-align:right}
 .money .fx{margin-left:auto}
 .tail{margin-top:auto;display:grid;grid-template-columns:1fr 1fr;gap:1.4em;align-items:end;padding-top:1.4em}
@@ -204,7 +204,7 @@ padding:.5em 0;font-size:.54em;font-weight:600;letter-spacing:.16em;text-transfo
 .lede .deck{margin-top:.4em;font-family:${SERIF};font-style:italic;font-size:.92em;color:${ink(0.6)}}
 .cols{margin-top:1.1em;display:flex;gap:1.3em;border-top:1px solid ${INK};padding-top:1em}
 .main{flex:1;min-width:0}
-.main .sums{margin-top:1em;margin-left:auto;width:11em}
+.main .sums{margin-top:1em;margin-left:auto;min-width:11em;width:max-content}
 .side{width:8.8em;flex:none;border-left:1px solid ${ink(0.2)};padding-left:1.2em}
 .side>div+div{margin-top:1.1em}
 .side .due .amt{font-family:${SERIF};font-weight:400;letter-spacing:-.01em}
@@ -386,7 +386,7 @@ letter-spacing:-.06em;font-variant-numeric:tabular-nums;white-space:nowrap}
 .facts{display:flex;gap:1.4em}
 .facts>div{flex:1;min-width:0}
 .work{margin-top:1.2em}
-.body .sums{margin-top:1em;margin-left:auto;width:12em}
+.body .sums{margin-top:1em;margin-left:auto;min-width:12em;width:max-content}
 .tail{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em;padding-top:1.2em}
 .tail .left>div+div{margin-top:1em}
 `;
@@ -466,7 +466,7 @@ letter-spacing:-.04em;font-variant-numeric:tabular-nums;white-space:nowrap}
 .stub .row2 .cap,.stub .row2 .fv{color:inherit}
 .stub .row2 .cap{opacity:.6}
 .work{margin-top:1.6em}
-.wrap .sums{margin-top:1em;margin-left:auto;width:12em}
+.wrap .sums{margin-top:1em;margin-left:auto;min-width:12em;width:max-content}
 .tail{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em;padding-top:1.2em}
 .tail .left>div+div{margin-top:1em}
 `;
@@ -753,7 +753,7 @@ function adire(d: DocumentData, opts: RenderOptions): string {
 .facts>div:first-child{flex:1.6}
 .work{margin-top:1.3em}
 .money{margin-top:1.3em;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em}
-.money .sums{width:12em}
+.money .sums{min-width:12em;width:max-content}
 .tail{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em;padding-top:1.2em}
 .tail .left>div+div{margin-top:1em}
 `;
@@ -934,7 +934,7 @@ h1{margin-top:.9em;font-family:${DISPLAY};font-size:2.6em;line-height:.9;font-we
 .facts>div{border-top:.18em solid ${MARIGOLD};padding-top:.6em;min-width:0}
 .work{margin-top:1.2em}
 .money{margin-top:1em;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em}
-.money .sums{width:12em}
+.money .sums{min-width:12em;width:max-content}
 .tail{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em;padding-top:1.2em}
 .tail .left>div+div{margin-top:1em}
 `;
@@ -1088,8 +1088,11 @@ function monogram(d: DocumentData, opts: RenderOptions): string {
 .line{margin-top:1.2em;height:1px;background:${INK}}
 .facts{margin-top:1em;display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.2em}
 .work{margin-top:1.6em}
-.owe{margin-top:1.4em;display:flex;align-items:center;justify-content:space-between;gap:1.2em}
-.owe .sums{width:12em}
+/* Wraps, pill under the sums, only when a very large total leaves no room
+   for both on one line (20 October 2026). */
+.owe{margin-top:1.4em;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1.2em}
+.owe .pillbox{margin-left:auto}
+.owe .sums{min-width:12em;width:max-content}
 .pillbox{display:flex;align-items:center;gap:1em;border:.12em solid ${INK};border-radius:99em;padding:.65em .7em .65em 1.3em}
 .pillbox .cap{white-space:nowrap}
 .pillbox .v{font-family:${DISPLAY};font-size:${fit(h.display, 1.6, 9)}em;line-height:1;font-weight:800;letter-spacing:-.04em;

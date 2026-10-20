@@ -18,6 +18,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
 import { downloadMedia } from "../whatsapp/client.ts";
 import { get as getFile, put } from "../storage/files.ts";
+import { isTileImage, rendererAvailable } from "../pdf/chrome.ts";
 
 /** Comfortably big enough for a logo, small enough to inline in a render. */
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -85,7 +86,8 @@ export async function saveLogoBytes(
 
   const key = logoKey(userId);
   await put(key, bytes, contentType, userId);
-  await db().query(`UPDATE users SET logo_url = $2 WHERE id = $1`, [userId, key]);
+  const tile = rendererAvailable() ? await isTileImage(`data:${contentType};base64,${bytes.toString("base64")}`) : null;
+  await db().query(`UPDATE users SET logo_url = $2, logo_tile = $3 WHERE id = $1`, [userId, key, tile]);
 
   log.info({ userId, bytes: bytes.length, contentType }, "logo saved");
   return { ok: true };
@@ -95,7 +97,27 @@ export const MAX_LOGO_BYTES = MAX_BYTES;
 
 /** Forgets it, so the next invoice goes out without one. */
 export async function clearLogo(userId: string): Promise<void> {
-  await db().query(`UPDATE users SET logo_url = NULL WHERE id = $1`, [userId]);
+  await db().query(`UPDATE users SET logo_url = NULL, logo_tile = NULL WHERE id = $1`, [userId]);
+}
+
+/**
+ * Whether their logo should be shown with rounded corners (see migration
+ * 0047). Worked out on first sight for a logo saved before this existed.
+ */
+export async function logoIsTile(userId: string): Promise<boolean> {
+  const { rows } = await db().query<{ logo_url: string | null; logo_tile: boolean | null }>(
+    `SELECT logo_url, logo_tile FROM users WHERE id = $1`,
+    [userId],
+  );
+  const r = rows[0];
+  if (!r?.logo_url) return false;
+  if (r.logo_tile !== null) return r.logo_tile;
+  if (!rendererAvailable()) return false;
+  const file = await getFile(r.logo_url).catch(() => null);
+  if (!file) return false;
+  const tile = await isTileImage(`data:${file.contentType};base64,${file.bytes.toString("base64")}`);
+  await db().query(`UPDATE users SET logo_tile = $2 WHERE id = $1 AND logo_url = $3`, [userId, tile, r.logo_url]);
+  return tile;
 }
 
 /**

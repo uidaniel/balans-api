@@ -496,7 +496,6 @@ export function pickerPage(opts: {
   const chosen = templateById(opts.chosenId);
   const mine = new Set(availableTo(opts.plan).map((t) => t.id));
   const ready = TEMPLATES.filter((t) => t.ready);
-  const free = ready.filter((t) => !t.pro).length;
 
   const cards = ready
     .map((t) => {
@@ -526,13 +525,11 @@ export function pickerPage(opts: {
       return `<div class="card${on ? " on" : ""}" data-plan="${t.pro ? "pro" : "free"}" data-name="${esc(t.name)}">
       ${preview(html, t.name, locked)}
       <div class="meta">
-        <div class="name">${esc(t.name)}${
-          t.pro ? `<span class="tag pro">Pro</span>` : `<span class="tag">Free</span>`
-        }</div>
+        <div class="name">${esc(t.name)}${locked ? `<span class="tag pro">Pro</span>` : ""}</div>
         <div class="blurb">${esc(t.blurb)}</div>
         ${
           !opts.token
-            ? `<div class="locked">In the form, choose <b>${esc(t.name)}</b><br>under Design${t.pro ? " (Pro)" : ""}</div>`
+            ? `<div class="locked">In the form, choose <b>${esc(t.name)}</b><br>under Design</div>`
             : locked
             ? `<div class="locked">Reply <b>upgrade</b> on WhatsApp<br>to use this one</div>`
             : `<form method="post" action="/designs/${esc(opts.token)}${opts.back ? "?from=settings" : ""}">
@@ -546,8 +543,6 @@ export function pickerPage(opts: {
     .join("");
 
   const saved = opts.savedId ? templateById(opts.savedId) : null;
-  const seg = (f: string, label: string, n: number, on = false) =>
-    `<button type="button" data-f="${f}" aria-pressed="${on}">${label}<span>${n}</span></button>`;
 
   return `<!doctype html>
 <html lang="en"><head>
@@ -572,9 +567,6 @@ export function pickerPage(opts: {
 <main class="wrap">
   ${saved ? `<div class="done" role="status">Saved. Your invoices now go out as ${esc(saved.name)}.</div>` : ""}
   <div class="bar">
-    <div class="seg" role="group" aria-label="Show designs">
-      ${seg("all", "All", ready.length, true)}${seg("free", "Free", free)}${seg("pro", "Pro", ready.length - free)}
-    </div>
   </div>
   <div class="chips" role="tablist" aria-label="Designs">${ready
     .map(

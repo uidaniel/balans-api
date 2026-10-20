@@ -11,6 +11,7 @@
  * what happens when there isn't one.
  */
 
+import { cardFeeKobo } from "../payments/card-fee.ts";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
@@ -71,7 +72,7 @@ describe("what the receipt says", () => {
     // only line Pro changes.
     const html = receiptHtml(draft(ABROAD), "free", today);
     assert.match(html, /Paystack fee/);
-    assert.match(html, /Balans fee \(Free\)/);
+    assert.match(html, /Balans fee/);
     assert.match(html, /To your bank/);
   });
 
@@ -142,12 +143,13 @@ describe("what the receipt says", () => {
     });
   });
 
-  it("names the plan the user is actually on, and its figure", () => {
-    // The same invoice, and the fee Pro does not take.
+  it("shows Balans's flat card fee, the same on every plan", () => {
+    // ₦1,000 a payment from abroad since 20 October 2026 (payments/card-fee.ts).
     const pro = receiptHtml(draft(ABROAD), "pro", today);
-    assert.match(pro, /Balans fee \(Pro\)/);
-    assert.match(pro, /₦0/);
-    assert.ok(payout(draft(ABROAD), "pro").receivesKobo > payout(draft(ABROAD), "free").receivesKobo);
+    assert.match(pro, /Balans fee/);
+    // ₦0 until the fee starts on its announced date, then −₦1,000.
+    assert.match(pro, cardFeeKobo() > 0 ? /−₦1,000/ : /Balans fee[\s\S]{0,200}₦0/);
+    assert.equal(payout(draft(ABROAD), "pro").receivesKobo, payout(draft(ABROAD), "free").receivesKobo);
   });
 
   it("does not print the invoice total twice", () => {

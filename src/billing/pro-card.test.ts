@@ -182,7 +182,11 @@ describe("the Pay button", () => {
     const { NAIRA_YEAR_PRICE } = await import("./price.ts");
     const { proStartUrl } = await import("./pro-link.ts");
     assert.equal(NAIRA_YEAR_PRICE.chargeKobo, 30_000_00);
-    assert.match(proOffer({ used: 1, allowance: 3 }, undefined, NAIRA_YEAR_PRICE), /₦30,000.*whole year.*next page/s);
+    // Yearly first (20 October 2026), said a month at a time, the month after it.
+    const offer = proOffer({ used: 1, allowance: 3 }, undefined, NAIRA_YEAR_PRICE);
+    assert.match(offer, /₦2,500 a month\* on the yearly plan \(₦30,000 once, two months free\)/);
+    assert.match(offer, /Or ₦3,000 month to month\. You choose on the next page\./);
+    assert.ok(offer.indexOf("₦2,500") < offer.indexOf("₦3,000"), "the year leads");
     assert.match(proPayPrompt(NAIRA_YEAR_PRICE), /A year of Pro is ₦30,000/);
     assert.match(proStartUrl("00000000-0000-0000-0000-000000000000", "year"), /&term=year$/);
   });

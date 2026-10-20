@@ -20,6 +20,7 @@ import { shapeFor, stagesFor, type Stage, dueDateWithStages } from "./parts.ts";
 import type { Draft } from "./store.ts";
 import { documentLink } from "./links.ts";
 import type { BankDetails } from "./bank-details.ts";
+import { cardFeeKobo, NO_PERCENTAGE } from "../payments/card-fee.ts";
 
 /**
  * How the client pays, in a message they will read.
@@ -159,7 +160,10 @@ export function payout(
   plan: "free" | "pro",
 ): Payout {
   const p = defaults.plans[plan];
-  const rates = { percentBps: p.feePercentBps, minKobo: p.feeMinKobo, capKobo: p.feeCapKobo };
+  // Abroad, the flat card fee and no percentage (payments/card-fee.ts).
+  const rates = draft.foreign
+    ? NO_PERCENTAGE
+    : { percentBps: p.feePercentBps, minKobo: p.feeMinKobo, capKobo: p.feeCapKobo };
 
   /*
    * Which processor, and it is not a detail.
@@ -205,6 +209,7 @@ export function payout(
       passToClient: draft.passFeesToClient,
       paidBeforeKobo,
       processor,
+      flatFeeKobo: draft.foreign ? cardFeeKobo() : 0,
     });
     paidBeforeKobo += amountKobo;
     clientPaysKobo += part.clientPaysKobo;
@@ -357,9 +362,10 @@ export function draftSummary(
   if (bank && !draft.foreign && (draft.type === "invoice" || draft.type === "payment_request")) {
     sections.push([
       "To be paid into:",
-      row("Account name", bank.accountName),
-      row("Bank", bank.bankName),
-      row("Account number", bank.accountNumber),
+      // Bold, label and value: these are the lines to check before sending.
+      b(row("Account name", bank.accountName)),
+      b(row("Bank", bank.bankName)),
+      b(row("Account number", bank.accountNumber)),
     ]);
   }
 

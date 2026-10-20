@@ -12,7 +12,7 @@ import { defaults, env } from "../config.ts";
 import { availableTo } from "../pdf/templates.ts";
 import { b, i, lines, para } from "../whatsapp/format.ts";
 import { GRACE_DAYS, type SubscriptionState } from "./subscription.ts";
-import { chargedAs, NAIRA_PRICE, type ProPrice } from "./price.ts";
+import { chargedAs, NAIRA_PRICE, perMonthOf, type ProPrice } from "./price.ts";
 
 const pro = defaults.plans.pro;
 
@@ -50,7 +50,7 @@ export function proOffer(
    * decoration. `voice.test.ts` allows exactly that and nothing looser.
    */
   return para(
-    `⭐ ${b("Balans Pro")} — ${b(price.label)} a month.`,
+    proHeadline(price, year),
     chargedAs(price) ?? "",
     trialLine(trial),
     lines(
@@ -67,7 +67,24 @@ export function proOffer(
       // Counted from the registry, so the claim cannot outlive the designs.
       `✅ All ${availableTo("pro").length} invoice designs`,
     ),
-    year ? yearLine(year) : "",
+  );
+}
+
+/**
+ * The price, yearly first (20 October 2026).
+ *
+ * The year leads because it is the better deal and the steadier customer,
+ * and it is said as a month because that is the number people compare. The
+ * month stays on the next line, one tap away, never hidden.
+ */
+export function proHeadline(price: ProPrice, year?: ProPrice): string {
+  if (!year) return `⭐ ${b("Balans Pro")} — ${b(price.label)} a month.`;
+  const monthly = perMonthOf(year);
+  return lines(
+    monthly
+      ? `⭐ ${b("Balans Pro")} — ${b(`${monthly} a month`)} on the yearly plan (${year.label} once, two months free).`
+      : `⭐ ${b("Balans Pro")} — ${b(year.label)} a year, two months free.`,
+    `Or ${price.label} month to month. You choose on the next page.`,
   );
 }
 
@@ -76,7 +93,8 @@ export function proOffer(
  * price of ten, said as what it saves.
  */
 export function yearLine(year: ProPrice): string {
-  return `💡 Or ${b(year.label)} for a whole year — two months free. You choose on the next page.`;
+  const monthly = perMonthOf(year);
+  return `💡 Or ${b(year.label)} for a whole year${monthly ? ` (${monthly} a month)` : ""} — two months free. You choose on the next page.`;
 }
 
 /**
@@ -290,4 +308,18 @@ export function proRenewOffer(state: SubscriptionState, price: ProPrice = NAIRA_
       : "",
     year ? yearLine(year) : "",
   );
+}
+
+/**
+ * One line about Pro under an ordinary reply (20 October 2026), for somebody
+ * whose free documents are used. At most once every three days; see
+ * `proNudgeLine` in conversation/handle.ts.
+ */
+export function proNudge(allowance: number, perMonth: string | null): string {
+  return `⭐ Your ${allowance} free documents are used. Reply ${b("upgrade")} to keep sending${perMonth ? `, from ${perMonth} a month on the yearly plan` : ""}.`;
+}
+
+/** Under "marked paid", when one free document is left: the moment Balans just earned its keep. */
+export function lastFreeLeft(perMonth: string | null): string {
+  return `🎁 You have 1 free document left. After that, Pro keeps you sending${perMonth ? `, from ${perMonth} a month on the yearly plan` : ""}.`;
 }

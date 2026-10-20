@@ -238,7 +238,7 @@ export function require_(...keys: (keyof typeof env)[]): void {
  * published text proves nothing about what somebody agreed to. It said
  * "2026-09-draft-1" while the site said 3.1 until 27 September 2026.
  */
-export const legalConsentVersion = process.env.LEGAL_CONSENT_VERSION ?? "3.2";
+export const legalConsentVersion = process.env.LEGAL_CONSENT_VERSION ?? "4.0";
 
 export const defaults = {
   plans: {
@@ -294,22 +294,36 @@ export const defaults = {
     /** Zero until Paystack confirms VAT applies to the card fee. Then 7.5. */
     feeVatPercent: 0,
     /**
-     * Per-invoice ceilings, in each currency's minor units, about $1,000
-     * each; a day's ceiling is twice that. A cap is not a judgement about the
-     * work — it is the blast radius of a chargeback on a payment method we
-     * have never yet taken, held small until we have. Round figures, fixed,
-     * so the number a user is told does not move with the naira.
+     * Balans's own fee on each card payment from abroad (20 October 2026):
+     * a flat ₦1,000 a payment, always the freelancer's, taken out of what
+     * they receive and never added to the client's charge. Collected by
+     * Paystack as the transaction charge, so it never passes through the
+     * freelancer's hands. Naira transfers stay free.
+     */
+    balansFeeKobo: 1_000_00,
+    /**
+     * The day it starts, Lagos time. Straight away: there were no users in
+     * the market yet to give the terms' 30 days' notice to (20 October 2026).
+     * A later change that costs more needs the notice and a date here.
+     */
+    balansFeeFrom: "2026-10-20",
+    /**
+     * Per-invoice ceilings, in each currency's minor units, about $2,500
+     * each (raised from $1,000 on 20 October 2026); a day's ceiling is twice
+     * that. A cap is not a judgement about the work — it is the blast radius
+     * of a chargeback on a payment method still new to us. Round figures,
+     * fixed, so the number a user is told does not move with the naira.
      */
     invoiceCapMinor: {
-      USD: 1_000_00,
-      GBP: 800_00,
-      EUR: 900_00,
-      CAD: 1_400_00,
-      AUD: 1_500_00,
-      GHS: 12_000_00,
-      KES: 130_000_00,
-      ZAR: 18_000_00,
-      AED: 3_700_00,
+      USD: 2_500_00,
+      GBP: 2_000_00,
+      EUR: 2_250_00,
+      CAD: 3_500_00,
+      AUD: 3_750_00,
+      GHS: 30_000_00,
+      KES: 325_000_00,
+      ZAR: 45_000_00,
+      AED: 9_250_00,
     } as Record<"USD" | "GBP" | "EUR" | "CAD" | "AUD" | "GHS" | "KES" | "ZAR" | "AED", number>,
     /**
      * What a user is told about when the money arrives.
@@ -330,9 +344,6 @@ export const defaults = {
   },
   limits: {
     minInvoiceKobo: 1_000_00,
-    maxInvoiceNewUserKobo: 200_000_00,
-    maxInvoiceEstablishedKobo: 2_000_000_00,
-    maxPerDayNewUserKobo: 500_000_00,
     lineItemsPerDocument: 20,
     samplesPerUser: 3,
     inboundPerMinute: 20,

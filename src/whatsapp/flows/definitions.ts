@@ -1145,7 +1145,10 @@ export function designOptions(pro: boolean): CurrencyOption[] {
   return TEMPLATES.filter((t) => t.ready).map((t) => ({
     id: t.id,
     title: t.name,
-    ...(t.pro ? { description: pro ? "Pro" : "Comes with Pro." } : {}),
+    // No "Pro" under each name (20 October 2026): every account has every
+    // design, so the label only said something that was not a limit. The
+    // note stays on a design somebody actually cannot use.
+    ...(t.pro && !pro ? { description: "Comes with Pro." } : {}),
     enabled: pro || !t.pro,
   }));
 }
@@ -2160,7 +2163,7 @@ const consent: FlowDefinition = {
               type: "TextBody",
               // From the config, so the screen somebody agrees to cannot
               // disagree with the limit that is actually enforced.
-              text: `Your first ${defaults.plans.free.trialDocuments} documents are free, with every feature. After that, Pro is ${formatNaira(defaults.plans.pro.priceKobo)} a month or ${formatNaira(defaults.plans.pro.yearPriceKobo)} a year for unlimited documents. Balans takes no fee on what your clients pay you. Nothing renews by itself \u2014 your invoices and records stay where they are.`,
+              text: `Your first ${defaults.plans.free.trialDocuments} documents are free, with every feature. After that, Pro is ${formatNaira(defaults.plans.pro.priceKobo)} a month or ${formatNaira(defaults.plans.pro.yearPriceKobo)} a year for unlimited documents. Balans takes no fee on naira payments; a card payment from abroad carries a flat ${formatNaira(defaults.international.balansFeeKobo)}. Nothing renews by itself \u2014 your invoices and records stay where they are.`,
             },
             {
               type: "TextBody",

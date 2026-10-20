@@ -29,9 +29,37 @@ type Settlement = {
   id: number | string;
   status: string;
   total_amount: number;
+  /** What actually reached the bank, after deductions. */
+  effective_amount?: number | null;
+  /** Refunds and chargebacks Paystack recovered out of this payout. */
+  deductions?: number | null;
   settlement_date: string | null;
   subaccount?: unknown;
 };
+
+/**
+ * What actually reached the bank, and what was held back (20 October 2026).
+ *
+ * `total_amount` is the payout before Paystack takes back refunds and
+ * chargebacks. Telling the user that figure promised ₦255,754.71 for a payout
+ * that arrived as ₦254,423.71: Paystack had recovered a ₦1,331 refund out of
+ * it. So the smallest figure Paystack gives is the one we say, and the
+ * difference is named.
+ */
+export function paidOut(s: Pick<Settlement, "total_amount" | "effective_amount" | "deductions">): {
+  paidKobo: number;
+  deductedKobo: number;
+} {
+  const total = s.total_amount;
+  const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)) ? Number(v) : null);
+  const effective = n(s.effective_amount);
+  const deductions = n(s.deductions);
+  const candidates = [total];
+  if (effective !== null && effective >= 0) candidates.push(effective);
+  if (deductions !== null && deductions > 0) candidates.push(total - deductions);
+  const paidKobo = Math.max(0, Math.min(...candidates));
+  return { paidKobo, deductedKobo: total - paidKobo };
+}
 
 const WEEK_MS = 7 * 86_400_000;
 
@@ -46,9 +74,14 @@ async function paystack<T>(path: string, fetchImpl: typeof fetch): Promise<T | n
 
 /** The words, in the chat. */
 export function payoutMessage(x: {
+  /** What reached the bank: see `paidOut`. */
   amountKobo: number;
   invoices: string[];
   account: string | null;
+  /** Held back by Paystack, for refunds or chargebacks. */
+  deductedKobo?: number;
+  /** The invoices those refunds were on, when we can tell. */
+  refundedOn?: string[];
 }): string {
   const which =
     x.invoices.length === 0
@@ -56,11 +89,18 @@ export function payoutMessage(x: {
       : x.invoices.length === 1
         ? `invoice ${x.invoices[0]}`
         : `invoices ${x.invoices.join(", ")}`;
+  const held = x.deductedKobo && x.deductedKobo > 0 ? x.deductedKobo : 0;
+  const on = x.refundedOn?.length
+    ? ` on ${x.refundedOn.length === 1 ? "invoice" : "invoices"} ${x.refundedOn.join(", ")}`
+    : "";
   return para(
     `💸 ${b("Paid out to your bank")}`,
     // No "banks usually show it within hours": Paystack marks a settlement
     // successful once the bank has it.
     `${b(formatNaira(x.amountKobo))} for ${which} has been paid into ${x.account ?? "your bank account"}.`,
+    held
+      ? `Paystack kept back ${formatNaira(held)} for a refund${on}, so this is ${formatNaira(x.amountKobo + held)} less ${formatNaira(held)}.`
+      : "",
   );
 }
 
@@ -99,7 +139,7 @@ export async function tellPayouts(log: FastifyBaseLogger, fetchImpl: typeof fetc
     if (!code || !owner) {
       await db().query(
         `INSERT INTO payouts_told (settlement_id, amount_kobo, settled_on) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-        [id, s.total_amount, s.settlement_date?.slice(0, 10) ?? null],
+        [id, paidOut(s).paidKobo, s.settlement_date?.slice(0, 10) ?? null],
       );
       continue;
     }
@@ -122,15 +162,35 @@ export async function tellPayouts(log: FastifyBaseLogger, fetchImpl: typeof fetc
     if (!user.wa_phone) continue;
     const account = `${owner.bank_name} ••${owner.account_last4}`;
     const invoices = [...new Set(rows.map((r) => clientNumber(r.ref, r.number) ?? "—"))];
+    const { paidKobo, deductedKobo } = paidOut(s);
+
+    /*
+     * Which refunds the deduction was for, when the figures say so: the
+     * user's card payments reversed in the last month whose total is exactly
+     * what Paystack held back. Anything less certain names no invoice.
+     */
+    let refundedOn: string[] = [];
+    if (deductedKobo > 0) {
+      const { rows: back } = await db().query<{ ref: string | null; number: number | null; kobo: number }>(
+        `SELECT d.ref, d.number, p.client_total_kobo AS kobo
+           FROM payments p JOIN documents d ON d.id = p.document_id
+          WHERE d.user_id = $1 AND p.provider = 'paystack' AND p.status IN ('refunded', 'disputed')
+            AND p.created_at > now() - interval '45 days'`,
+        [owner.user_id],
+      );
+      if (back.reduce((t, r) => t + Number(r.kobo), 0) === deductedKobo) {
+        refundedOn = [...new Set(back.map((r) => clientNumber(r.ref, r.number) ?? "—"))];
+      }
+    }
 
     const outcome = await send(
       {
         userId: user.user_id,
         phone: user.wa_phone,
-        text: payoutMessage({ amountKobo: s.total_amount, invoices, account }),
+        text: payoutMessage({ amountKobo: paidKobo, invoices, account, deductedKobo, refundedOn }),
         fallback: {
           template: "payout_paid",
-          params: [formatNaira(s.total_amount), invoices.join(", ") || "your card payments", account],
+          params: [formatNaira(paidKobo), invoices.join(", ") || "your card payments", account],
         },
       },
       log,
@@ -144,13 +204,13 @@ export async function tellPayouts(log: FastifyBaseLogger, fetchImpl: typeof fetc
     await db().query(
       `INSERT INTO payouts_told (settlement_id, user_id, amount_kobo, settled_on) VALUES ($1, $2, $3, $4)
        ON CONFLICT DO NOTHING`,
-      [id, user.user_id, s.total_amount, s.settlement_date?.slice(0, 10) ?? null],
+      [id, user.user_id, paidKobo, s.settlement_date?.slice(0, 10) ?? null],
     );
     await db().query(`UPDATE payments SET settled_at = COALESCE(settled_at, now()) WHERE id = ANY($1::uuid[])`, [
       rows.map((r) => r.payment_id),
     ]);
     told += 1;
-    log.info({ settlement: id, userId: user.user_id, amountKobo: s.total_amount }, "payout told");
+    log.info({ settlement: id, userId: user.user_id, amountKobo: paidKobo, totalKobo: s.total_amount, deductedKobo }, "payout told");
   }
   return told;
 }

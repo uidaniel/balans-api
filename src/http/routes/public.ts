@@ -12,6 +12,7 @@
  *     number; what is owed is read from the row.
  */
 
+import { cardFeeKobo, NO_PERCENTAGE } from "../../payments/card-fee.ts";
 import { subscriptionPrefixOf } from "../../billing/pro-checkout.ts";
 import { clientNumber } from "../../documents/client-number.ts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -425,16 +426,18 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     }
 
     /*
-     * Pro, so no Balans fee, and the processor's cut is borne by the
-     * subaccount — which is set on the transaction, not worked out here.
+     * The flat Balans fee on a card from abroad (payments/card-fee.ts), and
+     * no percentage whatever the plan. The processor's cut is borne by the
+     * subaccount, which is set on the transaction, not worked out here.
      * `settle` is still asked, because it is the one place that knows whether
      * fees are passed to the client, and on a fee-passing invoice the client
-     * is charged the grossed-up figure.
+     * is charged the grossed-up figure. Our fee is never passed on.
      */
-    const split = settle(outstandingKobo, ratesFor(doc.plan), {
+    const split = settle(outstandingKobo, NO_PERCENTAGE, {
       passToClient: doc.passFeesToClient,
       paidBeforeKobo: doc.amountPaidKobo,
       processor: withVat(DEFAULT_INTL_PROCESSOR, defaults.international.feeVatPercent),
+      flatFeeKobo: cardFeeKobo(),
     });
 
     /*
@@ -467,6 +470,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       amountKobo: split.clientPaysKobo,
       reference,
       subaccountCode: sub.code,
+      transactionChargeKobo: split.balansFeeKobo,
       callbackUrl: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/pay/callback?ref=${reference}`,
       metadata: {
         document_id: doc.id,

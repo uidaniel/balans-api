@@ -208,13 +208,11 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
       ${grossedUp ? row("Client pays", formatNaira(money.clientPaysKobo)) : ""}
       ${row(processorLabel, `−${formatNaira(money.processorFeeKobo)}`, { muted: true, cost: true })}
       ${
+        // The flat card fee, the same on every plan (20 October 2026), so no
+        // plan in brackets after it.
         money.balansFeeKobo > 0
-          ? row(`Balans fee (${plan === "pro" ? "Pro" : "Free"})`, `−${formatNaira(money.balansFeeKobo)}`, {
-              muted: true,
-              cost: true,
-            })
-          : // "(Pro)" only on Pro: a Free invoice with no fee is not Pro's doing.
-            row(plan === "pro" ? "Balans fee (Pro)" : "Balans fee", "₦0", { muted: true })
+          ? row("Balans fee", `−${formatNaira(money.balansFeeKobo)}`, { muted: true, cost: true })
+          : row("Balans fee", "₦0", { muted: true })
       }
     </div>
     <div class="total"><span class="ic">${BANK}</span>${row("To your bank", formatNaira(money.receivesKobo), { strong: true })}</div>

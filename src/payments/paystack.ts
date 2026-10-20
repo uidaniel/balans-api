@@ -380,8 +380,10 @@ export type InitResult =
  *   only confirmation is `fees_split.params.bearer` on the verify response,
  *   which is what `verifyTransaction` reads it out of.
  *
- *   `transaction_charge: 0` — Balans takes nothing. Pro carries no fee and
- *   international invoicing is Pro only.
+ *   `transaction_charge` — Balans's flat fee on a card from abroad, ₦1,000
+ *   a payment since 20 October 2026 (payments/card-fee.ts). Paystack sends
+ *   it to the main account and the rest to the subaccount, so the fee never
+ *   passes through the freelancer's hands.
  *
  *   `channels: ["card", "apple_pay"]` — cards, and Apple Pay (switched on
  *   for the live account, 30 September 2026), which is a card underneath and
@@ -395,6 +397,8 @@ export async function initTransaction(
     amountKobo: number;
     reference: string;
     subaccountCode: string;
+    /** Balans's share, in kobo; the subaccount gets the rest. */
+    transactionChargeKobo: number;
     callbackUrl: string;
     /** Carried through the whole payment and returned on verify. */
     metadata: Record<string, unknown>;
@@ -416,7 +420,7 @@ export async function initTransaction(
         reference: input.reference,
         subaccount: input.subaccountCode,
         bearer: "subaccount",
-        transaction_charge: 0,
+        transaction_charge: input.transactionChargeKobo,
         channels: ["card", "apple_pay"],
         callback_url: input.callbackUrl,
         metadata: input.metadata,

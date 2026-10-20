@@ -463,6 +463,37 @@ async function fitSheets(t: Tab): Promise<void> {
   }
 }
 
+/**
+ * Whether a picture is a tile: roughly square, with all four corners solid
+ * (brand/user-logo.ts). Chrome decodes it, so PNG, JPEG and WebP all work with
+ * no image library here. False when it cannot tell.
+ */
+export async function isTileImage(dataUri: string): Promise<boolean> {
+  const expression = `new Promise((done) => {
+    const img = new Image();
+    img.onerror = () => done(false);
+    img.onload = () => {
+      const w = img.naturalWidth, h = img.naturalHeight;
+      if (!w || !h || w / h < 0.8 || w / h > 1.25) return done(false);
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      const g = c.getContext("2d"); g.drawImage(img, 0, 0);
+      const i = Math.max(1, Math.round(Math.min(w, h) * 0.01));
+      const solid = [[i, i], [w - 1 - i, i], [i, h - 1 - i], [w - 1 - i, h - 1 - i]]
+        .every(([x, y]) => g.getImageData(x, y, 1, 1).data[3] > 245);
+      done(solid);
+    };
+    img.src = ${JSON.stringify(dataUri)};
+  })`;
+  try {
+    return await onTab(async (t) => {
+      const res = await t.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+      return res.result?.result?.value === true;
+    });
+  } catch {
+    return false;
+  }
+}
+
 export type PageSize = { widthInches: number; heightInches: number };
 /** A4, which is what a Nigerian printer and a Nigerian accountant expect. */
 export const A4: PageSize = { widthInches: 8.27, heightInches: 11.69 };
@@ -504,10 +535,19 @@ export async function renderPdf(html: string, size: PageSize = A4): Promise<Buff
  * Same browser and same rules as `renderPdf`: the HTML is self-contained, so
  * a render cannot hang on somebody else's CDN.
  */
-export async function renderPng(html: string, width: number, height: number): Promise<Buffer> {
+export async function renderPng(
+  html: string,
+  width: number,
+  height: number,
+  /**
+   * A document sheet rather than a card: laid out as it prints, and fitted
+   * the way `renderPdf` fits it, so the picture is the PDF's first page.
+   */
+  opts: { sheet?: boolean } = {},
+): Promise<Buffer> {
   return onTab(async (t) => {
     // A tab that last printed a PDF was measuring in print media; a card is a screen.
-    await t.send("Emulation.setEmulatedMedia", { media: "" });
+    await t.send("Emulation.setEmulatedMedia", { media: opts.sheet ? "print" : "" });
     // The viewport has to match, or the capture is padded or cropped.
     await t.send("Emulation.setDeviceMetricsOverride", {
       width,
@@ -517,6 +557,7 @@ export async function renderPng(html: string, width: number, height: number): Pr
     });
     await t.send("Page.setDocumentContent", { frameId: t.frameId, html: await withLocalFonts(html) });
     await settled(t);
+    if (opts.sheet) await fitSheets(t);
     const res = await t.send("Page.captureScreenshot", {
       format: "png",
       clip: { x: 0, y: 0, width, height, scale: 1 },

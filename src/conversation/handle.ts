@@ -7,7 +7,8 @@
  * which is why the interesting logic stays testable without a database.
  */
 
-import { NAIRA_PRICE, proPriceFor, type ProPrice } from "../billing/price.ts";
+import { NAIRA_PRICE, perMonthOf, proPriceFor, type ProPrice } from "../billing/price.ts";
+import { brandedLimitCard } from "../billing/limit-card.ts";
 import { abroadCurrencyFor, homeCurrencyFor } from "../../core/home-currency.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { legalConsentVersion } from "../config.ts";
@@ -68,6 +69,7 @@ import {
   trialOf,
   findDocument,
   foreignInvoicedToday,
+  foreignNairaToday,
   planOf,
   summarise,
 } from "../documents/queries.ts";
@@ -110,6 +112,8 @@ import {
   proActive,
   proOffer,
   trialSentLine,
+  proNudge,
+  lastFreeLeft,
   proRenewOffer,
 } from "../billing/messages.ts";
 import { renewalOpen } from "../billing/subscription.ts";
@@ -197,12 +201,15 @@ async function limitCard(
   if (trial.paid || trial.left > 0) return { stop: false, plan: "pro" };
 
   log.info({ userId, used: trial.used, allowance: trial.allowance }, "trial used up");
-  const words = limitReachedMessage(trial.allowance);
+  const perMonth = perMonthOf(await proPriceFor(userId, log, "year"));
+  const words = limitReachedMessage(trial.allowance, perMonth);
   if (!phone) return { stop: true, words };
 
+  // Their own last invoice on the card when it can be drawn; the stock card
+  // when it cannot (billing/limit-card.ts).
   const sent = await sendButtons(phone, {
-    headerImage: LIMIT_CARD,
-    body: limitReachedCaption(trial.allowance),
+    headerImage: (await brandedLimitCard(userId, trial.allowance, log)) ?? LIMIT_CARD,
+    body: limitReachedCaption(trial.allowance, perMonth),
     // The id is the word the parser already reads, so tapping this and typing
     // "upgrade" are the same message arriving by different routes.
     buttons: [{ id: "upgrade", title: "Get Pro" }],
@@ -875,6 +882,11 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   await saveConversation(user.id, next, context);
   await reply(user.id, msg.from, replies, log, buttons, buttonsImage);
 
+  if (next === "idle" && !opener && !result.effects.some((e) => NO_PRO_NUDGE.has(e.type))) {
+    const nudge = await proNudgeLine(user.id, log).catch(() => null);
+    if (nudge) await reply(user.id, msg.from, [nudge], log);
+  }
+
   log.info(
     { userId: user.id, from: state, to: next, effects: result.effects.map((e) => e.type) },
     "conversation advanced",
@@ -1374,6 +1386,10 @@ async function runEffects(
           log.info({ userId, version: effect.version }, "consent recorded");
           break;
 
+        case "offer_branding":
+          if (ctx.phone) await offerBranding(userId, ctx.phone, "setup", log);
+          break;
+
         /* -- Documents (F6) ------------------------------------------------- */
 
         case "save_draft": {
@@ -1814,8 +1830,22 @@ async function runEffects(
           };
 
           const offerDesigns = async (): Promise<void> => {
-            if (!ctx.phone || (await hasChosenTemplate(userId))) return;
-            if ((await documentsEverSent(userId)) > DESIGN_OFFER_LIMIT) return;
+            if (!ctx.phone || ctx.editingId || confirmed.updatedFrom) return;
+            const ever = await documentsEverSent(userId);
+            // Their first one went out with no logo: one more nudge to add it
+            // (see offerBranding), instead of the design picker.
+            if (ever === 1) {
+              const { rows } = await db().query<{ logo: boolean }>(
+                `SELECT logo_url IS NOT NULL AS logo FROM users WHERE id = $1`,
+                [userId],
+              );
+              if (!rows[0]?.logo) {
+                await offerBranding(userId, ctx.phone, "first_send", log);
+                return;
+              }
+            }
+            if (await hasChosenTemplate(userId)) return;
+            if (ever > DESIGN_OFFER_LIMIT) return;
 
             const cta = await sendCta(ctx.phone, {
               body: "🎨 Want your invoices to look different? Pick a design.",
@@ -2655,6 +2685,20 @@ async function runEffects(
              * keeps a copy of what their client was sent. Text alone if the
              * PDF cannot be made or sent.
              */
+            /*
+             * The moment Balans has just made them money (20 October 2026):
+             * one line about Pro when the free documents are nearly or all
+             * used, under the confirmation rather than in it.
+             */
+            const trialNow = await trialOf(userId);
+            const proLine = trialNow.paid
+              ? null
+              : trialNow.left === 0
+                ? await proNudgeLine(userId, log).catch(() => null)
+                : trialNow.left === 1
+                  ? lastFreeLeft(perMonthOf(await proPriceFor(userId, log, "year")))
+                  : null;
+
             const receipt = ctx.phone ? await receiptForDocument(inv.id, log).catch(() => null) : null;
             if (receipt && ctx.phone) {
               const up = await uploadDocument(receipt.bytes, receipt.filename);
@@ -2662,11 +2706,13 @@ async function runEffects(
                 const sent = await sendDocument(ctx.phone, up.mediaId, receipt.filename, doneText);
                 if (sent.ok) {
                   await recordOutbound(userId, sent.waMessageId, "sent", { kind: "document" });
+                  if (proLine) extra.push(proLine);
                   break;
                 }
               }
             }
             extra.push(doneText);
+            if (proLine) extra.push(proLine);
             break;
           }
 
@@ -3039,6 +3085,81 @@ async function handleOnboardingForm(
  * possible to say later which terms a given person accepted.
  */
 /**
+ * The Pro line for somebody whose free documents are used (20 October 2026).
+ *
+ * Their own message opened the 24-hour window, so this costs nothing to send,
+ * unlike a template. Claimed in the database before it is said, so it rides
+ * along at most once every three days however many turns there are.
+ */
+async function proNudgeLine(userId: string, log: FastifyBaseLogger): Promise<string | null> {
+  const { rows } = await db().query<{ allowance: number }>(
+    `UPDATE users u SET pro_nudged_at = now()
+      WHERE u.id = $1 AND u.consent_version IS NOT NULL
+        AND (u.pro_nudged_at IS NULL OR u.pro_nudged_at < now() - interval '3 days')
+        AND NOT balans_paid(u)
+        AND balans_trial_used(u.id) >= u.trial_documents
+      RETURNING u.trial_documents AS allowance`,
+    [userId],
+  );
+  if (!rows[0]) return null;
+  return proNudge(rows[0].allowance, perMonthOf(await proPriceFor(userId, log, "year")));
+}
+
+/**
+ * Turns that already talk about Pro, or hand over to a form or a card, and
+ * should not have the line added under them.
+ */
+const NO_PRO_NUDGE = new Set(["show_upgrade", "start_pro", "save_draft", "send_flow", "record_consent", "offer_branding"]);
+
+/**
+ * The invitation to brand their invoices (20 October 2026).
+ *
+ * Once, straight after setup, and never in the way: setup itself does not ask
+ * for a logo, because the first invoice is what hooks somebody and a fifth
+ * question before it costs some of them. This comes after the card, as a
+ * separate message they can ignore. The point is that by the time the free
+ * documents run out, the invoices carry their logo and colour, and keeping
+ * that is a reason to pay.
+ *
+ * "first_send" is the second and last chance: under the first invoice, when
+ * it went out with no logo. One message with one button either way, and the
+ * button opens settings on the brand tab.
+ */
+async function offerBranding(
+  userId: string,
+  phone: string,
+  when: "setup" | "first_send",
+  log: FastifyBaseLogger,
+): Promise<void> {
+  const { rows } = await db().query<{ logo: boolean }>(
+    `SELECT logo_url IS NOT NULL AS logo FROM users WHERE id = $1`,
+    [userId],
+  );
+  if (rows[0]?.logo) return;
+  const sent = await sendCta(phone, {
+    body:
+      when === "setup"
+        ? para(
+            `🎨 ${b("Make your invoices look like you")}`,
+            "Add your logo, pick your colour and a design. It takes a minute, and every invoice after that carries them.",
+            "Or just send your logo here as a picture.",
+          )
+        : para(
+            `🎨 ${b("That one went out without your logo.")}`,
+            "Add it, with your colour and design, before the next one. Or send the logo here as a picture.",
+          ),
+    label: when === "setup" ? "Style my invoices" : "Add my logo",
+    url: `${await settingsUrlFor(userId)}#brand`,
+    footer: "Optional · the link works for 24 hours",
+  });
+  if (sent.ok) {
+    await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+    return;
+  }
+  log.warn({ userId, reason: sent.reason }, "could not send the branding button");
+}
+
+/**
  * Setup finished inside the form, and the form closed on "Start invoicing".
  *
  * Everything is already done: the endpoint saved the account, checked the
@@ -3093,6 +3214,7 @@ async function finishSetupFromForm(userId: string, phone: string, log: FastifyBa
   if (outcome.lines.length) {
     await reply(userId, phone, outcome.lines, log, outcome.buttons, outcome.buttonsImage);
   }
+  await offerBranding(userId, phone, "setup", log);
 }
 
 async function handleConsentForm(
@@ -3155,6 +3277,7 @@ async function handleConsentForm(
   if (outcome.lines.length) {
     await reply(userId, phone, outcome.lines, log, outcome.buttons, outcome.buttonsImage);
   }
+  await offerBranding(userId, phone, "setup", log);
 }
 
 /**
@@ -3870,20 +3993,36 @@ async function openedForPlan(
  */
 async function overForeignCap(
   userId: string,
-  foreign: { currency: Foreign; amountMinor: number },
+  foreign: { currency: Foreign; amountMinor: number; rate: number },
   today: Civil,
 ): Promise<string | null> {
-  const invoiceCapMinor = defaults.international.invoiceCapMinor[foreign.currency];
-  const dailyCapMinor = invoiceCapMinor * 2;
+  const caps = defaults.international.invoiceCapMinor;
+  const invoiceCapMinor = caps[foreign.currency];
   const priced = formatMoney(foreign.amountMinor, foreign.currency);
 
   if (foreign.amountMinor > invoiceCapMinor) {
     return VOICE.foreignTooBig(priced, formatMoney(invoiceCapMinor, foreign.currency), false);
   }
 
+  /*
+   * The day, across every currency (20 October 2026): twice the dollar
+   * ceiling, in naira at today's dollar rate. Per currency, somebody could
+   * take two ceilings in each of nine currencies in one day.
+   */
+  const usd = await currentRate("USD").catch(() => null);
+  if (usd) {
+    const dailyCapKobo = Math.round(caps.USD * 2 * usd.rate);
+    const thisKobo = Math.round(foreign.amountMinor * foreign.rate);
+    if ((await foreignNairaToday(userId, today)) + thisKobo > dailyCapKobo) {
+      return VOICE.foreignTooBig(priced, `${formatMoney(caps.USD * 2, "USD")} (or the same in other currencies)`, true);
+    }
+    return null;
+  }
+
+  // No dollar rate to add the day up with: each currency on its own ceiling.
   const already = await foreignInvoicedToday(userId, foreign.currency, today);
-  if (already + foreign.amountMinor > dailyCapMinor) {
-    return VOICE.foreignTooBig(priced, formatMoney(dailyCapMinor, foreign.currency), true);
+  if (already + foreign.amountMinor > invoiceCapMinor * 2) {
+    return VOICE.foreignTooBig(priced, formatMoney(invoiceCapMinor * 2, foreign.currency), true);
   }
   return null;
 }

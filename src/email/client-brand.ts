@@ -11,6 +11,7 @@
 
 import { db } from "../db/pool.ts";
 import { get as getFile } from "../storage/files.ts";
+import { logoIsTile } from "../brand/user-logo.ts";
 import type { ClientBrand, InlineImage } from "./layout.ts";
 
 /**
@@ -45,7 +46,7 @@ export async function clientBrandFor(userId: string, plan: string): Promise<Clie
     }
   }
 
-  return { name: u.business_name ?? "", logo, colour: u.brand_color };
+  return { name: u.business_name ?? "", logo, colour: u.brand_color, rounded: logo ? await logoIsTile(userId) : false };
 }
 
 /** The pieces of an `Email` that change when it is sent as the business. */

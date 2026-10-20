@@ -192,11 +192,11 @@ letter-spacing:.06em;text-transform:uppercase;color:${ink(0.4)}}
 .items .nm{min-width:0;flex:1}
 .items .nm b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .items .q{width:2.6em;flex:none;text-align:right}
-.items .u{width:7em;flex:none;text-align:right;white-space:nowrap}
-.items .a{width:7.4em;flex:none;text-align:right;font-weight:600;white-space:nowrap}
+.items .u{width:max(var(--un,0em),7em);flex:none;text-align:right;white-space:nowrap}
+.items .a{width:max(var(--an,0em),7.4em);flex:none;text-align:right;font-weight:600;white-space:nowrap}
 
 /* Totals, as the two Free layouts set them ------------------------------- */
-.totals{margin-left:auto;margin-top:.9em;width:12.6em;font-size:.66em}
+.totals{margin-left:auto;margin-top:.9em;min-width:12.6em;width:max-content;font-size:.66em}
 .totals p{display:flex;justify-content:space-between;gap:.9em;padding:.35em 0}
 .totals p span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${ink(0.55)}}
 .totals p.sum{margin-top:.3em;border-top:1px solid ${ink(0.25)};padding-top:.6em}
@@ -219,10 +219,10 @@ letter-spacing:.06em;text-transform:uppercase;color:${ink(0.4)}}
 .rows .nm b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .rows .nm i{display:block;margin-top:.15em;font-size:.88em;font-style:normal;color:${ink(0.45)};
 overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rows .u{width:4.6em;text-align:right}
-.rows .q{width:1.6em;text-align:right}
+.rows .u{width:max(var(--un,0em),4.6em);flex:none;text-align:right;white-space:nowrap}
+.rows .q{width:2.2em;flex:none;text-align:right}
 .rows .it .u,.rows .it .q{color:${ink(0.6)}}
-.rows .a{width:5em;text-align:right;font-weight:600}
+.rows .a{width:max(var(--an,0em),5em);flex:none;text-align:right;font-weight:600;white-space:nowrap}
 
 /* Subtotal and tax, small, for beside a stated total --------------------- */
 .sums{font-size:.58em}
@@ -527,6 +527,24 @@ export function bizMeta(d: DocumentData, fields: ("address" | "email" | "tin")[]
   return parts.join("<br>");
 }
 
+/**
+ * Room for the widest amount on this document (20 October 2026).
+ *
+ * The rate and amount columns are fixed widths, sized for six figures. A
+ * ₦12,500,000 line ran past its column in fourteen of the twenty designs, and
+ * the cap is ₦50,000,000. So each document widens them as far as its own
+ * longest figure needs, and no further: an invoice for ₦45,000 keeps exactly
+ * the layout it always had.
+ *
+ * About 0.6em a character covers the face's tabular digits with a little
+ * over, bold included. Each layout keeps its own width as the floor:
+ * `width:max(var(--un), <its width>)`.
+ */
+function columnRoom(d: DocumentData): string {
+  const need = (ks: number[]) => Math.ceil((Math.max(0, ...ks.map((k) => money(k).length)) * 0.6 + 0.2) * 10) / 10;
+  return ` style="--un:${need(d.lines.map((l) => l.unitAmountKobo))}em;--an:${need(d.lines.map((l) => l.amountKobo))}em"`;
+}
+
 /** The two Free layouts' table of work. */
 export function items(d: DocumentData, opts: { rate?: boolean } = {}): string {
   const rate = opts.rate !== false;
@@ -548,7 +566,7 @@ export function items(d: DocumentData, opts: { rate?: boolean } = {}): string {
     )
     .join("");
 
-  return `<div class="items">${head}${rows}</div>`;
+  return `<div class="items"${columnRoom(d)}>${head}${rows}</div>`;
 }
 
 /**
@@ -582,7 +600,7 @@ export function rows(d: DocumentData, opts: { head?: "bar" | "rule"; rate?: bool
     )
     .join("");
 
-  return `<div class="rows ${head}">${header}${body}</div>`;
+  return `<div class="rows ${head}"${columnRoom(d)}>${header}${body}</div>`;
 }
 
 /**

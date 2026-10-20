@@ -475,3 +475,76 @@ export function proEmail(opts: {
     }),
   };
 }
+
+/**
+ * The trial is used up and they have gone quiet (20 October 2026).
+ *
+ * One email, two days after the last free document, to somebody who has not
+ * paid or written since. An account notice rather than a campaign: it says
+ * where they stand, that nothing already sent is affected, and what sending
+ * the next one takes. It is sent once and never repeated, which is why the
+ * job marks it before sending.
+ *
+ * The picture is their own last invoice, in their own design, the same card
+ * the chat shows at the limit (billing/limit-card.ts). Left out when it could
+ * not be drawn.
+ */
+export function trialUsedEmail(opts: {
+  businessName: string | null;
+  allowance: number;
+  card: Buffer | null;
+  /** "₦30,000". */
+  yearLabel: string;
+  /** "₦2,500", the year a month at a time; null abroad. */
+  perMonth: string | null;
+  /** "₦3,000". */
+  monthLabel: string;
+  yearUrl: string;
+  monthUrl: string;
+}): Omit<Email, "to"> {
+  const business = opts.businessName?.trim() || null;
+  const card: InlineImage | null = opts.card
+    ? { cid: "your-invoice", file: "your-invoice.png", bytes: opts.card, contentType: "image/png", alt: "Your last invoice", width: 536, height: 670 }
+    : null;
+  const yearly = opts.perMonth
+    ? `${opts.perMonth} a month on the yearly plan (${opts.yearLabel} once, two months free)`
+    : `${opts.yearLabel} a year, two months free`;
+  const lines = [
+    `You have used your ${opts.allowance} free documents.`,
+    "Everything you sent still works: the links open, your clients can pay, and nothing is deleted.",
+    `To send your next invoice with your logo, colour and design, Pro is ${yearly}, or ${opts.monthLabel} month to month.`,
+  ];
+
+  return {
+    subject: business ? `${business}: your free invoices are used` : "Your free invoices are used",
+    replyTo: env.SUPPORT_EMAIL,
+    ...(card ? { images: [card] } : {}),
+    text: [
+      ...lines.flatMap((l) => [l, ""]),
+      `Yearly: ${opts.yearUrl}`,
+      `Monthly: ${opts.monthUrl}`,
+      "",
+      `Questions? Reply to this email, or write to ${env.SUPPORT_EMAIL}. This is the only email about it.`,
+      "",
+      "—",
+      `Balans is a product of ${env.LEGAL_ENTITY_NAME}.`,
+      "Balans is not a bank and never holds your money.",
+    ].join("\n"),
+    html: layout({
+      preheader: "Everything you sent still works. Here is how to keep sending.",
+      ...(card ? { banner: card } : {}),
+      heading: "Your free invoices are used",
+      body: [
+        paragraph(esc(lines[0]!)),
+        paragraph(esc(lines[1]!)),
+        paragraph(esc(lines[2]!)),
+        button(opts.perMonth ? `Go yearly, ${opts.perMonth}/month` : `Go yearly, ${opts.yearLabel}`, opts.yearUrl),
+        paragraph(`Or <a href="${esc(opts.monthUrl)}" style="color:inherit;">pay ${esc(opts.monthLabel)} for one month</a>.`, true),
+        paragraph(
+          `Questions? Reply to this email, or write to <a href="mailto:${esc(env.SUPPORT_EMAIL)}" style="color:inherit;">${esc(env.SUPPORT_EMAIL)}</a>. This is the only email about it.`,
+          true,
+        ),
+      ].join("\n"),
+    }),
+  };
+}

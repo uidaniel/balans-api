@@ -126,6 +126,8 @@ export type ClientBrand = {
   logo: InlineImage | null;
   /** #RRGGBB, or null to keep marigold. */
   colour: string | null;
+  /** A square logo with solid corners, drawn with rounded ones. */
+  rounded?: boolean;
 };
 
 /**
@@ -198,7 +200,7 @@ const row = (inner: string, padTop: number) =>
 function brandHeader(brand: ClientBrand): string {
   return brand.logo
     ? `<img src="cid:${brand.logo.cid}" alt="${esc(brand.name)}"
-           style="display:block;max-height:44px;max-width:220px;height:auto;border:0;outline:none;text-decoration:none;">`
+           style="display:block;max-height:44px;max-width:220px;height:auto;border:0;outline:none;text-decoration:none;${brand.rounded ? "border-radius:10px;" : ""}">`
     : `<p style="${P}font-size:21px;line-height:26px;font-weight:700;letter-spacing:-0.02em;color:${LIGHT.ink};" class="bl-ink">${esc(brand.name)}</p>`;
 }
 

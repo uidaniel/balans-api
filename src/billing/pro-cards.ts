@@ -41,7 +41,8 @@ export function proPoints(): string[] {
 
 export function proCardHtml(kind: "limit" | "upgrade"): string {
   const limit = defaults.plans.free.trialDocuments;
-  const price = formatNaira(defaults.plans.pro.priceKobo);
+  // Yearly first (20 October 2026), said a month at a time.
+  const price = formatNaira(Math.round(defaults.plans.pro.yearPriceKobo / 12));
   // "Three done." is a fact about the reader, so it is only on the card sent
   // to somebody who has used them all. See pro-card.test.ts.
   const headline = kind === "limit" ? [`${Cap(word(limit))} done.`, "Go unlimited."] : ["Upgrade", "to Pro."];
@@ -86,7 +87,7 @@ display:flex;align-items:baseline;gap:22px;line-height:1}
 <p class="sub">${sub}</p>
 <ul>${proPoints().map((p) => `<li>${tick}<span>${p}</span></li>`).join("")}</ul>
 <p class="reply">REPLY <b>UPGRADE</b></p>
-<p class="price">${price}<span>/ month</span></p>
+<p class="price">${price}<span>/ month, yearly</span></p>
 <div class="big">${markSvg("242px")}</div>
 </body></html>`;
 }

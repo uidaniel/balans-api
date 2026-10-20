@@ -77,6 +77,8 @@ body{background:var(--cream);color:var(--ink);font-family:var(--sans);font-size:
 letter-spacing:-.03em;font-size:20px;min-width:0}
 .dot{width:22px;height:22px;border-radius:50%;background:var(--marigold);flex:none}
 .own-logo{display:block;max-height:44px;max-width:200px;width:auto;height:auto;object-fit:contain}
+/* A square logo with solid corners: rounded, not a circle (20 October 2026). */
+.own-logo.tile{border-radius:22%}
 .own-name{font-size:19px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .kind{font-size:13px;font-weight:600;color:var(--ink-50);letter-spacing:.01em;white-space:nowrap}
 .doctitle{margin-top:22px;font-size:15px;font-weight:600;color:var(--ink-80)}
@@ -616,7 +618,7 @@ const DOWNLOAD = `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path 
 function whose(doc: PublicDocument): string {
   if (doc.plan === "pro") {
     return doc.logoDataUri
-      ? `<img class="own-logo" src="${doc.logoDataUri}" alt="${esc(doc.businessName)}">`
+      ? `<img class="own-logo${doc.logoTile ? " tile" : ""}" src="${doc.logoDataUri}" alt="${esc(doc.businessName)}">`
       : `<span class="own-name">${esc(doc.businessName)}</span>`;
   }
   return logoAvailable() ? logoSvg("40px") : `<span class="dot"></span>balans`;
@@ -1065,13 +1067,15 @@ export function renderProPlans(o: {
   /** Abroad: charged in naira at today's rate, said once under the plans. */
   note: string | null;
 }): string {
-  const plan = (x: { name: string; price: string; per: string; sub: string; until: string; url: string; best?: boolean }) => `
+  // The yearly plan leads (20 October 2026), priced a month at a time; the
+  // button still says the amount Paystack will actually take.
+  const plan = (x: { name: string; price: string; per: string; sub: string; until: string; url: string; pay: string; best?: boolean }) => `
   <a class="plan${x.best ? " best" : ""}" href="${esc(x.url)}">
     <span class="row1"><span class="name">${esc(x.name)}</span>${x.best ? `<span class="badge">2 months free</span>` : ""}</span>
     <span class="price">${esc(x.price)}<small>/${esc(x.per)}</small></span>
     ${x.sub ? `<span class="sub">${esc(x.sub)}</span>` : ""}
     <span class="until">Pro until ${esc(x.until)}</span>
-    <span class="go">Pay ${esc(x.price)} &rarr;</span>
+    <span class="go">Pay ${esc(x.pay)} &rarr;</span>
   </a>`;
   return `<!doctype html>
 <html lang="en"><head>
@@ -1100,8 +1104,8 @@ export function renderProPlans(o: {
   <h1 style="margin-top:22px">${o.renewing ? "Renew Balans Pro" : "Choose your Pro plan"}</h1>
   <p class="from">Pick one. The payment page opens next, for exactly that.</p>
   <div class="plans">
-    ${plan({ name: "Monthly", price: o.monthLabel, per: "month", sub: "", until: o.monthUntil, url: o.monthUrl })}
-    ${plan({ name: "Yearly", price: o.yearLabel, per: "year", sub: o.yearPerMonth ? `${o.yearPerMonth} a month, paid once a year` : "Paid once a year", until: o.yearUntil, url: o.yearUrl, best: true })}
+    ${plan({ name: "Yearly", price: o.yearPerMonth ?? o.yearLabel, per: o.yearPerMonth ? "month" : "year", sub: o.yearPerMonth ? `${o.yearLabel} paid once a year` : "Paid once a year", until: o.yearUntil, url: o.yearUrl, pay: o.yearLabel, best: true })}
+    ${plan({ name: "Monthly", price: o.monthLabel, per: "month", sub: "", until: o.monthUntil, url: o.monthUrl, pay: o.monthLabel })}
   </div>
   ${o.note ? `<p class="note">${esc(o.note)}</p>` : ""}
 </div></div>

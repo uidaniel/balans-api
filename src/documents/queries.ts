@@ -369,6 +369,25 @@ export async function foreignInvoicedToday(
 }
 
 /**
+ * Every invoice abroad issued today, in naira, whatever its currency
+ * (20 October 2026). The daily ceiling is one figure across all of them:
+ * per currency, nine currencies were nine ceilings.
+ */
+export async function foreignNairaToday(userId: string, today: Civil): Promise<number> {
+  const { rows } = await db().query<{ total: number | null }>(
+    `SELECT COALESCE(SUM(total_kobo), 0)::bigint AS total
+       FROM documents
+      WHERE user_id = $1
+        AND currency <> 'NGN'
+        AND type <> 'sample'
+        AND status <> 'draft' AND status <> 'cancelled'
+        AND issue_date = $2::date`,
+    [userId, formatISO(today)],
+  );
+  return Number(rows[0]?.total ?? 0);
+}
+
+/**
  * What plan somebody is on, counting the grace period.
  *
  * The grace days are the point of this function reading a date at all. F18

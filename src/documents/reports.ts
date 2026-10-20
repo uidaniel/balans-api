@@ -185,10 +185,12 @@ export function summaryMessage(s: Summary): string {
  * the offer itself, because there is no picture behind it and no button under
  * it — so it says what to reply.
  */
-export function limitReachedMessage(allowance: number): string {
+export function limitReachedMessage(allowance: number, perMonth: string | null = null): string {
   return para(
     `🛑 ${b(`You have used your ${allowance} free documents.`)}`,
-    `Reply ${b("upgrade")} to keep sending invoices, monthly or yearly.`,
+    perMonth
+      ? `Reply ${b("upgrade")} to keep sending invoices, from ${perMonth} a month on the yearly plan.`
+      : `Reply ${b("upgrade")} to keep sending invoices, monthly or yearly.`,
     i("Invoices already sent still work, and you still get paid."),
   );
 }
@@ -201,10 +203,12 @@ export function limitReachedMessage(allowance: number): string {
  * cannot know, and that nothing already sent is affected: somebody stopped
  * mid-invoice will wonder whether money they are owed is at risk.
  */
-export function limitReachedCaption(allowance: number): string {
+export function limitReachedCaption(allowance: number, perMonth: string | null = null): string {
   return para(
     `🛑 ${b(`You have used your ${allowance} free documents.`)}`,
-    "Get Pro to keep sending invoices, monthly or yearly.",
+    perMonth
+      ? `Get Pro to keep sending invoices, from ${perMonth} a month on the yearly plan.`
+      : "Get Pro to keep sending invoices, monthly or yearly.",
     i("Invoices already sent still work, and you still get paid."),
   );
 }

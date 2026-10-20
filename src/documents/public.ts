@@ -9,7 +9,7 @@
  * that renders more than it meant to.
  */
 
-import { logoDataUri } from "../brand/user-logo.ts";
+import { logoDataUri, logoIsTile } from "../brand/user-logo.ts";
 import { db } from "../db/pool.ts";
 import type { Civil } from "../../core/dates.ts";
 import { partsFor, nextPayable, type Part } from "./parts.ts";
@@ -88,6 +88,8 @@ export type PublicDocument = {
    * `renderDocument`. Absent on Free, and on Pro without them.
    */
   logoDataUri?: string | null;
+  /** A square logo with solid corners, shown with rounded ones (migration 0047). */
+  logoTile?: boolean;
   brandColor?: string | null;
   /**
    * The sender's own payment details, on an invoice abroad they chose to send
@@ -234,6 +236,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     hasPayoutAccount: r.has_payout_account,
     plan: r.plan,
     logoDataUri: r.plan === "pro" ? await logoDataUri(r.user_id, r.plan, r.logo_url) : null,
+    logoTile: r.plan === "pro" && r.logo_url ? await logoIsTile(r.user_id) : false,
     brandColor: r.plan === "pro" ? r.brand_color : null,
     paymentDetails: r.delivery_type === "own_details" ? r.payment_details : null,
     // The account stamped on it when it was sent — never the live one, so a

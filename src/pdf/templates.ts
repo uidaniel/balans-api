@@ -272,6 +272,13 @@ function wordmark(d: DocumentData, opts: RenderOptions): string {
 .rail{width:6em;flex:none}
 .rail>div+div{margin-top:.85em}
 .work{min-width:0;flex:1;border-left:1px solid ${ink(0.12)};padding-left:1.3em}
+/* The rail leaves the table about 24em, and the shared columns took 22 of it,
+   so every item came out as "E…" (found 20 October 2026). Tighter columns,
+   and a name that wraps rather than vanishes. */
+.work .items .hd,.work .items .it{gap:1em}
+.work .items .u{width:max(var(--un,0em),5.6em)}
+.work .items .a{width:max(var(--an,0em),6.4em)}
+.work .items .nm b{white-space:normal;overflow-wrap:anywhere}
 .signrow{margin-top:auto;display:flex;justify-content:flex-end;padding-top:1.2em}
 .signrow + .tail{margin-top:.8em}
 .tail{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:1em;
@@ -364,7 +371,7 @@ height:2.8em;object-fit:contain;object-position:right center}
 .work{margin-top:1.3em}
 .sums{margin-top:1.3em}
 .money{margin-top:1.3em;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em}
-.money .sums{margin-top:0;width:12em}
+.money .sums{margin-top:0;min-width:12em;width:max-content}
 .tail{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;
 gap:1.2em;padding-top:1.4em}
 .tail .left{min-width:0}
@@ -459,7 +466,7 @@ border-bottom:1px solid ${ink(0.12)};padding:.75em 0}
 .strip>div.wide{flex:1.4}
 .work{margin-top:1.1em}
 .money{margin-top:1em;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em}
-.money .sums{width:11.5em}
+.money .sums{min-width:11.5em;width:max-content}
 .tail{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;
 gap:1.2em;padding-top:1em}
 `;
@@ -678,7 +685,7 @@ padding-top:.85em;font-size:.56em}
 .card .facts .k2{font-size:.9em;letter-spacing:.12em;text-transform:uppercase;color:rgba(246,241,231,.45)}
 .card .facts .v{margin-top:.3em;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .body{flex:1;display:flex;flex-direction:column;padding:1.3em 1.8em 1.4em}
-.body .sums{margin-top:1em;margin-left:auto;width:12em}
+.body .sums{margin-top:1em;margin-left:auto;min-width:12em;width:max-content}
 .tail{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;
 gap:1.2em;padding-top:1.2em}
 `;
@@ -775,7 +782,7 @@ function ledger(d: DocumentData, opts: RenderOptions): string {
 .foot{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em;
 border-top:.14em solid ${INK};padding-top:.8em}
 .foot .right{text-align:right}
-.foot .sums{margin-bottom:.6em;margin-left:auto;width:11em;text-align:left}
+.foot .sums{margin-bottom:.6em;margin-left:auto;min-width:11em;width:max-content;text-align:left}
 `;
 
   const section = (n: number, k: string, inner: string) =>
@@ -857,7 +864,7 @@ padding:1.7em 1.2em 1.4em}
 .main .sub{margin-top:.5em;font-size:.6em;color:${ink(0.55)};
 overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .work{margin-top:1.4em}
-.main .sums{margin-top:1em;margin-left:auto;width:11em}
+.main .sums{margin-top:1em;margin-left:auto;min-width:11em;width:max-content}
 .bar{margin-top:.8em;display:flex;align-items:center;justify-content:space-between;gap:1em;
 background:${INK};color:${CREAM};padding:.7em .9em}
 .bar .k{font-size:.56em;font-weight:600;letter-spacing:.14em;text-transform:uppercase}

@@ -207,6 +207,7 @@ describe("starting a card payment", () => {
         amountKobo: 663_500_00,
         reference: "bal_abc_def",
         subaccountCode: "ACCT_yxs6g56bmt5ykjq",
+        transactionChargeKobo: 1_000_00,
         callbackUrl: "https://payment.balans.ng/pay/callback",
         metadata: { document_id: "d1", original_currency: "USD", original_amount_minor: 50_000 },
       },
@@ -229,7 +230,8 @@ describe("starting a card payment", () => {
     const { sent } = await start();
     assert.equal(sent.bearer, "subaccount");
     assert.equal(sent.subaccount, "ACCT_yxs6g56bmt5ykjq");
-    assert.equal(sent.transaction_charge, 0);
+    // Balans's flat card fee, and only that (20 October 2026).
+    assert.equal(sent.transaction_charge, 1_000_00);
   });
 
   it("charges naira, whatever the invoice was priced in", async () => {

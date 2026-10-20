@@ -48,7 +48,7 @@ const bank: BankDetails = {
 describe("draft: to be paid into", () => {
   it("shows the account name, bank and number on a naira invoice", () => {
     const text = draftSummary(draft({}), today, "pro", false, bank);
-    assert.match(text, /To be paid into:\nAccount name: Ada Obi\nBank: GTBank\nAccount number: 0123456789/);
+    assert.match(text, /To be paid into:\n\*Account name: Ada Obi\*\n\*Bank: GTBank\*\n\*Account number: 0123456789\*/);
     assert.ok(text.indexOf("To be paid into") < text.indexOf("Send it?"));
   });
 
