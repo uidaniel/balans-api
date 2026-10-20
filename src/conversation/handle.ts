@@ -351,7 +351,7 @@ import {
 import { documentLink } from "../documents/links.ts";
 import { clearSignature, issueSignatureToken } from "../brand/signature.ts";
 import { signatureUrl } from "../http/routes/signature.ts";
-import { bankDetailsOf } from "../documents/bank-details.ts";
+import { accountToStamp, bankDetailsOf, deliveryFor } from "../documents/bank-details.ts";
 import { findPayableByNumber, recordOfflinePayment } from "../payments/offline.ts";
 
 export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promise<void> {
@@ -1523,8 +1523,13 @@ async function runEffects(
            * and because it is what arrives if Chrome is busy or Meta's
            * upload fails.
            */
-          const card = await draftCard(draft, gate.plan, ctx.today, log);
-          extra.push(draftSummary(draft, ctx.today, gate.plan, card === null));
+          const [card, bank] = await Promise.all([
+            draftCard(draft, gate.plan, ctx.today, log),
+            !draft.foreign && deliveryFor(draft.type, "NGN") === "bank_details"
+              ? accountToStamp(userId)
+              : null,
+          ]);
+          extra.push(draftSummary(draft, ctx.today, gate.plan, card === null, bank));
           buttons = draftButtons();
           if (card) buttonsImage = card;
 

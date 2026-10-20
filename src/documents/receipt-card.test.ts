@@ -272,7 +272,7 @@ describe("when the picture cannot be drawn", () => {
      * both places at once.
      */
     assert.match(branch, /draftCard\(/);
-    assert.match(branch, /draftSummary\(draft, ctx\.today, gate\.plan, card === null\)/);
+    assert.match(branch, /draftSummary\(draft, ctx\.today, gate\.plan, card === null, bank\)/);
   });
 
   it("puts the words in the message either way", () => {

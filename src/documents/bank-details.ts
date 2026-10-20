@@ -85,6 +85,37 @@ export async function attachBankDetails(
   return r ? fromRow(r) : null;
 }
 
+/**
+ * The account a naira invoice would be stamped with if it were sent now: the
+ * same row `attachBankDetails` picks. For showing the sender on the draft
+ * where their client's money will go, before anything is stamped.
+ */
+export async function accountToStamp(userId: string): Promise<BankDetails | null> {
+  const { rows } = await db().query<{
+    bank_name: string;
+    account_name: string;
+    account_last4: string;
+    account_number_encrypted: Buffer;
+  }>(
+    `SELECT bank_name, account_name, account_last4, account_number_encrypted
+       FROM bank_accounts
+      WHERE user_id = $1 AND status = 'active'
+        AND (effective_at IS NULL OR effective_at <= now())
+      ORDER BY effective_at DESC NULLS LAST, created_at DESC
+      LIMIT 1`,
+    [userId],
+  );
+  const r = rows[0];
+  return r
+    ? {
+        bankName: r.bank_name,
+        accountName: r.account_name,
+        accountNumber: decrypt(r.account_number_encrypted),
+        last4: r.account_last4,
+      }
+    : null;
+}
+
 /** The account stamped on a document, or null for one sent with a link. */
 export async function bankDetailsOf(documentId: string): Promise<BankDetails | null> {
   const { rows } = await db().query<{

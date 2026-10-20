@@ -234,6 +234,12 @@ export function draftSummary(
    * picture cannot be searched in a chat or read aloud.
    */
   fees = true,
+  /**
+   * The account the client will pay into, on a naira invoice or request.
+   * The sender sees it before sending, so a wrong or old account is caught
+   * here rather than by a client who has already transferred to it.
+   */
+  bank: BankDetails | null = null,
 ): string {
   /*
    * One group per thing somebody checks, with a blank line between them.
@@ -345,6 +351,17 @@ export function draftSummary(
   // reason: its parts are halves of one arrangement.
   const planRows = planLines(draft, today);
   if (planRows.length) sections.push(planRows);
+
+  // Only where the document will carry it: a quote is not paid, and an
+  // invoice abroad is paid by card (see bank-details.ts).
+  if (bank && !draft.foreign && (draft.type === "invoice" || draft.type === "payment_request")) {
+    sections.push([
+      "To be paid into:",
+      row("Account name", bank.accountName),
+      row("Bank", bank.bankName),
+      row("Account number", bank.accountNumber),
+    ]);
+  }
 
   // Only where there is a card fee to pass on: a naira transfer has none.
   if (draft.passFeesToClient && draft.foreign) sections.push([row("Fees", "Client pays the transaction fee")]);
