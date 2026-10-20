@@ -169,6 +169,12 @@ export function settle(
      * `balansFeeStep`.
      */
     paidBeforeKobo?: number;
+    /**
+     * A flat Balans fee on this one payment: ₦1,000 on a card from abroad
+     * (20 October 2026). Never more than what is left after the processor,
+     * so a tiny payment cannot leave the user owing.
+     */
+    flatFeeKobo?: number;
   } = {},
 ): Settlement {
   const rates = opts.processor ?? DEFAULT_PROCESSOR;
@@ -179,12 +185,13 @@ export function settle(
 
   const clientPaysKobo = opts.passToClient ? grossUp(invoiceKobo, rates) : invoiceKobo;
   const processorFeeKobo = processorFee(clientPaysKobo, rates);
+  const flat = Math.min(opts.flatFeeKobo ?? 0, Math.max(0, clientPaysKobo - processorFeeKobo - ours));
 
   return {
     clientPaysKobo,
     processorFeeKobo,
-    balansFeeKobo: ours,
-    userReceivesKobo: clientPaysKobo - processorFeeKobo - ours,
+    balansFeeKobo: ours + flat,
+    userReceivesKobo: clientPaysKobo - processorFeeKobo - ours - flat,
   };
 }
 
