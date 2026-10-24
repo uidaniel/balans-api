@@ -225,6 +225,19 @@ export async function openSubscription(
   });
 }
 
+/**
+ * Where a month starts once it is paid for: when the Pro already paid for
+ * ends, or now if none is running. For `subscriptions s`, in SQL.
+ *
+ * A month is opened when somebody asks for Pro and dated then, but it is paid
+ * whenever they get round to it. A month asked for before Pro ended on 7
+ * October and paid on 24 October ended on 7 November: two weeks for a
+ * month's money (24 October 2026). So the dates are set again when the
+ * first money arrives, keeping the length asked for (a month or a year).
+ * GREATEST skips the NULL of somebody not on Pro.
+ */
+const PAID_FROM = `GREATEST(now(), (SELECT u.plan_expires_at FROM users u WHERE u.id = s.user_id AND u.plan = 'pro'))`;
+
 /* -------------------------------------------------------------------------- */
 /* Collecting                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -250,9 +263,8 @@ export async function collect(
       id: string;
       price_kobo: number;
       amount_collected_kobo: number;
-      period_end: Date;
     }>(
-      `SELECT id, price_kobo, amount_collected_kobo, period_end
+      `SELECT id, price_kobo, amount_collected_kobo
          FROM subscriptions
         WHERE user_id = $1 AND status IN ('pending', 'collecting')
         ORDER BY period_start DESC LIMIT 1
@@ -266,12 +278,18 @@ export async function collect(
     const collected = sub.amount_collected_kobo + amountKobo;
     const settled = collected >= sub.price_kobo;
 
-    await c.query(
-      `UPDATE subscriptions
-          SET amount_collected_kobo = $2, status = $3
-        WHERE id = $1`,
+    // The first money dates the month, as on the link path.
+    const { rows: dated } = await c.query<{ period_end: Date }>(
+      `UPDATE subscriptions s
+          SET amount_collected_kobo = $2, status = $3,
+              period_start = CASE WHEN s.status = 'pending' THEN ${PAID_FROM} ELSE s.period_start END,
+              period_end = CASE WHEN s.status = 'pending' THEN ${PAID_FROM} + age(s.period_end, s.period_start)
+                                ELSE s.period_end END
+        WHERE s.id = $1
+        RETURNING s.period_end`,
       [sub.id, collected, settled ? "active" : "collecting"],
     );
+    const periodEnd = dated[0]!.period_end;
 
     // F18: "Pro activates when the first deduction succeeds or the link is
     // paid." The first kobo, not the last — somebody paying by instalment
@@ -282,7 +300,7 @@ export async function collect(
               plan_expires_at = GREATEST(COALESCE(plan_expires_at, now()), $2)
         WHERE id = $1
         RETURNING plan`,
-      [userId, sub.period_end],
+      [userId, periodEnd],
     );
 
     // F18: subscription revenue is recorded separately from transaction fees.
@@ -452,14 +470,17 @@ export async function activateByReference(
     price_kobo: number;
     period_end: Date;
   }>(
-    `UPDATE subscriptions
+    `UPDATE subscriptions s
         SET status = 'active',
             amount_collected_kobo = $2,
             provider_reference = $3,
-            paid_at = now()
-      WHERE payment_reference = $1
-        AND status IN ('pending', 'collecting')
-      RETURNING id, user_id, price_kobo, period_end`,
+            paid_at = now(),
+            period_start = CASE WHEN s.status = 'pending' THEN ${PAID_FROM} ELSE s.period_start END,
+            period_end = CASE WHEN s.status = 'pending' THEN ${PAID_FROM} + age(s.period_end, s.period_start)
+                              ELSE s.period_end END
+      WHERE s.payment_reference = $1
+        AND s.status IN ('pending', 'collecting')
+      RETURNING s.id, s.user_id, s.price_kobo, s.period_end`,
     [reference, paidKobo, providerReference],
   );
 

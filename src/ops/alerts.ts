@@ -83,7 +83,12 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 async function mail(subject: string, text: string, html: string, log: FastifyBaseLogger): Promise<void> {
   if (!env.ALERTS_ENABLED) return;
   for (const to of ALERT_TO) {
-    const sent = await sendEmail({ to, subject, text, html }, log).catch(() => ({ ok: false as const }));
+    const sent = await sendEmail(
+      // No logo: these never show it, and an unshown inline image arrives as
+      // a stretched attachment under the alert (24 October 2026).
+      { to, subject, text, html, noMark: true },
+      log,
+    ).catch(() => ({ ok: false as const }));
     if (!sent.ok) log.warn({ to, subject }, "alert email not sent");
   }
 }

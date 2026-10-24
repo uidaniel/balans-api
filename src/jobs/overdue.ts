@@ -141,10 +141,23 @@ export function isLastReminder(kind: string, plan: string): boolean {
 export async function scheduleReminders(today: Civil, log: FastifyBaseLogger): Promise<number> {
   let made = 0;
 
-  for (const step of SCHEDULE) {
+  for (const [i, step] of SCHEDULE.entries()) {
+    /*
+     * Only the latest step that is due. An invoice that comes back into the
+     * schedule late — Pro switched on again, or a refund reopening it — had
+     * every step it missed fall due at once: on 24 October 2026 the 3-day
+     * and 7-day reminders for an invoice due 3 October went to the client in
+     * the same minute. A step whose next one is also due, for this invoice's
+     * plan, is written as cancelled instead, so it counts as done.
+     */
+    const next = SCHEDULE[i + 1];
     const { rows } = await db().query<{ id: string }>(
       `INSERT INTO reminders (document_id, channel, kind, scheduled_at, status)
-       SELECT d.id, 'whatsapp', $2, now(), 'pending'
+       SELECT d.id, 'whatsapp', $2, now(),
+              CASE WHEN $5::int IS NOT NULL
+                        AND d.due_date + ($5::int || ' days')::interval <= $1::date
+                        AND ($6::boolean = false OR balans_doc_pro(d, u))
+                   THEN 'cancelled' ELSE 'pending' END
          FROM documents d
          JOIN users u ON u.id = d.user_id
         WHERE d.type IN ('invoice', 'payment_request')
@@ -162,7 +175,7 @@ export async function scheduleReminders(today: Civil, log: FastifyBaseLogger): P
              WHERE r.document_id = d.id AND r.kind = $2 AND r.channel = 'whatsapp'
           )
        RETURNING id`,
-      [formatISO(today), step.kind, String(step.daysAfterDue), step.proOnly],
+      [formatISO(today), step.kind, String(step.daysAfterDue), step.proOnly, next?.daysAfterDue ?? null, next?.proOnly ?? false],
     );
     made += rows.length;
   }

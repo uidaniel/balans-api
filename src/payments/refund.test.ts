@@ -39,6 +39,20 @@ describe("a refund", () => {
     assert.match(m, /₦30,000 of that invoice is still paid/);
     assert.doesNotMatch(m, /unpaid again/i);
   });
+
+  it("says the client won't be chased, and how to ask again", () => {
+    const m = reversedMessage(notice());
+    assert.match(m, /won't remind Zenith Homes/);
+    assert.match(m, /resend invoice 7/);
+  });
+
+  it("stops the invoice's reminders in the same transaction", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("./refund.ts", import.meta.url), "utf8");
+    const inTx = src.slice(src.indexOf("const result = await tx("), src.indexOf("if (!result) return"));
+    assert.match(inTx, /UPDATE reminders SET status = 'cancelled'/);
+    assert.match(inTx, /REMINDER_KINDS/);
+  });
 });
 
 describe("a chargeback", () => {

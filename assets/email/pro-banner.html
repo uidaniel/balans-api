@@ -8,8 +8,10 @@
   without the month: an email is kept, and a card that said September would
   still say it in March.
 
-  "No Balans fee" is true while Pro's fee is zero (config.ts). If that
-  changes, this has to be redrawn with it.
+  The chips said "No Balans fee" until 24 October 2026, which stopped being
+  true when card payments from abroad took a flat fee from every plan. They
+  now name things that hold on every payment. "20 designs" is the count in
+  src/pdf/templates.ts: a new design means redrawing this.
 -->
 <html lang="en">
 <head>
@@ -52,7 +54,7 @@ h1{margin-top:16px;font-family:"Wix Madefor Display",sans-serif;font-weight:800;
       Payment received
     </span>
     <h1>You're on Pro.</h1>
-    <div class="chips"><span>Unlimited invoices</span><span>No Balans fee</span></div>
+    <div class="chips"><span>Unlimited invoices</span><span>All 20 designs</span></div>
   </div>
 
   <div class="card-shadow"></div>

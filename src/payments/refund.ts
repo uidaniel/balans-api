@@ -19,6 +19,7 @@ import { formatNaira } from "../../core/totals.ts";
 import { b, lines, para } from "../whatsapp/format.ts";
 import { sendText } from "../whatsapp/client.ts";
 import { recordOutbound } from "../conversation/store.ts";
+import { REMINDER_KINDS } from "../documents/actions.ts";
 
 export type ReversalOutcome =
   | { kind: "reversed"; reference: string; partial: boolean }
@@ -123,6 +124,26 @@ export async function reversePayment(
               paid_at = CASE WHEN $2::bigint = 0 THEN NULL ELSE paid_at END
         WHERE id = $1`,
       [payment.document_id, paid, status],
+    );
+
+    /*
+     * Money given back is not a debt to chase. A refund put an invoice due
+     * 3 October back to unpaid on 24 October 2026, and fifteen minutes later
+     * the client got the 3-day and 7-day reminders with a link to pay what
+     * had just been returned to them. Reminders for it stop, as "stop
+     * reminders" stops them; the sender can still resend it by hand.
+     */
+    await c.query(
+      `WITH cancelled AS (
+         UPDATE reminders SET status = 'cancelled' WHERE document_id = $1 AND status = 'pending'
+       )
+       INSERT INTO reminders (document_id, channel, kind, scheduled_at, status)
+       SELECT $1, 'whatsapp', k.kind, now(), 'cancelled'
+         FROM unnest($2::text[]) AS k(kind)
+        WHERE NOT EXISTS (
+          SELECT 1 FROM reminders r WHERE r.document_id = $1 AND r.kind = k.kind AND r.channel = 'whatsapp'
+        )`,
+      [payment.document_id, [...REMINDER_KINDS]],
     );
 
     // The deposit or stage it paid is owed again: the parts are settled
@@ -237,6 +258,9 @@ export function reversedMessage(n: ReversedNotice): string {
     n.stillPaidKobo > 0
       ? `${formatNaira(n.stillPaidKobo)} of that invoice is still paid.`
       : "The invoice is showing as unpaid again.",
+    `Balans won't remind ${n.clientName} about it.${
+      n.documentNumber === null ? "" : ` If they should still pay, send ${b(`resend invoice ${n.documentNumber}`)}.`
+    }`,
   );
 }
 

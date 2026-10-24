@@ -162,3 +162,39 @@ describe("every way Pro is switched on", () => {
     assert.match(source, /inGrace = expired && now <= graceEnds/);
   });
 });
+
+describe("when a paid month starts", () => {
+  /*
+   * A month is dated when somebody asks for Pro and paid whenever they get
+   * round to it. One asked for before Pro ended on 7 October and paid on 24
+   * October ran to 7 November (24 October 2026). The first money dates it.
+   */
+  const source = readFileSync(new URL("./subscription.ts", import.meta.url), "utf8");
+  const between = (from: string, to: string) => source.slice(source.indexOf(from), source.indexOf(to, source.indexOf(from)));
+
+  it("starts at the payment, or when the Pro already paid for ends", () => {
+    assert.match(source, /const PAID_FROM = `GREATEST\(now\(\), \(SELECT u\.plan_expires_at FROM users u WHERE u\.id = s\.user_id AND u\.plan = 'pro'\)\)`/);
+  });
+
+  it("is dated again on both paths, on the first money only, keeping the length", () => {
+    const link = between("export async function activateByReference", "RETURNING");
+    const deduction = between("export async function collect", "RETURNING");
+    for (const path of [link, deduction]) {
+      assert.match(path, /period_start = CASE WHEN s\.status = 'pending' THEN \$\{PAID_FROM\} ELSE s\.period_start END/);
+      assert.match(path, /\$\{PAID_FROM\} \+ age\(s\.period_end, s\.period_start\)/, "a year stays a year");
+    }
+  });
+
+  it("gives the account the new end, not the one the month was opened with", () => {
+    const deduction = between("export async function collect", "INSERT INTO fee_ledger");
+    assert.match(deduction, /\[userId, periodEnd\]/);
+    assert.match(between("export async function activateByReference", "INSERT INTO fee_ledger"), /RETURNING s\.id, s\.user_id, s\.price_kobo, s\.period_end/);
+  });
+
+  it("puts right the months already paid late", () => {
+    const sql = readFileSync(new URL("../db/migrations/0049_pro_month_from_payment.sql", import.meta.url), "utf8");
+    assert.match(sql, /s\.paid_at > s\.period_start \+ interval '1 day'/);
+    assert.match(sql, /period_end = s\.paid_at \+ age\(s\.period_end, s\.period_start\)/);
+    assert.match(sql, /AND s\.period_end > now\(\)/, "only months still running");
+  });
+});

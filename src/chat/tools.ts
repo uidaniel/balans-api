@@ -313,7 +313,7 @@ async function moneySummary(userId: string, today: Civil, words: string) {
 
 async function getAccount(userId: string, today: Civil) {
   const day = when(today);
-  const [{ rows }, trial, { rows: banks }] = await Promise.all([
+  const [{ rows }, trial, { rows: banks }, { rows: paid }] = await Promise.all([
     db().query<{
       business_name: string | null; email: string | null; email_verified_at: Date | null; plan_expires_at: Date | null;
       logo_url: string | null; signature_url: string | null; template_id: string | null; default_due_days: number; created_at: Date;
@@ -329,6 +329,14 @@ async function getAccount(userId: string, today: Civil) {
         WHERE user_id = $1 AND status IN ('active', 'pending') ORDER BY status`,
       [userId],
     ),
+    // The payment behind the Pro date. Without it the assistant could only
+    // say "email us" to somebody asking why their month ends when it does
+    // (24 October 2026).
+    db().query<{ amount_collected_kobo: number; paid_at: Date | null; period_start: Date; period_end: Date }>(
+      `SELECT amount_collected_kobo, paid_at, period_start, period_end FROM subscriptions
+        WHERE user_id = $1 AND status = 'active' ORDER BY period_end DESC LIMIT 1`,
+      [userId],
+    ),
   ]);
   const u = rows[0];
   if (!u) return { error: "No account." };
@@ -339,6 +347,11 @@ async function getAccount(userId: string, today: Civil) {
     // "pro" is paying or still on the free documents; paying is the subscription.
     plan: trial.paid ? "Pro (paid)" : trial.left > 0 ? "Free documents, with every Pro feature" : "No plan: free documents used, needs Pro for new invoices",
     ...proDates(trial.paid ? "pro" : "free", u.plan_expires_at, day),
+    ...(trial.paid && paid[0]
+      ? {
+          last_pro_payment: `${formatNaira(paid[0].amount_collected_kobo)}${paid[0].paid_at ? ` on ${day(paid[0].paid_at)}` : ""}, for ${day(paid[0].period_start)} to ${day(paid[0].period_end)}`,
+        }
+      : {}),
     // Worked out here: asked how many were left, the model said "2 of 3"
     // rather than subtract, which is the rule doing its job.
     free_documents_used: `${Math.min(trial.used, trial.allowance)} of ${trial.allowance}, in total (they do not reset monthly)`,

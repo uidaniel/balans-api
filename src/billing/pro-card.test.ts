@@ -16,7 +16,7 @@
  * not take the message down with it.
  *
  * And because a card is a picture, its claims are the only ones in the
- * product no test can read. "₦3,000" and "8 designs" are painted on. If the
+ * product no test can read. "₦3,000" and "20 designs" are painted on. If the
  * config moves, the artwork is silently wrong and nothing fails. The last
  * block fails instead, and says which file to redraw.
  */
