@@ -119,6 +119,10 @@ export function parseInbound(payload: unknown): { messages: Inbound[]; statuses:
         if (!id || !from || !msg) continue;
 
         const type = str(msg.type) ?? "other";
+        // A 👍 on one of our messages is not something to answer. Meta sends
+        // it as a message of its own, and read as one it was told "I can only
+        // read text and images".
+        if (type === "reaction") continue;
         const out: Inbound = {
           waMessageId: id,
           from,

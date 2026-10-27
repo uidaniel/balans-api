@@ -238,7 +238,7 @@ export function require_(...keys: (keyof typeof env)[]): void {
  * published text proves nothing about what somebody agreed to. It said
  * "2026-09-draft-1" while the site said 3.1 until 27 September 2026.
  */
-export const legalConsentVersion = process.env.LEGAL_CONSENT_VERSION ?? "4.0";
+export const legalConsentVersion = process.env.LEGAL_CONSENT_VERSION ?? "5.0";
 
 export const defaults = {
   plans: {

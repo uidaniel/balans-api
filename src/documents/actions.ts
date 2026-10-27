@@ -28,6 +28,23 @@ export type ActionResult<T> = { ok: true; value: T } | { ok: false; why: string 
 export type Cancelled = { number: number; type: string; clientName: string };
 
 /**
+ * A payment on document `d` that may still land (27 October 2026).
+ *
+ * Every press of Pay leaves an `initialised` row, and nothing closes the ones
+ * a client walks away from. Counting all of them refused every invoice whose
+ * page anybody had once paid from — three at once, each called "paid". A
+ * transfer can land until its account expires; a card checkout is somebody at
+ * the checkout now, and an hour covers it. One that lands later all the same
+ * still settles the invoice: what is lost is the cancel, never the money.
+ */
+const PAYMENT_OPEN = `EXISTS (
+  SELECT 1 FROM payments p
+   WHERE p.document_id = d.id
+     AND p.status = 'initialised'
+     AND (p.transfer_expires_at > now()
+          OR (p.transfer_account_number IS NULL AND p.created_at > now() - interval '1 hour')))`;
+
+/**
  * "Cancelling is allowed when no payment exists."
  *
  * The check and the update are one statement: a payment landing between a
@@ -44,8 +61,10 @@ export async function cancelDocument(
     type: string;
     amount_paid_kobo: number;
     client_name: string;
+    paying: boolean;
   }>(
-    `SELECT d.id, d.status, d.type, d.amount_paid_kobo, c.name AS client_name
+    `SELECT d.id, d.status, d.type, d.amount_paid_kobo, c.name AS client_name,
+            ${PAYMENT_OPEN} AS paying
        FROM documents d JOIN clients c ON c.id = d.client_id
       WHERE d.user_id = $1 AND d.number = $2 AND d.status <> 'draft'
       ORDER BY d.created_at DESC LIMIT 1`,
@@ -56,22 +75,29 @@ export async function cancelDocument(
   if (!doc) return { ok: false, why: "not_found" };
   if (doc.status === "cancelled") return { ok: false, why: "already_cancelled" };
   if (doc.status === "paid" || doc.amount_paid_kobo > 0) return { ok: false, why: "has_payment" };
+  if (doc.paying) return { ok: false, why: "paying_now" };
 
   const { rowCount } = await db().query(
-    `UPDATE documents
+    `UPDATE documents d
         SET status = 'cancelled', cancelled_at = now()
-      WHERE id = $1
-        AND amount_paid_kobo = 0
-        AND status NOT IN ('paid', 'part_paid', 'cancelled')
+      WHERE d.id = $1
+        AND d.amount_paid_kobo = 0
+        AND d.status NOT IN ('paid', 'part_paid', 'cancelled')
+        AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.document_id = d.id AND p.status = 'success')
         -- A payment in flight counts: it may land a second from now.
-        AND NOT EXISTS (
-          SELECT 1 FROM payments p
-           WHERE p.document_id = $1 AND p.status IN ('success', 'initialised')
-        )`,
+        AND NOT ${PAYMENT_OPEN}`,
     [doc.id],
   );
 
-  if (rowCount === 0) return { ok: false, why: "has_payment" };
+  // Something started or landed since the read. Money that landed is a
+  // payment; anything else is somebody still paying.
+  if (rowCount === 0) {
+    const { rows: now } = await db().query<{ paid: boolean }>(
+      `SELECT d.amount_paid_kobo > 0 OR d.status IN ('paid', 'part_paid') AS paid FROM documents d WHERE d.id = $1`,
+      [doc.id],
+    );
+    return { ok: false, why: now[0]?.paid ? "has_payment" : "paying_now" };
+  }
 
   // Nothing pending should chase a cancelled invoice.
   await db().query(
@@ -105,10 +131,12 @@ export async function previewCancel(userId: string, numbers: number[]): Promise<
     currency: string | null;
     original_amount_minor: number | null;
     client_name: string;
+    paying: boolean;
   }>(
     `SELECT DISTINCT ON (d.number)
             d.number, d.status, d.type, d.amount_paid_kobo, d.total_kobo,
-            d.currency, d.original_amount_minor, c.name AS client_name
+            d.currency, d.original_amount_minor, c.name AS client_name,
+            ${PAYMENT_OPEN} AS paying
        FROM documents d JOIN clients c ON c.id = d.client_id
       WHERE d.user_id = $1 AND d.number = ANY($2::int[]) AND d.status <> 'draft'
       ORDER BY d.number, d.created_at DESC`,
@@ -121,6 +149,7 @@ export async function previewCancel(userId: string, numbers: number[]): Promise<
     if (!d) return { number, ok: false, why: "not_found" };
     if (d.status === "cancelled") return { number, ok: false, why: "already_cancelled" };
     if (d.status === "paid" || Number(d.amount_paid_kobo) > 0) return { number, ok: false, why: "has_payment" };
+    if (d.paying) return { number, ok: false, why: "paying_now" };
     return {
       number,
       ok: true,

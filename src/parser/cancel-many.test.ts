@@ -229,4 +229,10 @@ describe("what it says", () => {
     assert.match(out, /^🚫 \*Cancelled 2 invoices:\* #3, #4/);
     assert.match(out, /Could not cancel:\n- #6 — paid/);
   });
+
+  it("does not call an invoice somebody is still paying 'paid'", () => {
+    const out = cancelledManyMessage([], [{ number: 16, why: "paying_now" }]);
+    assert.match(out, /#16 — your client is paying it now/);
+    assert.doesNotMatch(out, /— paid/);
+  });
 });

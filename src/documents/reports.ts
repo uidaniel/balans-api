@@ -235,6 +235,12 @@ export function cannotCancelMessage(number: number, why: string): string {
       ),
     );
   }
+  if (why === "paying_now") {
+    return lines(
+      `⏳ ${b(`Invoice #${number}`)} cannot be cancelled yet. Your client has started paying it.`,
+      "If the money does not come, you can cancel it a little later.",
+    );
+  }
   if (why === "already_cancelled") {
     return `Invoice ${b(`#${number}`)} was already cancelled.`;
   }
@@ -251,6 +257,7 @@ export function cannotCancelMessage(number: number, why: string): string {
 /** Why one of a list cannot be cancelled, in the fewest plain words. */
 const CANNOT_CANCEL: Record<string, string> = {
   has_payment: "paid",
+  paying_now: "your client is paying it now",
   already_cancelled: "already cancelled",
   not_found: "not found",
 };

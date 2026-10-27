@@ -84,6 +84,24 @@ describe("inbound: other shapes", () => {
     assert.equal(messages[0]!.text, "use this as my logo");
   });
 
+  it("drops a reaction, which is nothing to answer", () => {
+    const { messages } = parseInbound(
+      envelope({
+        metadata: meta,
+        messages: [
+          {
+            id: "wamid.RRR",
+            from: "2348012345678",
+            type: "reaction",
+            timestamp: "1750000004",
+            reaction: { message_id: "wamid.OURS", emoji: "👍" },
+          },
+        ],
+      }),
+    );
+    assert.equal(messages.length, 0);
+  });
+
   it("separates delivery statuses from messages", () => {
     const { messages, statuses } = parseInbound(
       envelope({
