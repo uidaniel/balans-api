@@ -289,7 +289,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
   /* The amount, on a panel of its own. */
   .band { margin-top:30px; padding:30px 34px; border-radius:28px; background:var(--soft); }
   .cap { font-size:27px; color:rgb(16 35 28 / 0.55); }
-  .amount { margin-top:2px; font-size:96px; font-weight:400; letter-spacing:-0.055em; line-height:1.05; }
+  .amount { margin-top:2px; font-size:96px; font-weight:500; letter-spacing:-0.055em; line-height:1.05; }
   .pair { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:24px; }
   .pair .amount { font-size:64px; white-space:nowrap; }
   .pair .r { text-align:right; }
@@ -311,8 +311,8 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
   .row .lead { flex:1; min-width:24px; border-bottom:3px dotted currentColor;
                opacity:0.25; transform:translateY(-0.3em); }
   .row.muted { color:rgb(16 35 28 / 0.55); }
-  .row .v { font-weight:500; white-space:nowrap; }
-  .row .v.cost { color:var(--red); font-weight:500; }
+  .row .v { font-weight:600; white-space:nowrap; }
+  .row .v.cost { color:var(--red); font-weight:600; }
   .items { margin-top:30px; font-size:30px; }
   .items .row { margin-top:12px; }
   .items .l { max-width:62%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
@@ -329,7 +329,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
   .total .row .lead { display:none; }
   .total .row .l { flex:1; }
   .row.strong { font-size:40px; font-weight:500; letter-spacing:-0.02em; }
-  .row.strong .v { font-size:48px; font-weight:500; color:var(--moss); letter-spacing:-0.03em; }
+  .row.strong .v { font-size:48px; font-weight:600; color:var(--moss); letter-spacing:-0.03em; }
   .note { margin-top:20px; font-size:26px; line-height:1.5; color:rgb(16 35 28 / 0.5); }
   /*
    * The settlement line is the footer of the card, not a footnote on it:

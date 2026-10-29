@@ -268,96 +268,137 @@ padding:.5em 0;font-size:.54em;font-weight:600;letter-spacing:.16em;text-transfo
 }
 
 /* -------------------------------------------------------------------------- */
-/* Blueprint                                                                  */
+/* The rebrand's four (29 October 2026)                                       */
 /* -------------------------------------------------------------------------- */
 
 /**
- * An architect's drawing sheet: a faint grid, a ruled frame, and the facts in
- * a title block in the bottom right corner, where anyone who has read a
- * drawing looks for them.
+ * What Glare, Fluted, Frost and Halftone share: Onest, as on balans.ng, at
+ * weights no heavier than semibold, and every label in sentence case rather
+ * than tracked capitals. Laid over the kit's rules, so the shared pieces
+ * (rows, sums, the pay link, the small print) keep their structure and only
+ * change their voice.
+ *
+ * Accents are mixed from MARIGOLD with `color-mix`, never written as another
+ * hex: `applyBrand` swaps that one hex for a Pro colour across the whole
+ * page, so a light or a wash mixed from it turns the business's colour too.
  */
-function blueprint(d: DocumentData, opts: RenderOptions): string {
-  const css = `
-.sheet{background-color:#fff;
-background-image:linear-gradient(${ink(0.04)} 1px,transparent 1px),linear-gradient(90deg,${ink(0.04)} 1px,transparent 1px),
-linear-gradient(${ink(0.075)} 1px,transparent 1px),linear-gradient(90deg,${ink(0.075)} 1px,transparent 1px);
-background-size:1em 1em,1em 1em,5em 5em,5em 5em}
-.frm{position:absolute;inset:1.1em;border:.1em solid ${INK};pointer-events:none}
-.wrap{position:relative;flex:1;display:flex;flex-direction:column;padding:2em 2.1em 1.9em}
-.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1.2em}
-.kd .k{font-family:${DISPLAY};font-size:1.7em;line-height:1;font-weight:800;letter-spacing:.24em}
-.kd .n{margin-top:.5em;font-size:.56em;letter-spacing:.2em;text-transform:uppercase;color:${ink(0.55)}}
-.top .brand{text-align:right;min-width:0}
-.top .brand .logo{flex-direction:column;align-items:flex-end;gap:.4em}
-.top .brand .logo img{height:2.3em;object-position:right center}
-.top .brand .meta{margin-top:.35em}
-.panel{margin-top:1.3em;background:#fff;border:1px solid ${INK};padding:.9em 1em .4em}
-.panel .rows .it:last-child{border-bottom:0}
-.notes{margin-top:1em;background:#fff;display:inline-block;padding:.2em .3em 0 0}
-.foot{margin-top:auto;display:flex;gap:1.4em;align-items:flex-end;padding-top:1em}
-.foot .left{flex:1;min-width:0;display:flex;flex-direction:column;gap:1em}
-.foot .left>*{background:#fff;align-self:flex-start;padding:.2em .3em 0 0}
-.tb{width:13.6em;flex:none;background:#fff;border:.1em solid ${INK};display:grid;grid-template-columns:1fr 1fr}
-.tb>div{min-width:0;padding:.5em .65em;border-right:1px solid ${INK};border-bottom:1px solid ${INK}}
-.tb>div:nth-child(even){border-right:0}
-.tb .wide{grid-column:1 / -1;border-right:0}
-.tb>div:last-child{border-bottom:0}
-.tb .fv .sub{font-size:.9em}
-.made{margin-top:.6em}
+export const BRAND_SHEET = `
+.sheet{font-family:${FONT.brand};font-weight:500}
+.cap{font-size:.6em;font-weight:500;letter-spacing:0;text-transform:none;color:${ink(0.5)}}
+.fv{font-weight:500}
+.fv .sub{font-weight:500}
+.logo .biz{font-weight:600}
+.meta{font-weight:500}
+.rows .hd{font-weight:500;letter-spacing:0;text-transform:none}
+.rows .hd span>span{font-size:1em}
+.rows .nm b{font-weight:500}
+.rows .u,.rows .q{font-weight:500}
+.rows .a{font-weight:600}
+.sums p{font-weight:500}
+.sums p span:last-child,.sums p.sum{font-weight:600}
+.due .amt{font-family:${FONT.brand};font-weight:600;letter-spacing:-.045em}
+.fx{font-family:${FONT.brand};font-weight:500}
+.pay .url{font-weight:600}
+.pay .how,.note,.legal,.made{font-weight:500}
+.dtitle p{font-weight:600!important;letter-spacing:-.02em!important}
+.mark{font-family:${FONT.brand};font-weight:600}
 `;
 
+/** Marigold at a strength, as a colour a Pro brand colour replaces. */
+export const gold = (pct: number, into = "transparent"): string =>
+  `color-mix(in srgb,${MARIGOLD} ${pct}%,${into})`;
+
+/* -------------------------------------------------------------------------- */
+/* Frost (was Blueprint)                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Frosted white panels on warm sand, the way balans.ng sets its own cards:
+ * the kind and who it is for as a two-tone headline, the facts in one panel,
+ * the amount on a panel of marigold beside it, and the work below in a third.
+ * Soft, and still a hard-working document: every fact is boxed where it is
+ * looked for.
+ */
+function blueprint(d: DocumentData, opts: RenderOptions): string {
   const h = headlineAmount(d);
-  const halves = [
+  const css = `${BRAND_SHEET}
+.sheet{background:#F1EAD9}
+.wrap{flex:1;display:flex;flex-direction:column;padding:1.6em 1.7em 1.3em}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1.2em}
+.top .logo{flex-direction:column;align-items:flex-start;gap:.45em}
+.top .logo img{height:2.3em}
+.top .meta{margin-top:.35em}
+.top .kd{flex:none;text-align:right;font-size:.6em;color:${ink(0.55)}}
+.top .kd b{display:inline-block;margin-bottom:.4em;border-radius:99em;background:#fff;padding:.35em .9em;font-weight:600;color:${INK}}
+h1{margin-top:1.1em;font-size:2.2em;line-height:1;font-weight:600;letter-spacing:-.045em;overflow-wrap:anywhere}
+h1 span{display:block;color:${ink(0.42)}}
+.pane{background:rgba(255,255,255,.82);border-radius:.62em;box-shadow:inset 0 0 0 1px rgba(255,255,255,.9),0 .5em 1.4em -.9em rgba(16,35,28,.35)}
+.lead{margin-top:1.1em;display:grid;grid-template-columns:1fr 1fr;gap:.6em}
+.facts{padding:.95em 1em;display:grid;grid-template-columns:1fr 1fr;gap:.85em 1em;align-content:start}
+.facts>div{min-width:0}
+.facts>div:first-child{grid-column:1 / -1}
+.amtp{border-radius:.62em;padding:.95em 1.05em;color:${INK};
+background:linear-gradient(180deg,${gold(55, "#fff")},${MARIGOLD})}
+.amtp .cap{color:${ink(0.62)}}
+.amtp .due .amt{margin-top:.25em}
+.amtp .fx{color:${ink(0.7)}}
+.amtp .due.paid .amt{color:${INK}}
+.work{margin-top:.6em;padding:.9em 1em .8em}
+.work .rows .it:last-child{border-bottom:0}
+.work .sums{margin:.7em 0 0 auto;min-width:12em;width:max-content}
+.tail{margin-top:auto;padding-top:.9em;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em}
+.tail .left{min-width:0;display:flex;flex-direction:column;gap:.9em}
+.tail .pane{padding:.8em .95em}
+`;
+
+  const facts = [
+    billedTo(d),
     d.number === null ? "" : field(numberLabel(d), esc(String(d.number))),
     d.issueDate ? field("Issued", when(d.issueDate)) : "",
     dueField(d),
     isReceipt(d) && d.receipt ? field("Method", esc(methodWords(d.receipt.method))) : "",
   ].filter(Boolean);
-  // The title block is a grid of pairs: an odd one out gets an empty partner
-  // so the rules still meet.
-  if (halves.length % 2) halves.push("<div></div>");
 
-  const cells = [
-    `<div class="wide">${billedTo(d)}</div>`,
-    ...halves,
-    `<div class="wide">${due(d, { size: `${fit(h.display, 1.5, 12.2)}em` })}</div>`,
-  ].join("");
+  const pay = payInfo(d);
+  const notes = notesBlock(d);
 
-  const body = `<div class="frm"></div>
-<div class="wrap">
+  const body = `<div class="wrap">
   <div class="top">
-    <div class="kd">
-      <p class="k">${upperKind(d)}</p>
-      <p class="n">${[no(d), d.issueDate ? when(d.issueDate) : ""].filter(Boolean).join(" &middot; ")}</p>
-    </div>
-    <div class="brand">
+    <div class="min0">
       ${biz(d)}
-      <p class="meta">${bizMeta(d)}</p>
+      ${bizMeta(d) ? `<p class="meta">${bizMeta(d)}</p>` : ""}
     </div>
+    <div class="kd"><b>${kind(d)}</b>${no(d) ? `<br>${no(d)}` : ""}</div>
   </div>
 
-  <div class="panel">${titleBlock(d)}${rows(d)}</div>
-  <div style="display:flex;justify-content:flex-end"><div class="panel" style="margin-top:-1px;border-top:0;padding:.7em 1em;width:13em">${sums(d)}</div></div>
-  ${notesBlock(d, "notes")}
+  <h1>${kind(d)}<span>${esc(d.title ? d.clientName : headline(d))}</span></h1>
 
-  <div class="foot">
+  <div class="lead">
+    <div class="pane facts">${facts.join("")}</div>
+    <div class="amtp">${due(d, { size: `${fit(h.display, 2.1, 12)}em` })}</div>
+  </div>
+
+  <div class="pane work">${titleBlock(d)}${rows(d, { head: "rule" })}${sums(d)}</div>
+
+  <div class="tail">
     <div class="left">
-      ${payInfo(d) || ""}
-      ${signature(d)}
+      ${pay ? `<div class="pane">${pay}</div>` : ""}
+      ${notes ? `<div class="pane">${notes}</div>` : ""}
     </div>
-    <div class="tb">${cells}</div>
+    ${signature(d)}
   </div>
 
   ${legal(d)}
-  ${d.showMadeWith ? madeWith(d) : ""}
+  ${made(d)}
 </div>`;
 
   return sheet(d, opts, {
     css,
     body,
+    fonts: ["brand"],
     rowEm: 2.9,
     logoEm: 2.2,
-    brand: (k) => `.frm,.panel,.tb,.tb>div{border-color:${k.c}}.kd .k{color:${k.deep}}`,
+    brand: (k) => `.sheet{background:${k.page}}.amtp,.amtp .cap,.amtp .fx,.amtp .due .amt{color:${k.on}}.amtp .cap,.amtp .fx{opacity:.75}h1 span{color:${k.deep};opacity:.7}`,
   });
 }
 
@@ -910,55 +951,61 @@ letter-spacing:-.045em;font-variant-numeric:tabular-nums;white-space:nowrap}
 }
 
 /* -------------------------------------------------------------------------- */
-/* Angle                                                                      */
+/* Halftone (was Angle)                                                       */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Two cut triangles in the top corner and a slanted band along the foot. The
- * modern-corporate shape, kept to the edges so the middle stays plain paper.
+ * A field of halftone dots falling off from the top corner, the printed light
+ * of the brand's posters, and the amount set large and light under it. The
+ * dots are two screens, coarse near the corner and fine further out, so they
+ * seem to shrink as they fade, the way a printed gradient does. Everything
+ * else is plain paper.
  */
 function angle(d: DocumentData, opts: RenderOptions): string {
-  const css = `
-.c1{position:absolute;top:0;right:0;width:14em;height:11.5em;background:${MARIGOLD};clip-path:polygon(0 0,100% 0,100% 100%)}
-.c2{position:absolute;top:0;right:0;width:8.6em;height:7em;background:${INK};clip-path:polygon(0 0,100% 0,100% 100%)}
-.base{position:absolute;left:0;right:0;bottom:0;height:1.3em;background:${INK};clip-path:polygon(0 70%,100% 0,100% 100%,0 100%)}
-.base2{position:absolute;left:0;right:0;bottom:0;height:2.1em;background:${MARIGOLD};clip-path:polygon(0 86%,100% 0,100% 100%,0 100%)}
-.wrap{position:relative;flex:1;display:flex;flex-direction:column;padding:1.7em 2em 2.5em}
-.who{max-width:15em}
+  const h = headlineAmount(d);
+  const css = `${BRAND_SHEET}
+.dots{position:absolute;top:0;right:0;width:23em;height:17em;pointer-events:none}
+.dots i{position:absolute;inset:0}
+.dots .a{background-image:radial-gradient(circle,${gold(100)} .13em,transparent .14em);background-size:.4em .4em;
+-webkit-mask-image:radial-gradient(75% 85% at 100% 0%,#000 0%,rgba(0,0,0,.85) 30%,transparent 68%);
+mask-image:radial-gradient(75% 85% at 100% 0%,#000 0%,rgba(0,0,0,.85) 30%,transparent 68%)}
+.dots .b{background-image:radial-gradient(circle,${gold(100)} .065em,transparent .075em);background-size:.4em .4em;
+background-position:.2em .2em;
+-webkit-mask-image:radial-gradient(100% 100% at 100% 0%,transparent 25%,#000 45%,transparent 95%);
+mask-image:radial-gradient(100% 100% at 100% 0%,transparent 25%,#000 45%,transparent 95%)}
+.wrap{position:relative;flex:1;display:flex;flex-direction:column;padding:1.7em 1.9em 1.4em}
+.who{max-width:16em}
 .who .logo{flex-direction:column;align-items:flex-start;gap:.5em;min-width:0}
 .who .logo img{height:2.3em}
 .who .meta{margin-top:.35em}
-h1{margin-top:.9em;font-family:${DISPLAY};font-size:2.6em;line-height:.9;font-weight:800;letter-spacing:-.055em}
-.subl{margin-top:.5em;font-size:.6em;color:${ink(0.55)}}
-.facts{margin-top:1.2em;display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:1em}
-.facts>div{border-top:.18em solid ${MARIGOLD};padding-top:.6em;min-width:0}
-.work{margin-top:1.2em}
-.money{margin-top:1em;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em}
-.money .sums{min-width:12em;width:max-content}
+.kd{margin-top:1.6em;font-size:.62em;color:${ink(0.55)}}
+.kd b{font-weight:600;color:${INK}}
+.big{margin-top:.5em}
+.big .due .amt{font-weight:600;letter-spacing:-.05em}
+.facts{margin-top:1.3em;display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:1em}
+.facts>div{border-top:1px solid ${ink(0.18)};padding-top:.6em;min-width:0}
+.work{margin-top:1.3em}
+.work .sums{margin:.8em 0 0 auto;min-width:12em;width:max-content}
 .tail{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em;padding-top:1.2em}
 .tail .left>div+div{margin-top:1em}
 `;
 
-  const body = `<div class="c1"></div><div class="c2"></div><div class="base2"></div><div class="base"></div>
+  const body = `<div class="dots"><i class="a"></i><i class="b"></i></div>
 <div class="wrap">
   <div class="who">
     ${biz(d)}
     ${bizMeta(d) ? `<p class="meta">${bizMeta(d)}</p>` : ""}
   </div>
-  <h1>${kind(d)}</h1>
-  <p class="subl">${[no(d), d.issueDate ? `Issued ${when(d.issueDate)}` : ""].filter(Boolean).join(" &middot; ")}</p>
+  <p class="kd"><b>${kind(d)}</b>${[no(d), d.issueDate ? `Issued ${when(d.issueDate)}` : ""].filter(Boolean).map((x) => ` &middot; ${x}`).join("")}</p>
+  <div class="big">${due(d, { size: `${fit(h.display, 3.4, 22)}em` })}</div>
 
   <div class="facts">
     ${billedTo(d)}
     ${dueField(d) || "<div></div>"}
-    ${field("Amount", headlineAmount(d).display)}
+    ${namesWork(d) && !d.title ? field("For", esc(headline(d))) : field("Items", String(d.lines.length))}
   </div>
 
-  <div class="work">${titleBlock(d)}${rows(d, { head: "bar" })}</div>
-  <div class="money">
-    ${due(d)}
-    ${sums(d)}
-  </div>
+  <div class="work">${titleBlock(d)}${rows(d, { head: "rule" })}${sums(d)}</div>
 
   <div class="tail">
     <div class="left">${payInfo(d)}${notesBlock(d)}</div>
@@ -971,9 +1018,9 @@ h1{margin-top:.9em;font-family:${DISPLAY};font-size:2.6em;line-height:.9;font-we
   return sheet(d, opts, {
     css,
     body,
+    fonts: ["brand"],
     rowEm: 3.2,
     logoEm: 2.6,
-    brand: (k) => `.c2,.base{background:${k.deep}}.rows .hd.bar{background:${k.deep};color:#fff}`,
   });
 }
 

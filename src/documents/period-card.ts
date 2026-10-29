@@ -61,7 +61,7 @@ body{width:${CARD}px;height:${CARD}px;background:${MARIGOLD};font-family:${FONT.
 .card{position:relative;width:100%;height:100%;padding:72px 72px 64px;display:flex;flex-direction:column}
 .mark img{height:62px;display:block}
 h1{margin-top:64px;font-size:34px;font-weight:400;color:rgba(16,35,28,.62)}
-.big{font-size:150px;font-weight:400;letter-spacing:-.055em;line-height:1;margin:16px 0 18px}
+.big{font-size:150px;font-weight:500;letter-spacing:-.055em;line-height:1;margin:16px 0 18px}
 .biglabel{font-size:32px;font-weight:500;color:rgba(16,35,28,.66)}
 .rows{margin-top:auto;padding:8px 36px;border-radius:36px;background:rgba(255,250,236,.62);
   backdrop-filter:blur(30px);box-shadow:inset 0 0 0 2px rgba(255,255,255,.55),0 30px 60px -40px rgba(80,50,0,.45)}
@@ -69,7 +69,7 @@ h1{margin-top:64px;font-size:34px;font-weight:400;color:rgba(16,35,28,.62)}
   padding:26px 0;border-bottom:2px solid rgba(16,35,28,.08)}
 .row:last-child{border-bottom:0}
 .row .k{font-size:30px;color:rgba(16,35,28,.62)}
-.row .v{font-size:38px;font-weight:400;letter-spacing:-.02em;white-space:nowrap}
+.row .v{font-size:38px;font-weight:600;letter-spacing:-.02em;white-space:nowrap}
 .row.late .v{color:${CORAL}}
 .best{margin-top:28px;font-size:27px;color:rgba(16,35,28,.66)}
 .best b{font-weight:500;color:${INK}}

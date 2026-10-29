@@ -45,9 +45,12 @@ export const CARDS = [
 ] as const;
 export type Card = (typeof CARDS)[number];
 
-/** Four by five for the three that carry a list, square for the rest. */
-export const heightOf = (card: Card): number =>
-  card === "cheatsheet" || card === "limit" || card === "upgrade" ? TALL : SQUARE;
+/**
+ * Four by five for the cheatsheet, which carries ten rows; square for the
+ * rest. The offer cards were four by five too and read as a long strip in
+ * the chat (29 October 2026), so their price panel lies across the foot.
+ */
+export const heightOf = (card: Card): number => (card === "cheatsheet" ? TALL : SQUARE);
 
 /* -------------------------------------------------------------------------- */
 
@@ -159,25 +162,26 @@ function offer(kind: "limit" | "upgrade"): string {
   return page(
     kind,
     `<div class="pill ink">Balans Pro</div>
-${headline(440, line, muted)}
-<p class="sub" style="top:860px;width:1300px">${sub}</p>
+${headline(400, line, muted, 180)}
+<p class="sub" style="top:790px;width:1220px;font-size:58px">${sub}</p>
 <ul class="points">${proPoints()
       .map((p) => `<li><span class="tick">${TICK}</span>${p}</li>`)
       .join("")}</ul>
 <div class="price">
-  <p class="kick" style="margin:0">Balans Pro</p>
-  <p class="amount">${naira(priceKobo)}</p>
-  <p class="per">a month, or ${naira(yearPriceKobo)} a year</p>
-  <div class="pill" style="position:static;margin-top:52px;height:132px;font-size:52px;padding:0 70px">Reply UPGRADE</div>
+  <div>
+    <p class="amount">${naira(priceKobo)}</p>
+    <p class="per">a month, or ${naira(yearPriceKobo)} a year</p>
+  </div>
+  <div class="pill" style="position:static;height:132px;font-size:52px;padding:0 66px">Reply UPGRADE</div>
 </div>`,
-    `.points{position:absolute;left:150px;right:150px;top:1100px;list-style:none}
-.points li{display:flex;align-items:center;gap:44px;height:112px;border-top:3px solid rgb(246 241 231/.1);font-size:56px;letter-spacing:-.01em}
+    `.points{position:absolute;left:150px;right:150px;top:1000px;list-style:none}
+.points li{display:flex;align-items:center;gap:40px;height:96px;border-top:3px solid rgb(246 241 231/.1);font-size:52px;letter-spacing:-.01em}
 .tick{color:#f5b82e;display:flex}
-.price{position:absolute;left:150px;right:150px;bottom:150px;height:760px;border-radius:72px;background:rgb(8 19 15/.42);
+.price{position:absolute;left:150px;right:150px;bottom:130px;height:420px;border-radius:64px;background:rgb(8 19 15/.5);
 backdrop-filter:blur(70px) saturate(130%);box-shadow:inset 0 4px 0 rgb(255 240 200/.16),inset 0 0 0 3px rgb(246 241 231/.14),
-0 60px 120px -60px rgb(0 0 0/.6);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
-.amount{font-size:330px;line-height:1;letter-spacing:-.055em;margin-top:26px}
-.per{font-size:58px;color:rgb(246 241 231/.66);margin-top:16px}`,
+0 60px 120px -60px rgb(0 0 0/.6);display:flex;align-items:center;justify-content:space-between;padding:0 80px}
+.amount{font-size:240px;font-weight:500;line-height:1;letter-spacing:-.055em}
+.per{font-size:52px;line-height:1.2;color:rgb(246 241 231/.7);margin-top:22px}`,
   );
 }
 

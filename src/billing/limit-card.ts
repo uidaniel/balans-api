@@ -79,7 +79,7 @@ overflow:hidden;box-shadow:0 40px 90px rgba(0,0,0,.55);background:#fff}
 .price{position:absolute;left:75px;right:75px;bottom:75px;height:250px;border-radius:40px;background:rgb(8 19 15/.88);
 backdrop-filter:blur(40px) saturate(130%);box-shadow:inset 0 2px 0 rgb(255 240 200/.16),inset 0 0 0 1.5px rgb(246 241 231/.14);
 display:flex;align-items:center;justify-content:space-between;padding:0 44px}
-.amount{font-size:112px;line-height:1;letter-spacing:-.055em}
+.amount{font-size:112px;font-weight:500;line-height:1;letter-spacing:-.055em}
 .per{font-size:26px;color:rgb(246 241 231/.66);margin-top:10px}
 .cta{height:66px;padding:0 34px;border-radius:999px;display:flex;align-items:center;font-weight:500;font-size:26px;color:#10231c;
 background:linear-gradient(180deg,#ffd877,#f5b82e);box-shadow:inset 0 2px 0 rgb(255 250 230/.6)}
@@ -87,7 +87,7 @@ background:linear-gradient(180deg,#ffd877,#f5b82e);box-shadow:inset 0 2px 0 rgb(
 .ngn::before,.ngn::after{content:"";position:absolute;left:-.06em;right:-.06em;height:.065em;background:currentColor;top:.36em}
 .ngn::after{top:.52em}
 </style></head><body>
-<img class="art" src="${artUri("limit.jpg")}" alt="">
+<img class="art" src="${artUri("limit-tall.jpg")}" alt="">
 <img class="logo" src="${artUri("logo-dark.svg")}" alt="Balans">
 <div class="pill">Balans Pro</div>
 <h1><span>This is yours.</span><span class="m">Keep sending it.</span></h1>

@@ -71,7 +71,7 @@ import {
 } from "./kit.ts";
 import type { DocumentData } from "./template.ts";
 import { renderDocumentHtml } from "./template.ts";
-import { PLUS_RENDERERS } from "./templates-plus.ts";
+import { BRAND_SHEET, gold, PLUS_RENDERERS } from "./templates-plus.ts";
 
 export type TemplateId =
   | "classic"
@@ -105,9 +105,9 @@ export const TEMPLATES: TemplateSpec[] = [
   },
   {
     id: "wordmark",
-    name: "Wordmark",
+    name: "Glare",
     pro: false,
-    blurb: "The word set large, the details down a rail. Reads well in black and white.",
+    blurb: "The amount on night green, under a soft fall of gold light. Clean white paper below.",
     ready: true,
   },
   // The first Pro design shown: the one that could only come from here.
@@ -134,9 +134,9 @@ export const TEMPLATES: TemplateSpec[] = [
   },
   {
     id: "monolith",
-    name: "Monolith",
+    name: "Fluted",
     pro: true,
-    blurb: "A full-height ink spine with the word turned up it. Unmistakable across a desk.",
+    blurb: "A spine of reeded glass catching one band of light. Unmistakable across a desk.",
     ready: true,
   },
   {
@@ -219,16 +219,16 @@ export const TEMPLATES: TemplateSpec[] = [
   },
   {
     id: "blueprint",
-    name: "Blueprint",
+    name: "Frost",
     pro: true,
-    blurb: "A drawing sheet: faint grid, ruled frame and the facts in a title block, bottom right.",
+    blurb: "Frosted white panels on warm sand, the amount on a panel of gold. Soft, and every fact boxed.",
     ready: true,
   },
   {
     id: "angle",
-    name: "Angle",
+    name: "Halftone",
     pro: true,
-    blurb: "Cut triangles in the corner and a slanted band at the foot. Modern, and plain in the middle.",
+    blurb: "Printed dots falling from the corner and the amount set large and light. Plain in the middle.",
     ready: true,
   },
   {
@@ -251,125 +251,135 @@ export const availableTo = (plan: "free" | "pro"): TemplateSpec[] =>
   TEMPLATES.filter((t) => t.ready && (plan === "pro" || !t.pro));
 
 /* -------------------------------------------------------------------------- */
-/* Wordmark (Free)                                                            */
+/* Glare (Free; the id is still "wordmark")                                   */
 /* -------------------------------------------------------------------------- */
 
 /**
- * The kind set large, the facts down a rail on the left.
+ * Glare: the head of the page in night green, with a soft marigold light
+ * falling into it from the top corner, printed as a fine halftone the way
+ * the brand's posters are (29 October 2026; this id was Wordmark). The
+ * amount sits on the band in large light type; everything under it is clean
+ * white paper, so it still photocopies.
  *
- * No colour blocks at all beyond the total: it is the layout that survives a
- * fax machine, which is still how some Nigerian offices receive an invoice.
+ * A logo goes on a small white tile: most logos are drawn for white paper,
+ * and an ink mark on night green would vanish.
  */
 function wordmark(d: DocumentData, opts: RenderOptions): string {
-  const css = `
-.wrap{flex:1;display:flex;flex-direction:column;padding:1.7em 1.8em 1.4em}
-.top{display:flex;align-items:flex-start;justify-content:space-between;gap:1em}
-.kind{font-size:1.9em;line-height:1;font-weight:800;letter-spacing:-.04em}
-.brand{min-width:0;text-align:right}
-.brand .logo{justify-content:flex-end}
-.brand .meta{margin-top:.35em}
-.body{margin-top:1.5em;display:flex;gap:1.4em}
-.rail{width:6em;flex:none}
-.rail>div+div{margin-top:.85em}
-.work{min-width:0;flex:1;border-left:1px solid ${ink(0.12)};padding-left:1.3em}
-/* The rail leaves the table about 24em, and the shared columns took 22 of it,
-   so every item came out as "E…" (found 20 October 2026). Tighter columns,
-   and a name that wraps rather than vanishes. */
-.work .items .hd,.work .items .it{gap:1em}
-.work .items .u{width:max(var(--un,0em),5.6em)}
-.work .items .a{width:max(var(--an,0em),6.4em)}
-.work .items .nm b{white-space:normal;overflow-wrap:anywhere}
-.signrow{margin-top:auto;display:flex;justify-content:flex-end;padding-top:1.2em}
-.signrow + .tail{margin-top:.8em}
-.tail{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:1em;
-border-top:1px solid ${ink(0.12)};padding-top:.9em;font-size:.58em;color:${ink(0.45)}}
-.tail b{font-weight:600;color:${INK}}
-.tail .made{font-size:1em}
+  const h = headlineAmount(d);
+  const receipt = isReceipt(d) ? d.receipt : undefined;
+  const css = `${BRAND_SHEET}
+.band{position:relative;flex:none;overflow:hidden;background:#08130F;color:${CREAM};padding:1.6em 1.8em 1.35em}
+.band .light{position:absolute;inset:0;pointer-events:none;
+background:radial-gradient(70% 120% at 104% -12%,${gold(48)},${gold(18)} 38%,transparent 72%),
+radial-gradient(34% 60% at 98% -6%,${gold(55, "#fff")},transparent 70%)}
+.band .dots{position:absolute;inset:0;pointer-events:none;
+background-image:radial-gradient(circle,rgba(255,244,214,.22) .05em,transparent .06em);background-size:.3em .3em;
+-webkit-mask-image:radial-gradient(70% 120% at 104% -12%,#000,transparent 70%);mask-image:radial-gradient(70% 120% at 104% -12%,#000,transparent 70%)}
+.band>*:not(.light):not(.dots){position:relative}
+.band .top{display:flex;align-items:flex-start;justify-content:space-between;gap:1em}
+.band .logo{min-width:0;flex-direction:column;align-items:flex-start;gap:.5em}
+.band .logo img{height:2.2em;max-width:11em;background:#fff;border-radius:.4em;padding:.25em .4em}
+.band .logo .biz{font-size:.78em}
+.band .k{flex:none;font-size:.6em;color:rgba(246,241,231,.62)}
+.band .k b{font-weight:600;color:${CREAM}}
+.band .cap{color:rgba(246,241,231,.58)}
+.band .due{margin-top:1.7em}
+.band .due .amt{margin-top:.2em;color:${CREAM}}
+.band .due.paid .amt{color:${CREAM}}
+.band .fx{color:rgba(246,241,231,.62)}
+.band .fx b{color:${CREAM}}
+.band .facts{margin-top:1.3em;display:flex;gap:1.2em;border-top:1px solid rgba(246,241,231,.14);padding-top:.85em}
+.band .facts>div{flex:1;min-width:0}
+.band .facts>div:first-child{flex:1.7}
+.band .fv .sub{color:rgba(246,241,231,.55)}
+.band .dtitle .cap{color:rgba(246,241,231,.58)}
+.body{flex:1;display:flex;flex-direction:column;padding:1.3em 1.8em 1.3em}
+.body .sums{margin:.9em 0 0 auto;min-width:12em;width:max-content}
+.tail{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em;padding-top:1.2em}
+.tail .left>div+div{margin-top:1em}
 `;
 
   const facts = [
-    // No client email on the rail: it is six em wide, which a name fits and
-    // an address does not.
-    field("Billed to", party(d.clientName, null)),
-    d.number === null ? "" : field(`${kind(d)} #`, String(d.number)),
-    d.issueDate ? field("Issue date", when(d.issueDate)) : "",
-    d.dueDate ? field(dueLabel(d), when(d.dueDate)) : "",
+    field(isReceipt(d) ? "Received from" : "Billed to", party(d.clientName, d.clientEmail), "min0"),
+    receipt
+      ? field("Paid on", when(receipt.paidOn))
+      : d.issueDate
+        ? field("Issued", when(d.issueDate))
+        : "",
+    receipt
+      ? field("Method", esc(methodWords(receipt.method)))
+      : d.dueDate
+        ? field(dueLabel(d), when(d.dueDate))
+        : "",
     d.businessTin ? field("TIN", esc(d.businessTin)) : "",
   ].filter(Boolean);
 
-  const body = `<div class="wrap">
+  const body = `<div class="band">
+  <div class="light"></div><div class="dots"></div>
   <div class="top">
-    <p class="kind">${upperKind(d)}</p>
-    <div class="brand">
-      ${biz(d)}
-      <p class="meta">${bizMeta(d, ["address", "email"])}</p>
-    </div>
+    ${biz(d)}
+    <p class="k"><b>${kind(d)}</b>${d.number === null ? "" : ` &middot; No. ${d.number}`}</p>
   </div>
+  ${due(d, { size: `${Math.min(3, 26 / (Math.max(h.display.length, 5) * 0.6)).toFixed(2)}em` })}
+  <div class="facts">${facts.join("")}</div>
+</div>
 
-  <div class="body">
-    <div class="rail">${facts.join("")}</div>
-    <div class="work">
-      ${titleBlock(d)}
-      ${items(d)}
-      ${totals(d, { accent: "marigold" })}
-      ${notesBlock(d, "nb")}
-    </div>
-  </div>
-
-  ${signature(d) ? `<div class="signrow">${signature(d)}</div>` : ""}
+<div class="body">
+  ${titleBlock(d)}
+  ${rows(d, { head: "rule" })}
+  ${sums(d)}
   <div class="tail">
-    <span>${
-      payWhere(d)
-        ? payWhere(d)
-        : d.businessEmail
-          ? esc(d.businessEmail)
-          : ""
-    }</span>
-    ${d.showMadeWith ? madeWith(d) : d.businessEmail ? `<span>${esc(d.businessEmail)}</span>` : ""}
+    <div class="left">${payInfo(d)}${notesBlock(d)}</div>
+    ${signature(d)}
   </div>
-
   ${legal(d)}
+  ${d.showMadeWith ? `<div style="margin-top:.5em">${madeWith(d)}</div>` : ""}
 </div>`;
 
-  // The Free items table sets a taller row than the numbered Pro one.
-  return sheet(d, opts, { css, body, rowEm: 1.6, brand: (k) => `.kind{color:${k.deep}}.work{border-left-color:${k.c}}.tail{border-top-color:${k.c}}` });
+  return sheet(d, opts, {
+    css,
+    body,
+    fonts: ["brand"],
+    rowEm: 1.6,
+    logoEm: 1,
+    brand: (k) => `.band{background:${k.night}}`,
+  });
 }
 
 /* -------------------------------------------------------------------------- */
-/* Monolith (Pro)                                                             */
+/* Fluted (Pro; the id is still "monolith")                                   */
 /* -------------------------------------------------------------------------- */
 
 /**
- * A full-height ink spine with the word turned up it.
- *
- * The spine is the whole idea: one heavy block against a lot of white, so the
- * document is recognisable face down on a desk. Nothing is printed on it but
- * the word and the number, and nothing of ours — a Balans mark up the side of
- * somebody's invoice reads as their mark, which it is not.
+ * Fluted: a spine of reeded glass down the left edge, each rib catching one
+ * band of marigold light a little lower than the last, like the ribbed glass
+ * of the brand's posters (29 October 2026; this id was Monolith, and the
+ * spine is what it keeps). The kind and number are set plainly in the main
+ * column rather than turned up the spine in capitals.
  */
+const RIBS = Array.from({ length: 12 }, (_, i) => {
+  const t = i / 11;
+  const c = 26 + 12 * Math.sin(t * Math.PI * 1.6 + 0.4) + 10 * t;
+  const w = 8 + 4 * Math.cos(t * Math.PI * 2.2);
+  const at = (v: number) => `${v.toFixed(1)}%`;
+  return `<i style="background:linear-gradient(180deg,var(--night) 0%,var(--night) ${at(c - w)},${gold(45, "#fff")} ${at(c)},${MARIGOLD} ${at(c + w * 0.6)},color-mix(in srgb,var(--night) 70%,${MARIGOLD}) ${at(c + w * 2.2)},var(--night) ${at(c + w * 3.4)},var(--night) 100%)"></i>`;
+}).join("");
+
 function monolith(d: DocumentData, opts: RenderOptions): string {
-  const css = `
+  const css = `${BRAND_SHEET}
 .row{flex:1;display:flex;min-height:0}
-.spine{width:3.3em;flex:none;background:${INK};color:${CREAM};
-display:flex;flex-direction:column;align-items:center;justify-content:space-between;
-padding:1.7em 0 1.5em}
-.spine .word{writing-mode:vertical-rl;transform:rotate(180deg);
-font-family:${DISPLAY};font-size:1.75em;line-height:1;font-weight:800;letter-spacing:.2em}
-.spine .no{writing-mode:vertical-rl;transform:rotate(180deg);font-size:.56em;
-letter-spacing:.22em;opacity:.55}
-.main{min-width:0;flex:1;display:flex;flex-direction:column;padding:1.7em 1.6em 1.4em}
+.spine{--night:#08130F;width:3.3em;flex:none;display:flex;background:var(--night)}
+.spine i{flex:1;box-shadow:inset .04em 0 0 rgba(255,240,210,.08),inset -.04em 0 0 rgba(0,0,0,.35)}
+.main{min-width:0;flex:1;display:flex;flex-direction:column;padding:1.7em 1.7em 1.4em}
 .top{display:flex;align-items:flex-start;justify-content:space-between;gap:1em}
-.dates{font-size:.56em;line-height:1.6;color:${ink(0.5)}}
-.dates b{font-weight:600;color:${INK}}
+.kd h1{font-size:2.1em;line-height:1;font-weight:600;letter-spacing:-.045em}
+.kd p{margin-top:.55em;font-size:.58em;line-height:1.6;color:${ink(0.55)}}
 .brand{min-width:0;text-align:right}
-.brand .biz{font-size:.9em;line-height:1.1;font-weight:800;letter-spacing:.06em;
-text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.brand img{display:block;margin-left:auto;margin-bottom:.5em;width:auto;max-width:13em;
-height:2.8em;object-fit:contain;object-position:right center}
-.brand .meta{margin-top:.6em;font-size:.54em;line-height:1.5;color:${ink(0.5)}}
-.facts{margin-top:1.6em;display:flex;gap:1.4em;border-top:1px solid ${ink(0.12)};padding-top:1em}
+.brand .logo{flex-direction:column;align-items:flex-end;gap:.45em}
+.brand .logo img{height:2.6em;object-position:right center}
+.brand .meta{margin-top:.4em}
+.facts{margin-top:1.5em;display:flex;gap:1.4em;border-top:1px solid ${ink(0.12)};padding-top:1em}
 .work{margin-top:1.3em}
-.sums{margin-top:1.3em}
 .money{margin-top:1.3em;display:flex;align-items:flex-end;justify-content:space-between;gap:1.2em}
 .money .sums{margin-top:0;min-width:12em;width:max-content}
 .tail{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;
@@ -379,22 +389,23 @@ gap:1.2em;padding-top:1.4em}
 .tail .terms{max-width:13em}
 `;
 
+  const dates = [
+    d.issueDate ? `Issued ${when(d.issueDate)}` : "",
+    d.dueDate && !isReceipt(d) ? `${dueLabel(d)} ${when(d.dueDate)}` : "",
+    isReceipt(d) && d.receipt ? `Paid ${when(d.receipt.paidOn)}` : "",
+  ].filter(Boolean);
+
   const body = `<div class="row">
-  <div class="spine">
-    <p class="word">${upperKind(d)}</p>
-    ${d.number === null ? "<span></span>" : `<p class="no">No. ${d.number}</p>`}
-  </div>
+  <div class="spine">${RIBS}</div>
 
   <div class="main">
     <div class="top">
-      <div class="dates">
-        ${d.number === null ? "" : `<b>No. ${d.number}</b><br>`}
-        ${d.issueDate ? `Issued ${when(d.issueDate)}<br>` : ""}
-        ${d.dueDate ? `${dueLabel(d)} ${when(d.dueDate)}` : ""}
+      <div class="kd">
+        <h1>${kind(d)}</h1>
+        <p>${[d.number === null ? "" : `No. ${d.number}`, ...dates].filter(Boolean).join("<br>")}</p>
       </div>
       <div class="brand">
-        ${d.logoDataUri ? `<img src="${d.logoDataUri}" alt="">` : ""}
-        <p class="biz">${esc(d.businessName)}</p>
+        ${biz(d)}
         <p class="meta">${bizMeta(d)}</p>
       </div>
     </div>
@@ -403,15 +414,13 @@ gap:1.2em;padding-top:1.4em}
     <div class="facts">
       ${field(isReceipt(d) ? "Received from" : "Billed to", party(d.clientName, d.clientEmail), "min0")}
       ${
-        namesWork(d) && !d.title
-          ? field("Work", esc(headline(d)))
-          : d.number === null
-            ? ""
-            : field(numberLabel(d), String(d.number))
+        // The number is under the heading already, so the second fact is
+        // the work when one line names it, and nothing otherwise.
+        namesWork(d) && !d.title ? field("Work", esc(headline(d))) : ""
       }
     </div>
 
-    <div class="work">${rows(d, { head: "bar" })}</div>
+    <div class="work">${rows(d, { head: "rule" })}</div>
 
     <div class="money">
       ${due(d)}
@@ -431,7 +440,7 @@ gap:1.2em;padding-top:1.4em}
   </div>
 </div>`;
 
-  return sheet(d, opts, { css, body, brand: (k) => `.spine{background:${k.c};color:${k.on}}.facts{border-top-color:${k.c}}` });
+  return sheet(d, opts, { css, body, fonts: ["brand"], brand: (k) => `.spine{--night:${k.night}}.facts{border-top-color:${k.c}}` });
 }
 
 /* -------------------------------------------------------------------------- */

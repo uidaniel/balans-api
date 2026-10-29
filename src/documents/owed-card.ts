@@ -59,7 +59,7 @@ body{width:${CARD}px;height:${CARD}px;background:${CREAM};font-family:${FONT.bra
 .card{position:relative;width:100%;height:100%;padding:72px 72px 64px;display:flex;flex-direction:column}
 .mark img{height:62px;display:block}
 h1{margin-top:64px;font-size:34px;font-weight:400;color:rgba(16,35,28,.6)}
-.total{font-size:150px;font-weight:400;letter-spacing:-.055em;line-height:1;margin:16px 0 18px}
+.total{font-size:150px;font-weight:500;letter-spacing:-.055em;line-height:1;margin:16px 0 18px}
 /*
  * The late figure, which is the line this card exists for. A total tells
  * somebody how much is outstanding; this tells them how much is a problem.
@@ -74,7 +74,7 @@ h1{margin-top:64px;font-size:34px;font-weight:400;color:rgba(16,35,28,.6)}
 .who{font-size:32px;font-weight:500;letter-spacing:-.01em}
 .sub{font-size:24px;color:rgba(16,35,28,.5);margin-top:4px}
 .row.od .sub{color:${CORAL}}
-.amt{font-size:36px;font-weight:400;letter-spacing:-.02em;white-space:nowrap}
+.amt{font-size:36px;font-weight:600;letter-spacing:-.02em;white-space:nowrap}
 .more{margin-top:auto;padding-top:24px;font-size:25px;color:rgba(16,35,28,.5)}
 ${NGN_CSS}
 </style></head><body>

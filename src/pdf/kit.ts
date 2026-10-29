@@ -180,6 +180,8 @@ body{background:#fff;color:${INK};-webkit-print-color-adjust:exact;print-color-a
 .fv .sub{display:block;font-weight:400;overflow-wrap:anywhere;color:${ink(0.5)}}
 .logo{display:flex;align-items:center;gap:.55em}
 .logo img{display:block;width:auto;max-width:14em;height:3em;object-fit:contain;object-position:left center}
+/* A square logo, an app icon or a badge, gets the rounded corners it is drawn for. */
+img.sq{border-radius:22%}
 .logo .biz{font-size:1.05em;line-height:1.2;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meta{font-size:.6em;line-height:1.55;color:${ink(0.5)}}
 
@@ -302,7 +304,7 @@ type SheetParts = {
    * Where this layout wears a Pro brand colour, beyond the marigold swap:
    * each layout is mostly ink, so swapping marigold alone left several of
    * them with the colour on one link underline. Each names its own signature
-   * surface — Monolith's spine, Statement's card — so the colour reads as
+   * surface — Fluted's spine, Statement's card — so the colour reads as
    * part of the design rather than a tint over it.
    */
   brand?: (k: BrandTokens) => string;
@@ -508,7 +510,7 @@ export const COIN = `<svg viewBox="0 0 120 120" aria-hidden="true">
  */
 export function biz(d: DocumentData, className = ""): string {
   return `<div class="logo ${className}">
-    ${d.logoDataUri ? `<img src="${d.logoDataUri}" alt="">` : ""}
+    ${d.logoDataUri ? `<img${logoIsSquare(d.logoDataUri) ? ' class="sq"' : ""} src="${d.logoDataUri}" alt="">` : ""}
     <p class="biz">${esc(d.businessName)}</p>
   </div>`;
 }
@@ -625,8 +627,8 @@ export function totals(d: DocumentData, opts: { accent?: "ink" | "marigold" } = 
     ${line("Subtotal", d.subtotalKobo)}
     ${hasVat(d) ? line(`VAT (${d.vatPercent ?? 0}%)`, d.vatKobo) : ""}
     ${
-      // "Paid in full" on an invoice that is: Wordmark has no headline block,
-      // so this line is the only place it can say so now the stamp is gone.
+      // "Paid in full" on an invoice that is: a layout without a headline block
+      // has no other place to say so now the stamp is gone.
       line(
         isReceipt(d) ? "Paid" : isPaid(d) ? "Paid in full" : "Total",
         isReceipt(d) ? d.amountPaidKobo : d.totalKobo,
@@ -797,3 +799,59 @@ export const legal = (d: DocumentData, className = ""): string =>
       ? `${esc(untrackedNote(d.businessName))}<br>`
       : ""
   }${esc(d.legalLines[0])}<br>${esc(d.legalLines[1])}</div>`;
+
+/**
+ * A logo's width and height, read from the image's own header, or null when
+ * the format is not one we read. PNG, JPEG, WebP and GIF: what the logo
+ * upload accepts and what anybody's phone produces.
+ */
+export function imageSize(dataUri: string): { w: number; h: number } | null {
+  const m = /^data:[^;]+;base64,(.+)$/.exec(dataUri);
+  if (!m) return null;
+  const b = Buffer.from(m[1]!.slice(0, 64_000), "base64");
+  try {
+    // PNG: the IHDR chunk is always first.
+    if (b.readUInt32BE(0) === 0x89504e47) return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+    // GIF: logical screen size, little-endian.
+    if (b.toString("ascii", 0, 3) === "GIF") return { w: b.readUInt16LE(6), h: b.readUInt16LE(8) };
+    // WebP: lossy, lossless or extended.
+    if (b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WEBP") {
+      const kind = b.toString("ascii", 12, 16);
+      if (kind === "VP8 ") return { w: b.readUInt16LE(26) & 0x3fff, h: b.readUInt16LE(28) & 0x3fff };
+      if (kind === "VP8L") {
+        const v = b.readUInt32LE(21);
+        return { w: (v & 0x3fff) + 1, h: ((v >> 14) & 0x3fff) + 1 };
+      }
+      if (kind === "VP8X") return { w: b.readUIntLE(24, 3) + 1, h: b.readUIntLE(27, 3) + 1 };
+    }
+    // JPEG: walk the segments to the first start-of-frame.
+    if (b[0] === 0xff && b[1] === 0xd8) {
+      let i = 2;
+      while (i + 9 < b.length) {
+        if (b[i] !== 0xff) return null;
+        const marker = b[i + 1]!;
+        const len = b.readUInt16BE(i + 2);
+        if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+          return { w: b.readUInt16BE(i + 7), h: b.readUInt16BE(i + 5) };
+        }
+        i += 2 + len;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * A square-ish logo: an app-icon or a badge, which reads as cut out with
+ * rounded corners and as a sticker without them. Wide wordmarks are left as
+ * they are.
+ */
+export function logoIsSquare(dataUri: string | null | undefined): boolean {
+  if (!dataUri) return false;
+  const s = imageSize(dataUri);
+  if (!s || !s.w || !s.h) return false;
+  const r = s.w / s.h;
+  return r > 0.8 && r < 1.25;
+}
