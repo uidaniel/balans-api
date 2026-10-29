@@ -28,7 +28,7 @@ import { logoDataUri } from "../../brand/user-logo.ts";
 import { renderDocumentHtml, type DocumentData } from "../../pdf/template.ts";
 import { FONT, FONT_FILES, fontStylesheet } from "../../pdf/fonts.ts";
 import { availableTo, renderTemplate, TEMPLATES, templateById } from "../../pdf/templates.ts";
-import { logoSvg } from "../../brand/logo.ts";
+import { BAND, GOLD, darkLogo } from "../../brand/web.ts";
 
 const HTML = "text/html; charset=utf-8";
 
@@ -211,20 +211,21 @@ const CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
 /* Green the whole way down, so the white sheets are the brightest thing on
    the page and nothing competes with them. */
-body{background:var(--ink);color:var(--ink);font-family:${FONT.sans};
+body{background:#08130f;color:var(--ink);font-family:${FONT.brand};
 -webkit-font-smoothing:antialiased;line-height:1.5;padding:0 0 80px}
-.top{color:var(--cream);padding:22px 20px 28px}
+.top{color:var(--cream);padding:22px 20px 30px;background:${BAND}}
+.top .mark{margin-bottom:22px}
 .top .in,.wrap{max-width:1120px;margin:0 auto}
 .back{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px 0 10px;border-radius:999px;
-background:rgba(246,241,231,.08);color:var(--cream);font-weight:600;font-size:13.5px;text-decoration:none;margin-bottom:22px}
+background:rgba(246,241,231,.08);box-shadow:inset 0 0 0 1px rgba(246,241,231,.12);color:var(--cream);font-weight:500;font-size:13.5px;text-decoration:none;margin-bottom:22px}
 .back:hover{background:rgba(246,241,231,.14)}
 .back svg{width:15px;height:15px;flex:none}
-/* The page is set in the same two typefaces as the sheets it is offering. */
-.top h1{font-family:${FONT.display};font-size:32px;line-height:1.1;letter-spacing:-.04em;font-weight:800}
+/* Onest, as on balans.ng: light and large. */
+.top h1{font-family:${FONT.brand};font-size:34px;line-height:1.08;letter-spacing:-.045em;font-weight:400}
 .top p{margin-top:8px;color:rgba(246,241,231,.66);font-size:15px;max-width:56ch}
 .now{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:6px 12px 6px 8px;border-radius:999px;
 background:rgba(246,241,231,.08);font-size:13px;color:rgba(246,241,231,.75)}
-.now b{color:var(--cream);font-weight:600}
+.now b{color:var(--cream);font-weight:500}
 .now i{width:20px;height:20px;border-radius:50%;background:var(--marigold);display:grid;place-items:center}
 .now i svg{width:11px;height:11px}
 .wrap{padding:0 20px}
@@ -233,7 +234,7 @@ background:rgba(246,241,231,.08);font-size:13px;color:rgba(246,241,231,.75)}
    is not drawn without it — every design is shown either way. */
 .seg{display:none;padding:4px;border-radius:999px;background:rgba(246,241,231,.08);box-shadow:inset 0 0 0 1px rgba(246,241,231,.1)}
 .js .seg{display:inline-flex}
-.seg button{border:0;background:none;font:600 13.5px/1 ${FONT.sans};color:rgba(246,241,231,.7);height:34px;padding:0 14px;
+.seg button{border:0;background:none;font:500 13.5px/1 ${FONT.brand};color:rgba(246,241,231,.7);height:34px;padding:0 14px;
 border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:background-color .2s,color .2s}
 .seg button span{font-weight:500;opacity:.6;font-variant-numeric:tabular-nums}
 .seg button[aria-pressed="true"]{background:var(--cream);color:var(--ink)}
@@ -241,10 +242,10 @@ border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;gap:6p
    designs are a row to swipe rather than a grid to scroll. */
 .chips,.pos{display:none}
 .done{display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:13px 16px;border-radius:16px;
-background:#eef7f1;color:#256b41;font-weight:600;font-size:14.5px;box-shadow:0 0 0 1px rgba(63,143,95,.2)}
+background:#eef7f1;color:#256b41;font-weight:500;font-size:14.5px;box-shadow:0 0 0 1px rgba(63,143,95,.2)}
 .done::before{content:"";width:22px;height:22px;flex:none;border-radius:50%;background:#3f8f5f url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5 10 17.5 19 7.5'/%3E%3C/svg%3E") center/12px no-repeat}
 .grid{display:grid;gap:18px;justify-content:center;grid-template-columns:repeat(auto-fill,calc(793.7px * var(--sc) + 24px))}
-.card{background:var(--paper);border-radius:20px;box-shadow:0 20px 40px -24px rgba(0,0,0,.5);display:flex;flex-direction:column;
+.card{background:var(--paper);border-radius:24px;box-shadow:0 20px 40px -24px rgba(0,0,0,.5);display:flex;flex-direction:column;
 padding:12px;transition:box-shadow .25s,transform .25s}
 .card:hover{transform:translateY(-2px);box-shadow:0 26px 50px -24px rgba(0,0,0,.6)}
 .card.on{box-shadow:0 0 0 3px var(--marigold),0 20px 40px -24px rgba(0,0,0,.5)}
@@ -264,26 +265,26 @@ transform:scale(var(--sc));transform-origin:top left;pointer-events:none}
 .zoom{position:absolute;inset:0;border:0;background:transparent;cursor:zoom-in;display:flex;align-items:flex-end;
 justify-content:flex-end;padding:10px}
 .zoom span{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:999px;
-background:rgba(16,35,28,.86);color:var(--cream);font:600 12px/1 ${FONT.sans};opacity:0;transform:translateY(4px);
+background:rgba(16,35,28,.86);color:var(--cream);font:500 12px/1 ${FONT.brand};opacity:0;transform:translateY(4px);
 transition:opacity .2s,transform .2s}
 .card:hover .zoom span,.zoom:focus-visible span{opacity:1;transform:none}
 .zoom:focus-visible{outline:2px solid var(--ink);outline-offset:-2px;border-radius:10px}
 .lockchip{position:absolute;top:10px;left:10px;display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px 0 7px;
-border-radius:999px;background:var(--ink);color:var(--marigold);font:700 10.5px/1 ${FONT.sans};letter-spacing:.06em;text-transform:uppercase}
+border-radius:999px;background:var(--ink);color:var(--marigold);font:500 11.5px/1 ${FONT.brand}}
 .lockchip svg{width:11px;height:11px}
 .meta{padding:14px 4px 4px;display:flex;flex-direction:column;flex:1}
-.name{font-weight:700;font-size:15.5px;display:flex;align-items:center;gap:8px}
-.tag{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
-padding:3px 7px;border-radius:99px;background:var(--sand);color:var(--muted)}
-.tag.pro{background:var(--marigold);color:var(--ink)}
+.name{font-weight:500;font-size:16px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.tag{font-size:11.5px;font-weight:500;
+padding:3px 8px;border-radius:99px;background:var(--sand);color:var(--muted)}
+.tag.pro{background:linear-gradient(180deg,#ffd877,#f5b82e);color:var(--ink)}
 .blurb{margin-top:5px;font-size:13px;color:#6b7d74;line-height:1.45;flex:1}
 form{margin-top:12px}
 /* A pill, as every button on balans.ng is. */
-.use{width:100%;height:42px;border:0;border-radius:999px;background:var(--ink);color:var(--cream);
-font:600 14px/1 ${FONT.sans};cursor:pointer;transition:transform .15s,opacity .2s}
+.use{width:100%;height:42px;border:0;border-radius:999px;${GOLD};
+font:500 14px/1 ${FONT.brand};cursor:pointer;transition:transform .15s,opacity .2s}
 .use:hover{opacity:.9}
 .use:active{transform:scale(.98)}
-.use:disabled{background:#eef7f1;color:#256b41;cursor:default;opacity:1;transform:none}
+.use:disabled{background:#eef7f1;color:#256b41;box-shadow:none;cursor:default;opacity:1;transform:none}
 .locked{margin-top:12px;padding:10px 12px;border-radius:14px;background:var(--cream);font-size:12.5px;color:var(--muted);text-align:center;line-height:1.45}
 .locked b{color:var(--ink)}
 .foot{display:block;width:max-content;margin:44px auto 0;opacity:.85;transition:opacity .2s}
@@ -300,7 +301,7 @@ width:calc(793.7px * var(--lb));height:calc(1122.5px * var(--lb));animation:lbup
 @keyframes lbup{from{transform:translateY(16px) scale(.98);opacity:0}}
 .lbsheet iframe{position:absolute;top:0;left:0;width:793.7px;height:1122.5px;border:0;transform:scale(var(--lb));transform-origin:top left}
 .lbbar{display:flex;align-items:center;gap:8px;color:var(--cream)}
-.lbbar .t{min-width:9em;text-align:center;font-weight:600;font-size:14.5px}
+.lbbar .t{min-width:9em;text-align:center;font-weight:500;font-size:14.5px}
 .lbbar button{width:40px;height:40px;border:0;border-radius:999px;background:rgba(246,241,231,.12);color:var(--cream);
 cursor:pointer;display:grid;place-items:center}
 .lbbar button:hover{background:rgba(246,241,231,.2)}
@@ -328,7 +329,7 @@ cursor:pointer;display:grid;place-items:center}
   .js .chips{display:flex;gap:6px;overflow-x:auto;padding:2px 12px 12px;scrollbar-width:none;scroll-snap-type:x proximity}
   .chips::-webkit-scrollbar{display:none}
   .chip{flex:none;height:32px;padding:0 12px;border-radius:999px;border:0;background:rgba(246,241,231,.08);
-    box-shadow:inset 0 0 0 1px rgba(246,241,231,.1);font:600 13px/1 ${FONT.sans};color:rgba(246,241,231,.75);display:inline-flex;align-items:center;gap:5px;scroll-snap-align:center}
+    box-shadow:inset 0 0 0 1px rgba(246,241,231,.1);font:500 13px/1 ${FONT.brand};color:rgba(246,241,231,.75);display:inline-flex;align-items:center;gap:5px;scroll-snap-align:center}
   .chip i{width:6px;height:6px;border-radius:50%;background:var(--marigold)}
   .chip[aria-current="true"]{background:var(--cream);color:var(--ink);box-shadow:none}
   .chip[hidden]{display:none}
@@ -374,15 +375,8 @@ function preview(html: string, title: string, locked = false): string {
     </div>`;
 }
 
-/**
- * The Balans logo, coin and word, for the foot of a page that is green the
- * whole way down: the word is drawn in cream, and the coin keeps its own ink
- * mark on marigold.
- */
-function logoOnInk(): string {
-  const svg = logoSvg("30px");
-  return svg ? svg.replace(/(<path transform[^>]*?)fill="#10231C"/, '$1fill="#F6F1E7"') : "balans.ng";
-}
+/** The Balans logo for the foot of a page that is green the whole way down. */
+const logoOnInk = (): string => darkLogo("26px");
 
 const LOCK = `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3.2" y="7" width="9.6" height="6.8" rx="1.8" fill="currentColor"/><path d="M5.4 7V5.2a2.6 2.6 0 0 1 5.2 0V7" stroke="currentColor" stroke-width="1.6"/></svg>`;
 const EYE = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" aria-hidden="true"><path d="M6 2.5H2.5V6M10 2.5h3.5V6M6 13.5H2.5V10M10 13.5h3.5V10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -551,6 +545,7 @@ export function pickerPage(opts: {
 <link rel="stylesheet" href="/designs/fonts.css">
 <style>${CSS}</style></head><body>
 <header class="top"><div class="in">
+  <div class="mark">${darkLogo("26px")}</div>
   ${opts.back ? `<a class="back" href="${esc(opts.back)}">${ARROW("M10 3.5 5.5 8l4.5 4.5")}Back to settings</a>` : ""}
   ${
     opts.token

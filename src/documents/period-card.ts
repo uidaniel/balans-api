@@ -7,10 +7,11 @@
  * month from one where nobody was invoiced at all. A card can put the thing
  * that happened first and the thing that hasn't underneath it.
  *
- * Marigold, where the draft receipt is cream. The receipt is a document about
- * one invoice and wants to look like paper; this is a report about a month and
- * wants to look like the brand. It also makes the two instantly different in a
- * scrolled-back chat, which is the only place anybody compares them.
+ * Gold satin printed in halftone (29 October 2026; it was flat marigold),
+ * where the draft receipt is white paper on night green. The receipt is a document about one
+ * invoice and wants to look like paper; this is a report about a month and
+ * wants to look like the brand. It also makes the two instantly different in
+ * a scrolled-back chat, which is the only place anybody compares them.
  *
  * Same rule as every other card here: this REPLACES nothing. The words stay as
  * the body of the message, because a picture cannot be searched in a chat,
@@ -20,7 +21,7 @@
 import type { FastifyBaseLogger } from "fastify";
 
 import { formatNaira } from "../../core/totals.ts";
-import { logoAvailable, logoSvg } from "../brand/logo.ts";
+import { artUri, NGN_CSS, ngn } from "../brand/cards.ts";
 import { fontFaces, FONT } from "../pdf/fonts.ts";
 import { renderPng } from "../pdf/chrome.ts";
 import { publishCard } from "./card-link.ts";
@@ -31,7 +32,7 @@ const CARD = 1080;
 
 const INK = "#10231C";
 const MARIGOLD = "#F5B82E";
-const CLAY = "#C2593F";
+const CORAL = "#B5482F";
 
 /** One figure with its label above it, in the size the number deserves. */
 const line = (label: string, value: string, cls = ""): string =>
@@ -52,35 +53,35 @@ export function periodHtml(s: Summary): string {
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><style>
-${fontFaces(["sans", "display"])}
+${fontFaces(["brand"])}
 *{box-sizing:border-box;margin:0;padding:0}
-body{width:${CARD}px;height:${CARD}px;background:${MARIGOLD};font-family:${FONT.sans};
-  color:${INK};-webkit-font-smoothing:antialiased}
-.card{width:100%;height:100%;padding:70px 64px;display:flex;flex-direction:column}
-.mark{display:flex;align-items:center;gap:14px;margin-bottom:40px}
-.word{font-family:${FONT.display};font-size:40px;font-weight:800;letter-spacing:-.02em}
-/* The counter-form stays ink on marigold rather than marigold on marigold. */
-.word i{font-style:normal;color:rgba(16,35,28,.45)}
-h1{font-size:30px;font-weight:600;color:rgba(16,35,28,.62);letter-spacing:.08em;
-  text-transform:uppercase}
-.big{font-family:${FONT.display};font-size:104px;font-weight:800;letter-spacing:-.03em;
-  line-height:1.03;margin:14px 0 4px}
-.biglabel{font-size:29px;font-weight:600;color:rgba(16,35,28,.62)}
-.rows{margin-top:auto;background:rgba(255,255,255,.62);border-radius:28px;padding:10px 32px}
-.row{display:flex;align-items:baseline;justify-content:space-between;gap:24px;
-  padding:24px 0;border-bottom:1px solid rgba(16,35,28,.1)}
+body{width:${CARD}px;height:${CARD}px;background:${MARIGOLD};font-family:${FONT.brand};
+  color:${INK};-webkit-font-smoothing:antialiased;position:relative;overflow:hidden}
+.art{position:absolute;inset:0;width:100%;height:100%}
+.card{position:relative;width:100%;height:100%;padding:72px 72px 64px;display:flex;flex-direction:column}
+.mark img{height:62px;display:block}
+h1{margin-top:64px;font-size:34px;font-weight:400;color:rgba(16,35,28,.62)}
+.big{font-size:150px;font-weight:400;letter-spacing:-.055em;line-height:1;margin:16px 0 18px}
+.biglabel{font-size:32px;font-weight:500;color:rgba(16,35,28,.66)}
+.rows{margin-top:auto;padding:8px 36px;border-radius:36px;background:rgba(255,250,236,.62);
+  backdrop-filter:blur(30px);box-shadow:inset 0 0 0 2px rgba(255,255,255,.55),0 30px 60px -40px rgba(80,50,0,.45)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:24px;
+  padding:26px 0;border-bottom:2px solid rgba(16,35,28,.08)}
 .row:last-child{border-bottom:0}
-.row .k{font-size:29px;color:rgba(16,35,28,.62)}
-.row .v{font-family:${FONT.display};font-size:36px;font-weight:700;white-space:nowrap}
-.row.late .v{color:${CLAY}}
-.best{margin-top:28px;font-size:26px;color:rgba(16,35,28,.62)}
-.best b{font-weight:600;color:${INK}}
-</style></head><body><div class="card">
+.row .k{font-size:30px;color:rgba(16,35,28,.62)}
+.row .v{font-size:38px;font-weight:400;letter-spacing:-.02em;white-space:nowrap}
+.row.late .v{color:${CORAL}}
+.best{margin-top:28px;font-size:27px;color:rgba(16,35,28,.66)}
+.best b{font-weight:500;color:${INK}}
+${NGN_CSS}
+</style></head><body>
+<img class="art" src="${artUri("period.jpg")}" alt="">
+<div class="card">
 
-<div class="mark">${logoAvailable() ? logoSvg("56px") : `<span class="word">bala<i>n</i>s</span>`}</div>
+<div class="mark"><img src="${artUri("logo-ink.svg")}" alt="Balans"></div>
 
 <h1>${esc(s.period.label)}</h1>
-<p class="big">${esc(formatNaira(headline))}</p>
+<p class="big">${ngn(esc(formatNaira(headline)))}</p>
 <p class="biglabel">${esc(headlineLabel)}</p>
 
 <div class="rows">

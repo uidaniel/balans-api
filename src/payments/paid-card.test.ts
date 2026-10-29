@@ -22,7 +22,7 @@ const lagos = (hour: number, minute = 0) =>
   new Date(Date.UTC(2026, 8, 22, hour - 1, minute));
 
 /** The same choice notifyPaid makes. */
-const cardFor = (at: Date) => (settlesTonight(at) ? "paid-tonight.png" : "paid-tomorrow.png");
+const cardFor = (at: Date) => (settlesTonight(at) ? "paid-tonight.jpg" : "paid-tomorrow.jpg");
 
 const notice: PaidNotice = {
   userId: "u",
@@ -41,7 +41,7 @@ describe("the payment card", () => {
   it("promises tonight before the run, and the caption agrees", () => {
     for (const h of [0, 9, 14, 21]) {
       const at = lagos(h);
-      assert.equal(cardFor(at), "paid-tonight.png", `${h}:00 Lagos`);
+      assert.equal(cardFor(at), "paid-tonight.jpg", `${h}:00 Lagos`);
       assert.match(paidMessage(notice, at), /in your bank tonight/i, `${h}:00 Lagos`);
     }
   });
@@ -49,7 +49,7 @@ describe("the payment card", () => {
   it("promises tomorrow night after it, and the caption agrees", () => {
     for (const h of [22, 23]) {
       const at = lagos(h);
-      assert.equal(cardFor(at), "paid-tomorrow.png", `${h}:00 Lagos`);
+      assert.equal(cardFor(at), "paid-tomorrow.jpg", `${h}:00 Lagos`);
       assert.match(paidMessage(notice, at), /tomorrow night/i, `${h}:00 Lagos`);
     }
   });
@@ -60,10 +60,10 @@ describe("the payment card", () => {
     const just = lagos(SETTLEMENT_HOUR - 1, 59);
     const late = lagos(SETTLEMENT_HOUR, 0);
 
-    assert.equal(cardFor(just), "paid-tonight.png");
+    assert.equal(cardFor(just), "paid-tonight.jpg");
     assert.match(paidMessage(notice, just), /tonight/i);
 
-    assert.equal(cardFor(late), "paid-tomorrow.png");
+    assert.equal(cardFor(late), "paid-tomorrow.jpg");
     assert.match(paidMessage(notice, late), /tomorrow night/i);
   });
 
@@ -75,7 +75,7 @@ describe("the payment card", () => {
       for (const m of [0, 30, 59]) {
         const at = lagos(h, m);
         const saysTonight = /in your bank tonight/i.test(paidMessage(notice, at));
-        const showsTonight = cardFor(at) === "paid-tonight.png";
+        const showsTonight = cardFor(at) === "paid-tonight.jpg";
         assert.equal(showsTonight, saysTonight, `card and caption disagree at ${h}:${m} Lagos`);
       }
     }

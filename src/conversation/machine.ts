@@ -499,11 +499,11 @@ function fingerprint(file: string): string {
   }
 }
 
-const WELCOME_CARD = brand("welcome.png");
-export const SETUP_DONE_CARD = brand("setup-done.png");
-export const LIMIT_CARD = brand("limit.png");
-export const UPGRADE_CARD = brand("upgrade.png");
-export const PRO_CARD = brand("pro.png");
+const WELCOME_CARD = brand("welcome.jpg");
+export const SETUP_DONE_CARD = brand("setup-done.jpg");
+export const LIMIT_CARD = brand("limit.jpg");
+export const UPGRADE_CARD = brand("upgrade.jpg");
+export const PRO_CARD = brand("pro.jpg");
 const TERMS_URL = site + "/terms";
 const PRIVACY_URL = site + "/privacy";
 

@@ -19,7 +19,7 @@ import type { FastifyBaseLogger } from "fastify";
 
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
-import { logoAvailable, logoSvg } from "../brand/logo.ts";
+import { artUri, NGN_CSS, ngn } from "../brand/cards.ts";
 import { fontFaces, FONT } from "../pdf/fonts.ts";
 import { renderPng } from "../pdf/chrome.ts";
 import { publishCard } from "./card-link.ts";
@@ -34,9 +34,8 @@ const SHOWN = 6;
 
 const INK = "#10231C";
 const CREAM = "#F6F1E7";
-const MARIGOLD = "#F5B82E";
-const CLAY = "#C2593F";
-const MOSS = "#3F8F5F";
+const CORAL = "#C2593F";
+const MINT = "#3F8F5F";
 
 export function owedHtml(owed: Debtors, today: Civil): string {
   const late = owed.rows.filter((d) => (d.daysLate ?? 0) > 0);
@@ -44,39 +43,48 @@ export function owedHtml(owed: Debtors, today: Civil): string {
   const rows = owed.rows.slice(0, SHOWN);
   const hidden = owed.rows.length - rows.length + owed.more;
 
+  /*
+   * Cream, with soft gold light from one corner (29 October 2026). The art is
+   * a picture with no words on it, and everything that is somebody's money
+   * is type over it. Light on purpose: the summary is gold and the breakdown
+   * is paper on night green, so the three never look alike in a chat.
+   */
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><style>
-${fontFaces(["sans", "display"])}
+${fontFaces(["brand"])}
 *{box-sizing:border-box;margin:0;padding:0}
-body{width:${CARD}px;height:${CARD}px;background:${CREAM};font-family:${FONT.sans};
-  color:${INK};-webkit-font-smoothing:antialiased}
-.card{width:100%;height:100%;padding:70px 64px;display:flex;flex-direction:column}
-.mark{display:flex;align-items:center;gap:14px;margin-bottom:44px}
-.word{font-family:${FONT.display};font-size:40px;font-weight:800;letter-spacing:-.02em}
-.word i{font-style:normal;color:${MARIGOLD}}
-h1{font-size:30px;font-weight:600;color:rgba(16,35,28,.6);letter-spacing:.01em}
-.total{font-family:${FONT.display};font-size:96px;font-weight:800;letter-spacing:-.03em;
-  line-height:1.05;margin:10px 0 6px}
+body{width:${CARD}px;height:${CARD}px;background:${CREAM};font-family:${FONT.brand};
+  color:${INK};-webkit-font-smoothing:antialiased;position:relative;overflow:hidden}
+.art{position:absolute;inset:0;width:100%;height:100%}
+.card{position:relative;width:100%;height:100%;padding:72px 72px 64px;display:flex;flex-direction:column}
+.mark img{height:62px;display:block}
+h1{margin-top:64px;font-size:34px;font-weight:400;color:rgba(16,35,28,.6)}
+.total{font-size:150px;font-weight:400;letter-spacing:-.055em;line-height:1;margin:16px 0 18px}
 /*
  * The late figure, which is the line this card exists for. A total tells
  * somebody how much is outstanding; this tells them how much is a problem.
  */
-.late{font-size:30px;font-weight:600;color:${CLAY}}
-.clear{font-size:30px;font-weight:600;color:${MOSS}}
-.list{margin-top:44px;border-top:2px solid rgba(16,35,28,.12);padding-top:8px}
-.row{display:flex;align-items:baseline;justify-content:space-between;gap:24px;
-  padding:19px 0;border-bottom:1px solid rgba(16,35,28,.08)}
-.who{font-size:30px;font-weight:600}
-.sub{font-size:23px;color:rgba(16,35,28,.5);margin-top:3px}
-.row.od .sub{color:${CLAY}}
-.amt{font-family:${FONT.display};font-size:33px;font-weight:700;white-space:nowrap}
-.more{margin-top:auto;padding-top:26px;font-size:25px;color:rgba(16,35,28,.5)}
-</style></head><body><div class="card">
+.late{font-size:32px;font-weight:500;color:${CORAL}}
+.clear{font-size:32px;font-weight:500;color:${MINT}}
+.list{margin-top:44px;padding:8px 36px;border-radius:36px;background:rgba(255,255,255,.62);
+  backdrop-filter:blur(30px);box-shadow:inset 0 0 0 2px rgba(255,255,255,.7),0 30px 60px -40px rgba(16,35,28,.35)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:24px;
+  padding:22px 0;border-bottom:2px solid rgba(16,35,28,.07)}
+.row:last-child{border-bottom:0}
+.who{font-size:32px;font-weight:500;letter-spacing:-.01em}
+.sub{font-size:24px;color:rgba(16,35,28,.5);margin-top:4px}
+.row.od .sub{color:${CORAL}}
+.amt{font-size:36px;font-weight:400;letter-spacing:-.02em;white-space:nowrap}
+.more{margin-top:auto;padding-top:24px;font-size:25px;color:rgba(16,35,28,.5)}
+${NGN_CSS}
+</style></head><body>
+<img class="art" src="${artUri("owed.jpg")}" alt="">
+<div class="card">
 
-<div class="mark">${logoAvailable() ? logoSvg("56px") : `<span class="word">bala<i>n</i>s</span>`}</div>
+<div class="mark"><img src="${artUri("logo-light.svg")}" alt="Balans"></div>
 
 <h1>Owed to you</h1>
-<p class="total">${esc(formatNaira(owed.totalKobo))}</p>
+<p class="total">${ngn(esc(formatNaira(owed.totalKobo)))}</p>
 ${
   lateKobo > 0
     ? `<p class="late">${esc(formatNaira(lateKobo))} of it is already late</p>`

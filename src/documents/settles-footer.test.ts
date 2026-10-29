@@ -67,7 +67,8 @@ describe("where it is said", () => {
     // like. This is the answer to the question, so it is sized like one.
     const rule = card.slice(card.indexOf(".settles {"), card.indexOf(".settles span"));
     assert.match(rule, /font-size:32px/);
-    assert.match(rule, /font-weight:700/);
+    // Medium in Onest since 29 October 2026: the brand sets nothing bolder.
+    assert.match(rule, /font-weight:500/);
     assert.ok(!/opacity/.test(rule), "the line is faded again");
   });
 

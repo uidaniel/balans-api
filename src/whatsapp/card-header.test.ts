@@ -41,7 +41,7 @@ const { sendCta, sendImage } = await import("./client.ts");
 
 const PHONE = "2349052995617";
 const MEDIA_ID = "2994830510867588";
-const LINK = "https://balans.ng/brand/paid-tonight.png";
+const LINK = "https://balans.ng/brand/paid-tonight.jpg";
 
 type Payload = {
   type?: string;
@@ -113,7 +113,7 @@ describe("a card in a message of its own", () => {
 
   it("still takes a link for the files that have one", async () => {
     const t = captor();
-    await sendImage(PHONE, LINK, "Dem don balans you.", { fetchImpl: t.impl });
+    await sendImage(PHONE, LINK, "You’ve been paid.", { fetchImpl: t.impl });
     assert.equal(t.sent[0]?.image?.link, LINK);
     assert.equal(t.sent[0]?.image?.id, undefined);
   });

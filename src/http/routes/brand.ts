@@ -22,19 +22,19 @@ const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../as
 
 /** Public name -> file on disk. Nothing outside this map is reachable. */
 const FILES: Record<string, { file: string; type: string }> = {
-  "welcome.png": { file: "welcome.png", type: "image/png" },
-  "setup-done.png": { file: "setup-done.png", type: "image/png" },
-  "cheatsheet.png": { file: "cheatsheet.png", type: "image/png" },
+  "welcome.jpg": { file: "welcome.jpg", type: "image/jpeg" },
+  "setup-done.jpg": { file: "setup-done.jpg", type: "image/jpeg" },
+  "cheatsheet.jpg": { file: "cheatsheet.jpg", type: "image/jpeg" },
   // Two, chosen by the clock. See `settlesTonight`.
-  "paid-tonight.png": { file: "paid-tonight.png", type: "image/png" },
-  "paid-tomorrow.png": { file: "paid-tomorrow.png", type: "image/png" },
+  "paid-tonight.jpg": { file: "paid-tonight.jpg", type: "image/jpeg" },
+  "paid-tomorrow.jpg": { file: "paid-tomorrow.jpg", type: "image/jpeg" },
   // The Free limit, with what Pro costs and what it removes.
-  "limit.png": { file: "limit.png", type: "image/png" },
+  "limit.jpg": { file: "limit.jpg", type: "image/jpeg" },
   // The same offer without the "five done" headline, for anyone who asks
   // for Pro before they have run out.
-  "upgrade.png": { file: "upgrade.png", type: "image/png" },
+  "upgrade.jpg": { file: "upgrade.jpg", type: "image/jpeg" },
   // The membership card, once the money is in.
-  "pro.png": { file: "pro.png", type: "image/png" },
+  "pro.jpg": { file: "pro.jpg", type: "image/jpeg" },
 };
 
 /**
@@ -58,16 +58,17 @@ export async function brandRoutes(app: FastifyInstance): Promise<void> {
     /*
      * The Pro card, with the month on it.
      *
-     * The artwork has "MEMBER SINCE SEP 2026" painted in, so everybody who
-     * subscribed later would get a card saying September. The month is drawn
-     * over it instead, by the same browser that renders the invoices.
+     * "Member since <month>" is engraved on the gold card by the same browser
+     * that renders the invoices (brand/cards.ts). The stock file has no line
+     * at all, so a card that cannot be drawn says nothing rather than a
+     * wrong month.
      *
      * A month in the URL rather than a user: it is the only thing that
      * varies, it is not private, and it means twelve possible images a year
      * — each built once and kept — instead of one per subscriber. A request
-     * with no month, or a bad one, gets the artwork as it is.
+     * with no month, or a bad one, gets the stock card.
      */
-    if (req.params.name === "pro.png" && req.query.m) {
+    if (req.params.name === "pro.jpg" && req.query.m) {
       const parts = MONTH.exec(req.query.m);
       const year = Number(parts?.[1]);
       const month = Number(parts?.[2]);
@@ -77,13 +78,13 @@ export async function brandRoutes(app: FastifyInstance): Promise<void> {
           const card = await proCard(month, year);
           if (card) {
             return reply
-              .header("content-type", "image/png")
+              .header("content-type", "image/jpeg")
               .header("cache-control", "public, max-age=31536000, immutable")
               .send(card);
           }
         } catch (e) {
           // The card is a nicety; the message it rides on is not. Falling back
-          // to the artwork costs a wrong month and saves the whole send.
+          // to the stock card costs the month and saves the whole send.
           req.log.error({ err: (e as Error).message }, "could not draw the Pro card");
         }
       }

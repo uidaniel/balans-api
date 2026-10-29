@@ -27,7 +27,8 @@
 import type { FastifyBaseLogger } from "fastify";
 
 import { formatFriendly, type Civil } from "../../core/dates.ts";
-import { logoAvailable, logoSvg } from "../brand/logo.ts";
+import { readFileSync } from "node:fs";
+import { artUri, NGN_CSS, ngn } from "../brand/cards.ts";
 import { fontFaces, FONT } from "../pdf/fonts.ts";
 import { renderPng } from "../pdf/chrome.ts";
 import { uploadDocument } from "../whatsapp/client.ts";
@@ -49,6 +50,15 @@ import type { Draft } from "./store.ts";
  * device in ten.
  */
 export const CARD = 1400;
+
+/**
+ * The ink logo, for white paper: the coin and the Onest wordmark, inlined so
+ * a render with no network still has it.
+ */
+const LOGO = readFileSync(new URL("../../assets/brand/art/logo-light.svg", import.meta.url), "utf8")
+  .replace(/\swidth="[^"]*"/, "")
+  .replace(/\sheight="[^"]*"/, "")
+  .replace("<svg", '<svg style="height:58px;width:auto;display:block"');
 
 const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -229,17 +239,21 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
      origin and no network, so a linked stylesheet would simply not resolve
      and the card would come back in whatever the container happens to have —
      which, in this image, is DejaVu. */
-  ${fontFaces(["display"])}
+  ${fontFaces(["brand"])}
   :root {
     --ink:#10231c; --ink2:#173128; --cream:#f6f1e7; --sand:#e9e1d0; --sand-2:#ddd3bf; --moss:#2e8a55; --red:#d14343;
     --marigold:#f5b82e; --soft:#f6f2ea;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body { width:${CARD}px; height:${CARD}px; overflow:hidden; }
+  /* The paper on ribbed gold glass, in night green (29 October 2026). */
+  .art { position:absolute; inset:0; width:100%; height:100%; }
+  .paper { position:relative; }
   body {
-    background:var(--cream);
+    position:relative;
+    background:#08130f;
     color:var(--ink);
-    font-family:${FONT.display};
+    font-family:${FONT.brand};
     font-size:34px; line-height:1.4;
     display:flex; align-items:center; justify-content:center; padding:50px;
   }
@@ -250,7 +264,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
     --tooth:34px;
     width:100%; background:#fff; padding:50px 58px calc(var(--tooth) + 46px);
     border-radius:34px 34px 0 0;
-    box-shadow:0 26px 60px -40px rgb(16 35 28 / 0.45);
+    box-shadow:0 40px 90px -30px rgb(0 0 0 / 0.6);
     mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg)
           50% / var(--tooth) 100%;
   }
@@ -261,22 +275,21 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
   .head { display:flex; align-items:center; justify-content:space-between; gap:24px; }
   .mark { display:flex; }
   .mark svg { height:58px; width:auto; display:block; }
-  .mark .word { font-size:42px; font-weight:800; letter-spacing:-0.03em; }
   .mark .word i { font-style:normal; color:var(--moss); }
-  .tag { padding:10px 22px; border-radius:999px; background:var(--soft); font-size:26px; font-weight:700;
-         letter-spacing:0.06em; text-transform:uppercase; color:rgb(16 35 28 / 0.62); white-space:nowrap; }
+  .tag { padding:12px 26px; border-radius:999px; background:var(--ink); font-size:26px; font-weight:500;
+         color:var(--cream); white-space:nowrap; }
 
-  h1 { margin-top:34px; font-size:52px; font-weight:800; letter-spacing:-0.035em; line-height:1.1; }
+  h1 { margin-top:34px; font-size:56px; font-weight:400; letter-spacing:-0.04em; line-height:1.1; }
   .sub { margin-top:14px; display:flex; align-items:center; gap:16px; font-size:30px; color:rgb(16 35 28 / 0.6); min-width:0; }
   .sub .av { width:52px; height:52px; border-radius:50%; flex:none; display:grid; place-items:center;
-             background:var(--ink); color:var(--cream); font-size:22px; font-weight:800; letter-spacing:0; }
+             background:var(--ink); color:var(--cream); font-size:22px; font-weight:500; letter-spacing:0; }
   .sub span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .sub b { color:var(--ink); font-weight:700; }
+  .sub b { color:var(--ink); font-weight:500; }
 
   /* The amount, on a panel of its own. */
   .band { margin-top:30px; padding:30px 34px; border-radius:28px; background:var(--soft); }
   .cap { font-size:27px; color:rgb(16 35 28 / 0.55); }
-  .amount { margin-top:2px; font-size:88px; font-weight:800; letter-spacing:-0.045em; line-height:1.05; }
+  .amount { margin-top:2px; font-size:96px; font-weight:400; letter-spacing:-0.055em; line-height:1.05; }
   .pair { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:24px; }
   .pair .amount { font-size:64px; white-space:nowrap; }
   .pair .r { text-align:right; }
@@ -284,10 +297,10 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
   .swap { width:92px; height:92px; border-radius:50%; background:var(--marigold);
           display:grid; place-items:center; }
   .rate { margin:18px auto 0; display:table; padding:10px 22px; border-radius:999px;
-          background:#fff; font-size:30px; font-weight:700; letter-spacing:-0.01em; }
+          background:#fff; font-size:30px; font-weight:500; letter-spacing:-0.01em; }
   .meta { margin-top:18px; display:flex; flex-wrap:wrap; gap:12px; }
   .when { display:inline-flex; align-items:center; gap:10px; padding:10px 20px 10px 16px; border-radius:999px;
-          background:#fff; font-size:27px; font-weight:600; color:var(--ink); }
+          background:#fff; font-size:27px; font-weight:500; color:var(--ink); }
   .when svg { color:var(--moss); }
   .stages { margin-top:18px; display:grid; gap:10px; font-size:27px; color:rgb(16 35 28 / 0.7); }
   .stages div { display:flex; align-items:center; gap:14px; }
@@ -298,13 +311,13 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
   .row .lead { flex:1; min-width:24px; border-bottom:3px dotted currentColor;
                opacity:0.25; transform:translateY(-0.3em); }
   .row.muted { color:rgb(16 35 28 / 0.55); }
-  .row .v { font-weight:600; white-space:nowrap; }
-  .row .v.cost { color:var(--red); font-weight:700; }
+  .row .v { font-weight:500; white-space:nowrap; }
+  .row .v.cost { color:var(--red); font-weight:500; }
   .items { margin-top:30px; font-size:30px; }
   .items .row { margin-top:12px; }
-  .items .l { max-width:62%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  .items .l { max-width:62%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
   .items .q { flex:none; align-self:center; padding:3px 12px; border-radius:999px; background:var(--soft);
-              font-size:23px; font-weight:700; color:rgb(16 35 28 / 0.6); }
+              font-size:23px; font-weight:500; color:rgb(16 35 28 / 0.6); }
   .items .more { margin-top:10px; font-size:25px; color:rgb(16 35 28 / 0.5); }
 
   /* What lands, in the colour of money that has arrived. */
@@ -315,8 +328,8 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
   .total .row { flex:1; margin:0; color:var(--ink); }
   .total .row .lead { display:none; }
   .total .row .l { flex:1; }
-  .row.strong { font-size:40px; font-weight:800; letter-spacing:-0.02em; }
-  .row.strong .v { font-size:46px; font-weight:800; color:var(--moss); letter-spacing:-0.03em; }
+  .row.strong { font-size:40px; font-weight:500; letter-spacing:-0.02em; }
+  .row.strong .v { font-size:48px; font-weight:500; color:var(--moss); letter-spacing:-0.03em; }
   .note { margin-top:20px; font-size:26px; line-height:1.5; color:rgb(16 35 28 / 0.5); }
   /*
    * The settlement line is the footer of the card, not a footnote on it:
@@ -324,17 +337,17 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
    * it is said once, here, at a size that survives a phone in a chat thread.
    */
   .settles { margin-top:26px; display:flex; align-items:center; gap:22px; padding:24px 28px; border-radius:24px;
-             background:rgb(245 184 46 / 0.16); color:var(--ink); font-size:32px; font-weight:700; line-height:1.3; }
+             background:rgb(245 184 46 / 0.16); color:var(--ink); font-size:32px; font-weight:500; line-height:1.3; }
   .settles .ic { width:64px; height:64px; border-radius:50%; flex:none; display:grid; place-items:center;
                  background:var(--marigold); color:var(--ink); }
-  .settles span { display:block; margin-top:6px; font-size:24px; font-weight:500; color:rgb(16 35 28 / 0.62); }
+  .settles span { display:block; margin-top:6px; font-size:24px; font-weight:400; color:rgb(16 35 28 / 0.62); }
+  ${NGN_CSS}
 </style></head>
 <body>
+  <img class="art" src="${artUri("receipt.jpg")}" alt="">
   <div class="paper">
     <div class="head">
-      <div class="mark">${
-        logoAvailable() ? logoSvg("58px") : `<span class="word">bala<i>n</i>s</span>`
-      }</div>
+      <div class="mark">${LOGO}</div>
       <span class="tag">${words.tag}${draft.number ? ` · No. ${esc(String(draft.number))}` : ""}</span>
     </div>
 
@@ -359,11 +372,11 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
                  <div class="amount">${esc(formatMoney(agreedTotalMinor(draft.foreign.amountMinor, draft.subtotalKobo, draft.vatKobo), draft.foreign.currency))}</div></div>
                <div class="swap">${SWAP}</div>
                <div class="side r"><div class="cap">Naira amount</div>
-                 <div class="amount naira">${formatNaira(draft.totalKobo)}</div></div>
+                 <div class="amount naira">${ngn(formatNaira(draft.totalKobo))}</div></div>
              </div>
              <div class="rate">${INFO[draft.foreign.currency].symbol}1 → ${formatNaira(Math.round(draft.foreign.rate * 100))}</div>`
           : `<div class="cap">${esc(words.amount)}</div>
-             <div class="amount">${formatNaira(draft.totalKobo)}</div>`
+             <div class="amount">${ngn(formatNaira(draft.totalKobo))}</div>`
       }
       ${
         draft.vatKobo > 0 || draft.dueDate

@@ -50,8 +50,21 @@ const WIX: Face[] = [
   { family: "Wix Madefor Display", weight: 800, style: "normal", file: "WixMadeforDisplay-ExtraBold.ttf" },
 ];
 
+/*
+ * Onest, the brand's face since the rebrand (29 October 2026): balans.ng, the
+ * posters and the cards the bot sends in chat. The invoices stay in Wix
+ * Madefor Display; a sheet is somebody else's document, not our poster.
+ */
+const ONEST: Face[] = [300, 400, 500, 600].map((weight) => ({
+  family: "Onest",
+  weight,
+  style: "normal" as const,
+  file: `Onest-${weight}.ttf`,
+}));
+
 /** The faces, grouped by the part of a sheet that needs them. */
 const FACES = {
+  brand: ONEST,
   sans: WIX,
   display: WIX,
   serif: [
@@ -80,6 +93,7 @@ export const FONT = {
   sans: `"Wix Madefor Display","DejaVu Sans","Segoe UI",-apple-system,"Helvetica Neue",Arial,sans-serif`,
   display: `"Wix Madefor Display","DejaVu Sans","Segoe UI",-apple-system,Arial,sans-serif`,
   serif: `"Instrument Serif","DejaVu Serif",Georgia,"Times New Roman",serif`,
+  brand: `"Onest","DejaVu Sans","Segoe UI",-apple-system,Arial,sans-serif`,
 };
 
 /* Read once. The same seven files are wanted on every render, and base64 of

@@ -21,10 +21,12 @@
  * that is a dashboard nobody opens twice.
  */
 
+import { NGN_CSS, ngnText } from "../brand/cards.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { esc } from "./page.ts";
 import { FONT, fontFacesForPage } from "../pdf/fonts.ts";
+import { BAND, darkLogo } from "../brand/web.ts";
 
 export type SummaryData = {
   businessName: string;
@@ -48,7 +50,6 @@ export type SummaryData = {
   clients: { name: string; paidKobo: number }[];
 };
 
-const MOSS = "#3F8F5F";
 const MARIGOLD = "#F5B82E";
 const CLAY = "#C2593F";
 
@@ -252,7 +253,7 @@ export function renderSummary(d: SummaryData, today: Civil): string {
   const year = d.months.reduce((n, m) => n + m.paidKobo, 0);
   const owingCount = d.owing.length;
 
-  return `<!doctype html>
+  return ngnText(`<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -260,32 +261,33 @@ export function renderSummary(d: SummaryData, today: Civil): string {
 <meta name="format-detection" content="telephone=no">
 <title>Your Balans summary</title>
 <style>
-${fontFacesForPage(["sans", "display"])}
+${fontFacesForPage(["brand"])}
 :root{--ink:#10231C;--bg:#F6F1E7;--card:#FFFFFF;--t1:#10231C;--t2:rgba(16,35,28,.62);--t3:rgba(16,35,28,.45);
 --line:rgba(16,35,28,.08);--grid:rgba(16,35,28,.08);--soft:#F3EEE4;
---bar:${MOSS};--bar-hi:#2C6E47;--paid:${MOSS};--owed:${MARIGOLD};--late:${CLAY};--late-bg:rgba(194,89,63,.1);
---ok-bg:rgba(63,143,95,.12);--meter:rgba(63,143,95,.14);
+--bar:#10231C;--bar-hi:#C98A0E;--paid:#10231C;--owed:${MARIGOLD};--late:${CLAY};--late-bg:rgba(194,89,63,.1);
+--ok-bg:rgba(63,143,95,.12);--ok:#2C6E47;--meter:rgba(16,35,28,.08);
 --lift:0 0 0 1px rgba(16,35,28,.06),0 1px 2px rgba(16,35,28,.05),0 12px 32px -18px rgba(16,35,28,.2)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:${FONT.sans};color:var(--t1);background:var(--bg);font-size:15px;
+body{font-family:${FONT.brand};color:var(--t1);background:var(--bg);font-size:15px;
   line-height:1.45;-webkit-font-smoothing:antialiased;padding:0 0 calc(40px + env(safe-area-inset-bottom))}
-.band{background:var(--ink);color:#F6F1E7;padding:26px 18px 96px}
+.band{background:${BAND};color:#F6F1E7;padding:22px 18px 100px}
+.logo{margin-bottom:28px}
 .band .in,.wrap{max-width:640px;margin:0 auto}
-.eyebrow{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:rgba(246,241,231,.55)}
-h1{margin-top:6px;font-family:${FONT.display};font-size:26px;line-height:1.15;font-weight:800;letter-spacing:-.035em;overflow-wrap:anywhere}
+.eyebrow{font-size:15px;color:rgba(246,241,231,.48)}
+h1{margin-top:2px;font-size:32px;line-height:1.08;font-weight:400;letter-spacing:-.04em;overflow-wrap:anywhere}
 .when{color:rgba(246,241,231,.6);font-size:13.5px;margin-top:4px}
 .wrap{padding:0 12px;margin-top:-76px;display:grid;gap:12px}
-.card{background:var(--card);border-radius:20px;padding:20px;box-shadow:var(--lift)}
-h2{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:15px;font-weight:700;
-  letter-spacing:-.01em;margin-bottom:14px}
+.card{background:var(--card);border-radius:28px;padding:22px;box-shadow:var(--lift)}
+h2{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:17px;font-weight:500;
+  letter-spacing:-.02em;margin-bottom:14px}
 h2 span{font-size:13px;font-weight:500;color:var(--t2)}
 .lbl{font-size:13.5px;color:var(--t2)}
-.hero .big{margin-top:4px;font-family:${FONT.display};font-size:44px;line-height:1.05;font-weight:800;letter-spacing:-.045em;overflow-wrap:anywhere}
+.hero .big{margin-top:4px;font-size:48px;line-height:1.05;font-weight:400;letter-spacing:-.05em;overflow-wrap:anywhere}
 .status{display:inline-flex;align-items:center;gap:6px;margin-top:10px;height:28px;padding:0 11px 0 8px;border-radius:999px;
   font-size:13px;font-weight:600}
 .status svg{width:14px;height:14px;flex:none}
 .status.late{background:var(--late-bg);color:var(--late)}
-.status.ok{background:var(--ok-bg);color:var(--bar-hi)}
+.status.ok{background:var(--ok-bg);color:var(--ok)}
 .status b{color:var(--t1);font-weight:700}
 .split{display:flex;gap:2px;height:10px;border-radius:99px;overflow:hidden;margin-top:20px}
 .split span{display:block;min-width:4px}
@@ -297,10 +299,10 @@ h2 span{font-size:13px;font-weight:500;color:var(--t2)}
 .sw{width:10px;height:10px;border-radius:3px;flex:none}
 .pct{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.tile{background:var(--card);border-radius:18px;padding:15px 16px;box-shadow:var(--lift);min-width:0}
+.tile{background:var(--card);border-radius:24px;padding:16px 18px;box-shadow:var(--lift);min-width:0}
 .tile .k{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--t2)}
 .tile .k svg{width:13px;height:13px;color:var(--late);flex:none}
-.tile .v{margin-top:4px;font-family:${FONT.display};font-size:21px;font-weight:700;letter-spacing:-.03em;overflow-wrap:anywhere}
+.tile .v{margin-top:4px;font-size:23px;font-weight:400;letter-spacing:-.04em;overflow-wrap:anywhere}
 .plot{position:relative;margin-right:46px}
 .bars{display:block;width:100%;height:auto;overflow:visible}
 .bars line.g{stroke:var(--grid);stroke-width:1;vector-effect:non-scaling-stroke}
@@ -330,31 +332,33 @@ h2 span{font-size:13px;font-weight:500;color:var(--t2)}
 .who{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sub{font-size:12.5px;color:var(--t3)}
 .end{text-align:right;flex:none;min-width:6.6em}
-.amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.amt{font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
 .st{font-size:12.5px;color:var(--t3)}
 .st.late{color:var(--late);font-weight:600}
 .meter{display:block;margin-top:6px;height:6px;border-radius:99px;background:var(--meter);overflow:hidden}
-.meter span{display:block;height:100%;border-radius:99px;background:var(--bar)}
+.meter span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#ffd877,#f5b82e)}
 .none{color:var(--t2);font-size:14px}
 footer{margin-top:8px;text-align:center;font-size:12.5px;color:var(--t3)}
 @media (min-width:600px){
   .band{padding:34px 24px 104px}
-  h1{font-size:30px}
+  h1{font-size:38px}
   .wrap{padding:0 20px}
   .card{padding:24px}
   .tiles{grid-template-columns:repeat(4,1fr)}
 }
 @media (prefers-color-scheme:dark){
   :root{--bg:#0B1612;--card:#13221C;--t1:#EDE7DA;--t2:rgba(237,231,218,.66);--t3:rgba(237,231,218,.45);
-    --line:rgba(237,231,218,.08);--grid:rgba(237,231,218,.09);--soft:#1B2E26;--bar:#5DB282;--bar-hi:#82CDA1;--paid:#5DB282;
-    --late:#E58A6F;--late-bg:rgba(229,138,111,.14);--ok-bg:rgba(93,178,130,.16);--meter:rgba(93,178,130,.16);
+    --line:rgba(237,231,218,.08);--grid:rgba(237,231,218,.09);--soft:#1B2E26;--bar:#F5B82E;--bar-hi:#FFD877;--paid:#F5B82E;--owed:rgba(245,184,46,.35);
+    --late:#E58A6F;--late-bg:rgba(229,138,111,.14);--ok-bg:rgba(93,178,130,.16);--ok:#82CDA1;--meter:rgba(237,231,218,.1);
     --lift:0 0 0 1px rgba(237,231,218,.06)}
-  .band{background:#07100D}
+  .band{background:${BAND}}
   .tip{background:#EDE7DA;color:#10231C}
 }
+${NGN_CSS}
 </style></head>
 <body>
 <header class="band"><div class="in">
+  <div class="logo">${darkLogo("30px")}</div>
   <p class="eyebrow">Summary</p>
   <h1>${esc(d.businessName)}</h1>
   <p class="when">Everything so far · ${esc(formatFriendly(today, today))}</p>
@@ -397,5 +401,5 @@ ${
 
 <footer>This page is private to you. The link stops working after a day.</footer>
 </main>
-</body></html>`;
+</body></html>`);
 }

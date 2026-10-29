@@ -148,13 +148,10 @@ describe("the emails a payment sends", () => {
   it("never shows the client the freelancer's half of the message", () => {
     /*
      * Reported from a real inbox. Both emails carried the same banner, and
-     * it reads "Dem don balans you" — the product's one piece of Nigerian
-     * English, addressed to the person who has just been paid. It went to
-     * the person who had just paid.
-     *
-     * That is the wrong half of the voice pointed at the wrong reader, on
-     * the message a client is most likely to keep, forward to their accounts
-     * department, or open somewhere the idiom means nothing at all.
+     * it reads "You've been paid" (until 29 October 2026, "Dem don balans
+     * you"), addressed to the person who has just been paid. It went to the
+     * person who had just paid: the wrong reader, on the message a client is
+     * most likely to keep or forward to their accounts department.
      */
     const client = source.slice(
       source.indexOf("export async function emailPaidToClient"),
@@ -163,13 +160,13 @@ describe("the emails a payment sends", () => {
     const user = source.slice(source.indexOf("export async function emailPaidToUser"));
 
     assert.ok(!client.includes("PAID_BANNER"), "the client is getting the freelancer's banner");
-    assert.ok(!/balans you/i.test(client), "the phrase reached the client's copy");
+    assert.ok(!/been paid/i.test(client), "the phrase reached the client's copy");
     // Free: the receipt banner. Pro: no banner of ours at all, only their logo.
     assert.match(client, /images: brand \? as\.images : \[RECEIPT_BANNER\]/);
 
     // And the freelancer keeps it: it is their moment, and only theirs.
     assert.match(user, /images: \[PAID_BANNER\]/);
-    assert.match(user, /Dem don balans you/);
+    assert.match(user, /You’ve been paid/);
     assert.ok(!user.includes("RECEIPT_BANNER"));
   });
 

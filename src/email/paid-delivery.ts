@@ -38,12 +38,11 @@ const esc = (s: string): string =>
  * Two pictures, because these are two different messages to two different
  * people, and for a while they were not.
  *
- * Both emails carried the freelancer's banner: "Dem don balans you" — the
- * product's one piece of Nigerian English, addressed to the person who has
- * just been paid. It went to the person who had just paid. The wrong half of
- * the voice, pointed at the wrong reader, on the one message a client is most
- * likely to keep, forward to their accounts department, or open in another
- * country where the idiom means nothing at all.
+ * Both emails carried the freelancer's banner, "You've been paid" (it read
+ * "Dem don balans you" until 29 October 2026), addressed to the person who
+ * has just been paid. It went to the person who had just paid: the wrong
+ * reader, on the one message a client is most likely to keep, forward to
+ * their accounts department, or open in another country.
  *
  * Attached rather than linked, like every other banner here: mail clients
  * block remote images by default, and a payment confirmation that arrives as
@@ -66,7 +65,7 @@ const RECEIPT_BANNER: InlineImage = {
 const PAID_BANNER: InlineImage = {
   cid: "paid-banner",
   file: "paid-banner.png",
-  alt: "Payment received. Dem don balans you.",
+  alt: "Payment received. You’ve been paid, with Balans.",
   width: 536,
   height: 214,
 };
@@ -336,11 +335,11 @@ export async function emailPaidToUser(
     const sent = await sendEmail(
       {
         to: d.business_email,
-        subject: `Dem don balans you — ${got} from ${d.client_name}`,
+        subject: `You’ve been paid — ${got} from ${d.client_name}`,
         html: layout({
           preheader: `${d.client_name} paid ${got}.`,
           eyebrow: "Payment received",
-          heading: "Dem don balans you",
+          heading: "You’ve been paid",
           // Theirs alone. The poster carries the phrase, so the heading does
           // not have to shout it twice — and the client's copy says none of
           // it, because none of it is addressed to them.

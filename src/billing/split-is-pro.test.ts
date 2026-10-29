@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PLANS } from "../whatsapp/flows/definitions.ts";
 import { proOffer } from "./messages.ts";
-import { proPoints } from "./pro-cards.ts";
+import { proPoints } from "../brand/cards.ts";
 
 const handle = readFileSync(new URL("../conversation/handle.ts", import.meta.url), "utf8");
 

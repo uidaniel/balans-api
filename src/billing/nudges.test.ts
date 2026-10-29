@@ -29,10 +29,11 @@ describe("the yearly plan leads", () => {
 describe("the branded limit card", () => {
   it("says it is theirs and carries their invoice", () => {
     const html = limitCardHtml(Buffer.from("png"), 3);
-    assert.match(html, /This is yours\.<br>Keep sending it\./);
+    assert.match(html, /This is yours\.<\/span><span class="m">Keep sending it\./);
     assert.match(html, /Your three free documents are used/);
     assert.match(html, /data:image\/png;base64,/);
-    assert.match(html, /₦2,500<span>\/ month, yearly/);
+    // The month's own price, with the year beside it (29 October 2026).
+    assert.match(html, /<span class="ngn">N<\/span>3,000<\/p><p class="per">a month, or <span class="ngn">N<\/span>30,000 a year/);
   });
 });
 

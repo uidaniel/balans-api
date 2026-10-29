@@ -159,7 +159,7 @@ async function sendMenu(
   if (!phone) return fallback;
 
   const sent = await sendButtons(phone, {
-    headerImage: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/brand/cheatsheet.png`,
+    headerImage: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/brand/cheatsheet.jpg`,
     body: VOICE.helpCaption,
     buttons: helpButtons(),
   });

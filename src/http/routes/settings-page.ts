@@ -28,7 +28,7 @@ import { get as getFile } from "../../storage/files.ts";
 import { normaliseHex } from "../../brand/colour.ts";
 import { renderDocumentHtml, type DocumentData } from "../../pdf/template.ts";
 import { FONT } from "../../pdf/fonts.ts";
-import { logoSvg } from "../../brand/logo.ts";
+import { BAND, GOLD, darkLogo, lightLogo } from "../../brand/web.ts";
 import { renderTemplate, TEMPLATES } from "../../pdf/templates.ts";
 import { pickerUrlFor } from "./templates.ts";
 import { issueSignatureToken } from "../../brand/signature.ts";
@@ -398,23 +398,25 @@ const CSS = `
 --line:rgba(16,35,28,.09);--muted:#5f6f67;--faint:#8a978f;--moss:#2f7a4b;--clay:#b8452d;
 --lift:0 0 0 1px rgba(16,35,28,.06),0 1px 2px rgba(16,35,28,.05),0 12px 32px -18px rgba(16,35,28,.2)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--cream);color:var(--ink);font-family:${FONT.sans};-webkit-font-smoothing:antialiased;
+body{background:var(--cream);color:var(--ink);font-family:${FONT.brand};-webkit-font-smoothing:antialiased;
 line-height:1.5;padding:0 0 64px}
 button{cursor:pointer;font:inherit}
 .hidden{display:none!important}
 /* The head: who these settings belong to, on the same ink band as the pay
    page, the designs and the summary. */
-.band{background:var(--ink);color:var(--cream);padding:24px 16px 26px}
+.band{background:${BAND};color:var(--cream);padding:20px 16px 28px}
+.band .mark{max-width:1040px;margin:0 auto 22px}
 .band .in{max-width:1040px;margin:0 auto;display:flex;align-items:center;gap:14px}
 .av{width:48px;height:48px;border-radius:14px;flex:none;display:grid;place-items:center;background:var(--marigold);
-color:var(--ink);font-family:${FONT.display};font-weight:800;font-size:18px;letter-spacing:-.03em}
+color:var(--ink);font-family:${FONT.brand};font-weight:500;font-size:18px;letter-spacing:-.03em;
+background:linear-gradient(180deg,#ffd877,#f5b82e)}
 .who{min-width:0;flex:1}
-.who .k{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:rgba(246,241,231,.5)}
-h1{font-family:${FONT.display};font-size:24px;font-weight:800;letter-spacing:-.035em;line-height:1.15;
+.who .k{font-size:14px;color:rgba(246,241,231,.48)}
+h1{font-family:${FONT.brand};font-size:28px;font-weight:400;letter-spacing:-.04em;line-height:1.12;
 overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pill{flex:none;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border-radius:99px;
-background:rgba(246,241,231,.12);color:rgba(246,241,231,.85);white-space:nowrap}
-.pill.pro{background:var(--marigold);color:var(--ink)}
+.pill{flex:none;font-size:12.5px;font-weight:500;padding:6px 12px;border-radius:99px;
+background:rgba(246,241,231,.08);box-shadow:inset 0 0 0 1px rgba(246,241,231,.14);color:rgba(246,241,231,.85);white-space:nowrap}
+.pill.pro{${GOLD}}
 .shell{max-width:1040px;margin:0 auto;padding:0 16px}
 /* The sections: a row of tabs on a phone, kept in reach as the page
    scrolls; a column down the side from 860px. */
@@ -423,7 +425,7 @@ background:rgba(246,241,231,.92);-webkit-backdrop-filter:blur(10px);backdrop-fil
 scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .tabs::-webkit-scrollbar{display:none}
 .tab{flex:none;display:inline-flex;align-items:center;gap:8px;border:0;background:var(--paper);color:var(--muted);
-font-size:14px;font-weight:600;height:38px;padding:0 15px 0 12px;border-radius:99px;white-space:nowrap;
+font-size:14px;font-weight:500;height:38px;padding:0 15px 0 12px;border-radius:99px;white-space:nowrap;
 box-shadow:inset 0 0 0 1px var(--line);transition:background-color .2s,color .2s}
 .tab svg{width:16px;height:16px;flex:none;opacity:.75}
 .tab[aria-selected="true"]{background:var(--ink);color:var(--cream);box-shadow:none}
@@ -432,7 +434,7 @@ box-shadow:inset 0 0 0 1px var(--line);transition:background-color .2s,color .2s
 @media(min-width:860px){
   .band{padding:34px 24px 34px}
   .av{width:56px;height:56px;font-size:21px;border-radius:16px}
-  h1{font-size:28px}
+  h1{font-size:34px}
   .shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;padding:28px 24px 0;align-items:start}
   .tabs{flex-direction:column;gap:2px;margin:0;padding:0;background:none;backdrop-filter:none;-webkit-backdrop-filter:none;
     top:24px;overflow:visible}
@@ -441,15 +443,15 @@ box-shadow:inset 0 0 0 1px var(--line);transition:background-color .2s,color .2s
   .tab[aria-selected="true"]{background:var(--paper);color:var(--ink);box-shadow:var(--lift)}
 }
 .saved{margin:4px 0 12px;display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;background:#eef7f1;
-color:var(--moss);font-weight:600;font-size:14.5px;box-shadow:0 0 0 1px rgba(47,122,75,.18)}
+color:var(--moss);font-weight:500;font-size:14.5px;box-shadow:0 0 0 1px rgba(47,122,75,.18)}
 /* A section: a heading, its fields, and a bar along the foot holding the
    one thing to press and what happened when it was pressed. */
-.card{background:var(--paper);border-radius:20px;box-shadow:var(--lift);overflow:hidden;animation:in .25s ease-out}
+.card{background:var(--paper);border-radius:28px;box-shadow:var(--lift);overflow:hidden;animation:in .25s ease-out}
 @keyframes in{from{opacity:0;transform:translateY(6px)}}
 @media(prefers-reduced-motion:reduce){.card{animation:none}}
 .card.off{display:none}
 .ch{padding:22px 22px 4px}
-.card h2{font-family:${FONT.display};font-size:19px;font-weight:700;letter-spacing:-.025em}
+.card h2{font-family:${FONT.brand};font-size:22px;font-weight:400;letter-spacing:-.035em}
 .hint{color:var(--muted);font-size:14px;margin-top:4px;max-width:60ch}
 .hint b{color:var(--ink)}
 .cb{padding:6px 22px 22px}
@@ -458,7 +460,7 @@ border-top:1px solid var(--line);background:#fcfaf6}
 .cf .msg{margin:0 auto 0 0;flex:1;min-width:10em}
 .field{padding:14px 0;border-top:1px solid var(--line)}
 .field:first-child{border-top:0}
-.field>label,.field>.lb{display:block;font-size:13.5px;font-weight:600;color:var(--ink)}
+.field>label,.field>.lb{display:block;font-size:13.5px;font-weight:500;color:var(--ink)}
 .field .opt{font-weight:400;color:var(--faint)}
 .field .help{display:block;font-size:12.5px;font-weight:400;color:var(--muted);margin-top:2px}
 @media(min-width:860px){
@@ -481,10 +483,10 @@ padding:11px 13px;font:inherit;font-size:16px;line-height:1.45;color:var(--ink);
 .row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
 /* Pills, as every button on balans.ng is. */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 22px;border:0;border-radius:999px;
-background:var(--ink);color:var(--cream);font-weight:600;font-size:14.5px;text-decoration:none;white-space:nowrap;
+background:var(--ink);color:var(--cream);font-weight:500;font-size:14.5px;text-decoration:none;white-space:nowrap;
 transition:opacity .2s,transform .15s}
 .btn:active{transform:scale(.98)}
-.btn.gold{background:var(--marigold);color:var(--ink);box-shadow:inset 0 -2px 0 rgba(16,35,28,.12)}
+.btn.gold{${GOLD}}
 .btn.ghost{background:#fff;color:var(--ink);box-shadow:inset 0 0 0 1px rgba(16,35,28,.16)}
 .btn.wide{width:100%}
 .btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
@@ -494,7 +496,7 @@ transition:opacity .2s,transform .15s}
 /* Invoices: the two pages it opens, as rows. */
 .links{margin-top:6px;border-radius:16px;box-shadow:inset 0 0 0 1px var(--line);overflow:hidden}
 .link{display:flex;align-items:center;gap:14px;padding:14px 16px;border-top:1px solid var(--line);color:var(--ink);
-text-decoration:none;font-weight:600;font-size:15px;transition:background-color .15s}
+text-decoration:none;font-weight:500;font-size:15px;transition:background-color .15s}
 .link:first-child{border-top:0}
 .link:hover{background:#fcfaf6}
 .link .ic{width:38px;height:38px;border-radius:12px;background:var(--cream);display:grid;place-items:center;flex:none}
@@ -524,12 +526,12 @@ place-items:center;overflow:hidden;flex:none;padding:8px}
 .pick input{margin-top:0}
 .brow{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
 .brow .btn{flex:1}
-.pv .lb{display:block;font-size:13.5px;font-weight:600;margin-bottom:8px}
+.pv .lb{display:block;font-size:13.5px;font-weight:500;margin-bottom:8px}
 .frame{border-radius:12px;overflow:hidden;background:#fff;position:relative;
 box-shadow:0 0 0 1px var(--line),0 16px 36px -20px rgba(16,35,28,.35);height:calc(1122.5px * var(--sc));--sc:.42}
 .frame::before{content:"Loading preview…";position:absolute;top:45%;left:0;right:0;text-align:center;color:var(--faint);font-size:14px}
 .frame iframe{position:absolute;top:0;left:0;width:793.7px;height:1122.5px;border:0;transform:scale(var(--sc));transform-origin:top left}
-.locked{margin-top:6px;padding:18px;border-radius:16px;background:var(--ink);color:var(--cream)}
+.locked{margin-top:6px;padding:18px;border-radius:20px;background:${BAND};color:var(--cream)}
 .locked p{font-size:14.5px;color:rgba(246,241,231,.8)}
 .locked .btn{margin-top:14px}
 /* Payout: the account as a card, because it is one. */
@@ -538,17 +540,17 @@ background:radial-gradient(120% 140% at 100% 0%,#24463a 0%,var(--ink) 55%);min-h
 .bank::before{content:"";position:absolute;top:18px;left:20px;width:34px;height:24px;border-radius:6px;
 background:linear-gradient(135deg,#f7cf6a,#d99a12)}
 .bank::after{content:"";position:absolute;top:16px;right:18px;width:28px;height:28px;border-radius:50%;background:rgba(246,241,231,.08)}
-.bank b{display:block;font-family:${FONT.display};font-size:17px;letter-spacing:-.01em}
+.bank b{display:block;font-family:${FONT.brand};font-size:17px;font-weight:500;letter-spacing:-.01em}
 .bank span{color:rgba(246,241,231,.62);font-size:13.5px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
-.found{margin-top:12px;padding:12px 14px;border-radius:12px;background:#eef7f1;color:var(--moss);font-weight:600}
+.found{margin-top:12px;padding:12px 14px;border-radius:12px;background:#eef7f1;color:var(--moss);font-weight:500}
 .step{margin-top:14px;padding:16px;border-radius:16px;background:#fcfaf6;box-shadow:inset 0 0 0 1px var(--line)}
 .step .hint{margin-top:0}
 .step .btn{margin-top:12px}
 /* Plan. */
 .plan{display:grid;gap:16px}
-.plancard{padding:20px;border-radius:18px;background:var(--ink);color:var(--cream)}
-.plancard .pt{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:rgba(246,241,231,.5)}
-.plancard .pn{margin-top:4px;font-family:${FONT.display};font-size:24px;font-weight:800;letter-spacing:-.03em}
+.plancard{padding:22px;border-radius:24px;background:${BAND};color:var(--cream)}
+.plancard .pt{font-size:14px;color:rgba(246,241,231,.48)}
+.plancard .pn{margin-top:2px;font-family:${FONT.brand};font-size:30px;font-weight:400;letter-spacing:-.04em}
 .plancard .hint{color:rgba(246,241,231,.7)}
 .plancard ul{list-style:none;margin-top:14px;display:grid;gap:8px}
 .plancard li{display:flex;align-items:center;gap:10px;font-size:14px;color:rgba(246,241,231,.85)}
@@ -556,7 +558,7 @@ background:linear-gradient(135deg,#f7cf6a,#d99a12)}
 background:var(--marigold) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310231c' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5 10 17.5 19 7.5'/%3E%3C/svg%3E") center/11px no-repeat}
 .foot{margin:28px auto 0;max-width:1040px;padding:0 16px;display:flex;flex-direction:column;align-items:center;gap:12px;
 text-align:center;color:var(--faint);font-size:12.5px}
-.foot b{color:var(--muted)}
+.foot b{color:var(--muted);font-weight:500}
 .foot svg{display:block;opacity:.85}
 /* The page for an expired link, and for one that would not load. */
 .wrap{max-width:560px;margin:0 auto;padding:40px 16px}
@@ -908,7 +910,7 @@ export function settingsPage(token: string): string {
 <title>Settings</title>
 <link rel="stylesheet" href="/designs/fonts.css"><style>${CSS}</style></head>
 <body data-t="${esc(token)}">
-<header class="band"><div class="in">
+<header class="band"><div class="mark">${darkLogo("26px")}</div><div class="in">
   <span class="av" id="av" aria-hidden="true"></span>
   <div class="who"><p class="k">Settings</p><h1 id="title">Settings</h1></div>
   <span id="plan" class="pill">&nbsp;</span>
@@ -1050,7 +1052,7 @@ export function settingsPage(token: string): string {
 
 <footer class="foot">
   <p>To close your account, reply <b>close my account</b> on WhatsApp.</p>
-  ${logoSvg("24px")}
+  ${lightLogo("22px")}
 </footer>
 <script>${JS}</script></body></html>`;
 }

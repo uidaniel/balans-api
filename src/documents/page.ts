@@ -20,6 +20,7 @@ import { agreedTotalMinor } from "../../core/exchange.ts";
 import { outstandingKobo, payable, payableLabel, payableNowKobo, type PublicDocument } from "./public.ts";
 import { logoAvailable, logoSvg, markSvg, processorLogo, type Processor } from "../brand/logo.ts";
 import { FONT, fontFacesForPage } from "../pdf/fonts.ts";
+import { BAND, GOLD } from "../brand/web.ts";
 import { defaults, env } from "../config.ts";
 import { DEFAULT_INTL_PROCESSOR, settle, withVat } from "../../core/fees.ts";
 
@@ -35,18 +36,19 @@ export function esc(s: string): string {
 
 /* Brand tokens, copied from the web app's globals.css. Duplicated on purpose:
    this page must render from a cold server with no shared stylesheet. The
-   face is the site's too — Wix Madefor Display, for reading and for the
-   figures — served by this API and inlined as rules, so the only requests
-   are for the few files a phone actually uses. */
+   face is the site's too — Onest since the rebrand (29 October 2026), light
+   for the figures, medium at most — served by this API and inlined as rules,
+   so the only requests are for the few files a phone actually uses. The band
+   is the brand's night green with one soft light, as on balans.ng. */
 const CSS = `
-${fontFacesForPage(["sans", "display"])}
+${fontFacesForPage(["brand"])}
 :root{--marigold:#f5b82e;--marigold-hi:#ffc848;--ink:#10231c;--ink-2:#173128;
---cream:#f6f1e7;--sand:#e9e1d0;--paper:#ffffff;--moss:#3f8f5f;--moss-deep:#2f6b47;--clay:#c2462e;
+--cream:#f6f1e7;--night:#08130f;--sand:#e9e1d0;--paper:#ffffff;--moss:#3f8f5f;--moss-deep:#2f6b47;--clay:#c2462e;
 --ink-80:rgba(16,35,28,.8);--ink-65:rgba(16,35,28,.65);--ink-50:rgba(16,35,28,.5);--ink-40:rgba(16,35,28,.4);
 --ink-10:rgba(16,35,28,.1);--ink-6:rgba(16,35,28,.06);--ink-3:rgba(16,35,28,.03);
 --line:rgba(16,35,28,.08);
 --lift:0 0 0 1px rgba(16,35,28,.06),0 1px 2px rgba(16,35,28,.05),0 12px 32px -16px rgba(16,35,28,.18);
---sans:${FONT.sans};--display:${FONT.display}}
+--sans:${FONT.brand};--display:${FONT.brand}}
 *{box-sizing:border-box;margin:0;padding:0}
 html{-webkit-text-size-adjust:100%}
 body{background:var(--cream);color:var(--ink);font-family:var(--sans);font-size:15px;
@@ -60,10 +62,10 @@ body{background:var(--cream);color:var(--ink);font-family:var(--sans);font-size:
  * sits in its own column and stays put while the details scroll beside it;
  * the grid places it there whatever its order in the markup.
  */
-.band{height:208px;background:var(--ink);position:relative;overflow:hidden}
+.band{height:208px;background:${BAND};position:relative;overflow:hidden}
 .band::after{content:"";position:absolute;inset:auto 0 0;height:1px;background:rgba(246,241,231,.08)}
 .shell{position:relative;max-width:560px;margin:-168px auto 0;padding:0 16px;display:grid;gap:14px}
-.card{background:var(--paper);border-radius:20px;box-shadow:var(--lift)}
+.card{background:var(--paper);border-radius:28px;box-shadow:var(--lift)}
 @media(min-width:920px){
   .band{height:248px}
   .shell{max-width:1060px;margin-top:-188px;padding:0 32px;grid-template-columns:minmax(0,1fr) 400px;gap:24px;align-items:start}
@@ -73,26 +75,26 @@ body{background:var(--cream);color:var(--ink);font-family:var(--sans);font-size:
 }
 .summary{padding:26px 26px 22px}
 .ident{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px}
-.brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:500;
 letter-spacing:-.03em;font-size:20px;min-width:0}
 .dot{width:22px;height:22px;border-radius:50%;background:var(--marigold);flex:none}
 .own-logo{display:block;max-height:44px;max-width:200px;width:auto;height:auto;object-fit:contain}
 /* A square logo with solid corners: rounded, not a circle (20 October 2026). */
 .own-logo.tile{border-radius:22%}
 .own-name{font-size:19px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.kind{font-size:13px;font-weight:600;color:var(--ink-50);letter-spacing:.01em;white-space:nowrap}
-.doctitle{margin-top:22px;font-size:15px;font-weight:600;color:var(--ink-80)}
+.kind{font-size:13px;font-weight:500;color:var(--ink-50);white-space:nowrap}
+.doctitle{margin-top:22px;font-size:15px;font-weight:500;color:var(--ink-80)}
 .eyebrow{margin-top:26px;font-size:13px;color:var(--ink-50)}
 .doctitle + .eyebrow{margin-top:6px}
-h1{font-family:var(--display);font-size:46px;font-weight:800;letter-spacing:-.045em;
+h1{font-family:var(--display);font-size:50px;font-weight:400;letter-spacing:-.05em;
 line-height:1.02;margin-top:6px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .from{margin-top:10px;font-size:15px;color:var(--ink-65)}
-.from b{color:var(--ink);font-weight:600}
+.from b{color:var(--ink);font-weight:500}
 .fx{margin-top:8px;font-size:13px;line-height:1.5;color:var(--ink-65);max-width:38ch}
-.fx b{color:var(--ink);font-weight:600}
+.fx b{color:var(--ink);font-weight:500}
 /* Status, as a small badge with a dot of its colour. */
 .pill{display:inline-flex;align-items:center;gap:7px;height:28px;margin-top:14px;padding:0 11px 0 10px;
-border-radius:999px;font-size:13px;font-weight:600;white-space:nowrap}
+border-radius:999px;font-size:13px;font-weight:500;white-space:nowrap}
 .pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
 .pill.due{background:rgba(245,184,46,.16);color:#8a5a00}
 .pill.paid{background:rgba(63,143,95,.13);color:var(--moss-deep)}
@@ -101,24 +103,24 @@ border-radius:999px;font-size:13px;font-weight:600;white-space:nowrap}
 .facts{margin-top:22px;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;gap:0 20px}
 .facts>div{padding-top:14px;min-width:0}
 .facts dt{font-size:12.5px;color:var(--ink-50)}
-.facts dd{margin-top:2px;font-size:14.5px;font-weight:600;overflow-wrap:anywhere}
+.facts dd{margin-top:2px;font-size:14.5px;font-weight:500;overflow-wrap:anywhere}
 /* The work, as a table in its own card. */
 .items{padding:6px 0 4px;overflow:hidden}
 .sect{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 26px 6px;
-font-size:13px;font-weight:600;color:var(--ink-50)}
+font-size:13px;font-weight:500;color:var(--ink-50)}
 table{width:100%;border-collapse:collapse}
-th{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;text-align:left;color:var(--ink-40);
+th{font-size:12.5px;font-weight:500;text-align:left;color:var(--ink-50);
 padding:10px 26px 10px;border-bottom:1px solid var(--line)}
 th.r,td.r{text-align:right}
 td{padding:15px 26px;border-bottom:1px solid var(--line);font-size:15px;vertical-align:top}
 tbody tr:last-child td{border-bottom:0}
-td.r{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.r{font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
 td .qty{display:block;font-size:13px;color:var(--ink-50);margin-top:2px;font-variant-numeric:tabular-nums}
 .totals{margin:0 26px;padding:14px 0 18px;border-top:1px solid var(--line)}
 .row{display:flex;justify-content:space-between;gap:16px;font-size:14.5px;color:var(--ink-65);
 padding:4px 0;font-variant-numeric:tabular-nums}
 .row.grand{margin-top:8px;padding-top:12px;border-top:1px solid var(--line);color:var(--ink);
-font-family:var(--display);font-size:20px;font-weight:700;letter-spacing:-.025em}
+font-family:var(--display);font-size:22px;font-weight:500;letter-spacing:-.03em}
 .row.paidoff{color:var(--moss)}
 .totals .row.grand:first-child{margin-top:0;padding-top:4px;border-top:0}
 .note{margin:0 26px 22px;padding:14px 16px;background:var(--cream);border-radius:14px;
@@ -129,17 +131,17 @@ font-size:14px;line-height:1.6;color:var(--ink-65);white-space:pre-wrap}
 padding:11px 0;border-bottom:1px solid var(--line);font-size:14.5px}
 .part:last-child{border-bottom:0}
 .part .who{color:var(--ink-65)}
-.part .amt{font-weight:600;font-variant-numeric:tabular-nums}
+.part .amt{font-weight:500;font-variant-numeric:tabular-nums}
 .part.done .who,.part.done .amt{color:var(--moss)}
 .part.phead{border-bottom:0;padding-bottom:0}
-.part.phead .who{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-40)}
+.part.phead .who{font-size:12.5px;font-weight:500;color:var(--ink-50)}
 .part .tag{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;
-background:var(--ink-6);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;
-color:var(--ink-65);font-weight:600;vertical-align:1px}
+background:var(--ink-6);font-size:11.5px;
+color:var(--ink-65);font-weight:500;vertical-align:1px}
 .part.done .tag{background:rgba(63,143,95,.12);color:var(--moss-deep)}
 .part .on{display:block;font-size:12.5px;color:var(--ink-50);margin-top:3px}
 /* The paying column. */
-.side{display:grid;gap:16px;align-content:start;background:var(--paper);border-radius:20px;box-shadow:var(--lift);padding:18px}
+.side{display:grid;gap:16px;align-content:start;background:var(--paper);border-radius:28px;box-shadow:var(--lift);padding:18px}
 /* Everything in the paying column shares its card, so nothing in it is
    framed twice and none of it ever sits on the band. */
 .side .paycard,.side .pay.own{box-shadow:none;padding:0;border-radius:0;background:none}
@@ -151,29 +153,28 @@ color:var(--ink-65);font-weight:600;vertical-align:1px}
 .side .tfine{margin:12px 2px 0}
 .pay{padding:0}
 .paycard{padding:22px}
-.teyebrow{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
-.pay.own{background:var(--paper);border-radius:20px;box-shadow:var(--lift);padding:22px}
+.teyebrow{font-size:13px;font-weight:500}
+.pay.own{background:var(--paper);border-radius:28px;box-shadow:var(--lift);padding:22px}
 .pay.own .teyebrow{color:var(--ink-50)}
-.pay.own .own-amt{margin-top:6px;font-family:var(--display);font-size:22px;font-weight:800;letter-spacing:-.03em}
+.pay.own .own-amt{margin-top:6px;font-family:var(--display);font-size:24px;font-weight:400;letter-spacing:-.04em}
 .pay.own .own-details{margin-top:12px;padding:14px 16px;border-radius:14px;background:var(--cream);
 font-size:15.5px;line-height:1.55;white-space:normal;overflow-wrap:anywhere;user-select:all}
 .pay.own .tsmall{text-align:left;margin:12px 0 0;max-width:none}
-/* The site's primary button: a marigold pill. */
+/* The site's primary button: the gold pill, as on balans.ng. */
 button.pay-btn,a.pay-btn,button.tcopy{display:flex;align-items:center;justify-content:center;gap:8px;
-width:100%;height:54px;padding:0 24px;border:0;border-radius:999px;background:var(--marigold);
-color:var(--ink);font:600 16px/1 var(--sans);cursor:pointer;text-decoration:none;
-box-shadow:inset 0 -2px 0 rgba(16,35,28,.12);
-transition:background-color .2s,transform .15s;-webkit-tap-highlight-color:transparent}
-button.pay-btn:hover,a.pay-btn:hover,button.tcopy:hover{background:var(--marigold-hi)}
+width:100%;height:54px;padding:0 24px;border:0;border-radius:999px;${GOLD};
+font:500 16px/1 var(--sans);cursor:pointer;text-decoration:none;
+transition:filter .2s,transform .15s;-webkit-tap-highlight-color:transparent}
+button.pay-btn:hover,a.pay-btn:hover,button.tcopy:hover{filter:brightness(1.05)}
 button.pay-btn:active,a.pay-btn:active,button.tcopy:active{transform:scale(.985)}
 button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 button.pay-btn:disabled{opacity:.5;cursor:default}
 .lock{width:14px;height:14px;flex:none;margin-top:2px}
 .secure{margin-top:12px;display:flex;align-items:flex-start;justify-content:center;gap:6px;
 font-size:13px;color:var(--ink-50);text-align:center}
-.banner{padding:18px 20px;border-radius:20px;font-size:14.5px;line-height:1.55;text-align:center;
+.banner{padding:18px 20px;border-radius:22px;font-size:14.5px;line-height:1.55;text-align:center;
 background:var(--paper);box-shadow:var(--lift);color:var(--ink-65)}
-.banner.paid{background:#eef7f1;color:var(--moss-deep);font-weight:600;box-shadow:0 0 0 1px rgba(63,143,95,.18)}
+.banner.paid{background:#eef7f1;color:var(--moss-deep);font-weight:500;box-shadow:0 0 0 1px rgba(63,143,95,.18)}
 .banner.paid::before{content:"";display:block;width:34px;height:34px;margin:2px auto 10px;border-radius:50%;
 background:var(--moss) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5 10 17.5 19 7.5'/%3E%3C/svg%3E") center/18px no-repeat}
 .banner.cancelled{color:var(--ink-65)}
@@ -190,10 +191,10 @@ font-size:11.5px;font-weight:500;color:var(--ink-65);white-space:nowrap}
 .badge img{height:12px;width:auto;display:block}
 .badge svg.psmark{width:12px;height:12px;margin-right:-3px}
 .tsmall{margin:10px auto 0;max-width:420px;font-size:12.5px;line-height:1.6;color:var(--ink-50)}
-.tsmall b{color:var(--ink-65);font-weight:600}
+.tsmall b{color:var(--ink-65);font-weight:500}
 .files{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
 .files a{display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 16px 0 14px;border-radius:999px;
-font-size:13.5px;font-weight:600;color:var(--ink);text-decoration:none;background:var(--paper);
+font-size:13.5px;font-weight:500;color:var(--ink);text-decoration:none;background:var(--paper);
 box-shadow:inset 0 0 0 1px var(--ink-10);transition:box-shadow .2s}
 .files a:hover{box-shadow:inset 0 0 0 1px var(--ink-40)}
 .files svg{width:15px;height:15px;flex:none}
@@ -201,7 +202,7 @@ box-shadow:inset 0 0 0 1px var(--ink-10);transition:box-shadow .2s}
 margin:28px auto 0;padding:0 16px;font-size:12.5px;line-height:1.5;color:var(--ink-50);text-align:center}
 .foot a{color:inherit;text-underline-offset:3px}
 .foot svg{width:16px;height:16px;flex:none}
-.foot b{color:var(--ink-65);font-weight:600}
+.foot b{color:var(--ink-65);font-weight:500}
 /* The step before a card is charged in naira for a foreign price. Opened by
    :target, so it needs no JavaScript. */
 .modal{display:none;position:fixed;inset:0;z-index:10;background:rgba(16,35,28,.5);
@@ -211,38 +212,38 @@ align-items:flex-end;justify-content:center;padding:12px}
 .modal:target .msheet{animation:rise .32s cubic-bezier(.16,1,.3,1)}
 @keyframes fade{from{opacity:0}}
 @keyframes rise{from{transform:translateY(24px);opacity:0}}
-.msheet{width:100%;max-width:440px;background:var(--paper);border-radius:24px;padding:26px 22px 18px;
+.msheet{width:100%;max-width:440px;background:var(--paper);border-radius:28px;padding:26px 22px 18px;
 box-shadow:0 24px 64px rgba(16,35,28,.3)}
-.mfield{display:block;margin:0 0 14px;font-size:13px;font-weight:600;color:var(--ink-65)}
+.mfield{display:block;margin:0 0 14px;font-size:13px;font-weight:500;color:var(--ink-65)}
 .mfield input{display:block;width:100%;margin-top:6px;height:48px;padding:0 14px;border-radius:14px;
 border:1px solid var(--ink-10);background:#fff;font:400 16px/1 var(--sans);color:var(--ink)}
 .mfield input:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px rgba(16,35,28,.08)}
 @media (min-width:600px){.modal{align-items:center}}
-.msheet h2{margin:0;font:700 22px/1.2 var(--display);letter-spacing:-.02em}
+.msheet h2{margin:0;font:400 26px/1.15 var(--display);letter-spacing:-.04em}
 .msheet p{margin:10px 0 0;font-size:14.5px;line-height:1.55;color:var(--ink-65)}
-.msheet p b{color:var(--ink);font-weight:600}
+.msheet p b{color:var(--ink);font-weight:500}
 .mrows{margin:18px 0 20px;padding:12px 16px;border-radius:16px;background:var(--cream)}
 .mrows .row{padding:5px 0}
 .mrows .row b{color:var(--ink);font-variant-numeric:tabular-nums}
-.mclose{display:block;margin-top:10px;padding:12px;text-align:center;font-size:14px;font-weight:600;
+.mclose{display:block;margin-top:10px;padding:12px;text-align:center;font-size:14px;font-weight:500;
 color:var(--ink-65);text-decoration:none}
-/* The transfer panel, on ink: the one thing here that is an action. */
-.tcard{background:var(--ink);color:var(--cream);border-radius:20px;padding:22px 18px 18px;text-align:center;
+/* The transfer panel, on night green: the one thing here that is an action. */
+.tcard{background:var(--night);color:var(--cream);border-radius:24px;padding:22px 18px 18px;text-align:center;
 box-shadow:0 18px 40px -20px rgba(16,35,28,.6)}
 .tcard .teyebrow{color:rgba(246,241,231,.55)}
-.tamt{font-family:var(--display);font-size:17px;font-weight:700;letter-spacing:-.02em;
+.tamt{font-family:var(--display);font-size:18px;font-weight:500;letter-spacing:-.02em;
 font-variant-numeric:tabular-nums}
-.tbox{margin-top:14px;background:var(--ink-2);border-radius:14px;overflow:hidden;text-align:left;
+.tbox{margin-top:14px;background:var(--ink);border-radius:16px;overflow:hidden;text-align:left;
 box-shadow:inset 0 0 0 1px rgba(246,241,231,.06)}
 .trow{display:flex;align-items:center;justify-content:space-between;gap:14px;
 padding:13px 16px;border-top:1px solid rgba(246,241,231,.07)}
 .trow:first-child{border-top:0}
 .trow.wide{display:block}
 .tk{color:rgba(246,241,231,.5);font-size:13px;flex:none}
-.tv{font-weight:600;text-align:right;color:var(--cream);min-width:0;font-size:14.5px}
+.tv{font-weight:500;text-align:right;color:var(--cream);min-width:0;font-size:14.5px}
 .trow.wide .tv{text-align:left;margin-top:5px}
 .tv .acct{font-family:var(--display);font-variant-numeric:tabular-nums;letter-spacing:.03em;
-font-size:20px;font-weight:700;line-height:1.2}
+font-size:21px;font-weight:500;line-height:1.2}
 button.tcopy{height:52px;margin-top:14px}
 button.icopy{flex:none;display:grid;place-items:center;width:34px;height:34px;margin:-6px -6px -6px 0;
 border:0;border-radius:10px;background:transparent;color:rgba(246,241,231,.55);cursor:pointer;
@@ -258,7 +259,7 @@ button.icopy.done .i-yes{display:block}
 .trow .tv{display:flex;align-items:center;justify-content:flex-end;gap:8px}
 button.tcopy.done{background:var(--moss);color:var(--cream)}
 .tfine{margin:14px 6px 0;font-size:13px;line-height:1.6;color:var(--ink-65);text-align:center}
-.tfine strong{color:var(--ink);font-weight:600}
+.tfine strong{color:var(--ink);font-weight:500}
 .twait{margin-top:16px;font-size:13px;color:rgba(246,241,231,.6);text-align:center;line-height:1.7}
 .twait .dot{display:inline-block;vertical-align:baseline;width:7px;height:7px;
 border-radius:50%;background:var(--marigold);margin-right:8px;animation:pulse 1.8s ease-in-out infinite}
@@ -268,8 +269,8 @@ border-radius:50%;background:var(--marigold);margin-right:8px;animation:pulse 1.
 .tussd{margin-top:12px;text-align:center;font-size:13.5px;color:var(--ink-65)}
 /* The page for when there is nothing to show: one card, centred. */
 .sheet{max-width:520px;margin:-120px auto 0;padding:0 16px;position:relative}
-.sheet .top{background:var(--paper);border-radius:20px;box-shadow:var(--lift);padding:28px}
-.sheet h1{font-size:36px}
+.sheet .top{background:var(--paper);border-radius:28px;box-shadow:var(--lift);padding:28px}
+.sheet h1{font-size:38px}
 @media(max-width:520px){
   .band{height:184px}
   .shell{margin-top:-150px;padding:0 10px;gap:12px}
@@ -588,7 +589,10 @@ export function renderDocument(...args: Parameters<typeof renderDocumentPage>): 
         "</head>",
         `<style>.band{background:${k.c}}body{background:${k.page}}` +
           `.tcard{background:${k.night}}.tbox{background:${k.night2}}` +
-          `.note,.side .banner:not(.paid),.side .trybalans,.mrows,.pay.own .own-details{background:${k.page}}</style></head>`,
+          `.note,.side .banner:not(.paid),.side .trybalans,.mrows,.pay.own .own-details{background:${k.page}}` +
+          // The gold pill is a gradient from a lighter gold, which the swap
+          // below would turn into gold-into-their-colour. Theirs, flat.
+          `button.pay-btn,a.pay-btn,button.tcopy{background:${k.c};box-shadow:none}</style></head>`,
       )
     : html;
   return applyBrand(band, doc.brandColor);
@@ -1084,18 +1088,18 @@ export function renderProPlans(o: {
 <title>Balans Pro</title><meta name="robots" content="noindex,nofollow">
 <style>${CSS}
 .plans{display:grid;gap:12px;margin-top:22px}
-.plan{display:block;text-decoration:none;color:var(--ink);background:#fff;border:1.5px solid var(--ink-10);border-radius:18px;padding:18px 18px 16px}
+.plan{display:block;text-decoration:none;color:var(--ink);background:#fff;border:1.5px solid var(--ink-10);border-radius:22px;padding:18px 18px 16px}
 .plan:active{transform:scale(.99)}
 .plan.best{border-color:var(--ink);box-shadow:0 0 0 3px rgba(245,184,46,.35)}
 .plan .row1{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.plan .name{font-weight:700;font-size:16px}
-.plan .badge{background:var(--marigold);color:var(--ink);font-size:12px;font-weight:800;border-radius:999px;padding:4px 10px;white-space:nowrap}
-.plan .price{display:block;margin-top:8px;font-size:30px;font-weight:800;letter-spacing:-.02em}
-.plan .price small{font-size:14px;font-weight:600;color:var(--ink-50);margin-left:2px}
+.plan .name{font-weight:500;font-size:16px}
+.plan .badge{background:var(--marigold);color:var(--ink);font-size:12px;font-weight:500;border-radius:999px;padding:4px 10px;white-space:nowrap}
+.plan .price{display:block;margin-top:8px;font-size:34px;font-weight:400;letter-spacing:-.045em}
+.plan .price small{font-size:14px;font-weight:400;letter-spacing:0;color:var(--ink-50);margin-left:2px}
 .plan .sub{display:block;margin-top:2px;font-size:13px;color:var(--ink-65)}
 .plan .until{display:block;margin-top:10px;font-size:14px;color:var(--ink-80)}
-.plan .go{display:block;margin-top:14px;text-align:center;font-weight:700;border-radius:12px;padding:12px;background:var(--ink-6)}
-.plan.best .go{background:var(--marigold)}
+.plan .go{display:block;margin-top:14px;text-align:center;font-weight:500;border-radius:999px;padding:13px;background:var(--ink-6)}
+.plan.best .go{${GOLD}}
 .note{margin-top:14px;font-size:13px;color:var(--ink-65)}
 </style></head><body>
 <div class="band" aria-hidden="true"></div>

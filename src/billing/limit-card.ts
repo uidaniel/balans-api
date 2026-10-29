@@ -18,8 +18,7 @@
 
 import type { FastifyBaseLogger } from "fastify";
 
-import { formatNaira } from "../../core/totals.ts";
-import { markSvg } from "../brand/logo.ts";
+import { artUri, naira } from "../brand/cards.ts";
 import { defaults } from "../config.ts";
 import { db } from "../db/pool.ts";
 import { documentSheetHtml } from "../documents/pdf.ts";
@@ -57,37 +56,47 @@ async function lastTrialDocument(userId: string): Promise<string | null> {
 }
 
 export function limitCardHtml(sheetPng: Buffer, allowance: number): string {
-  const perMonth = formatNaira(Math.round(defaults.plans.pro.yearPriceKobo / 12));
+  const { priceKobo, yearPriceKobo } = defaults.plans.pro;
   const n = WORDS[allowance] ?? String(allowance);
+  // The art of the stock limit card (brand/cards.ts) at half size: night
+  // green, the open padlock, gold satin rising at the foot. 2160 × 2700 is
+  // exactly twice this card.
   return `<!doctype html><html><head><meta charset="utf-8"><style>
-${fontFaces(["sans", "display"])}
+${fontFaces(["brand"])}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:${LIMIT_W}px;height:${LIMIT_H}px}
-body{background:#10231c;color:#f6f1e7;font-family:${FONT.sans};position:relative;overflow:hidden;-webkit-font-smoothing:antialiased}
-.orb{position:absolute;width:760px;height:760px;border-radius:50%;background:#28331f;right:-300px;bottom:-260px}
-.mark{position:absolute;left:80px;top:84px}
-.pill{position:absolute;right:80px;top:80px;height:52px;padding:0 26px;border-radius:999px;background:#f5b82e;color:#10231c;
-font-family:${FONT.display};font-weight:700;font-size:24px;letter-spacing:-.02em;display:flex;align-items:center}
-h1{position:absolute;left:78px;top:188px;font-family:${FONT.display};font-weight:800;font-size:96px;line-height:.9;letter-spacing:-.05em}
-.sub{position:absolute;left:80px;top:410px;width:880px;font-size:32px;line-height:1.35;color:rgba(246,241,231,.66)}
-.sheet{position:absolute;left:140px;top:560px;width:800px;transform:rotate(-3deg);transform-origin:top left;border-radius:18px;
-overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.45);background:#fff}
-.sheet img{display:block;width:800px;height:auto}
-.foot{position:absolute;left:0;right:0;bottom:0;height:250px;background:linear-gradient(180deg,rgba(16,35,28,0),#10231c 42%)}
-.price{position:absolute;left:78px;bottom:78px;font-family:${FONT.display};font-weight:800;font-size:78px;letter-spacing:-.05em;
-display:flex;align-items:baseline;gap:14px;line-height:1}
-.price span{font-size:30px;font-weight:700;letter-spacing:-.01em;color:rgba(246,241,231,.66)}
-.big{position:absolute;right:80px;bottom:72px}
+body{background:#08130f;color:#f6f1e7;font-family:${FONT.brand};position:relative;overflow:hidden;-webkit-font-smoothing:antialiased}
+.art{position:absolute;left:0;top:0;width:${LIMIT_W}px;display:block}
+.logo{position:absolute;left:75px;top:75px;height:66px}
+.pill{position:absolute;right:75px;top:79px;height:58px;padding:0 28px;border-radius:999px;background:#10231c;color:#f6f1e7;
+box-shadow:inset 0 0 0 1.5px rgb(246 241 231/.14);font-weight:500;font-size:24px;display:flex;align-items:center}
+h1{position:absolute;left:72px;top:200px;font-weight:400;font-size:92px;line-height:.98;letter-spacing:-.05em}
+h1 span{display:block}h1 .m{color:rgb(246 241 231/.48)}
+.sub{position:absolute;left:75px;top:410px;width:620px;font-size:30px;line-height:1.36;color:rgb(246 241 231/.66)}
+.sheet{position:absolute;left:200px;top:650px;width:660px;transform:rotate(-3deg);transform-origin:top left;border-radius:18px;
+overflow:hidden;box-shadow:0 40px 90px rgba(0,0,0,.55);background:#fff}
+.sheet img{display:block;width:660px;height:auto}
+.price{position:absolute;left:75px;right:75px;bottom:75px;height:250px;border-radius:40px;background:rgb(8 19 15/.88);
+backdrop-filter:blur(40px) saturate(130%);box-shadow:inset 0 2px 0 rgb(255 240 200/.16),inset 0 0 0 1.5px rgb(246 241 231/.14);
+display:flex;align-items:center;justify-content:space-between;padding:0 44px}
+.amount{font-size:112px;line-height:1;letter-spacing:-.055em}
+.per{font-size:26px;color:rgb(246 241 231/.66);margin-top:10px}
+.cta{height:66px;padding:0 34px;border-radius:999px;display:flex;align-items:center;font-weight:500;font-size:26px;color:#10231c;
+background:linear-gradient(180deg,#ffd877,#f5b82e);box-shadow:inset 0 2px 0 rgb(255 250 230/.6)}
+.ngn{position:relative;display:inline-block;line-height:1}
+.ngn::before,.ngn::after{content:"";position:absolute;left:-.06em;right:-.06em;height:.065em;background:currentColor;top:.36em}
+.ngn::after{top:.52em}
 </style></head><body>
-<div class="orb"></div>
-<div class="mark">${markSvg("44px")}</div>
+<img class="art" src="${artUri("limit.jpg")}" alt="">
+<img class="logo" src="${artUri("logo-dark.svg")}" alt="Balans">
 <div class="pill">Balans Pro</div>
-<h1>This is yours.<br>Keep sending it.</h1>
+<h1><span>This is yours.</span><span class="m">Keep sending it.</span></h1>
 <p class="sub">Your ${n} free documents are used. Pro keeps your logo, colour and design on every invoice.</p>
 <div class="sheet"><img src="data:image/png;base64,${sheetPng.toString("base64")}" alt=""></div>
-<div class="foot"></div>
-<p class="price">${perMonth}<span>/ month, yearly</span></p>
-<div class="big">${markSvg("120px")}</div>
+<div class="price">
+  <div><p class="amount">${naira(priceKobo)}</p><p class="per">a month, or ${naira(yearPriceKobo)} a year</p></div>
+  <div class="cta">Reply UPGRADE</div>
+</div>
 </body></html>`;
 }
 

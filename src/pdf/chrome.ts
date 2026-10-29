@@ -543,7 +543,15 @@ export async function renderPng(
    * A document sheet rather than a card: laid out as it prints, and fitted
    * the way `renderPdf` fits it, so the picture is the PDF's first page.
    */
-  opts: { sheet?: boolean } = {},
+  opts: {
+    sheet?: boolean;
+    /**
+     * JPEG for a card painted over a photograph: the brand cards since 29
+     * October 2026 are lit 3D renders with grain, which is 6MB as a PNG and
+     * about half a megabyte as a JPEG. WhatsApp takes 5MB at most.
+     */
+    jpeg?: boolean;
+  } = {},
 ): Promise<Buffer> {
   return onTab(async (t) => {
     // A tab that last printed a PDF was measuring in print media; a card is a screen.
@@ -559,7 +567,7 @@ export async function renderPng(
     await settled(t);
     if (opts.sheet) await fitSheets(t);
     const res = await t.send("Page.captureScreenshot", {
-      format: "png",
+      ...(opts.jpeg ? { format: "jpeg", quality: 88 } : { format: "png" }),
       clip: { x: 0, y: 0, width, height, scale: 1 },
       captureBeyondViewport: true,
     });

@@ -96,13 +96,14 @@ describe("the card for a month", () => {
      * and something did.
      */
     const html = periodHtml(month() as never);
-    assert.match(html, /class="big">₦1,953,275/);
+    // ₦ is drawn as an N with two bars: Onest has no naira sign.
+    assert.match(html, /class="big"><span class="ngn">N<\/span>1,953,275/);
     assert.match(html, /Waiting to be paid/);
   });
 
   it("leads with what landed once something has", () => {
     const html = periodHtml(month({ paidKobo: 800_000_00 }) as never);
-    assert.match(html, /class="big">₦800,000/);
+    assert.match(html, /class="big"><span class="ngn">N<\/span>800,000/);
     assert.match(html, /Paid to you/);
   });
 

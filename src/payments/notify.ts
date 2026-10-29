@@ -155,7 +155,7 @@ export async function notifyPaid(n: PaidNotice, log: FastifyBaseLogger): Promise
     n.provider === "paystack"
       ? undefined
       : `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/brand/${
-          settlesTonight(at) ? "paid-tonight.png" : "paid-tomorrow.png"
+          settlesTonight(at) ? "paid-tonight.jpg" : "paid-tomorrow.jpg"
         }`;
 
   const outcome = await send(

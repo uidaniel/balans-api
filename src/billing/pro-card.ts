@@ -1,130 +1,24 @@
 /**
  * The Pro membership card, with the month they actually joined on it.
  *
- * The artwork reads "MEMBER SINCE SEP 2026", painted on. Everybody who
- * subscribes after September would get a card with the wrong month, and no
- * amount of code could fix a PNG.
- *
- * So the month is drawn over it. The design is the designed file — nothing is
- * recreated in CSS, because a hand-built copy would not match the type and
- * would drift from the artwork every time either changed. The only thing this
- * adds is a patch in the card's own colour over the old line, and the real
- * month in its place, rotated to sit on the card.
+ * The card is drawn in brand/cards.ts: a brushed gold card made in Google
+ * Flow, with the coin, "PRO" and "Member since <month>" engraved into it on
+ * the card's own plane. Until 29 October 2026 the month was painted into a
+ * PNG and patched over in the card's yellow; now it is simply part of the
+ * drawing, so there is nothing to cover.
  *
  * Rendered through the same browser as the invoices, cached by month, and
  * served from the brand route. Twelve possible images a year, each built once.
  */
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { CARD_W, SQUARE, proCardHtml as draw } from "../brand/cards.ts";
 import { renderPng, rendererAvailable } from "../pdf/chrome.ts";
 
-const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../assets/brand");
-
-/** The artwork, read once. */
-let artwork: string | null = null;
-const base = (): string => {
-  artwork ??= readFileSync(path.join(DIR, "pro.png")).toString("base64");
-  return artwork;
-};
-
 /** The card is square, and this is its real size. */
-export const SIZE = 2160;
-
-// prettier-ignore
-const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
-                "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"] as const;
-
-/**
- * Where the line sits on the card, measured from the artwork.
- *
- * The card is tilted, so the patch and the text are tilted with it. These are
- * fractions of the image rather than pixels, so the numbers still mean
- * something if the artwork is ever exported at another size.
- */
-export const LINE = {
-  /**
-   * The card's tilt, in degrees.
-   *
-   * Measured off the artwork rather than guessed: the line runs from about
-   * (490, 1095) to (1090, 1045) in the 2160px file, which is 4.8 degrees
-   * anticlockwise. Guessing put it three degrees out and the patch landed on
-   * the word PRO.
-   */
-  tilt: -4.8,
-  /**
-   * Top-left of the patch, as a fraction of the whole image.
-   *
-   * The gap between the two lines is narrow and the patch has to live in it.
-   * Reading the ink column by column: PRO bottoms out at y=1065, and the
-   * date line starts at y=1113 at its left end. A patch starting at 1055 —
-   * which is what this was — began ten pixels above PRO's baseline and shaved
-   * the bottom off the letters.
-   *
-   * 1098 sits between the two with room either side, and the height covers
-   * the date's full band (down to y=1138 at the left) without reaching back
-   * up into PRO once the rotation lifts the right-hand end.
-   */
-  x: 475 / 2160,
-  y: 1098 / 2160,
-  w: 660 / 2160,
-  h: 55 / 2160,
-  /** Type size, from a measured cap height of 27px. */
-  size: 39 / 2160,
-};
-
-/**
- * The card's own yellow.
- *
- * Sampled from the artwork, not taken from the brand sheet and hoped for:
- * every pixel around the line reads #F5B82E exactly, so a patch in it is
- * invisible. A near miss would show as a rectangle.
- */
-const CARD = "#F5B82E";
-const INK = "#10231C";
+export const SIZE = SQUARE;
 
 export function proCardHtml(month: number, year: number): string {
-  const label = `MEMBER SINCE ${MONTHS[month - 1]} ${year}`;
-  const pc = (n: number) => `${n * 100}%`;
-
-  return `<!doctype html>
-<html><head><meta charset="utf-8"><style>
-  * { margin: 0; padding: 0; box-sizing: border-box }
-  html, body { width: ${SIZE}px; height: ${SIZE}px; overflow: hidden }
-  body {
-    background: url(data:image/png;base64,${base()}) center/cover no-repeat;
-    position: relative;
-    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
-  }
-  /* The old line, covered in the card's own colour. */
-  .patch {
-    position: absolute;
-    left: ${pc(LINE.x)}; top: ${pc(LINE.y)};
-    width: ${pc(LINE.w)}; height: ${pc(LINE.h)};
-    background: ${CARD};
-    transform: rotate(${LINE.tilt}deg);
-    transform-origin: left top;
-  }
-  /* The real one, on the same plane. */
-  .since {
-    position: absolute;
-    left: ${pc(LINE.x)}; top: ${pc(LINE.y)};
-    height: ${pc(LINE.h)};
-    display: flex; align-items: center;
-    transform: rotate(${LINE.tilt}deg);
-    transform-origin: left top;
-    color: ${INK};
-    font-size: ${SIZE * LINE.size}px;
-    font-weight: 700;
-    letter-spacing: 0.10em;
-    white-space: nowrap;
-  }
-</style></head>
-<body>
-  <div class="patch"></div>
-  <div class="since">${label}</div>
-</body></html>`;
+  return draw(month, year);
 }
 
 /**
@@ -142,7 +36,7 @@ export async function proCard(month: number, year: number): Promise<Buffer | nul
   const had = cache.get(key);
   if (had) return had;
 
-  const png = await renderPng(proCardHtml(month, year), SIZE, SIZE);
-  cache.set(key, png);
-  return png;
+  const jpg = await renderPng(proCardHtml(month, year), CARD_W, SIZE, { jpeg: true });
+  cache.set(key, jpg);
+  return jpg;
 }

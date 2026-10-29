@@ -30,7 +30,6 @@ import { NAIRA_YEAR_PRICE } from "./price.ts";
 import { LIMIT_CARD, UPGRADE_CARD, PRO_CARD } from "../conversation/machine.ts";
 import { defaults } from "../config.ts";
 import { availableTo } from "../pdf/templates.ts";
-import { proCardHtml } from "./pro-cards.ts";
 
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 const limit = defaults.plans.free.trialDocuments;

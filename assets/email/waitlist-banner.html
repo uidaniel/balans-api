@@ -1,57 +1,62 @@
 <!doctype html>
 <!--
   The banner at the top of the waitlist confirmation (sent by the site,
-  balans/src/lib/email.ts), as it was drawn.
+  balans/src/lib/email.ts, from balans/public/email/waitlist-banner.png).
 
-  waitlist-banner.png is this page captured at 560x224 with a device scale of
-  2 and a transparent background. Keep this file beside it: the picture is
-  the only thing the email sends, but this is the only thing that can be
-  edited when the copy changes.
+  Authored at 1120x448, twice the 560x224 the email shows it at, and
+  captured on an opaque background with square corners: layout() rounds the
+  <img>, and Outlook, which ignores that, shows square corners on a dark
+  picture rather than a light halo around a rounded one.
 
-  The corners are rounded in the image rather than by CSS in the email,
-  because Outlook ignores border-radius on an <img> and draws square corners
-  over the card behind it.
+  Rebranded on 29 October 2026 with the cards the bot sends in WhatsApp:
+  night green, the gold 3D render from that card's art (assets/brand/art),
+  and Onest in two tones. Keep this file beside the PNG: the picture is the
+  only thing the email sends, but this is the only thing that can be edited
+  when the copy changes.
+
+  The frosted key with the gold slash is the cheatsheet card's
+  (assets/brand/art/cheatsheet.jpg): what they will be typing.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <style>
-@font-face{font-family:"Wix Madefor Display";font-weight:800;src:url("../fonts/WixMadeforDisplay-ExtraBold.ttf")}
-@font-face{font-family:"Wix Madefor Display";font-weight:400;src:url("../fonts/WixMadeforDisplay-Regular.ttf")}
-@font-face{font-family:"Wix Madefor Display";font-weight:600;src:url("../fonts/WixMadeforDisplay-SemiBold.ttf")}
+@font-face{font-family:Onest;font-weight:400;src:url("../fonts/Onest-400.ttf")}
+@font-face{font-family:Onest;font-weight:500;src:url("../fonts/Onest-500.ttf")}
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:560px;height:224px;background:transparent}
-.banner{position:relative;width:560px;height:224px;overflow:hidden;border-radius:16px;
-  background:#F5B82E;color:#10231C;font-family:"Wix Madefor Display",sans-serif}
-.halo{position:absolute;right:-70px;bottom:-120px;width:300px;height:300px;border-radius:50%;
-  background:#E3A92A}
-.coin{position:absolute;right:34px;bottom:30px;width:104px;height:104px}
-.copy{position:absolute;left:32px;top:30px}
-h1{font-family:"Wix Madefor Display",sans-serif;font-weight:800;font-size:38px;line-height:.98;
-  letter-spacing:-.045em}
-.chat{margin-top:22px;display:inline-flex;align-items:center;gap:10px;
-  padding:10px 14px 10px 14px;border-radius:14px 14px 14px 4px;background:#FFFDF8;
-  box-shadow:0 1px 0 rgba(16,35,28,.12)}
-.chat p{font-size:14.5px;font-weight:600;letter-spacing:-.005em}
-.chat span{font-size:11px;color:rgba(16,35,28,.45);white-space:nowrap}
+html,body{width:1120px;height:448px}
+.banner{position:relative;width:1120px;height:448px;overflow:hidden;background:#08130f;color:#F6F1E7;
+  font-family:Onest,sans-serif;-webkit-font-smoothing:antialiased}
+.art{position:absolute;display:block}
+/* Dark under the words, so they never sit on the light. */
+.shade{position:absolute;inset:0;background:linear-gradient(90deg,#08130f 34%,rgb(8 19 15/.6) 52%,transparent 70%)}
+.copy{position:absolute;left:64px;top:70px}
+.tag{display:inline-flex;align-items:center;gap:12px;height:52px;padding:0 24px 0 20px;border-radius:999px;
+  background:linear-gradient(180deg,#ffd877,#f5b82e);color:#10231c;font-size:23px;font-weight:500}
+.tag svg{width:22px;height:22px}
+h1{font-weight:400;font-size:78px;line-height:1;letter-spacing:-.05em}
+.tag + h1{margin-top:34px}
+h1 span{display:block}
+h1 .m{color:rgba(246,241,231,.48)}
+.sub{margin-top:26px;font-size:25px;color:rgba(246,241,231,.66)}
+/* A message as it is typed, on frosted glass. */
+.chat{display:inline-flex;align-items:baseline;gap:18px;margin-top:34px;padding:18px 24px;border-radius:26px 26px 26px 8px;
+  background:rgba(246,241,231,.09);box-shadow:inset 0 2px 0 rgba(255,255,255,.08),inset 0 0 0 2px rgba(246,241,231,.14)}
+.chat p{font-size:25px}
+.chat span{font-size:17px;color:rgba(246,241,231,.5);white-space:nowrap}
+.chips{display:flex;gap:12px;margin-top:30px}
+.chips span{height:46px;padding:0 22px;border-radius:999px;display:flex;align-items:center;font-size:21px;
+  background:rgba(246,241,231,.09);box-shadow:inset 0 0 0 2px rgba(246,241,231,.14)}
+.art{left:-60px;top:-20px;width:1180px}
 </style>
 </head>
 <body>
 <div class="banner">
-  <div class="halo"></div>
-  <svg class="coin" viewBox="0 0 120 120" aria-hidden="true">
-    <circle cx="60" cy="60" r="60" fill="#10231C"/>
-    <rect x="38" y="18" width="15" height="82" rx="3" fill="#F5B82E"/>
-    <circle cx="68" cy="74" r="19" fill="none" stroke="#F5B82E" stroke-width="14"/>
-    <rect x="25" y="25" width="41" height="8" rx="2" fill="#F5B82E"/>
-    <rect x="25" y="38" width="41" height="8" rx="2" fill="#F5B82E"/>
-  </svg>
+  <img class="art" src="../brand/art/cheatsheet.jpg" alt="">
+  <div class="shade"></div>
   <div class="copy">
-    <h1>You're on the list.<br>We'll WhatsApp you.</h1>
-    <div class="chat">
-      <p>Invoice Tunde 150k, due Friday</p>
-      <span>09:41 ✓✓</span>
-    </div>
+    <h1><span>You&rsquo;re on the list.</span><span class="m">We&rsquo;ll WhatsApp you.</span></h1>
+    <div class="chat"><p>Invoice Tunde 150k, due Friday</p><span>09:41 &#10003;&#10003;</span></div>
   </div>
 </div>
 </body>

@@ -118,7 +118,7 @@ describe("what the receipt says", () => {
       // The card used to set the bare $150 there: two different amounts
       // presented as the same one.
       assert.match(html, /\$161\.25/);
-      assert.match(html, /₦213,958\.33/);
+      assert.match(html, /<span class="ngn">N<\/span>213,958\.33/);
       assert.ok(!html.includes("$150.00"), "the price before VAT, beside a total with it");
     });
 
@@ -228,10 +228,11 @@ describe("what the receipt says", () => {
      * made the PDFs stop looking like balans.ng.
      */
     const html = receiptHtml(draft({}), "free", today);
+    // Onest since 29 October 2026, as on balans.ng and every other card.
     assert.match(html, /@font-face/);
-    assert.match(html, /font-family:"Wix Madefor Display"/);
+    assert.match(html, /font-family:"Onest"/);
     assert.match(html, /data:font\/ttf;base64,/);
-    assert.match(html, /font-family:"Wix Madefor Display","DejaVu Sans"/, "Wix Madefor leads the stack");
+    assert.match(html, /font-family:"Onest","DejaVu Sans"/, "Onest leads the stack");
   });
 
   it("has a text weight to be set in, not just headline weights", () => {

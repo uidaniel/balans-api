@@ -14,7 +14,8 @@
 import { liveSettingsPath } from "../../settings/page-token.ts";
 import type { FastifyInstance } from "fastify";
 import { env } from "../../config.ts";
-import { logoAvailable, logoSvg, markSvg } from "../../brand/logo.ts";
+import { BAND, GOLD, darkLogo, lightLogo } from "../../brand/web.ts";
+import { FONT } from "../../pdf/fonts.ts";
 import {
   clearSignature,
   MAX_SIGNATURE_BYTES,
@@ -48,24 +49,23 @@ const CSS = `
 :root{--ink:#10231C;--cream:#F6F1E7;--paper:#FFFFFF;--gold:#F5B82E;--line:rgba(16,35,28,.12);--faint:rgba(16,35,28,.55);
 --lift:0 0 0 1px rgba(16,35,28,.06),0 1px 2px rgba(16,35,28,.05),0 14px 34px -18px rgba(16,35,28,.25)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--cream);color:var(--ink);font-family:"Wix Madefor Display",system-ui,sans-serif;
+body{background:var(--cream);color:var(--ink);font-family:${FONT.brand};
   -webkit-font-smoothing:antialiased;min-height:100dvh;padding:0 0 48px}
 /* The head on ink, the card rising out of it: the same shape as the pay
    page, the designs and the settings this is opened from. */
-.top{background:var(--ink);color:var(--cream);padding:22px 18px 92px}
+.top{background:${BAND};color:var(--cream);padding:22px 18px 92px}
 .top .in,.wrap{max-width:560px;margin:0 auto}
 .back{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px 0 10px;border-radius:999px;margin-bottom:20px;
-background:rgba(246,241,231,.08);color:var(--cream);font-weight:600;font-size:13.5px;text-decoration:none}
+background:rgba(246,241,231,.08);box-shadow:inset 0 0 0 1px rgba(246,241,231,.12);color:var(--cream);font-weight:500;font-size:13.5px;text-decoration:none}
 .back svg{width:15px;height:15px}
-.brand{display:flex;align-items:center;gap:8px;font-family:"Wix Madefor Display",sans-serif;font-weight:700;letter-spacing:-.02em;color:var(--cream)}
-.brand svg{width:22px;height:22px}
-h1{margin-top:22px;font-family:"Wix Madefor Display",sans-serif;font-weight:800;font-size:32px;line-height:1.05;letter-spacing:-.04em}
+.brand{display:flex}
+h1{margin-top:24px;font-family:${FONT.brand};font-weight:400;font-size:34px;line-height:1.05;letter-spacing:-.045em}
 .lead{margin-top:10px;font-size:15.5px;line-height:1.55;color:rgba(246,241,231,.66);max-width:44ch}
 .wrap{padding:0 14px;margin-top:-70px;position:relative}
-.card{background:var(--paper);border-radius:24px;padding:18px;box-shadow:var(--lift)}
+.card{background:var(--paper);border-radius:28px;padding:18px;box-shadow:var(--lift)}
 .card+.card{margin-top:12px}
 .tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:999px;background:rgba(16,35,28,.06)}
-.tabs button{height:42px;border:0;border-radius:999px;background:transparent;font:inherit;font-weight:600;font-size:15px;color:var(--faint);
+.tabs button{height:42px;border:0;border-radius:999px;background:transparent;font:inherit;font-weight:500;font-size:15px;color:var(--faint);
   cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:background-color .2s,color .2s}
 .tabs button svg{width:17px;height:17px}
 .tabs button[aria-selected=true]{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(16,35,28,.12)}
@@ -76,12 +76,12 @@ h1{margin-top:22px;font-family:"Wix Madefor Display",sans-serif;font-weight:800;
 .pad canvas{display:block;width:100%;height:210px;border-radius:18px;cursor:crosshair;touch-action:none;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .pad .base{position:absolute;left:46px;right:24px;bottom:54px;border-top:1.5px solid rgba(16,35,28,.18);pointer-events:none}
-.pad .x{position:absolute;left:22px;bottom:50px;font:600 18px/1 "Wix Madefor Display",sans-serif;color:rgba(16,35,28,.3);pointer-events:none}
+.pad .x{position:absolute;left:22px;bottom:50px;font:600 18px/1 ${FONT.brand};color:rgba(16,35,28,.3);pointer-events:none}
 .pad .hint{position:absolute;left:0;right:0;top:40%;text-align:center;font-size:15px;color:rgba(16,35,28,.38);pointer-events:none}
 .row{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:13.5px;color:var(--faint)}
-.link{border:0;background:none;font:inherit;font-weight:600;color:var(--ink);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.link{border:0;background:none;font:inherit;font-weight:500;color:var(--ink);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .chip{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:999px;border:0;background:rgba(16,35,28,.06);
-  font:inherit;font-weight:600;font-size:13.5px;color:var(--ink);cursor:pointer}
+  font:inherit;font-weight:500;font-size:13.5px;color:var(--ink);cursor:pointer}
 .chip svg{width:15px;height:15px}
 input[type=text]{width:100%;height:52px;border-radius:14px;border:0;box-shadow:inset 0 0 0 1px var(--line);background:#fff;
   padding:0 16px;font:inherit;font-size:17px;color:var(--ink);outline:none}
@@ -92,15 +92,15 @@ input[type=text]:focus{box-shadow:inset 0 0 0 2px var(--ink)}
   font-size:32px;color:var(--ink);cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:0 18px;text-align:left;
   transition:box-shadow .15s,background-color .15s}
 .styles button[aria-pressed=true]{box-shadow:inset 0 0 0 2px var(--ink);background:rgba(245,184,46,.12)}
-.save{margin-top:18px;width:100%;height:54px;border:0;border-radius:999px;background:var(--gold);color:var(--ink);
-  font:inherit;font-weight:700;font-size:16.5px;cursor:pointer;box-shadow:inset 0 -2px 0 rgba(16,35,28,.12);transition:transform .15s,opacity .2s}
+.save{margin-top:18px;width:100%;height:54px;border:0;border-radius:999px;${GOLD};
+  font:inherit;font-weight:500;font-size:16.5px;cursor:pointer;transition:transform .15s,opacity .2s}
 .save:active{transform:scale(.985)}
 .save:disabled{opacity:.4;cursor:default;transform:none}
 .msg{margin-top:12px;text-align:center;font-size:14.5px;min-height:22px}
-.msg.ok{color:#2e8a55;font-weight:600}.msg.err{color:#c23b3b}
+.msg.ok{color:#2e8a55;font-weight:500}.msg.err{color:#c23b3b}
 /* How it sits on a document: the corner of an invoice, with the signature
    above the line where it will print. */
-.pv .k{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.pv .k{font-size:15px;font-weight:500;letter-spacing:-.01em;color:var(--ink)}
 .sheet{margin-top:12px;border-radius:14px;background:#fff;box-shadow:0 0 0 1px var(--line),0 10px 24px -18px rgba(16,35,28,.4);
   padding:18px 20px;display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
 .sheet .lines{flex:1;display:grid;gap:7px}
@@ -288,7 +288,7 @@ export function signaturePage(current: string | null, back: string | null = null
 <body>
 <header class="top"><div class="in">
   ${back ? `<a class="back" href="${back}"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Back to settings</a>` : ""}
-  <div class="brand">${logoAvailable() ? markSvg("22px") : ""}balans</div>
+  <div class="brand">${darkLogo("26px")}</div>
   <h1>Your signature</h1>
   <p class="lead">It goes above your business name on your invoices and quotes. Documents without one simply leave the line off.</p>
 </div></header>
@@ -323,7 +323,7 @@ export function signaturePage(current: string | null, back: string | null = null
       <div class="sig"><div class="space" id="pv"><span>Your signature here</span></div><div class="who">Authorised signature</div></div>
     </div>
   </div>
-  <div class="foot">${logoAvailable() ? logoSvg("22px") : ""}</div>
+  <div class="foot">${lightLogo("22px")}</div>
 </div><script>const BACK = ${JSON.stringify(back)};${JS}</script></body></html>`;
 }
 

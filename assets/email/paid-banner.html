@@ -11,66 +11,58 @@
   email's cream page. `layout()` rounds the <img> instead, which every mail
   client that matters honours.
 
-  It is the WhatsApp paid card (assets/brand/paid-tonight.png) turned on its
-  side, and with the settlement line taken off. The card says "in your bank
-  tonight" because it is sent within minutes of the payment and the clock is
-  still true; an email is kept, and a picture saying "tonight" would still say
-  it next March when somebody opens it looking for the receipt.
+  It is the WhatsApp paid card (assets/brand/paid-tonight.jpg) turned on its
+  side, its coins and light cropped from the same art, and with the
+  settlement line taken off. The card says "in your bank tonight" because it
+  is sent within minutes of the payment and the clock is still true; an email
+  is kept, and a picture saying "tonight" would still say it next March when
+  somebody opens it looking for the receipt.
 
-  "Dem don balans you" is the one piece of Nigerian English in the product's
-  own voice, and it is on the freelancer's copy rather than the client's for a
-  reason: the client is being thanked, the freelancer is being congratulated,
-  and only one of those is a moment.
+  Plain English since 29 October 2026: "You've been paid. With Balans."
+  replaced "Dem don balans you" here and on the card. It is on the
+  freelancer's copy rather than the client's for a reason: the client is
+  being thanked, the freelancer is being congratulated, and only one of those
+  is a moment.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <style>
-@font-face{font-family:"Wix Madefor Display";font-weight:700;src:url("../fonts/WixMadeforDisplay-Bold.ttf")}
-@font-face{font-family:"Wix Madefor Display";font-weight:800;src:url("../fonts/WixMadeforDisplay-ExtraBold.ttf")}
-@font-face{font-family:"Wix Madefor Display";font-weight:600;src:url("../fonts/WixMadeforDisplay-SemiBold.ttf")}
+@font-face{font-family:Onest;font-weight:400;src:url("../fonts/Onest-400.ttf")}
+@font-face{font-family:Onest;font-weight:500;src:url("../fonts/Onest-500.ttf")}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:1120px;height:448px}
-.banner{position:relative;width:1120px;height:448px;overflow:hidden;
-  background:#10231C;color:#F6F1E7;font-family:"Wix Madefor Display",sans-serif}
-/*
- * Marigold bleeding in from the side the stamp is on.
- *
- * A gradient, not a circle at low opacity: a flat circle has an edge, and at
- * this size the edge reads as a dark olive disc sitting on the banner rather
- * than as light coming from behind it.
- */
-.glow{position:absolute;right:-220px;top:-260px;width:760px;height:760px;
-  background:radial-gradient(circle,rgba(245,184,46,.30) 0%,rgba(245,184,46,.13) 42%,rgba(245,184,46,0) 70%)}
-.copy{position:absolute;left:64px;top:76px}
-.tag{display:inline-flex;align-items:center;gap:14px;height:52px;padding:0 24px 0 20px;
-  border-radius:999px;background:#183A2B;color:#6FDC9C;font-size:24px;font-weight:600}
-.tag svg{width:24px;height:24px}
-h1{margin-top:32px;font-family:"Wix Madefor Display",sans-serif;font-weight:800;font-size:80px;line-height:1;
-  letter-spacing:-.045em}
-.sub{margin-top:24px;font-size:26px;font-weight:600;color:rgba(246,241,231,.62)}
-/* The same mark the paid invoice itself now carries. */
-.stamp{position:absolute;right:76px;top:50%;transform:translateY(-50%) rotate(-12deg);
-  padding:20px 44px;border:8px solid #6FDC9C;border-radius:20px;color:#6FDC9C;
-  font-family:"Wix Madefor Display",sans-serif;font-weight:800;font-size:80px;letter-spacing:.12em;
-  opacity:.92}
+.banner{position:relative;width:1120px;height:448px;overflow:hidden;background:#08130f;color:#F6F1E7;
+  font-family:Onest,sans-serif;-webkit-font-smoothing:antialiased}
+/* The coins and their light, from the card's own art. */
+.art{position:absolute;left:180px;top:-450px;width:940px}
+/* Dark under the words, so they never sit on the light. */
+.shade{position:absolute;inset:0;background:linear-gradient(90deg,#08130f 34%,rgb(8 19 15/.6) 52%,transparent 70%)}
+.copy{position:absolute;left:64px;top:70px}
+.tag{display:inline-flex;align-items:center;gap:12px;height:52px;padding:0 24px 0 20px;border-radius:999px;
+  background:linear-gradient(180deg,#ffd877,#f5b82e);color:#10231c;font-size:23px;font-weight:500}
+.tag svg{width:22px;height:22px}
+h1{margin-top:34px;font-weight:400;font-size:78px;line-height:1;letter-spacing:-.05em}
+h1 span{display:block}
+h1 .m{color:rgba(246,241,231,.48)}
+.sub{margin-top:26px;font-size:25px;color:rgba(246,241,231,.66)}
 </style>
 </head>
 <body>
 <div class="banner">
-  <div class="glow"></div>
+  <img class="art" src="../brand/art/paid-tonight.jpg" alt="">
+  <div class="shade"></div>
   <div class="copy">
     <span class="tag">
       <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M1.5 6.4 4.4 9.3 10.5 3" stroke="#6FDC9C" stroke-width="2"
+        <path d="M1.5 6.4 4.4 9.3 10.5 3" stroke="#10231c" stroke-width="1.6"
               stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       Payment received
     </span>
-    <h1>Dem don balans<br>you.</h1>
+    <h1><span>You’ve been paid.</span><span class="m">With Balans.</span></h1>
     <p class="sub">The receipt and the paid invoice are attached.</p>
   </div>
-  <div class="stamp">PAID</div>
 </div>
 </body>
 </html>

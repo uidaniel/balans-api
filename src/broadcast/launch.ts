@@ -29,7 +29,7 @@ export const LAUNCH = {
   campaign: "launch_setup",
 
   /** 1080×1350, from the poster; public so WhatsApp and email can fetch it. */
-  image: `${site}/broadcast/launch-2cdf09d77fed.jpg`,
+  image: `${site}/broadcast/launch-867c06303abd.jpg`,
 
   whatsapp: {
     body: [

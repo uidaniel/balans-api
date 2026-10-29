@@ -14,10 +14,12 @@
  * rounded shape inside a phone's square screen is two outlines disagreeing
  * about the same corner.
  *
- * Set in the system's own sans. A web font would have to be fetched on open,
- * which Gmail refuses outright and which tells whoever serves the file that
- * the message was read. This is the one place the brand gives ground on
- * purpose.
+ * Onest first, the brand's face since 29 October 2026, then the system's own
+ * sans. Onest is named, never fetched: a web font would have to be loaded on
+ * open, which Gmail refuses outright and which tells whoever serves the file
+ * that the message was read. So it shows wherever it is installed and the
+ * system sans stands in everywhere else. Light weights to match balans.ng:
+ * nothing here is set heavier than 500 except the name in the logo.
  *
  * Images travel with the message and are referenced by content id rather than
  * fetched from a URL. Gmail and Outlook block remote images by default, so a
@@ -63,7 +65,15 @@ const DARK = {
 } as const;
 
 const FONT =
-  "'Wix Madefor Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+  "'Onest', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+
+/**
+ * The site's gold button: light at the top, marigold at the foot, with a lit
+ * top edge. Laid over a solid marigold, which is what Outlook and anything
+ * else without gradients shows. Taken off whole when a Pro business's colour
+ * replaces ours (see `layout`), so their button is their colour, flat.
+ */
+const GOLD = "background-image:linear-gradient(180deg,#FFD877,#F5B82E);box-shadow:inset 0 1px 0 rgba(255,250,230,0.6);";
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 const WIDTH = 600;
@@ -177,8 +187,9 @@ function styles(): string {
  * for its own background. The coin stays a picture because marigold and ink
  * read on either.
  *
- * The name is in the system's bold rather than the logo's face, which no mail
- * client has. Same size, weight and tracking as the drawn one.
+ * The name is the wordmark's face, Onest Bold, where it is installed and the
+ * system's bold where it is not. Same size, weight and tracking as the drawn
+ * one, which has been Onest since 29 October 2026.
  */
 function logoHtml(): string {
   return `<a href="${esc(env.SITE_URL)}" style="text-decoration:none;">
@@ -187,7 +198,7 @@ function logoHtml(): string {
           <img src="cid:${MARK_CID}" width="${MARK}" height="${MARK}" alt=""
                style="display:block;width:${MARK}px;height:${MARK}px;border:0;outline:none;text-decoration:none;">
         </td>
-        <td valign="middle" style="font-family:${FONT};font-size:21px;line-height:26px;font-weight:700;letter-spacing:-0.035em;color:${LIGHT.ink};" class="bl-ink">balans</td>
+        <td valign="middle" style="font-family:${FONT};font-size:21px;line-height:26px;font-weight:700;letter-spacing:-0.03em;color:${LIGHT.ink};" class="bl-ink">balans</td>
       </tr></table>
     </a>`;
 }
@@ -212,6 +223,8 @@ export function layout(opts: LayoutOptions): string {
   // marigold becomes whatever reads on theirs. Then marigold everywhere else.
   const on = onColour(colour);
   return html
+    .split(GOLD)
+    .join("")
     .split(`background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};`)
     .join(`background:${colour};border-radius:999px;color:${on};`)
     .split(`fillcolor="${LIGHT.marigold}">\n<w:anchorlock/><center style="color:${LIGHT.ink};`)
@@ -266,13 +279,13 @@ function layoutHtml({ preheader, heading, eyebrow, banner, body, brand }: Layout
   ${
     eyebrow
       ? row(
-          `<p style="${P}font-size:13px;line-height:20px;font-weight:600;color:${LIGHT.faint};" class="bl-faint">${esc(eyebrow)}</p>`,
+          `<p style="${P}font-size:13px;line-height:20px;font-weight:500;color:${LIGHT.faint};" class="bl-faint">${esc(eyebrow)}</p>`,
           28,
         )
       : ""
   }
   ${row(
-    `<h1 style="${P}font-size:22px;line-height:30px;font-weight:600;color:${LIGHT.ink};letter-spacing:-0.01em;" class="bl-ink">${esc(heading)}</h1>`,
+    `<h1 style="${P}font-size:24px;line-height:31px;font-weight:500;color:${LIGHT.ink};letter-spacing:-0.025em;" class="bl-ink">${esc(heading)}</h1>`,
     eyebrow ? 4 : 28,
   )}
 
@@ -334,13 +347,12 @@ export function paragraph(text: string, muted = false): string {
  * The one number the message is about, at the size that says so.
  *
  * A figure set at reading size in a sentence is a figure people re-read the
- * sentence to find: the amount, once, large, with what it is over it in
- * small caps.
+ * sentence to find: the amount, once, large, with what it is over it.
  */
 export function amount(label: string, value: string, sub?: string): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="padding-top:24px;font-family:${FONT};">
-<p style="${P}font-size:11px;line-height:16px;letter-spacing:0.06em;text-transform:uppercase;font-weight:600;color:${LIGHT.faint};" class="bl-faint">${esc(label)}</p>
-<p style="${P}padding-top:6px;font-size:38px;line-height:42px;font-weight:600;letter-spacing:-0.02em;color:${LIGHT.ink};" class="bl-ink">${esc(value)}</p>
+<p style="${P}font-size:13px;line-height:18px;font-weight:500;color:${LIGHT.faint};" class="bl-faint">${esc(label)}</p>
+<p style="${P}padding-top:6px;font-size:40px;line-height:44px;font-weight:400;letter-spacing:-0.035em;color:${LIGHT.ink};" class="bl-ink">${esc(value)}</p>
 ${sub ? `<p style="${P}padding-top:6px;font-size:13px;line-height:20px;color:${LIGHT.faint};" class="bl-faint">${esc(sub)}</p>` : ""}
 </td></tr></table>`;
 }
@@ -370,7 +382,7 @@ export function detailCard(rows: { label: string; value: string }[]): string {
     .map(
       (r, i) => `<tr>
 <td style="padding:10px 0;${i > 0 ? `border-top:1px solid ${LIGHT.line};` : ""}font-family:${FONT};font-size:13px;line-height:20px;color:${LIGHT.faint};white-space:nowrap;" class="bl-faint bl-rule">${esc(r.label)}</td>
-<td align="right" style="padding:10px 0 10px 16px;${i > 0 ? `border-top:1px solid ${LIGHT.line};` : ""}font-family:${FONT};font-size:13px;line-height:20px;font-weight:600;color:${LIGHT.ink};" class="bl-ink bl-rule">${esc(r.value)}</td>
+<td align="right" style="padding:10px 0 10px 16px;${i > 0 ? `border-top:1px solid ${LIGHT.line};` : ""}font-family:${FONT};font-size:13px;line-height:20px;font-weight:500;color:${LIGHT.ink};" class="bl-ink bl-rule">${esc(r.value)}</td>
 </tr>`,
     )
     .join("");
@@ -395,10 +407,10 @@ export function steps(items: { title: string; text: string }[]): string {
     .map(
       (s, i) => `<tr>
 <td valign="top" width="30" style="padding:${i ? 14 : 0}px 12px 0 0;">
-  <div style="width:22px;height:22px;border-radius:11px;background:${LIGHT.marigold};font-family:${FONT};font-size:12px;line-height:22px;font-weight:700;text-align:center;color:${LIGHT.ink};">${i + 1}</div>
+  <div style="width:22px;height:22px;border-radius:11px;background:${LIGHT.marigold};font-family:${FONT};font-size:12px;line-height:22px;font-weight:600;text-align:center;color:${LIGHT.ink};">${i + 1}</div>
 </td>
 <td valign="top" style="padding:${i ? 14 : 0}px 0 0 0;font-family:${FONT};">
-  <p style="${P}font-size:15px;line-height:22px;font-weight:600;color:${LIGHT.ink};" class="bl-ink">${s.title}</p>
+  <p style="${P}font-size:15px;line-height:22px;font-weight:500;color:${LIGHT.ink};" class="bl-ink">${s.title}</p>
   <p style="${P}padding-top:2px;font-size:15px;line-height:24px;color:${LIGHT.slate};" class="bl-slate">${s.text}</p>
 </td>
 </tr>`,
@@ -431,7 +443,7 @@ export function noteBlock(lines: string[]): string {
 }
 
 /**
- * The one thing to press: the site's marigold pill, with ink on it.
+ * The one thing to press: the site's gold pill, with ink on it.
  *
  * Outlook's Word engine ignores padding and border-radius on an anchor, so a
  * styled `<a>` collapses to bare underlined text on the one client where that
@@ -445,11 +457,11 @@ export function button(label: string, href: string): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding-top:24px;">
 <!--[if mso]>
 <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${h}" style="height:46px;v-text-anchor:middle;width:260px;" arcsize="50%" stroke="f" fillcolor="${LIGHT.marigold}">
-<w:anchorlock/><center style="color:${LIGHT.ink};font-family:${FONT};font-size:15px;font-weight:600;">${l}</center>
+<w:anchorlock/><center style="color:${LIGHT.ink};font-family:${FONT};font-size:15px;font-weight:500;">${l}</center>
 </v:roundrect>
 <![endif]-->
 <!--[if !mso]><!-- -->
-<a href="${h}" style="background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};display:inline-block;font-family:${FONT};font-size:15px;font-weight:600;line-height:46px;text-align:center;text-decoration:none;min-width:200px;padding:0 28px;mso-hide:all;">${l}</a>
+<a href="${h}" style="background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};${GOLD}display:inline-block;font-family:${FONT};font-size:15px;font-weight:500;line-height:46px;text-align:center;text-decoration:none;min-width:200px;padding:0 28px;mso-hide:all;">${l}</a>
 <!--<![endif]-->
 </td></tr></table>`;
 }
