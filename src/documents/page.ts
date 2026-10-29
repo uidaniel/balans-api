@@ -86,7 +86,7 @@ letter-spacing:-.03em;font-size:20px;min-width:0}
 .doctitle{margin-top:22px;font-size:15px;font-weight:500;color:var(--ink-80)}
 .eyebrow{margin-top:26px;font-size:13px;color:var(--ink-50)}
 .doctitle + .eyebrow{margin-top:6px}
-h1{font-family:var(--display);font-size:50px;font-weight:400;letter-spacing:-.05em;
+h1{font-family:var(--display);font-size:50px;font-weight:600;letter-spacing:-.05em;
 line-height:1.02;margin-top:6px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .from{margin-top:10px;font-size:15px;color:var(--ink-65)}
 .from b{color:var(--ink);font-weight:500}
@@ -114,13 +114,13 @@ padding:10px 26px 10px;border-bottom:1px solid var(--line)}
 th.r,td.r{text-align:right}
 td{padding:15px 26px;border-bottom:1px solid var(--line);font-size:15px;vertical-align:top}
 tbody tr:last-child td{border-bottom:0}
-td.r{font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.r{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 td .qty{display:block;font-size:13px;color:var(--ink-50);margin-top:2px;font-variant-numeric:tabular-nums}
 .totals{margin:0 26px;padding:14px 0 18px;border-top:1px solid var(--line)}
 .row{display:flex;justify-content:space-between;gap:16px;font-size:14.5px;color:var(--ink-65);
 padding:4px 0;font-variant-numeric:tabular-nums}
 .row.grand{margin-top:8px;padding-top:12px;border-top:1px solid var(--line);color:var(--ink);
-font-family:var(--display);font-size:22px;font-weight:500;letter-spacing:-.03em}
+font-family:var(--display);font-size:22px;font-weight:600;letter-spacing:-.03em}
 .row.paidoff{color:var(--moss)}
 .totals .row.grand:first-child{margin-top:0;padding-top:4px;border-top:0}
 .note{margin:0 26px 22px;padding:14px 16px;background:var(--cream);border-radius:14px;
@@ -131,7 +131,7 @@ font-size:14px;line-height:1.6;color:var(--ink-65);white-space:pre-wrap}
 padding:11px 0;border-bottom:1px solid var(--line);font-size:14.5px}
 .part:last-child{border-bottom:0}
 .part .who{color:var(--ink-65)}
-.part .amt{font-weight:500;font-variant-numeric:tabular-nums}
+.part .amt{font-weight:600;font-variant-numeric:tabular-nums}
 .part.done .who,.part.done .amt{color:var(--moss)}
 .part.phead{border-bottom:0;padding-bottom:0}
 .part.phead .who{font-size:12.5px;font-weight:500;color:var(--ink-50)}
@@ -156,7 +156,7 @@ color:var(--ink-65);font-weight:500;vertical-align:1px}
 .teyebrow{font-size:13px;font-weight:500}
 .pay.own{background:var(--paper);border-radius:28px;box-shadow:var(--lift);padding:22px}
 .pay.own .teyebrow{color:var(--ink-50)}
-.pay.own .own-amt{margin-top:6px;font-family:var(--display);font-size:24px;font-weight:400;letter-spacing:-.04em}
+.pay.own .own-amt{margin-top:6px;font-family:var(--display);font-size:24px;font-weight:600;letter-spacing:-.04em}
 .pay.own .own-details{margin-top:12px;padding:14px 16px;border-radius:14px;background:var(--cream);
 font-size:15.5px;line-height:1.55;white-space:normal;overflow-wrap:anywhere;user-select:all}
 .pay.own .tsmall{text-align:left;margin:12px 0 0;max-width:none}
@@ -231,7 +231,7 @@ color:var(--ink-65);text-decoration:none}
 .tcard{background:var(--night);color:var(--cream);border-radius:24px;padding:22px 18px 18px;text-align:center;
 box-shadow:0 18px 40px -20px rgba(16,35,28,.6)}
 .tcard .teyebrow{color:rgba(246,241,231,.55)}
-.tamt{font-family:var(--display);font-size:18px;font-weight:500;letter-spacing:-.02em;
+.tamt{font-family:var(--display);font-size:18px;font-weight:600;letter-spacing:-.02em;
 font-variant-numeric:tabular-nums}
 .tbox{margin-top:14px;background:var(--ink);border-radius:16px;overflow:hidden;text-align:left;
 box-shadow:inset 0 0 0 1px rgba(246,241,231,.06)}
@@ -1094,7 +1094,7 @@ export function renderProPlans(o: {
 .plan .row1{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .plan .name{font-weight:500;font-size:16px}
 .plan .badge{background:var(--marigold);color:var(--ink);font-size:12px;font-weight:500;border-radius:999px;padding:4px 10px;white-space:nowrap}
-.plan .price{display:block;margin-top:8px;font-size:34px;font-weight:400;letter-spacing:-.045em}
+.plan .price{display:block;margin-top:8px;font-size:34px;font-weight:600;letter-spacing:-.045em}
 .plan .price small{font-size:14px;font-weight:400;letter-spacing:0;color:var(--ink-50);margin-left:2px}
 .plan .sub{display:block;margin-top:2px;font-size:13px;color:var(--ink-65)}
 .plan .until{display:block;margin-top:10px;font-size:14px;color:var(--ink-80)}
