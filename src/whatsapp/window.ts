@@ -93,7 +93,8 @@ export type TemplateName =
   | "pro_last_day_pay"
   | "pro_back_pay"
   | "pro_last_day_pay_v2"
-  | "pro_free_pay";
+  | "pro_free_pay"
+  | "setup_reminder";
 
 export type TemplateSpec = {
   name: TemplateName;
@@ -448,6 +449,28 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
    * $0.05 each in Nigeria, against a utility template's $0.007. The words
    * are in broadcast/launch.ts with the email, so the two cannot disagree.
    */
+  /*
+   * Two days after somebody stopped part-way through setup (jobs/setup-nudges.ts).
+   * Once, and only to somebody who started: the footer says why they have it.
+   * Utility, because it is about an account they asked to open, and worded as
+   * that alone. Anything selling Balans in it would have Meta file it as
+   * marketing, which needs an opt-in this person never gave.
+   */
+  setup_reminder: {
+    name: "setup_reminder",
+    category: "UTILITY",
+    body: [
+      "Your Balans account setup is not finished yet.",
+      "",
+      "Tap below to finish it. It takes about a minute.",
+    ].join("\n"),
+    params: [],
+    example: [],
+    footer: "You are getting this because you started setting up Balans",
+    flowButton: { text: "Finish setup", flow: "onboarding", screen: "BUSINESS" },
+    header: { type: "image", sample: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/brand/welcome.jpg` },
+  },
+
   launch_setup: {
     name: "launch_setup",
     category: "MARKETING",

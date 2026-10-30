@@ -14,6 +14,7 @@
  */
 
 import { purgeParserText, sendTrialNotices } from "./trial-notices.ts";
+import { sendSetupFollowups, sendSetupNudges } from "./setup-nudges.ts";
 import { purgeExpiredCodes } from "../lib/codes.ts";
 import { tellPayouts } from "../payments/payouts.ts";
 import { proPriceForPhone } from "../billing/price.ts";
@@ -600,6 +601,12 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
     await sendLapsedReminders(log);
     // Free documents used, then quiet for two days: one email (20 October 2026).
     await sendTrialNotices(log);
+    // Started setting up and stopped: one nudge in the chat a few hours on,
+    // one follow-up two days on (30 October 2026). Not overnight.
+    if (!withinQuietHours()) {
+      await sendSetupNudges(log);
+      await sendSetupFollowups(log);
+    }
 
     // What the privacy policy promises: typed text gone after 30 days, and
     // used email codes not kept past a day after they expire.

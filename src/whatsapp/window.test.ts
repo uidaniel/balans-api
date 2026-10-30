@@ -46,6 +46,7 @@ describe("the templates we register with Meta", () => {
         "pro_last_day_pay_v2",
         "pro_renewal",
         "security_alert",
+        "setup_reminder",
       ],
     );
   });

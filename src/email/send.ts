@@ -489,6 +489,55 @@ export function proEmail(opts: {
  * the chat shows at the limit (billing/limit-card.ts). Left out when it could
  * not be drawn.
  */
+/**
+ * To somebody who started setting up and stopped, two days on (jobs/setup-nudges.ts).
+ *
+ * Once. The button opens the chat without typing anything for them: what a
+ * prefilled word would mean depends on which question they stopped at, and
+ * the chat already holds the form or the question, so landing there is enough.
+ */
+export function setupReminderEmail(opts: {
+  businessName: string | null;
+  /** Our WhatsApp number, digits only. Null leaves the button out. */
+  waNumber: string | null;
+}): Omit<Email, "to"> {
+  const business = opts.businessName?.trim() || null;
+  const chat = opts.waNumber ? `https://wa.me/${opts.waNumber}` : null;
+  const example = "Invoice Tunde 50k for logo design";
+  const lines = [
+    "You started setting up Balans on WhatsApp and stopped part-way. It takes about a minute to finish.",
+    `Then send one line like "${example}" and get back an invoice your client pays straight into your bank.`,
+  ];
+
+  return {
+    subject: "Your Balans setup is almost done",
+    replyTo: env.SUPPORT_EMAIL,
+    text: [
+      ...lines.flatMap((l) => [l, ""]),
+      chat ? `Finish in WhatsApp: ${chat}` : "Open your WhatsApp chat with Balans to finish.",
+      "",
+      `Questions? Reply to this email, or write to ${env.SUPPORT_EMAIL}. This is the only email about it.`,
+      "",
+      "—",
+      `Balans is a product of ${env.LEGAL_ENTITY_NAME}.`,
+      "Balans is not a bank and never holds your money.",
+    ].join("\n"),
+    html: layout({
+      preheader: "It takes about a minute, in the WhatsApp chat you started in.",
+      heading: business ? `${business} is nearly set up` : "Your setup is almost done",
+      body: [
+        paragraph(esc(lines[0]!)),
+        paragraph(`Then send one line like <em>${esc(example)}</em> and get back an invoice your client pays straight into your bank.`),
+        chat ? button("Finish in WhatsApp", chat) : paragraph("Open your WhatsApp chat with Balans to finish."),
+        paragraph(
+          `Questions? Reply to this email, or write to <a href="mailto:${esc(env.SUPPORT_EMAIL)}" style="color:inherit;">${esc(env.SUPPORT_EMAIL)}</a>. This is the only email about it.`,
+          true,
+        ),
+      ].join("\n"),
+    }),
+  };
+}
+
 export function trialUsedEmail(opts: {
   businessName: string | null;
   allowance: number;

@@ -499,7 +499,7 @@ function fingerprint(file: string): string {
   }
 }
 
-const WELCOME_CARD = brand("welcome.jpg");
+export const WELCOME_CARD = brand("welcome.jpg");
 export const SETUP_DONE_CARD = brand("setup-done.jpg");
 export const LIMIT_CARD = brand("limit.jpg");
 export const UPGRADE_CARD = brand("upgrade.jpg");
@@ -3872,7 +3872,7 @@ function foreignRefusal(money: Parsed["money"], quote: Quote | undefined): strin
   }
 }
 
-function onboardingHelp(state: State): string {
+export function onboardingHelp(state: State): string {
   switch (state) {
     case "onboarding:business_name":
       return lines(
