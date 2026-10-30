@@ -157,7 +157,9 @@ function bars(months: SummaryData["months"]): string {
     .map(
       (m, i) =>
         `<i class="hit" tabindex="0" data-i="${i}" aria-label="${esc(m.label)}: ${esc(formatNaira(m.paidKobo))}">` +
-        `<em class="tip"><b>${esc(m.label)}</b>${m.paidKobo > 0 ? esc(formatNaira(m.paidKobo)) : "Nothing paid"}</em></i>`,
+        // The figure sits in its own span: the tip is a flex column, and a bare drawn ₦ would
+        // become a row of its own, stretched to the tip's width with its bars.
+        `<em class="tip"><b>${esc(m.label)}</b><span>${m.paidKobo > 0 ? esc(formatNaira(m.paidKobo)) : "Nothing paid"}</span></em></i>`,
     )
     .join("");
 
