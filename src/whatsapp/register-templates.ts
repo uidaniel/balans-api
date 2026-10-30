@@ -196,13 +196,25 @@ export async function recordTemplateStatuses(): Promise<Record<string, string> |
   const existing = await list().catch(() => null);
   if (!existing) return null;
   const statuses = Object.fromEntries(existing.map((t) => [t.name, t.status]));
+  /*
+   * And the category Meta actually filed each one under, which is not always
+   * the one we asked for: Meta moves a utility template it reads as selling
+   * to marketing. Kept beside the statuses rather than inside them, because
+   * the admin reads `template_status` as plain name → status.
+   */
+  const categories = Object.fromEntries(existing.map((t) => [t.name, t.category ?? null]));
   const { db } = await import("../db/pool.ts");
-  await db().query(
-    `INSERT INTO config (key, value_json, updated_by) VALUES ('template_status', $1::jsonb, 'templates')
-       ON CONFLICT (key) DO UPDATE
-       SET value_json = EXCLUDED.value_json, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-    [JSON.stringify(statuses)],
-  );
+  for (const [key, value] of [
+    ["template_status", statuses],
+    ["template_category", categories],
+  ] as const) {
+    await db().query(
+      `INSERT INTO config (key, value_json, updated_by) VALUES ($1, $2::jsonb, 'templates')
+         ON CONFLICT (key) DO UPDATE
+         SET value_json = EXCLUDED.value_json, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [key, JSON.stringify(value)],
+    );
+  }
   return statuses;
 }
 

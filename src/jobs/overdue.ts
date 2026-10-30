@@ -15,6 +15,7 @@
 
 import { purgeParserText, sendTrialNotices } from "./trial-notices.ts";
 import { sendSetupFollowups, sendSetupNudges } from "./setup-nudges.ts";
+import { syncWhatsAppSpend } from "../whatsapp/spend.ts";
 import { purgeExpiredCodes } from "../lib/codes.ts";
 import { tellPayouts } from "../payments/payouts.ts";
 import { proPriceForPhone } from "../billing/price.ts";
@@ -617,6 +618,10 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
 
     // F15. Returns early on every day but the 1st.
     await sendMonthlySummaries(today, log);
+
+    // What WhatsApp really charged, from Meta, for the admin (30 October
+    // 2026). Every few hours; it reads, never sends, so quiet hours are moot.
+    await syncWhatsAppSpend(log);
 
     /*
      * The naira rate, kept warm (International PRD section 6).

@@ -115,14 +115,32 @@ export async function sendSetupNudges(log: FastifyBaseLogger): Promise<number> {
   return sent;
 }
 
-/** Whether Meta has approved the follow-up template yet. */
-async function reminderApproved(): Promise<boolean> {
+/**
+ * Whether the follow-up template may go: approved, and still filed as utility.
+ *
+ * Meta can approve a utility template as marketing, and then every send is a
+ * marketing message, at several times the price, to somebody who never opted
+ * in to marketing. So the category Meta gave it is checked as well as the
+ * approval, and if it ever reads marketing the WhatsApp half simply stops.
+ */
+export function mayUseReminder(status: string | null | undefined, category: string | null | undefined): boolean {
+  return status === "APPROVED" && category === "UTILITY";
+}
+
+async function reminderApproved(log: FastifyBaseLogger): Promise<boolean> {
+  const name = TEMPLATES.setup_reminder.name;
   const { rows } = await db()
-    .query<{ s: string | null }>(`SELECT value_json ->> $1 AS s FROM config WHERE key = 'template_status'`, [
-      TEMPLATES.setup_reminder.name,
-    ])
-    .catch(() => ({ rows: [] as { s: string | null }[] }));
-  return rows[0]?.s === "APPROVED";
+    .query<{ status: string | null; category: string | null }>(
+      `SELECT (SELECT value_json ->> $1 FROM config WHERE key = 'template_status')   AS status,
+              (SELECT value_json ->> $1 FROM config WHERE key = 'template_category') AS category`,
+      [name],
+    )
+    .catch(() => ({ rows: [] as { status: string | null; category: string | null }[] }));
+  const { status = null, category = null } = rows[0] ?? {};
+  if (status === "APPROVED" && category !== "UTILITY") {
+    log.warn({ template: name, category }, "setup reminder approved but not as utility; not sending it");
+  }
+  return mayUseReminder(status, category);
 }
 
 /**
@@ -138,7 +156,7 @@ async function reminderApproved(): Promise<boolean> {
  * and then this goes to a stranger.
  */
 export async function sendSetupFollowups(log: FastifyBaseLogger): Promise<number> {
-  const approved = await reminderApproved();
+  const approved = await reminderApproved(log);
 
   const { rows } = await db().query<{
     id: string;
