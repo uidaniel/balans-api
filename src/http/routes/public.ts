@@ -12,6 +12,7 @@
  *     number; what is owed is read from the row.
  */
 
+import { tellOpened } from "../../documents/opened.ts";
 import { cardFeeKobo, NO_PERCENTAGE } from "../../payments/card-fee.ts";
 import { subscriptionPrefixOf } from "../../billing/pro-checkout.ts";
 import { clientNumber } from "../../documents/client-number.ts";
@@ -139,6 +140,9 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     void markViewed(doc.id).catch((e: unknown) =>
       req.log.error({ err: e, documentId: doc.id }, "could not mark viewed"),
     );
+    void tellOpened(doc.id, req.headers["user-agent"], req.log).catch((e: unknown) =>
+      req.log.error({ err: e, documentId: doc.id }, "could not tell the sender it was opened"),
+    );
 
     const canPay = payable(doc).ok;
 
@@ -148,6 +152,9 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
      * stays off the path of almost every page view.
      */
     const cardReady = doc.foreign && canPay ? await cardPaymentAvailable(doc.userId) : true;
+    // Only a processor payment can land while the page is open; a naira
+    // invoice is a transfer the sender marks, and has nothing to wait for.
+    const pending = doc.foreign && canPay ? (await pendingPaymentsFor(doc.id)).length > 0 : false;
 
     return reply
       .type(HTML)
@@ -159,6 +166,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
         renderDocument(doc, todayIn(defaults.behaviour.timezone), {
           token: req.params.token,
           cardReady,
+          pending,
           // Only one we wrote. Anything else in the query string is somebody
           // playing, and gets no words of ours on a page about their money.
           error: req.query.e ? PAY_ERRORS[req.query.e] : undefined,
@@ -277,6 +285,9 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
 
     void markViewed(doc.id).catch((e: unknown) =>
       req.log.error({ err: e, documentId: doc.id }, "could not mark viewed"),
+    );
+    void tellOpened(doc.id, req.headers["user-agent"], req.log).catch((e: unknown) =>
+      req.log.error({ err: e, documentId: doc.id }, "could not tell the sender it was opened"),
     );
 
     return reply

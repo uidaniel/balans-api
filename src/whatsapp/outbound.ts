@@ -14,7 +14,7 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
-import { sendCta, sendDocument, sendImage, sendTemplate, sendText, uploadDocument } from "./client.ts";
+import { sendButtons, sendCta, sendDocument, sendImage, sendTemplate, sendText, uploadDocument, type ReplyButton } from "./client.ts";
 
 /** On the receipt when a card carried the words already. */
 const RECEIPT_CAPTION = "Receipt, for your records.";
@@ -51,6 +51,13 @@ export type Outbound = {
    * the words instead, so there is always a way through.
    */
   cta?: { label: string; url: string; footer?: string };
+  /**
+   * Reply buttons under the words, inside the window (31 October 2026): the
+   * reminder's "Yes, mark paid" and "Not yet". A tap sends the button's id
+   * back as a message, so it lands like the same words typed. If they will
+   * not send, the words go alone; the buttons were a shortcut, not the way.
+   */
+  buttons?: ReplyButton[];
   /** Attached inside the window only; templates cannot carry a file. */
   document?: { bytes: Buffer; filename: string };
   /**
@@ -205,6 +212,12 @@ async function sendInside(msg: Outbound, log: FastifyBaseLogger): Promise<SendOu
     log.warn({ userId: msg.userId, reason: shown.reason }, "button send failed; the link goes in the words");
     const res = await sendText(msg.phone, `${msg.text}\n\n${msg.cta.label}: ${msg.cta.url}`);
     return res.ok ? { kind: "sent", inWindow: true } : { kind: "failed", reason: res.reason };
+  }
+
+  if (msg.buttons?.length && !msg.document && !msg.image && !msg.cta) {
+    const shown = await sendButtons(msg.phone, { body: msg.text, buttons: msg.buttons });
+    if (shown.ok) return { kind: "sent", inWindow: true };
+    log.warn({ userId: msg.userId, reason: shown.reason }, "buttons send failed; the words go alone");
   }
 
   const res = await sendText(msg.phone, msg.text);

@@ -30,3 +30,33 @@ describe("scheduling reminders that were missed", () => {
     assert.match(schedule, /next\?\.daysAfterDue \?\? null, next\?\.proOnly \?\? false/);
   });
 });
+
+describe("asking whether they were paid (31 October 2026)", async () => {
+  const { promptMessage } = await import("./overdue.ts");
+  const { asCommand } = await import("../parser/commands.ts");
+  const base = {
+    number: 16,
+    clientName: "Zenith",
+    businessName: "Kemi Studio",
+    owedKobo: 50_000_00,
+    due: { y: 2026, m: 10, d: 30 },
+    today: { y: 2026, m: 11, d: 2 },
+    link: null,
+  };
+
+  it("says what the buttons under it are for", () => {
+    const m = promptMessage({ ...base, reminded: { email: true, whatsapp: false }, askPaid: true });
+    assert.match(m, /Has Zenith paid\?/);
+    assert.match(m, /once it is in your bank/);
+  });
+
+  it("says nothing about them when there are none", () => {
+    assert.doesNotMatch(promptMessage({ ...base, reminded: { email: true, whatsapp: false } }), /Has Zenith paid/);
+  });
+
+  it("reads the buttons' ids as the commands they stand for", () => {
+    assert.equal(asCommand("not yet 16")?.intent, "not_paid_yet");
+    assert.equal(asCommand("yes mark invoice 16 paid")?.intent, "confirm_payment");
+    assert.equal(asCommand("mark invoice 16 as paid")?.intent, "record_payment");
+  });
+});

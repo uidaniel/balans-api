@@ -362,6 +362,21 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
     };
   }
 
+  /* -- The terms, with the bank skipped (31 October 2026) ----------------- */
+  if (setup && req.screen === "TERMS") {
+    if (!ticked(data.agreed)) {
+      // The box is required on the screen, so this is a form that skipped
+      // its own check. Nothing is saved; the terms screen comes back.
+      return { screen: "TERMS", data: {} };
+    }
+    const done = await act.completeSetupNoBank(userId, log);
+    if (!done.ok) return { screen: "TERMS", data: {} };
+    return {
+      screen: "DONE",
+      data: { account_name: "No bank account yet", account_line: "Send add bank in the chat to add it" },
+    };
+  }
+
   /* -- Is this you? -------------------------------------------------------- */
   if (req.screen === "CONFIRM") {
     const checked = await recall(userId);

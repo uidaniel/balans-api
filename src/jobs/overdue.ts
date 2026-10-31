@@ -28,6 +28,7 @@ import { defaults, env } from "../config.ts";
 import { formatFriendly, formatISO, todayIn, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { b, block, lines, para, row } from "../whatsapp/format.ts";
+import type { ReplyButton } from "../whatsapp/client.ts";
 import { send } from "../whatsapp/outbound.ts";
 import { sendMonthlySummaries } from "./monthly-summary.ts";
 import { sweepStaleDrafts } from "../documents/store.ts";
@@ -299,6 +300,7 @@ export async function sendDueReminders(
       });
       const reminded = { email: emailed, whatsapp: whatsapped.ok };
       const how = remindedHow(reminded);
+      const buttons = await paidButtons(r.document_id, r.number);
 
       const outcome = await send(
         {
@@ -317,7 +319,9 @@ export async function sendDueReminders(
             owedAgreed,
             reminded,
             last: isLastReminder(r.kind, r.plan),
+            askPaid: buttons.length > 0,
           }),
+          buttons,
           fallback: how
             ? {
                 template: "client_reminded_doc",
@@ -411,6 +415,8 @@ export function promptMessage(x: {
   reminded?: { email: boolean; whatsapp: boolean };
   /** No reminder comes after this one, so there is nothing to stop. */
   last?: boolean;
+  /** "Yes, mark paid" and "Not yet" go under it: say what they are for. */
+  askPaid?: boolean;
 }): string {
   const word = x.type === "payment_request" ? "payment request" : "invoice";
   const which = x.number === null ? word.toUpperCase() : `${word.toUpperCase()} #${x.number}`;
@@ -456,10 +462,12 @@ export function promptMessage(x: {
    * forward — the whole point of sending it for them.
    */
   const how = x.reminded ? remindedHow(x.reminded) : null;
+  const askPaid = x.askPaid ? `💰 ${b(`Has ${x.clientName} paid?`)} Tap below once it is in your bank.` : null;
   if (how) {
     return para(
       heading,
       `✅ ${b(`${x.clientName} has been reminded ${how}`)}, with the link to pay.`,
+      askPaid,
       stop,
     );
   }
@@ -480,8 +488,119 @@ export function promptMessage(x: {
     // naming what to copy.
     `${b("Send them this")} \u2014 copy the message below:`,
     forward,
+    askPaid,
     x.last ? stop : `Or ${stop.charAt(0).toLowerCase()}${stop.slice(1)}`,
   );
+}
+
+/**
+ * "Yes, mark paid" and "Not yet", under a message to the sender about an
+ * unpaid invoice (31 October 2026).
+ *
+ * Balans cannot see a transfer into somebody's bank, so a naira invoice is
+ * paid only when they say so, and most never said: 7 of 24 senders had a paid
+ * invoice. Only where they mark it — a card payment is seen by Paystack and
+ * marks itself. With a payment plan, the tap asks which part came in first.
+ */
+export async function paidButtons(documentId: string, number: number | null): Promise<ReplyButton[]> {
+  if (number === null) return [];
+  const { rows } = await db().query<{ manual: boolean; open_parts: number }>(
+    // A naira invoice sent before there was a bank account on it is one only
+    // they can mark too (31 October 2026).
+    `SELECT (d.delivery_type IN ('bank_details', 'own_details') OR d.currency = 'NGN') AS manual,
+            (SELECT count(*)::int FROM payment_parts p WHERE p.document_id = d.id AND p.status <> 'paid') AS open_parts
+       FROM documents d WHERE d.id = $1`,
+    [documentId],
+  );
+  const r = rows[0];
+  if (!r?.manual) return [];
+  const yes = r.open_parts > 1 ? `mark invoice ${number} as paid` : `yes mark invoice ${number} paid`;
+  return [
+    { id: yes, title: "Yes, mark paid" },
+    { id: `not yet ${number}`, title: "Not yet" },
+  ];
+}
+
+/**
+ * "Did they pay?", once, the day after the due date (31 October 2026).
+ *
+ * To the sender only, on every plan, and only for an invoice they mark paid
+ * themselves. Inside the WhatsApp window only: there is no template for it,
+ * and a day-old question is not worth one. Skipped for an invoice whose
+ * reminders were stopped, which leaves a cancelled row behind.
+ */
+export async function sendPaidChecks(today: Civil, log: FastifyBaseLogger): Promise<number> {
+  if (withinQuietHours()) return 0;
+  const { rows } = await db().query<{
+    reminder_id: string;
+    document_id: string;
+    user_id: string;
+    wa_phone: string;
+    number: number | null;
+    client_name: string;
+    owed: string;
+    currency: string | null;
+    original_amount_minor: number | null;
+  }>(
+    `WITH due AS (
+       SELECT d.id
+         FROM documents d
+         JOIN users u ON u.id = d.user_id
+        WHERE d.type IN ('invoice', 'payment_request')
+          AND (d.delivery_type IN ('bank_details', 'own_details') OR d.currency = 'NGN')
+          AND d.status IN ('sent', 'viewed', 'overdue')
+          AND d.total_kobo > d.amount_paid_kobo
+          AND d.number IS NOT NULL
+          AND d.due_date = $1::date - 1
+          AND u.status = 'active'
+          AND NOT EXISTS (
+            SELECT 1 FROM reminders r
+             WHERE r.document_id = d.id AND (r.kind = 'paid_check' OR r.status = 'cancelled')
+          )
+        LIMIT 100
+     ),
+     claimed AS (
+       INSERT INTO reminders (document_id, channel, kind, scheduled_at, status)
+       SELECT id, 'whatsapp', 'paid_check', now(), 'sending' FROM due
+       RETURNING id, document_id
+     )
+     SELECT cl.id AS reminder_id, d.id AS document_id, d.user_id, u.wa_phone, d.number,
+            c.name AS client_name, (d.total_kobo - d.amount_paid_kobo)::text AS owed
+       FROM claimed cl
+       JOIN documents d ON d.id = cl.document_id
+       JOIN users u ON u.id = d.user_id
+       JOIN clients c ON c.id = d.client_id`,
+    [formatISO(today)],
+  );
+
+  let sent = 0;
+  for (const r of rows) {
+    try {
+      const buttons = await paidButtons(r.document_id, r.number);
+      const outcome = await send(
+        {
+          userId: r.user_id,
+          phone: r.wa_phone,
+          text: para(
+            `💰 ${b(`Did ${r.client_name} pay invoice #${r.number}?`)}`,
+            `${formatNaira(Number(r.owed))} was due yesterday. Balans cannot see your bank, so tap below once it is in your account.`,
+          ),
+          buttons,
+        },
+        log,
+      );
+      await db().query(
+        `UPDATE reminders SET status = $2, sent_at = CASE WHEN $2 = 'sent' THEN now() ELSE NULL END WHERE id = $1`,
+        [r.reminder_id, outcome.kind === "sent" ? "sent" : outcome.kind === "skipped" ? "skipped" : "failed"],
+      );
+      if (outcome.kind === "sent") sent += 1;
+    } catch (err) {
+      log.error({ err, documentId: r.document_id }, "paid check failed");
+      await db().query(`UPDATE reminders SET status = 'failed' WHERE id = $1`, [r.reminder_id]).catch(() => undefined);
+    }
+  }
+  if (sent) log.info({ count: sent }, "paid checks sent");
+  return sent;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -593,6 +712,7 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
     await expireQuotes(today, log);
     await scheduleReminders(today, log);
     await sendDueReminders(today, log);
+    await sendPaidChecks(today, log);
     const dropped = await sweepStaleDrafts(24);
     if (dropped) log.info({ count: dropped }, "stale drafts discarded");
     // A scheduled bank change that has come into force supersedes the old

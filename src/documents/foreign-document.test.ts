@@ -187,7 +187,7 @@ describe("the price on the page", () => {
     );
     assert.match(naira, /<h1>₦350,000<\/h1>/);
     assert.ok(!naira.includes("Charged in Naira"), "a naira invoice explained its own currency");
-    assert.match(naira, /Ask pysav for their bank details/);
+    assert.match(naira, /Payment details: contact pysav/);
     assert.ok(!naira.includes("by card"), "naira is paid by transfer");
     // No processor badge at all: Monnify, which once collected these, was
     // retired on 3 October 2026, and a transfer to the sender has none.

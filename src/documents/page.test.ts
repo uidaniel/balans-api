@@ -65,7 +65,7 @@ describe("what the page says", () => {
     // Monnify, which used to take these, was retired on 3 October 2026.
     const html = render(doc());
     assert.doesNotMatch(html, /<button/);
-    assert.match(html, /for their bank details/);
+    assert.match(html, /Payment details: contact /);
   });
 
   it("shows VAT only when there is some", () => {
@@ -117,7 +117,7 @@ describe("what the page refuses to do", () => {
     // the one thing this product must never do.
     const html = render(doc({ subAccountCode: null }));
     assert.doesNotMatch(html, /<button/);
-    assert.match(html, /for their bank details/i);
+    assert.match(html, /Payment details: contact /i);
   });
 
   it("never states an amount the document does not hold", () => {
@@ -516,5 +516,14 @@ describe("the order a phone reads the page in", () => {
     assert.doesNotMatch(html, /This invoice is paid/);
     // No PDF and no receipt yet: no download row, and no empty one either.
     assert.doesNotMatch(html, /class="files"/);
+  });
+});
+
+describe("a card payment in progress (31 October 2026)", () => {
+  it("asks for it while the page is open, and only then", () => {
+    const with_ = renderDocument(doc(), TODAY, { token: "a".repeat(32), pending: true });
+    assert.match(with_, /\/status/);
+    assert.match(with_, /location\.reload/);
+    assert.doesNotMatch(renderDocument(doc(), TODAY, { token: "a".repeat(32) }), /\/status'/);
   });
 });

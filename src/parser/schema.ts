@@ -54,6 +54,8 @@ export const INTENTS = [
   /** The answers to "Stop reminders for invoice 14?" (buttons). */
   "confirm_stop_reminders",
   "keep_reminders",
+  /** "Not yet", under the day-after "Did they pay?" (jobs/overdue.ts). */
+  "not_paid_yet",
   /** Choosing an invoice design. Advertised on the site, not built. */
   "templates",
   "remove_logo",

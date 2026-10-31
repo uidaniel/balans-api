@@ -138,7 +138,9 @@ const onboarding: FlowDefinition = {
       // Outside Nigeria the business leads to ABROAD instead of the bank
       // screens. No email code since 31 October 2026 (see below).
       BUSINESS: ["PAYOUT", "ABROAD"],
-      PAYOUT: ["MFB", "CONFIRM"],
+      // TERMS: "Skip for now", with no bank account (31 October 2026).
+      PAYOUT: ["MFB", "CONFIRM", "TERMS"],
+      TERMS: ["DONE"],
       MFB: ["CONFIRM"],
       CONFIRM: ["DONE"],
       ABROAD: ["DONE"],
@@ -185,6 +187,7 @@ const onboarding: FlowDefinition = {
         },
       },
       payoutScreen("onboarding"),
+      termsOnlyScreen(),
       mfbScreen("onboarding"),
       confirmScreen("onboarding"),
       abroadScreen(),
@@ -379,6 +382,51 @@ function payoutScreen(form: AccountForm): Record<string, unknown> {
                   account_number: "${form.account_number}",
                   ...v3(form),
                 },
+              },
+            },
+          ],
+        },
+        // Setup only: the account can wait (31 October 2026). A link rather
+        // than a second button, because a screen has one footer, and outside
+        // the form so its required boxes do not hold it back.
+        ...(change
+          ? []
+          : [
+              { type: "EmbeddedLink", text: "Skip for now", "on-click-action": { name: "navigate", next: { type: "screen", name: "TERMS" }, payload: {} } },
+              { type: "TextCaption", text: "Your client needs this to pay you. You can add it later." },
+            ]),
+      ],
+    },
+  };
+}
+
+/**
+ * The terms, for somebody who skipped the bank (31 October 2026): CONFIRM
+ * without an account on it. Setup is finished here all the same; the first
+ * invoice asks for the account, and "add bank" adds it any time.
+ */
+function termsOnlyScreen(): Record<string, unknown> {
+  return {
+    id: "TERMS",
+    title: "Before you finish",
+    terminal: false,
+    layout: {
+      type: "SingleColumnLayout",
+      children: [
+        { type: "TextBody", text: "You can add your bank account later: send add bank in the chat. Your client needs it to pay you." },
+        { type: "EmbeddedLink", text: "Read the Terms of use", "on-click-action": { name: "open_url", url: `${site}/terms` } },
+        { type: "EmbeddedLink", text: "Read the Privacy Notice", "on-click-action": { name: "open_url", url: `${site}/privacy` } },
+        {
+          type: "Form",
+          name: "terms_form",
+          children: [
+            { type: "OptIn", name: "agreed", label: "I agree to the Terms and the Privacy Notice", required: true },
+            {
+              type: "Footer",
+              label: "Finish setup",
+              "on-click-action": {
+                name: "data_exchange",
+                payload: { agreed: "${form.agreed}", skipped_bank: "1", form_version: "4" },
               },
             },
           ],

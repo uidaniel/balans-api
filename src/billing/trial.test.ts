@@ -72,3 +72,16 @@ describe("what it says", () => {
     assert.match(trialSentLine({ used: 3, allowance: 3 }), /last free document.*upgrade/);
   });
 });
+
+describe("what the trial line says Pro is doing (31 October 2026)", () => {
+  it("says the client is chased for them, when the document has a due date", () => {
+    const m = trialSentLine({ used: 1, allowance: 3 }, { client: "Zenith" });
+    assert.match(m, /If Zenith pays late, Balans reminds them by WhatsApp and email for you/);
+    assert.doesNotMatch(trialSentLine({ used: 1, allowance: 3 }), /pays late/);
+  });
+
+  it("gives the price on the last one", () => {
+    assert.match(trialSentLine({ used: 3, allowance: 3 }, { perMonth: "₦2,500" }), /Pro is ₦2,500 a month on the yearly plan/);
+    assert.match(trialSentLine({ used: 3, allowance: 3 }), /upgrade/);
+  });
+});

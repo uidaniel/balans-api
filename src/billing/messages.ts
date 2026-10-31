@@ -26,13 +26,30 @@ export function trialLine(t: { used: number; allowance: number }): string {
   return `You have ${left} of your ${t.allowance} free documents left, with every Pro feature. After that, new invoices need Pro.`;
 }
 
-/** Under a document just sent on the trial. */
-export function trialSentLine(t: { used: number; allowance: number }): string {
+/**
+ * Under a document just sent on the trial.
+ *
+ * With what Pro is doing for this one, when it is something they will see
+ * (31 October 2026): a free document is chased for them like a Pro one, and
+ * saying so once is the moment Pro is worth most. `client` only for one with
+ * a due date, which is what reminders need. `perMonth` is the yearly plan a
+ * month at a time, for the last one.
+ */
+export function trialSentLine(
+  t: { used: number; allowance: number },
+  o: { client?: string | null; perMonth?: string | null; year?: string | null } = {},
+): string {
   const left = Math.max(0, t.allowance - t.used);
   if (left === 0) {
-    return `🎁 That was your last free document. To send the next one, reply ${b("upgrade")} for Pro, monthly or yearly.`;
+    const price = o.perMonth ? `${o.perMonth} a month on the yearly plan` : o.year ? `${o.year} a year` : null;
+    return price
+      ? `🎁 That was your last free document. Pro is ${price}, so every invoice keeps your logo and chases late payers for you.`
+      : `🎁 That was your last free document. To send the next one, reply ${b("upgrade")} for Pro, monthly or yearly.`;
   }
-  return `🎁 That was ${Math.min(t.used, t.allowance)} of your ${t.allowance} free documents. ${left} left, with every Pro feature.`;
+  return lines(
+    `🎁 That was ${Math.min(t.used, t.allowance)} of your ${t.allowance} free documents. ${left} left, with every Pro feature.`,
+    o.client ? `If ${o.client} pays late, Balans reminds them by WhatsApp and email for you. On Pro, every invoice works this way.` : null,
+  );
 }
 
 export function proOffer(

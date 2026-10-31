@@ -306,6 +306,17 @@ border-radius:50%;background:var(--marigold);margin-right:8px;animation:pulse 1.
  * account and amount to copy as the transfer panel, and none of its countdown
  * or polling, because nothing will confirm a direct transfer.
  */
+/**
+ * Asks /status every four seconds for three minutes, and redraws the page
+ * when what has been paid is no longer what it was drawn with. A figure, not
+ * a flag: see the status route for the refresh loop a flag caused.
+ */
+const pollJs = (token: string, paidKobo: number): string => `
+(function(){var u='/i/'+${JSON.stringify(encodeURIComponent(token))}+'/status',paid=${Number(paidKobo)},n=0;
+function again(){if(++n<45)setTimeout(go,4000)}
+function go(){fetch(u,{cache:'no-store'}).then(function(r){return r.json()}).then(function(s){if(s&&typeof s.paidKobo==='number'&&s.paidKobo!==paid){location.reload()}else{again()}}).catch(again)}
+setTimeout(go,3000)})();`;
+
 const COPY_JS = `
 document.addEventListener('click', function (e) {
   var b = e.target.closest('button.copy');
@@ -441,6 +452,12 @@ function renderDocumentPage(
     /** Whether a card can actually be taken. Only consulted on a foreign invoice. */
     cardReady?: boolean;
     /**
+     * A card payment is in progress on it (31 October 2026): the payer is
+     * usually just back from checkout. The page asks for a few minutes and
+     * redraws itself once it lands, instead of waiting for a refresh.
+     */
+    pending?: boolean;
+    /**
      * Where this page was opened from, for its own links. A quote is opened
      * at balans.ng/q/…, which the site passes through to this API; its PDF
      * link has to stay under /q/ or it would point at a path the site does
@@ -570,6 +587,7 @@ function renderDocumentPage(
 </main>
 ${doc.plan === "pro" ? "" : footer(doc)}
 ${doc.bank && can.ok === false ? `<script>${COPY_JS}</script>` : ""}
+${opts.pending ? `<script>${pollJs(opts.token, doc.amountPaidKobo)}</script>` : ""}
 </body></html>`;
 }
 
@@ -791,9 +809,7 @@ function payBlock(
 
     // Unreachable: `payable` sends a naira invoice with no account to the
     // default below. Said the same way, in case that ever changes.
-    return `<div class="banner cancelled">Ask ${esc(doc.businessName)} for their bank details to pay this ${LABEL[
-      doc.type
-    ].toLowerCase()}.</div>`;
+    return `<div class="banner quote">Payment details: contact ${esc(doc.businessName)}.</div>`;
   }
 
   switch (can.why) {
@@ -820,7 +836,9 @@ function payBlock(
       // plumbing to the client.
       return doc.foreign
         ? `<div class="banner cancelled">Online payment is not set up for this ${LABEL[doc.type].toLowerCase()} yet. Contact ${esc(doc.businessName)} to arrange payment.</div>`
-        : `<div class="banner cancelled">Ask ${esc(doc.businessName)} for their bank details to pay this ${LABEL[doc.type].toLowerCase()}.</div>`;
+        : // Sent before they added a bank account (31 October 2026): it is
+          // still owed and will be paid, just not through this page.
+          `<div class="banner quote">Payment details: contact ${esc(doc.businessName)}.</div>`;
   }
 }
 

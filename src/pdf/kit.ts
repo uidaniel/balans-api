@@ -726,7 +726,8 @@ export function payInfo(d: DocumentData, opts: { label?: boolean; className?: st
           ? `<p class="how">Bank transfer to ${esc(d.bankDetails.accountName)}<br>Account details at the link</p>`
           : d.foreign
             ? `<p class="how">Card or Apple Pay<br>Protected by Paystack</p>`
-            : `<p class="how">Bank transfer to ${esc(d.businessName)}<br>Account details at the link</p>`
+            : // No account on it: sent before one was added (31 October 2026).
+              `<p class="how">Payment details: contact ${esc(d.businessName)}</p>`
     }
   </div>`;
 }

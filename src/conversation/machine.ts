@@ -53,6 +53,13 @@ export type State =
   | "onboarding:email"
   | "onboarding:verify_email"
   | "onboarding:consent"
+  /**
+   * A bank account added after setup, which can now be skipped (31 October
+   * 2026). Its own states, not onboarding's: the account confirmed leads back
+   * to the draft or to idle, never to the terms again.
+   */
+  | "adding_bank"
+  | "adding_bank:confirm"
   | "idle"
   /** A draft is on screen and the next message decides its fate (F6 step 3). */
   | "awaiting_confirm"
@@ -260,6 +267,8 @@ export type Effect =
        * asked for again. The effect writes the message, so it has to be told.
        */
       haveEmail?: boolean;
+      /** Where a failed lookup leaves the conversation. Setup's bank step by default. */
+      holdAt?: State;
     }
   | { type: "create_subaccount" }
   | { type: "send_email_code"; email: string }
@@ -343,7 +352,8 @@ export type Effect =
   /** Write the draft and show its summary (F6 step 2). */
   | { type: "save_draft"; doc: PendingDoc }
   /** Number it, make the link, send it (F6 step 4). */
-  | { type: "send_document" }
+  /** `withoutBank`: "Send without it", under the no-bank question (31 October 2026). */
+  | { type: "send_document"; withoutBank?: boolean }
   /** Open a sent invoice in the form, to change it. Null: the latest one. */
   | { type: "edit_sent"; number: number | null }
   | { type: "discard_draft" }
@@ -593,6 +603,9 @@ const CHANGE_NAME_TO =
 
 /** What to do next, under an answer that has the setup button beneath it. */
 const SETUP_NUDGE = "Tap below to set up. It takes about a minute.";
+
+/** Under the bank question during setup (31 October 2026): it can wait. */
+const SKIP_BANK = `Or reply ${b("skip")} to add it later. Your client needs it to pay you.`;
 
 /**
  * Everything the bot says during setup.
@@ -848,12 +861,31 @@ export const VOICE = {
         b("Which bank should your money go to?"),
         `Send the bank and account number together — like ${b("GTBank 0123456789")}.`,
       ),
+      SKIP_BANK,
     ),
 
-  askBank: lines(
-    `🏦 ${b("Which bank should your money go to?")}`,
-    `Send the bank and account number together — like ${b("GTBank 0123456789")}.`,
+  askBank: para(
+    lines(
+      `🏦 ${b("Which bank should your money go to?")}`,
+      `Send the bank and account number together — like ${b("GTBank 0123456789")}.`,
+    ),
+    SKIP_BANK,
   ),
+
+  /** The same question after setup, where there is nothing to skip to. */
+  askBankToAdd: para(
+    lines(
+      `🏦 ${b("Which bank should your money go to?")}`,
+      `Send the bank and account number together — like ${b("GTBank 0123456789")}.`,
+    ),
+    `Or reply ${b("later")} to leave it for now.`,
+  ),
+
+  bankAdded: (draftWaiting: boolean) =>
+    para(
+      `✅ ${b("Bank account added.")} Your invoices show it from now on.`,
+      draftWaiting ? `Your draft is still here. Reply ${b("yes")} to send it.` : null,
+    ),
 
   askEmail: lines(
     `✉️ ${b("What email address should we use?")}`,
@@ -1706,6 +1738,31 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
     case "onboarding:bank":
       return takeBank(text, context);
 
+    case "adding_bank":
+      if (/^(later|not now|no|cancel|stop|skip)[.!]*$/i.test(text.trim())) {
+        return {
+          replies: [`👍 Okay. Send ${b("add bank")} when you are ready.`],
+          next: context.draftId ? "awaiting_confirm" : "idle",
+          context: { ...context, attempts: 0 },
+          effects: [],
+        };
+      }
+      return takeBank(text, context, true);
+
+    case "adding_bank:confirm":
+      if (/^(yes|yeah|yep|correct|that is right|that'?s me|na me|ok|okay)\b/i.test(text.trim())) {
+        return {
+          replies: [VOICE.bankAdded(Boolean(context.draftId))],
+          next: context.draftId ? "awaiting_confirm" : "idle",
+          context: { ...context, attempts: 0 },
+          effects: [{ type: "create_subaccount" }],
+        };
+      }
+      if (/^(no|nope|wrong|not me|that is wrong)\b/i.test(text.trim())) {
+        return { replies: [VOICE.askBankToAdd], next: "adding_bank", context: { ...context, attempts: 0 }, effects: [] };
+      }
+      return retry("adding_bank:confirm", context, `Reply ${b("yes")} if it is, or ${b("no")} to send different details.`);
+
     case "onboarding:confirm_account":
       return confirmAccount(text, context);
 
@@ -1770,6 +1827,11 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
        * collects one. A link goes to it; the effect refuses quietly to
        * replace an address that is already confirmed.
        */
+      // "add bank" (31 October 2026): the bank change, which asks for the
+      // account straight away when there is none to protect.
+      if (/^add (a |my )?bank( account)?[.!]*$/i.test(text.trim())) {
+        return { replies: [], next: "settings:bank_code", context: { ...context, attempts: 0 }, effects: [{ type: "send_bank_change_code" }] };
+      }
       const typedEmail = text.trim().toLowerCase();
       if (EMAIL.test(typedEmail) && typedEmail.length <= 254) {
         return { replies: [], next: "idle", context, effects: [{ type: "send_email_link", email: typedEmail }] };
@@ -2217,6 +2279,7 @@ function fromParsed(msg: Inbound, ctx: Context, now: Civil): Step {
     case "stop_reminders":
     case "confirm_stop_reminders":
     case "keep_reminders":
+    case "not_paid_yet":
     case "cancel_document":
     case "resend_document":
     case "convert_quote":
@@ -3009,6 +3072,15 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
   const now = today(msg);
   const intent = msg.parsed?.intent;
 
+  // The two answers to "You have not added a bank account yet" (31 October
+  // 2026), read by their words because the parser knows neither.
+  if (/^send without (it|(a |the |my )?bank( account)?)$/i.test(msg.text.trim())) {
+    return { replies: [], next: "idle", context: { ...ctx, attempts: 0 }, effects: [{ type: "send_document", withoutBank: true }] };
+  }
+  if (/^add (a |my )?bank( account)?$/i.test(msg.text.trim())) {
+    return { replies: [VOICE.askBankToAdd], next: "adding_bank", context: { ...ctx, attempts: 0 }, effects: [] };
+  }
+
   if (intent === "confirm") {
     return {
       replies: [],
@@ -3632,13 +3704,22 @@ function takeBusinessName(text: string, ctx: Context, msg: Inbound): Step {
  * Accepts "GTBank 0123456789" in any order, and copes with the number being
  * sent on its own line.
  */
-function takeBank(text: string, ctx: Context): Step {
+function takeBank(text: string, ctx: Context, adding = false): Step {
+  /*
+   * "Skip" during setup (31 October 2026): straight to the terms, with no
+   * account. Setup counts as finished without one; the first invoice asks
+   * again, and "add bank" adds it any time.
+   */
+  if (!adding && /^(skip|skip (it|this|for now)|later|not now|i'?ll (add|do) it later|no bank( yet)?)[.!]*$/i.test(text.trim())) {
+    return { replies: [], next: "onboarding:consent", context: { ...ctx, attempts: 0 }, effects: [{ type: "ask_consent" }] };
+  }
+  const here: State = adding ? "adding_bank" : "onboarding:bank";
   const account = text.match(/\b(\d{10})\b/)?.[1];
   const bank = text.replace(/\b\d{10}\b/, "").replace(/\s+/g, " ").trim();
 
   if (!account) {
     return retry(
-      "onboarding:bank",
+      here,
       ctx,
       lines(
         "I need a 10-digit account number.",
@@ -3648,7 +3729,7 @@ function takeBank(text: string, ctx: Context): Step {
   }
   if (bank.length < 2) {
     return retry(
-      "onboarding:bank",
+      here,
       ctx,
       `Which bank is ${b(account)} with? Send the bank name, like ${b("GTBank")}.`,
     );
@@ -3656,14 +3737,14 @@ function takeBank(text: string, ctx: Context): Step {
 
   return {
     replies: [],
-    next: "onboarding:confirm_account",
+    next: adding ? "adding_bank:confirm" : "onboarding:confirm_account",
     context: { ...ctx, accountNumber: account, bankName: bank, attempts: 0 },
     // The caller resolves the name with the provider. We never take the user's
     // word for whose account it is (F17).
     effects: [
       // Always "Is that you?" with buttons since 31 October 2026: the email is
       // no longer asked for here, so there is nothing to collect in this turn.
-      { type: "resolve_account", bankQuery: bank, accountNumber: account, haveEmail: true },
+      { type: "resolve_account", bankQuery: bank, accountNumber: account, haveEmail: true, holdAt: here },
     ],
   };
 }

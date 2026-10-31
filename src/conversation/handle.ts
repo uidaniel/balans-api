@@ -269,6 +269,48 @@ async function sendProButton(
  * publish a Flow until the business is verified, and nobody should be unable
  * to finish signing up because of it.
  */
+/**
+ * What stops a draft going out for want of a bank account (31 October 2026),
+ * or null. Nothing for somebody abroad, who is paid to their own details, or
+ * for a quote, which is not paid at all.
+ */
+async function bankGate(
+  userId: string,
+  draftId: string,
+  phone: string | undefined,
+  withoutBank: boolean,
+): Promise<{ words: string; buttons: ReplyButton[] } | null> {
+  if (abroadCurrencyFor(phone) || (await accountInForce(userId))) return null;
+  const { rows } = await db().query<{ type: string; currency: string; pay_by: string | null; asked: boolean }>(
+    `SELECT d.type, d.currency, d.pay_by, u.sent_without_bank_at IS NOT NULL AS asked
+       FROM documents d JOIN users u ON u.id = d.user_id WHERE d.id = $1`,
+    [draftId],
+  );
+  const d = rows[0];
+  if (!d || d.type === "quote") return null;
+  const add: ReplyButton = { id: "add bank account", title: "Add bank account" };
+
+  if (d.currency !== "NGN") {
+    if (d.pay_by === "own") return null;
+    return {
+      words: para(
+        `🌍 ${b("A card payment from abroad is paid into your bank account, and you have not added one yet.")}`,
+        `Add it, then tap ${b("Send it")} again.`,
+      ),
+      buttons: [add],
+    };
+  }
+
+  if (withoutBank || d.asked) return null;
+  return {
+    words: para(
+      `🏦 ${b("You have not added a bank account yet.")}`,
+      "Your client needs it to pay you. Without it, the invoice tells them to contact you for payment details.",
+    ),
+    buttons: [add, { id: "send without bank", title: "Send without it" }],
+  };
+}
+
 async function sendConsentForm(
   userId: string,
   phone: string | undefined,
@@ -1131,7 +1173,7 @@ async function runEffects(
                 `Send the bank and account number again — like ${b("GTBank 0123456789")}.`,
               ),
             );
-            holdAt = "onboarding:bank";
+            holdAt = effect.holdAt ?? "onboarding:bank";
             break;
           }
 
@@ -1147,7 +1189,7 @@ async function runEffects(
                   )
                 : "I could not reach the bank just now. Send it again in a moment.",
             );
-            holdAt = "onboarding:bank";
+            holdAt = effect.holdAt ?? "onboarding:bank";
             break;
           }
 
@@ -1719,6 +1761,22 @@ async function runEffects(
             break;
           }
 
+          /*
+           * No bank account yet (31 October 2026): setup can be finished
+           * without one. A naira invoice asks once — add it, or send it saying
+           * to contact them for payment details. A card invoice abroad does
+           * not go at all: the card is paid into that account.
+           */
+          if (!ctx.editingId) {
+            const gate = await bankGate(userId, draft.id, ctx.phone, effect.withoutBank === true);
+            if (gate) {
+              extra.push(gate.words);
+              buttons = gate.buttons;
+              holdAt = "awaiting_confirm";
+              break;
+            }
+          }
+
           // Changing a sent invoice: into the same one, same number and link.
           const confirmed = ctx.editingId
             ? await applyEdit(userId, draft.id, ctx.editingId)
@@ -1844,9 +1902,47 @@ async function runEffects(
           };
 
           // Paid to their own details abroad is the same: only they can tell.
-          const markPaid: ReplyButton[] = confirmed.bank || confirmed.ownDetails
+          // And a naira one sent before there was a bank account to put on it.
+          const { rows: sentAs } = await db().query<{ no_bank: boolean }>(
+            `SELECT currency = 'NGN' AND delivery_type = 'payment_link' AND type <> 'quote' AS no_bank
+               FROM documents WHERE id = $1`,
+            [confirmed.id],
+          );
+          const noBank = sentAs[0]?.no_bank === true;
+          if (noBank && effect.withoutBank) {
+            await db().query(
+              `UPDATE users SET sent_without_bank_at = COALESCE(sent_without_bank_at, now()) WHERE id = $1`,
+              [userId],
+            );
+          }
+          const markPaid: ReplyButton[] = confirmed.bank || confirmed.ownDetails || noBank
             ? [{ id: `mark invoice ${confirmed.number} as paid`, title: "Mark as paid" }]
             : [];
+
+          /*
+           * The bank account, every third invoice sent without one (31
+           * October 2026): the question at the first, then a line at the
+           * third, sixth and so on. Never more often.
+           */
+          const remindBank = async (): Promise<void> => {
+            if (!noBank || ctx.editingId) return;
+            const { rows } = await db().query<{ n: number }>(
+              `SELECT count(*)::int AS n FROM documents d JOIN users u ON u.id = d.user_id
+                WHERE d.user_id = $1 AND d.currency = 'NGN' AND d.delivery_type = 'payment_link'
+                  AND d.type IN ('invoice', 'payment_request') AND d.status <> 'draft'
+                  AND u.sent_without_bank_at IS NOT NULL AND d.sent_at >= u.sent_without_bank_at`,
+              [userId],
+            );
+            const n = rows[0]?.n ?? 0;
+            if (n > 0 && n % 3 === 0) {
+              extra.push(
+                para(
+                  `🏦 ${b("Add your bank account")} so clients can pay you straight from the invoice.`,
+                  `Send ${b("add bank")}. It takes a minute.`,
+                ),
+              );
+            }
+          };
 
           /*
            * Where the free documents stand (19 October 2026), on its own line
@@ -1857,7 +1953,23 @@ async function runEffects(
             if (ctx.editingId || confirmed.updatedFrom) return;
             const t = await trialOf(userId);
             if (t.paid) return;
-            extra.push(trialSentLine(t));
+            const { rows } = await db().query<{ client: string; dated: boolean }>(
+              `SELECT c.name AS client, d.due_date IS NOT NULL AS dated
+                 FROM documents d JOIN clients c ON c.id = d.client_id WHERE d.id = $1`,
+              [confirmed.id],
+            );
+            const last = t.used >= t.allowance;
+            const year = last ? await proPriceFor(userId, log, "year") : null;
+            extra.push(
+              trialSentLine(t, {
+                client: rows[0]?.dated && confirmed.type !== "quote" ? rows[0].client : null,
+                perMonth: year ? perMonthOf(year) : null,
+                year: year?.label ?? null,
+              }),
+            );
+            // The way to it, under the last one. Only where nothing else
+            // has claimed this message's buttons.
+            if (last && !buttons) buttons = [{ id: "upgrade", title: "Get Pro" }];
           };
 
           /*
@@ -1941,6 +2053,7 @@ async function runEffects(
                 await offerDesigns();
                 await trialNote();
                 await askEmail();
+                await remindBank();
                 break;
               }
               log.error({ userId, reason: sent.reason }, "could not send the document");
@@ -1958,6 +2071,7 @@ async function runEffects(
           await offerDesigns();
           await trialNote();
           await askEmail();
+          await remindBank();
           break;
         }
 
@@ -2304,6 +2418,17 @@ async function runEffects(
           );
           const email = rows[0]?.verified ? rows[0]?.email : null;
 
+          /*
+           * No account at all (31 October 2026): setup can be finished without
+           * one. There is nothing to protect, so no code: the account is asked
+           * for, checked with the bank and confirmed by name, as in setup.
+           */
+          if (!(await accountInForce(userId))) {
+            extra.push(VOICE.askBankToAdd);
+            holdAt = "adding_bank";
+            break;
+          }
+
           if (!email) {
             extra.push(
               para(
@@ -2524,6 +2649,21 @@ async function runEffects(
           if (!(await sendProButton(userId, ctx.phone, proOffer(trial, price, year), UPGRADE_CARD, log, price))) {
             extra.push(proPayLink(proOffer(trial, price, year), proStartUrl(userId)));
           }
+          /*
+           * The email, asked for and not required (31 October 2026). Setup no
+           * longer collects one, and the Pro receipt is emailed. Asking before
+           * the payment would stand between somebody and paying; one line
+           * after the offer does not.
+           */
+          {
+            const { rows } = await db().query<{ verified: boolean }>(
+              `SELECT email_verified_at IS NOT NULL AS verified FROM users WHERE id = $1`,
+              [userId],
+            );
+            if (!rows[0]?.verified) {
+              extra.push(`📧 Add your email so your Pro receipt reaches you: send it here, like ${b("kemi@gmail.com")}.`);
+            }
+          }
           break;
         }
 
@@ -2595,6 +2735,16 @@ async function runEffects(
           if (effect.intent === "confirm_stop_reminders") {
             const stopped = await stopReminders(userId, number);
             extra.push(remindersStoppedMessage(stopped, number));
+            break;
+          }
+
+          if (effect.intent === "not_paid_yet") {
+            extra.push(
+              lines(
+                `👍 Okay. When it is in your bank, send ${b(`mark invoice ${number ?? ""} paid`.replace("  ", " "))}.`,
+                "Your client gets a receipt the moment you do.",
+              ),
+            );
             break;
           }
 

@@ -231,6 +231,8 @@ const NUMBERED: [RegExp, Intent][] = [
   // The buttons under "Stop reminders for invoice 3?".
   [/^yes,? stop reminders? (?:for )?(?:invoice )?#?(\d{1,6})$/, "confirm_stop_reminders"],
   [/^keep (?:the )?reminders? (?:for )?(?:invoice )?#?(\d{1,6})$/, "keep_reminders"],
+  // "Not yet", under "Did Zenith pay invoice 16?" (31 October 2026).
+  [/^not yet(?: paid)? (?:for )?(?:invoice )?#?(\d{1,6})$/, "not_paid_yet"],
   /*
    * A payment the sender is telling us about (addendum section 5): "Zenith
    * paid invoice 16", "paid invoice 16", "mark invoice 16 paid", "invoice 16

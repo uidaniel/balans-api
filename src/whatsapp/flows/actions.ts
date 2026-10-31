@@ -179,6 +179,19 @@ export async function completeSetup(userId: string, checked: Checked, log: Fasti
   return { ok: true };
 }
 
+/**
+ * Setup finished with the bank skipped (31 October 2026): the terms recorded
+ * and nothing else. The first invoice asks for the account, and "add bank"
+ * adds it any time.
+ */
+export async function completeSetupNoBank(userId: string, log: FastifyBaseLogger): Promise<Done> {
+  sendWelcome(userId, await recordConsent(userId, legalConsentVersion), log);
+  const { context } = await loadConversation(userId);
+  await saveConversation(userId, "idle", context.opener ? { opener: context.opener } : {});
+  log.info({ userId, version: legalConsentVersion }, "set up without a bank account");
+  return { ok: true };
+}
+
 /** Whether this user's WhatsApp number is outside Nigeria (Phase 3). */
 export async function isAbroad(userId: string): Promise<boolean> {
   const { rows } = await db().query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [userId]);

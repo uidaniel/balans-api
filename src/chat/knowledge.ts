@@ -90,11 +90,12 @@ Q: My payment for Pro didn't go through. A: That's usually the card or the bank.
 Q: Do you issue VAT receipts for Pro? A: No. For a record of a payment, email hello@balans.ng with the payment date.
 
 ## Getting started
-Q: How do I set up? A: Tap Set up Balans: add your business name and the bank account your money should go to, then agree to the terms. It takes about a minute. You can send your first invoice straight away.
+Q: How do I set up? A: Tap Set up Balans: add your business name and the bank account your money should go to, then agree to the terms. It takes about a minute. You can send your first invoice straight away. The bank account can be skipped and added later.
 Q: How do I send my first invoice? A: Type it in one line, like "Invoice Tunde 150k for logo design, due Friday", or send /invoice for a form. You see a draft before anything is sent.
 Q: Why do you need my email? A: After your first invoice, Balans asks for your email so copies of your invoices and receipts reach you. You confirm it by tapping a link we email you. Your clients see your business name, not your email. You need a confirmed email before you can change your payout bank.
 Q: How do I add my email? A: Send it here, like kemi@gmail.com, and tap the link we email you.
-Q: Why do you need my bank details? A: So clients know where to pay. Your account is checked and shown on the invoice page.
+Q: Why do you need my bank details? A: So clients know where to pay. Your account is checked and shown on the invoice page. Without one, your invoice tells your client to contact you for payment details, and clients abroad cannot pay you by card.
+Q: How do I add my bank account? A: Send "add bank", then your bank and account number, like GTBank 0123456789. It's checked with your bank and you confirm the name.
 Q: Do I need a business name? A: No. Your own name works.
 Q: I'm outside Nigeria. Can I use it? A: Yes. During setup you can add how you get paid (for example PayPal or IBAN), or add it later in settings. Those details appear on your invoices.
 Q: Can I start again? A: Send "start over" during setup.

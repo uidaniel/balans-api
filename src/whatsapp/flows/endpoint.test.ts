@@ -510,6 +510,22 @@ describe("setup, email code first", () => {
     assert.equal(there.screen, "ABROAD");
   });
 
+  it("can skip the bank, and finishes setup on the terms alone (31 October 2026)", async () => {
+    assert.deepEqual(screens.routing_model.PAYOUT, ["MFB", "CONFIRM", "TERMS"]);
+    assert.deepEqual(screens.routing_model.TERMS, ["DONE"]);
+    assert.match(JSON.stringify(screens.screens.find((s) => s.id === "PAYOUT")), /Skip for now/);
+
+    const finished: string[] = [];
+    const v4 = { ...deps, actions: { ...actions, completeSetupNoBank: async (u: string) => (finished.push(u), { ok: true as const }) } };
+    const out = (await answer(
+      { action: "data_exchange", screen: "TERMS", flow_token: "onboarding:user-1", data: { agreed: true, skipped_bank: "1", form_version: "4" } },
+      v4,
+    )) as Out;
+    assert.equal(out.screen, "DONE");
+    assert.deepEqual(finished, ["user-1"]);
+    assert.deepEqual(Object.keys(out.data).sort(), declared("DONE"));
+  });
+
   it("still sends the code from the first screen of a form opened before the change", async () => {
     calls.length = 0;
     const out = (await answer(v3("BUSINESS", { business_name: "Danny Codes Ltd", email: "Danny@X.ng" }), deps)) as Out;
