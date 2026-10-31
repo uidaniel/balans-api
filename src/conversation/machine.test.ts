@@ -4,7 +4,7 @@ import { step, VOICE, type Context, type State } from "./machine.ts";
 import type { Parsed } from "../parser/schema.ts";
 import type { Civil } from "../../core/dates.ts";
 import type { Correction } from "../parser/corrections.ts";
-import { FLOWS, currencyOptions, designOptions, payByOptions } from "../whatsapp/flows/definitions.ts";
+import { FLOWS, currencyOptions, designOptions } from "../whatsapp/flows/definitions.ts";
 import { readCorrection } from "../parser/corrections.ts";
 import { asCommand } from "../parser/commands.ts";
 import { settingsMenu } from "../settings/messages.ts";
@@ -680,14 +680,12 @@ describe("a tapped button", () => {
       // Naira already chosen: the box is required whenever it shows, and an
       // empty start would make everybody pick naira on every invoice.
       currency: "NGN",
-      pay_by: "",
       can_bill_abroad: false,
       // Hidden until the caller finds international invoicing on; then Free
       // sees it with only naira choosable, which is this list.
       show_currency: false,
       currencies: currencyOptions(false),
       // The "Paid by" list before the caller names their bank and details.
-      pay_options: payByOptions({ bank: null, details: null }),
       amount_help: "Naira, before VAT. Digits only.",
       // The Phone box, greyed out until the caller finds the sender on Pro.
       can_whatsapp_client: false,

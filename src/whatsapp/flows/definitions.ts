@@ -1021,8 +1021,6 @@ const CURRENCIES_SCHEMA = {
 };
 
 const carriedData = (numbers: "string" | "number"): Record<string, unknown> => ({
-  // "Paid by", chosen on the item screen under Currency (31 October 2026).
-  pay_by: { type: "string", __example__: "" },
   client_name: { type: "string", __example__: "Daniel Uwak" },
   client_email: { type: "string", __example__: "" },
   client_phone: { type: "string", __example__: "" },
@@ -1092,12 +1090,6 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
   show_currency: { type: "boolean", __example__: false },
   currencies: CURRENCIES_SCHEMA,
   /*
-   * How a client abroad can pay, as the last screen lists it (7 October 2026):
-   * their own bank (named), their own details, or a Balans link. Built for
-   * whoever opens the form (`payByOptions`), so it can name their account.
-   */
-  pay_options: CURRENCIES_SCHEMA,
-  /*
    * The line under the Amount box, which cannot be fixed text any more.
    *
    * "Naira, before VAT" is right for almost everybody and flatly wrong above
@@ -1136,7 +1128,6 @@ const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<str
   due_date: `\${${from}.due_date}`,
   // Chosen on the form screens, so it is read wherever the others are.
   currency: `\${${from}.currency}`,
-  pay_by: `\${${from}.pay_by}`,
   // Typed on the work screens, above the first item (9 October 2026).
   title: `\${${from}.title}`,
   // These three are only ever set on TERMS, at the end, so every screen
@@ -1154,7 +1145,6 @@ const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<str
   can_bill_abroad: "${data.can_bill_abroad}",
   show_currency: "${data.show_currency}",
   currencies: "${data.currencies}",
-  pay_options: "${data.pay_options}",
   amount_help: "${data.amount_help}",
   can_whatsapp_client: "${data.can_whatsapp_client}",
   phone_help: "${data.phone_help}",
@@ -1172,26 +1162,6 @@ const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<str
  * `home` is the currency their WhatsApp number suggests (core/home-currency.ts):
  * it goes to the top, then naira, then the rest in a fixed order.
  */
-/**
- * What the "Paid by" box lists (7 October 2026). Their Nigerian account by
- * name when they have one, their own details (saved, or asked for in the chat
- * once the form closes), and a Balans card link.
- */
-export function payByOptions(x: { bank: string | null; details: string | null }): CurrencyOption[] {
-  const first = (x.details ?? "").split("\n")[0]!.trim();
-  return [
-    ...(x.bank ? [{ id: "bank", title: "My bank account", description: x.bank }] : []),
-    {
-      id: "own",
-      title: "Custom payment details",
-      description: first ? (first.length > 60 ? `${first.slice(0, 59)}…` : first) : "Not for naira. PayPal, Wise and so on.",
-    },
-    // A card payment settles to a Nigerian account through Paystack: with
-    // none, the client would reach a checkout that cannot open (9 Oct 2026).
-    ...(x.bank ? [{ id: "link", title: "Balans payment link", description: "Not for naira. Your client pays by card." }] : []),
-  ];
-}
-
 export type CurrencyOption = { id: string; title: string; description?: string; enabled?: boolean };
 
 /**
@@ -1771,33 +1741,6 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
               "input-type": entry ? "number" : "text",
               "max-chars": 12,
             },
-            /*
-             * "Paid by", under the Amount and only once a currency other than
-             * naira is picked (31 October 2026): a Balans card link, their
-             * own details (PayPal, Wise…), or their Nigerian account.
-             *
-             * It was on the last screen, bound to the currency carried there,
-             * and WhatsApp showed it on naira invoices all the same, with its
-             * one option saying "Not for naira". A condition on this screen's
-             * own form is the shape the custom deposit already uses, and the
-             * one that works on a phone.
-             */
-            {
-              type: "If",
-              // One comparison (31 October 2026): the same check written as
-              // "== 'USD' || == 'GBP' || …" never showed the box on a phone.
-              // The form opens on naira (formValues), so anything else shows it.
-              condition: "${form.currency} != 'NGN'",
-              then: [
-                {
-                  type: "Dropdown",
-                  name: "pay_by",
-                  label: "Paid by",
-                  required: false,
-                  "data-source": "${data.pay_options}",
-                },
-              ],
-            },
             ...itemBoxes,
             ...(items === 5
               ? [
@@ -1909,13 +1852,11 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
            * Both mean naira.
            */
           currency: { type: "string", __example__: "" },
-          pay_by: { type: "string", __example__: "" },
           // Never shown on this screen and never edited here; TERMS only has
           // to declare them because it is the screen that hands everything on.
           can_bill_abroad: { type: "boolean", __example__: false },
           show_currency: { type: "boolean", __example__: false },
           currencies: CURRENCIES_SCHEMA,
-          pay_options: CURRENCIES_SCHEMA,
           amount_help: { type: "string", __example__: "Naira, before VAT. Digits only." },
           can_whatsapp_client: { type: "boolean", __example__: false },
           phone_help: { type: "string", __example__: "WhatsApp delivery comes with Pro." },
@@ -2037,7 +1978,6 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       plan: "${form.plan}",
                       deposit: "${form.deposit}",
                       design: "${form.design}",
-                      pay_by: "${data.pay_by}",
                       vat: "${form.vat}",
                       notes: "${form.notes}",
                       title: "${data.title}",

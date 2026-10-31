@@ -36,7 +36,7 @@ import {
 import { formatNaira } from "../../core/totals.ts";
 import { resolveDueDate, saysNoDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
-import { DEFAULT_TEMPLATE, EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, payByOptions, formScreenId, itemFields, planIdFor, PLANS } from "../whatsapp/flows/definitions.ts";
+import { DEFAULT_TEMPLATE, EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, formScreenId, itemFields, planIdFor, PLANS } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION, draftButtons } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
 import { INFO, type Foreign } from "../../core/currency.ts";
@@ -2745,11 +2745,9 @@ export function formValues(doc: PendingDoc, now: Civil): {
     // it shows, so an empty start would make everybody pick naira on every
     // invoice; this way the ordinary case is already chosen.
     currency: doc.foreign?.currency ?? "NGN",
-    pay_by: doc.payBy ?? "",
     can_bill_abroad: false,
     show_currency: false,
     currencies: currencyOptions(false),
-    pay_options: payByOptions({ bank: null, details: null }),
     // Free's list and the default design; `openedForPlan` puts in theirs.
     designs: designOptions(false),
     design: DEFAULT_TEMPLATE,

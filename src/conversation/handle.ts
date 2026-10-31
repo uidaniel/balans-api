@@ -36,7 +36,7 @@ import {
   type State,
   formValues,
 } from "./machine.ts";
-import { EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, payByOptions, planIdFor, splitForPlan } from "../whatsapp/flows/definitions.ts";
+import { EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, planIdFor, splitForPlan } from "../whatsapp/flows/definitions.ts";
 import { VAT_PERCENT } from "../parser/extract.ts";
 import { forLog, type Parsed } from "../parser/schema.ts";
 import { b, i, lines, para, row } from "../whatsapp/format.ts";
@@ -4118,18 +4118,6 @@ function clientWhatsAppIsPro(): string {
  * Only the document forms carry these keys. Onboarding and the rest do not
  * declare them, and a Flow handed one key too many dies at the first tap.
  */
-/** The "Paid by" box's list for this user: their bank by name, their details. */
-async function payOptionsFor(userId: string) {
-  const [account, { rows }] = await Promise.all([
-    accountInForce(userId),
-    db().query<{ d: string | null }>(`SELECT payment_details AS d FROM users WHERE id = $1`, [userId]),
-  ]);
-  return payByOptions({
-    bank: account ? `${account.bankName} ••${account.last4}` : null,
-    details: rows[0]?.d ?? null,
-  });
-}
-
 /** The sender's WhatsApp number, for putting their own currency first. */
 async function phoneOf(userId: string): Promise<string | null> {
   const { rows } = await db().query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [userId]);
@@ -4164,7 +4152,6 @@ async function openedForPlan(
           currencies: currencyOptions(pro, abroad ?? homeCurrencyFor(phone), abroad !== null),
           ...(pro || abroad ? { can_bill_abroad: true, amount_help: ABROAD_HELP } : {}),
           ...(abroad && data.currency === "NGN" ? { currency: abroad } : {}),
-          pay_options: await payOptionsFor(userId),
         }
       : {};
 
