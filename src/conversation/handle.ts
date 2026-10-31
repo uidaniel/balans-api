@@ -36,7 +36,7 @@ import {
   type State,
   formValues,
 } from "./machine.ts";
-import { EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, planIdFor, splitForPlan } from "../whatsapp/flows/definitions.ts";
+import { EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, keepChosen, planIdFor, splitForPlan } from "../whatsapp/flows/definitions.ts";
 import { VAT_PERCENT } from "../parser/extract.ts";
 import { forLog, type Parsed } from "../parser/schema.ts";
 import { b, i, lines, para, row } from "../whatsapp/format.ts";
@@ -1343,7 +1343,7 @@ async function runEffects(
           if (sent.ok) {
             await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
           } else {
-            log.error({ userId, reason: sent.reason }, "flow send failed");
+            log.error({ userId, key: effect.key, reason: sent.reason }, "flow send failed");
             flowFell = true;
             extra.push(effect.fallback?.line ?? VOICE.setupByHand);
             holdAt =
@@ -4149,7 +4149,14 @@ async function openedForPlan(
           show_currency: true,
           // Abroad, the currency they bill in is "home", even where their number
           // maps to none of ours (India: USD), or it opens greyed out.
-          currencies: currencyOptions(pro, abroad ?? homeCurrencyFor(phone), abroad !== null),
+          /*
+           * The currency the form opens on is never one it greys out (31
+           * October 2026). Changing a sent dollar invoice after Pro had ended
+           * opened the form on USD with USD disabled, and Meta refused the
+           * whole message: "(#131009) Parameter value is not valid". What the
+           * invoice is already in stays choosable; nothing new is unlocked.
+           */
+          currencies: keepChosen(currencyOptions(pro, abroad ?? homeCurrencyFor(phone), abroad !== null), data.currency),
           ...(pro || abroad ? { can_bill_abroad: true, amount_help: ABROAD_HELP } : {}),
           ...(abroad && data.currency === "NGN" ? { currency: abroad } : {}),
         }

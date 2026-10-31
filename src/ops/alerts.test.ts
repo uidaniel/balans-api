@@ -23,6 +23,15 @@ describe("error digests", () => {
     assert.doesNotMatch(bodies[0]!, /2348000000000/, "a phone number leaked into an alert");
   });
 
+  it("says which form and what the provider said (31 October 2026)", async () => {
+    captureLogError([{ userId: "u1", key: "invoice", reason: "(#131009) Parameter value is not valid" }, "flow send failed"]);
+    const { log, said } = fakeLog();
+    await sendErrorDigest(log);
+    const body = String(said[0]?.obj.body ?? "");
+    assert.match(body, /1× flow send failed \(invoice\): \(#131009\) Parameter value is not valid/);
+    assert.doesNotMatch(body, /u1/);
+  });
+
   it("sends nothing when nothing went wrong", async () => {
     const { log, said } = fakeLog();
     assert.equal(await sendErrorDigest(log), 0);

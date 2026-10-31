@@ -263,3 +263,19 @@ describe("what the form path does with it", () => {
     assert.match(handle, /const context: Record<string, unknown> = \{ doc: priced \}/);
   });
 });
+
+describe("the currency a form opens on (31 October 2026)", async () => {
+  const { currencyOptions, keepChosen } = await import("./definitions.ts");
+
+  it("is never greyed out, even where the plan would grey it", () => {
+    const free = currencyOptions(false);
+    assert.equal(free.find((o) => o.id === "USD")?.enabled, false, "the premise: USD is greyed on Free");
+    const opened = keepChosen(free, "USD");
+    assert.equal(opened.find((o) => o.id === "USD")?.enabled, undefined);
+    assert.equal(opened.find((o) => o.id === "GBP")?.enabled, false, "nothing else is unlocked");
+  });
+
+  it("leaves a naira form as it was", () => {
+    assert.deepEqual(keepChosen(currencyOptions(false), "NGN"), currencyOptions(false));
+  });
+});

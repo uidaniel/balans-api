@@ -1212,6 +1212,16 @@ export function currencyOptions(pro: boolean, home: Currency = "NGN", abroad = f
   );
 }
 
+/**
+ * The list with the option the form opens on always choosable (31 October
+ * 2026). A sent dollar invoice changed after Pro had ended opened on USD with
+ * USD greyed out, and Meta refused the message: "(#131009) Parameter value is
+ * not valid". Only that one is let through; nothing else is unlocked.
+ */
+export function keepChosen(options: CurrencyOption[], chosen: unknown): CurrencyOption[] {
+  return options.map((o) => (o.id === chosen && o.enabled === false ? { id: o.id, title: o.title } : o));
+}
+
 /** Some number of extra items, declared. Always strings: a form returns strings. */
 function itemData(count: number): Record<string, unknown> {
   const out: Record<string, unknown> = {};

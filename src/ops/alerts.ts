@@ -45,10 +45,18 @@ export function captureLogError(args: unknown[]): void {
     const [first, second] = args;
     let msg = typeof first === "string" ? first : typeof second === "string" ? second : "";
     if (first && typeof first === "object") {
-      const o = first as { err?: { message?: string }; message?: string; msg?: string };
+      const o = first as { err?: { message?: string }; message?: string; msg?: string; reason?: unknown; key?: unknown };
       const errMsg = o.err?.message ?? (first instanceof Error ? first.message : undefined);
       if (!msg) msg = o.msg ?? o.message ?? "";
+      /*
+       * Which form, and what Meta said (31 October 2026). A digest reading
+       * "flow send failed" and nothing else sent somebody to the server logs
+       * for the one fact that mattered. `key` is a form's name and `reason`
+       * the provider's own error text; neither holds a person's details.
+       */
+      if (typeof o.key === "string") msg = `${msg} (${o.key})`;
       if (errMsg) msg = msg ? `${msg}: ${errMsg}` : errMsg;
+      else if (typeof o.reason === "string") msg = msg ? `${msg}: ${o.reason}` : o.reason;
     }
     msg = clip(msg.replace(/\s+/g, " ").trim() || "(error with no message)", 300);
     const now = new Date();
