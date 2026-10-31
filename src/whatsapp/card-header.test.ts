@@ -41,7 +41,7 @@ const { sendCta, sendImage } = await import("./client.ts");
 
 const PHONE = "2349052995617";
 const MEDIA_ID = "2994830510867588";
-const LINK = "https://balans.ng/brand/paid-tonight.jpg";
+const LINK = "https://balans.ng/brand/welcome.jpg";
 
 type Payload = {
   type?: string;

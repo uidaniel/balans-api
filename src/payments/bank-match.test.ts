@@ -1,6 +1,6 @@
 /**
- * Bank matching, as people actually type it. Moved from the Monnify tests
- * when Monnify was retired; the lists are slices of real bank lists.
+ * Bank matching, as people actually type it. The lists are slices of real
+ * bank lists.
  */
 
 import { describe, it } from "node:test";
@@ -55,7 +55,7 @@ describe("bank matching, as people actually type it", () => {
 
 describe("a bank name resolves to a bank that can be paid", () => {
   /**
-   * Monnify lists 374 entries, and only 85 have a three-digit CBN code. The
+   * One real list has 374 entries, and only 85 have a three-digit CBN code. The
    * rest are NIP-only routes: wallets, agent networks, some microfinance
    * banks. Both kinds resolve an account name perfectly well, which is the
    * trap — a wallet passes every check and then fails at subaccount creation,

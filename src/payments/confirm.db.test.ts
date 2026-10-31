@@ -28,13 +28,13 @@ const quiet = {
   level: "silent",
 } as any;
 
-/** Monnify, replaced by a fixed answer. */
+/** Paystack, replaced by a fixed answer. */
 const saying = (over: Record<string, unknown>) =>
   async (): Promise<VerifyResult> => ({
     ok: true,
     raw: {},
     transaction: {
-      transactionReference: "MNFY|test",
+      transactionReference: "trx_test",
       paymentReference: "",
       paymentStatus: "PAID",
       amountPaidKobo: 0,
@@ -117,7 +117,7 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
 
     await recordInitialisedPayment({
       documentId, userId, reference,
-      providerReference: "MNFY|test",
+      providerReference: "trx_test",
       amountKobo: stageKobo + surchargeKobo,
       invoiceAmountKobo: stageKobo,
       balansFeeKobo: 500_00,
@@ -142,7 +142,7 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
   it("marks a matching payment paid", async () => {
     const { documentId, reference } = await scenario(50_000_00);
     const out = await confirmPayment(
-      { paymentReference: reference, transactionReference: "MNFY|test" },
+      { paymentReference: reference, transactionReference: "trx_test" },
       quiet,
       saying({ paymentReference: reference, amountPaidKobo: 50_000_00, totalPayableKobo: 50_000_00 }),
     );
@@ -173,7 +173,7 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
     const { documentId, reference } = await scenario(215_000_00, 0, 920_06, 53_750_00);
 
     const out = await confirmPayment(
-      { paymentReference: reference, transactionReference: "MNFY|test" },
+      { paymentReference: reference, transactionReference: "trx_test" },
       quiet,
       // What arrives is the grossed-up figure, and the amount check is
       // against that — the client really was asked to send it.
@@ -192,12 +192,12 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
   });
 
   it("changes nothing on a second delivery", async () => {
-    // Monnify retries. The same payment arriving twice must not credit twice.
+    // Paystack retries. The same payment arriving twice must not credit twice.
     const { documentId, reference } = await scenario(50_000_00);
     const verify = saying({ paymentReference: reference, amountPaidKobo: 50_000_00, totalPayableKobo: 50_000_00 });
 
-    const first = await confirmPayment({ paymentReference: reference, transactionReference: "MNFY|test" }, quiet, verify);
-    const second = await confirmPayment({ paymentReference: reference, transactionReference: "MNFY|test" }, quiet, verify);
+    const first = await confirmPayment({ paymentReference: reference, transactionReference: "trx_test" }, quiet, verify);
+    const second = await confirmPayment({ paymentReference: reference, transactionReference: "trx_test" }, quiet, verify);
 
     assert.equal(first.kind, "confirmed");
     assert.equal(second.kind, "already_confirmed");
@@ -210,8 +210,8 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
     const verify = saying({ paymentReference: reference, amountPaidKobo: 50_000_00, totalPayableKobo: 50_000_00 });
 
     const [a, b] = await Promise.all([
-      confirmPayment({ paymentReference: reference, transactionReference: "MNFY|test" }, quiet, verify),
-      confirmPayment({ paymentReference: reference, transactionReference: "MNFY|test" }, quiet, verify),
+      confirmPayment({ paymentReference: reference, transactionReference: "trx_test" }, quiet, verify),
+      confirmPayment({ paymentReference: reference, transactionReference: "trx_test" }, quiet, verify),
     ]);
 
     const kinds = [a.kind, b.kind].sort();
@@ -222,7 +222,7 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
   it("holds a short payment for review rather than marking it paid", async () => {
     const { documentId, reference } = await scenario(50_000_00);
     const out = await confirmPayment(
-      { paymentReference: reference, transactionReference: "MNFY|test" },
+      { paymentReference: reference, transactionReference: "trx_test" },
       quiet,
       saying({ paymentReference: reference, amountPaidKobo: 40_000_00, totalPayableKobo: 50_000_00 }),
     );
@@ -235,7 +235,7 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
   it("holds a payment in the wrong currency", async () => {
     const { reference } = await scenario(50_000_00);
     const out = await confirmPayment(
-      { paymentReference: reference, transactionReference: "MNFY|test" },
+      { paymentReference: reference, transactionReference: "trx_test" },
       quiet,
       saying({ paymentReference: reference, amountPaidKobo: 50_000_00, currency: "USD" }),
     );
@@ -246,7 +246,7 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
     // This is the one that would credit the wrong person's invoice.
     const { documentId, reference } = await scenario(50_000_00);
     const out = await confirmPayment(
-      { paymentReference: reference, transactionReference: "MNFY|test" },
+      { paymentReference: reference, transactionReference: "trx_test" },
       quiet,
       saying({ paymentReference: "bal_somebody_else", amountPaidKobo: 50_000_00 }),
     );
@@ -260,7 +260,7 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
     // document caps and the payment row keeps what really arrived.
     const { documentId, reference } = await scenario(50_000_00);
     const out = await confirmPayment(
-      { paymentReference: reference, transactionReference: "MNFY|test" },
+      { paymentReference: reference, transactionReference: "trx_test" },
       quiet,
       saying({ paymentReference: reference, paymentStatus: "OVERPAID", amountPaidKobo: 60_000_00 }),
     );
@@ -274,7 +274,7 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
   it("adds a part payment to what was already paid", async () => {
     const { documentId, reference } = await scenario(50_000_00, 20_000_00);
     const out = await confirmPayment(
-      { paymentReference: reference, transactionReference: "MNFY|test" },
+      { paymentReference: reference, transactionReference: "trx_test" },
       quiet,
       saying({ paymentReference: reference, amountPaidKobo: 30_000_00, totalPayableKobo: 30_000_00 }),
     );
@@ -288,7 +288,7 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
   it("records an abandoned checkout without touching the invoice", async () => {
     const { documentId, reference } = await scenario(50_000_00);
     const out = await confirmPayment(
-      { paymentReference: reference, transactionReference: "MNFY|test" },
+      { paymentReference: reference, transactionReference: "trx_test" },
       quiet,
       saying({ paymentReference: reference, paymentStatus: "ABANDONED", amountPaidKobo: 0 }),
     );
@@ -303,7 +303,7 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
     // failed puts a wrong word next to a payment still likely to arrive.
     const { documentId, reference } = await scenario(50_000_00);
     const out = await confirmPayment(
-      { paymentReference: reference, transactionReference: "MNFY|test" },
+      { paymentReference: reference, transactionReference: "trx_test" },
       quiet,
       saying({ paymentReference: reference, paymentStatus: "PENDING", amountPaidKobo: 0 }),
     );
@@ -316,7 +316,7 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
   it("holds a part payment that arrived short", async () => {
     const { documentId, reference } = await scenario(50_000_00);
     const out = await confirmPayment(
-      { paymentReference: reference, transactionReference: "MNFY|test" },
+      { paymentReference: reference, transactionReference: "trx_test" },
       quiet,
       saying({ paymentReference: reference, paymentStatus: "PARTIALLY_PAID", amountPaidKobo: 30_000_00 }),
     );
@@ -328,17 +328,17 @@ describe("confirming a payment", { skip: !HAS_DB && "no DATABASE_URL" }, () => {
 
   it("ignores a reference it never issued", async () => {
     const out = await confirmPayment(
-      { paymentReference: "bal_never_existed", transactionReference: "MNFY|test" },
+      { paymentReference: "bal_never_existed", transactionReference: "trx_test" },
       quiet,
       saying({}),
     );
     assert.equal(out.kind, "unknown_reference");
   });
 
-  it("asks for a retry when Monnify cannot be reached", async () => {
+  it("asks for a retry when Paystack cannot be reached", async () => {
     const { documentId, reference } = await scenario(50_000_00);
     const out = await confirmPayment(
-      { paymentReference: reference, transactionReference: "MNFY|test" },
+      { paymentReference: reference, transactionReference: "trx_test" },
       quiet,
       async () => ({ ok: false, message: "timeout" }),
     );

@@ -43,7 +43,7 @@ const doc = (over: Partial<DocumentData> = {}): DocumentData => ({
   dueDate: { y: 2026, m: 10, d: 8 },
   notes: null,
   publicUrl: null,
-  legalLines: ["Issued by pysav via Balans", "Payments processed by Monnify"],
+  legalLines: ["Issued by pysav via Balans", "Payments processed by Paystack"],
   showMadeWith: false,
   receipt: {
     number: 1,
@@ -103,7 +103,7 @@ describe("what a receipt says", () => {
     const html = renderReceiptHtml(doc());
     assert.match(html, /pysav/);
     assert.match(html, /Issued by pysav via Balans/);
-    assert.match(html, /Payments processed by Monnify/);
+    assert.match(html, /Payments processed by Paystack/);
   });
 });
 

@@ -53,7 +53,7 @@ describe("the checkout that is already open", () => {
     /*
      * A part payment landing between the two presses changes what is owed.
      * Handing back the earlier checkout would then charge a figure nobody
-     * owes any more — the same reason `liveTransferFor` matches on it.
+     * owes any more.
      */
     const fn = payments.slice(payments.indexOf("export async function liveCardCheckoutFor"));
     assert.match(fn, /COALESCE\(invoice_amount_kobo, client_total_kobo\) = \$2/);
@@ -61,7 +61,7 @@ describe("the checkout that is already open", () => {
 
   it("will not hand back a transfer, or a payment that is already spent", () => {
     const fn = payments.slice(payments.indexOf("export async function liveCardCheckoutFor"));
-    assert.match(fn, /provider = 'paystack'/, "a Monnify transfer has no checkout page");
+    assert.match(fn, /provider = 'paystack'/, "only a Paystack payment has a checkout page");
     assert.match(fn, /status = 'initialised'/, "a paid or failed payment is not somewhere to send anybody");
   });
 

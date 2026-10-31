@@ -1240,9 +1240,7 @@ async function runEffects(
            * Confirmed, so it is the account. Nothing to create at a processor
            * any more: a naira invoice is paid straight into it, and the
            * Paystack subaccount a card payment needs is made the first time
-           * somebody bills abroad (see paystack-subaccount.ts). This step
-           * used to create a Monnify subaccount, and failed for every OPay,
-           * PalmPay and Moniepoint account Monnify would not settle into.
+           * somebody bills abroad (see paystack-subaccount.ts).
            */
           await activateBankAccount(userId, null);
           log.info({ userId }, "payout account confirmed");
@@ -2535,7 +2533,7 @@ async function runEffects(
             bankName: bank.name,
             accountNumber: effect.accountNumber,
             accountName: resolved.account.accountName,
-            // No Monnify subaccount any more: naira is paid straight into the
+            // No subaccount to make here: naira is paid straight into the
             // account, and the Paystack one for card payments is made on demand.
             subAccountCode: null,
           };
@@ -3692,7 +3690,7 @@ async function handleInvoiceForm(
     vatPercent: fields.vat === "true" ? VAT_PERCENT : null,
     depositPercent,
     instalments,
-    // No longer asked: the form's fee box went with the Monnify split.
+    // Not asked: the form has no fee box.
     passFeesToClient: false,
     notes: notes || null,
     title: (fields.title ?? "").trim().slice(0, 120) || null,

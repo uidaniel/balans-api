@@ -180,7 +180,7 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
   const grossedUp = money.clientPaysKobo !== draft.totalKobo;
 
   /*
-   * Monnify charges per payment, so a split invoice pays their fee twice.
+   * The processor charges per payment, so a split invoice pays its fee twice.
    *
    * Unlabelled, that reads as a broken promise: their cut is capped at ₦2,000
    * and a ₦200,000 invoice split in two shows ₦2,700. Both numbers are right
@@ -396,19 +396,14 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
 
     <div class="settles"><span class="ic">${CLOCK}</span><div>${
       /*
-       * Section 9, in as many words: never say "tonight" about a card.
-       * Monnify's 10 PM run is a promise we can make because we know the hour
-       * of it and because it runs every day. A card is on Paystack's schedule,
-       * so the sentence comes from configuration — and `settlesLine` is the
-       * one place either is decided, so no two surfaces can disagree about
-       * when somebody is getting paid.
-       *
-       * Computed from the clock at render time, which is what makes "tonight"
-       * honest: an invoice drawn up at 11 PM says tomorrow, because 22:00 has
-       * already gone.
+       * Section 9, in as many words: never say "tonight" about a card. A
+       * card is on Paystack's schedule, which nobody has confirmed in
+       * writing, so the sentence comes from configuration — and
+       * `settlesLine` is the one place it is decided, so no two surfaces can
+       * disagree about when somebody is getting paid.
        */
       card
-        ? esc(settlesLine(new Date(), "paystack"))
+        ? esc(settlesLine())
         : draft.payBy === "own"
           ? "Your client pays you directly"
           : "Your client pays straight into your bank account"

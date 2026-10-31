@@ -59,12 +59,12 @@ const ABROAD: Partial<Draft> = {
 
 describe("what the receipt says", () => {
   it("pays a naira invoice straight to the bank, with nothing taken", () => {
-    // No processor touches it (bank-details.ts): no Monnify fee, no Balans
+    // No processor touches it (bank-details.ts): no processor fee, no Balans
     // fee, and no "settles tonight" about a transfer we never see.
     const html = receiptHtml(draft({}), "free", today);
     assert.match(html, /To your bank/);
     assert.ok(html.includes("₦20,000"), "all of it lands");
-    assert.ok(!/Monnify|Balans fee|tonight/.test(html), "a payment path this invoice does not take");
+    assert.ok(!/Paystack|Balans fee|tonight/.test(html), "a payment path this invoice does not take");
   });
 
   it("itemises the two fees instead of adding them up", () => {
@@ -78,9 +78,9 @@ describe("what the receipt says", () => {
 
   describe("an invoice priced abroad", () => {
     /*
-     * Found on a phone, on a real $150 invoice: the card said "Monnify fee"
-     * and promised settlement at 10 PM tonight, while the words directly
-     * underneath the same picture said 1 to 2 business days.
+     * Found on a phone, on a real $150 invoice: the card named the wrong
+     * processor's fee and promised settlement at 10 PM tonight, while the
+     * words directly underneath the same picture said 1 to 2 business days.
      *
      * The fee *figure* was right the whole time — `payout` knew it was an
      * international card — so nothing here was arithmetic. The card simply
@@ -99,17 +99,15 @@ describe("what the receipt says", () => {
     const html = receiptHtml(abroad, "pro", today);
 
     it("names the company that is actually charging the fee", () => {
-      // 3.9% + ₦100 is not a Monnify price, and this is the line somebody
-      // checks their bank statement against.
+      // 3.9% + ₦100 is Paystack's international price, and this is the line
+      // somebody checks their bank statement against.
       assert.match(html, /Paystack fee/);
-      assert.ok(!html.includes("Monnify fee"), "a correct number under the wrong name");
     });
 
     it("never promises a card will settle tonight", () => {
-      // Section 9, in as many words. Monnify's 10 PM run is a promise we can
-      // make because we know the hour of it; this is a card on somebody
-      // else's schedule.
-      assert.ok(!/10 PM|tonight|including weekends/i.test(html), "Monnify's promise on a card");
+      // Section 9, in as many words. This is a card on somebody else's
+      // schedule, and nobody has confirmed its hour.
+      assert.ok(!/10 PM|tonight|including weekends/i.test(html), "an hour promised for a card");
       assert.ok(html.includes(defaults.international.settlementText), "the configured sentence");
     });
 
@@ -132,12 +130,12 @@ describe("what the receipt says", () => {
        * ₦8,444.38, which is what the phone showed — 3.9% of ₦213,958.33
        * plus the flat ₦100, and the figure that was correct all along.
        *
-       * The point of pinning it is the second line: Monnify caps at ₦2,000,
-       * so a card fee four times that cap under Monnify's name was not a
-       * rounding difference, it was a different company's price list.
+       * The point of pinning it is the second line: the local schedule caps
+       * at ₦2,000, so a card fee four times that cap under the local name was
+       * not a rounding difference, it was a different price list.
        */
       assert.equal(processorFeeKobo, 844_438);
-      assert.ok(processorFeeKobo > 200_000, "nowhere near Monnify's cap");
+      assert.ok(processorFeeKobo > 200_000, "nowhere near the local cap");
       assert.ok(html.includes(`−₦${(processorFeeKobo / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}`));
       assert.ok(html.includes(formatNaira(receivesKobo)), "what lands in the bank");
     });

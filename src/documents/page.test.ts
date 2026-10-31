@@ -62,7 +62,7 @@ describe("what the page says", () => {
   });
 
   it("sends the client to the sender when a naira invoice has no account on it", () => {
-    // Monnify, which used to take these, was retired on 3 October 2026.
+    // Balans takes no naira of its own: the client pays the sender directly.
     const html = render(doc());
     assert.doesNotMatch(html, /<button/);
     assert.match(html, /Payment details: contact /);
@@ -446,10 +446,10 @@ describe("the number a client reads", () => {
   });
 });
 
-describe("a card invoice with no Monnify subaccount", () => {
+describe("a card invoice with no stored subaccount code", () => {
   /*
-   * Setup stopped making Monnify subaccounts on 26 September 2026, and every
-   * dollar invoice after that said "Online payment is not set up". A card
+   * Setup stopped making subaccounts on 26 September 2026, and every dollar
+   * invoice after that said "Online payment is not set up". A card
    * payment settles through a Paystack subaccount made on the first payment,
    * so a bank account is all it needs.
    */

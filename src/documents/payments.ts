@@ -12,7 +12,6 @@
  */
 
 import { db } from "../db/pool.ts";
-import type { Provider } from "../payments/provider.ts";
 
 export type InitialisedPayment = {
   documentId: string;
@@ -40,19 +39,9 @@ export type InitialisedPayment = {
    *
    * Kept so reconciliation can compare it against what the provider actually
    * charged. A drift here is how we find out their schedule changed, or that
-   * ours was wrong — which matters, because these rates were written for a
-   * different processor.
+   * ours was wrong.
    */
   expectedProcessorFeeKobo: number;
-  /**
-   * Which processor is collecting this one.
-   *
-   * Defaults to Monnify, which is every naira invoice and so nearly all of
-   * them. A payment recorded under the wrong provider is one the nightly
-   * reconciliation looks for in the wrong place — and one the webhook for the
-   * other provider would find and try to confirm.
-   */
-  provider?: "monnify" | "paystack";
   /**
    * Where the client goes to type their card, for a card payment.
    *
@@ -68,13 +57,13 @@ export async function recordInitialisedPayment(p: InitialisedPayment): Promise<v
        (document_id, reference, provider_reference, amount_kobo, client_total_kobo,
         invoice_amount_kobo, provider_fee_kobo, balans_fee_kobo, fee_bearer, status,
         raw_verify_json, provider)
-     VALUES ($1, $2, $3, $4, $5, $9, $6, $7, 'user', 'initialised', $8, $10)
+     VALUES ($1, $2, $3, $4, $5, $9, $6, $7, 'user', 'initialised', $8, 'paystack')
      ON CONFLICT (reference) DO NOTHING`,
     [
       p.documentId,
       p.reference,
-      // Monnify's own reference. A refund or a chargeback quotes this rather
-      // than ours, because those are events about the transaction.
+      // The processor's own reference. A refund or a chargeback quotes this
+      // rather than ours, because those are events about the transaction.
       p.providerReference,
       // What the user is owed out of this payment, before the processor's cut.
       p.amountKobo - p.balansFeeKobo,
@@ -87,7 +76,6 @@ export async function recordInitialisedPayment(p: InitialisedPayment): Promise<v
         ...(p.checkoutUrl ? { checkoutUrl: p.checkoutUrl } : {}),
       }),
       p.invoiceAmountKobo,
-      p.provider ?? "monnify",
     ],
   );
 }
@@ -114,120 +102,6 @@ export async function paymentsFor(documentId: string): Promise<
   }));
 }
 
-/* -------------------------------------------------------------------------- */
-/* Pay by transfer                                                            */
-/* -------------------------------------------------------------------------- */
-
-export type LiveTransfer = {
-  reference: string;
-  providerReference: string;
-  amountKobo: number;
-  bankName: string;
-  accountNumber: string;
-  accountName: string;
-  ussd: string | null;
-  expiresAt: Date;
-};
-
-/** Keeps the account Monnify issued, against the payment it belongs to. */
-export async function recordTransferAccount(
-  reference: string,
-  a: {
-    bankName: string;
-    bankCode: string;
-    accountNumber: string;
-    accountName: string;
-    ussd: string | null;
-    expiresAt: Date;
-  },
-): Promise<void> {
-  await db().query(
-    `UPDATE payments
-        SET transfer_bank_name = $2, transfer_bank_code = $3,
-            transfer_account_number = $4, transfer_account_name = $5,
-            transfer_ussd = $6, transfer_expires_at = $7
-      WHERE reference = $1`,
-    [reference, a.bankName, a.bankCode, a.accountNumber, a.accountName, a.ussd, a.expiresAt],
-  );
-}
-
-/**
- * The account a client is already part-way through paying into, if there is one.
- *
- * Bounded by the expiry Monnify gave and by the amount still being asked for.
- * Reusing an account is the point: somebody who has copied the number into
- * their banking app and come back must not be shown a different one, or the
- * transfer they are about to send lands against nothing.
- *
- * A minute of headroom, because the client still has to finish in their bank's
- * app after they read this. An account with forty seconds left is worse than
- * no account at all.
- */
-/**
- * The live account for a stage of this document, if one is still good.
- *
- * `amountKobo` is what the stage is worth — what the plan says and what the
- * page calls the balance — not what the client is charged for it. The two are
- * the same until fees are passed on, and then the client is charged the stage
- * grossed up by the processor's cut.
- *
- * This matched on the charged figure while both callers passed the stage, so
- * on every invoice that passes fees on it found nothing, twice over:
- *
- *   - the Pay button's "there is already an account for this" check failed,
- *     and minted a second one. Monnify matches a transfer on the account and
- *     the amount, so two live accounts for the same balance is a way to lose
- *     somebody's money — which is exactly what the check above it exists to
- *     prevent, and it had not worked on a fee-passing invoice.
- *   - and the page could not find the account it had just created, so
- *     pressing Pay reloaded the invoice with no panel on it at all.
- *
- * The second one hid the first: while the Pay button rendered the panel
- * itself, nobody noticed that nothing could look it up afterwards.
- */
-export async function liveTransferFor(
-  documentId: string,
-  amountKobo: number,
-): Promise<LiveTransfer | null> {
-  const { rows } = await db().query<{
-    reference: string;
-    provider_reference: string;
-    client_total_kobo: string;
-    transfer_bank_name: string;
-    transfer_account_number: string;
-    transfer_account_name: string;
-    transfer_ussd: string | null;
-    transfer_expires_at: Date;
-  }>(
-    `SELECT reference, provider_reference, client_total_kobo,
-            transfer_bank_name, transfer_account_number, transfer_account_name,
-            transfer_ussd, transfer_expires_at
-       FROM payments
-      WHERE document_id = $1
-        AND status = 'initialised'
-        AND transfer_account_number IS NOT NULL
-        AND transfer_expires_at > now() + interval '1 minute'
-        AND COALESCE(invoice_amount_kobo, client_total_kobo) = $2
-      ORDER BY transfer_expires_at DESC
-      LIMIT 1`,
-    [documentId, amountKobo],
-  );
-
-  const r = rows[0];
-  return r
-    ? {
-        reference: r.reference,
-        providerReference: r.provider_reference,
-        amountKobo: Number(r.client_total_kobo),
-        bankName: r.transfer_bank_name,
-        accountNumber: r.transfer_account_number,
-        accountName: r.transfer_account_name,
-        ussd: r.transfer_ussd,
-        expiresAt: r.transfer_expires_at,
-      }
-    : null;
-}
-
 /**
  * Payments started but not yet known to have landed.
  *
@@ -248,32 +122,28 @@ export async function liveTransferFor(
  */
 export async function pendingPaymentsFor(
   documentId: string,
-): Promise<{ reference: string; providerReference: string; provider: Provider }[]> {
+): Promise<{ reference: string; providerReference: string }[]> {
+  /*
+   * Paystack's only, and the filter is not optional.
+   *
+   * Confirming a payment means asking the processor that took it, and
+   * Paystack is the only one there is. A row from any earlier processor is
+   * a reference Paystack has never heard of: asked about, it answers "not
+   * found" for ever and the page polls it on every visit. Those rows are
+   * left out rather than asked about.
+   */
   const { rows } = await db().query<{
     reference: string;
     provider_reference: string;
-    provider: string;
   }>(
-    `SELECT reference, provider_reference, provider
-       FROM payments WHERE document_id = $1 AND status = 'initialised'`,
+    `SELECT reference, provider_reference
+       FROM payments
+      WHERE document_id = $1 AND status = 'initialised' AND provider = 'paystack'`,
     [documentId],
   );
   return rows.map((r) => ({
     reference: r.reference,
     providerReference: r.provider_reference,
-    /*
-     * Which processor to ask about it, and it is not optional.
-     *
-     * Confirming a payment means asking the provider that took it. Asked of
-     * the wrong one the reference simply does not exist, so a Paystack
-     * payment polled against Monnify comes back unverifiable for ever — the
-     * page waits, the freelancer is never told, and the money is sitting in
-     * their subaccount the whole time.
-     *
-     * Anything that is not 'paystack' is Monnify, including the older rows
-     * written before this column meant anything.
-     */
-    provider: r.provider === "paystack" ? "paystack" : "monnify",
   }));
 }
 
@@ -292,10 +162,7 @@ const CHECKOUT_REUSE_MINUTES = 10;
 /**
  * The card checkout already open on this document, if there is one.
  *
- * The transfer side has always done this — `liveTransferFor` hands back the
- * account that was already issued, because somebody returning from their
- * banking app must meet the same account they copied. The card side had no
- * equivalent, so every press of Pay opened *another* Paystack transaction.
+ * Without it every press of Pay opened *another* Paystack transaction.
  *
  * Seen twice on real invoices: two references 363ms apart, which is a browser
  * submitting the form twice rather than a person, and two 61 seconds apart,

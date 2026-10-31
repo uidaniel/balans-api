@@ -13,6 +13,7 @@
  * the `reminders` row is claimed before the message goes out.
  */
 
+import { recordTemplateStatuses } from "../whatsapp/register-templates.ts";
 import { purgeParserText, sendTrialNotices } from "./trial-notices.ts";
 import { sendSetupFollowups, sendSetupNudges } from "./setup-nudges.ts";
 import { syncWhatsAppSpend } from "../whatsapp/spend.ts";
@@ -713,6 +714,9 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
     await scheduleReminders(today, log);
     await sendDueReminders(today, log);
     await sendPaidChecks(today, log);
+    // Which templates Meta has approved, so a titled one is used within the
+    // hour of its approval rather than at the next deploy (window.ts TITLES).
+    await recordTemplateStatuses().catch((err: unknown) => log.warn({ err }, "could not refresh template statuses"));
     const dropped = await sweepStaleDrafts(24);
     if (dropped) log.info({ count: dropped }, "stale drafts discarded");
     // A scheduled bank change that has come into force supersedes the old

@@ -79,7 +79,7 @@ export const MIN_INVOICE_KOBO = 1_000_00;
  *
  * Set well above any freelance or small-agency job so it never refuses real
  * work. It is not the true ceiling: what a client can actually transfer in
- * one go is whatever their bank and Monnify allow, which is unconfirmed — and
+ * one go is whatever their bank allows, which is unconfirmed — and
  * the payment plan is the answer to an invoice larger than one transfer.
  */
 export const MAX_INVOICE_KOBO = 50_000_000_00;

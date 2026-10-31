@@ -1,5 +1,5 @@
 /**
- * Two processors, one answer to "is this really paid?".
+ * One answer to "is this really paid?".
  *
  * `confirmPayment` holds every rule that decides whether money moved: verify
  * by API, refuse a mismatched reference, refuse a currency that is not NGN,
@@ -22,7 +22,7 @@ import { readFileSync } from "node:fs";
 const KEY = "sk_test_0000000000000000000000000000000000000000";
 process.env.PAYSTACK_SECRET_KEY = KEY;
 
-const { providerFor, verifyWithPaystack, verifierFor } = await import("./provider.ts");
+const { verifyWithPaystack } = await import("./provider.ts");
 
 const answering = (body: unknown, status = 200): typeof fetch =>
   (async () =>
@@ -48,19 +48,6 @@ const paid = {
     authorization: { country_code: "GB" },
   },
 };
-
-describe("which processor collects", () => {
-  it("sends everything to Paystack, since Monnify was retired", () => {
-    assert.equal(providerFor("NGN"), "paystack");
-    assert.equal(providerFor("USD"), "paystack");
-    assert.equal(providerFor("GBP"), "paystack");
-  });
-
-  it("hands back a verifier rather than a branch at the call site", () => {
-    assert.equal(verifierFor("paystack"), verifyWithPaystack);
-    assert.notEqual(verifierFor("monnify"), verifyWithPaystack);
-  });
-});
 
 describe("Paystack's answer, in the shape the confirmation path reads", () => {
   it("carries a successful charge through with its figures intact", async () => {
@@ -131,11 +118,11 @@ describe("Paystack's answer, in the shape the confirmation path reads", () => {
 
   it("puts our own reference on both sides, because there is only one", async () => {
     /*
-     * Monnify echoes a second identifier of its own, and a mismatch between
-     * the two means we are about to credit the wrong document. Paystack
-     * verifies by the reference we set and has no second string, so the check
-     * compares ours against ours. Stated here so that nobody later reads the
-     * passing check as evidence of something it is not testing.
+     * The check is for a verifier that echoes a second identifier of its
+     * own, where a mismatch means we are about to credit the wrong document.
+     * Paystack verifies by the reference we set and has no second string, so
+     * the check compares ours against ours. Stated here so that nobody later
+     * reads the passing check as evidence of something it is not testing.
      */
     const r = await verifyWithPaystack("bal_abc_def", answering(paid));
     assert.ok(r.ok);
@@ -169,41 +156,31 @@ describe("Paystack's answer, in the shape the confirmation path reads", () => {
   });
 });
 
-describe("asking the right provider", () => {
+describe("asking Paystack, and only about Paystack's payments", () => {
   /*
-   * The bug this caught, found because a real card payment succeeded and
-   * Balans never noticed.
-   *
    * A webhook is one of two ways a payment gets confirmed. The other is the
    * invoice page, which polls `/i/:token/status` and confirms anything still
-   * initialised — and it called `confirmPayment` without saying who took the
-   * money, so it defaulted to Monnify. Asked of the wrong provider the
-   * reference does not exist, so the answer is "not found" for ever: the page
-   * waits, the freelancer is never told, and the money is sitting in their
-   * subaccount the whole time.
-   *
-   * It only shows up when a webhook is missed, which is exactly when the
-   * safety net is the only thing left.
+   * initialised. It only matters when a webhook is missed, which is exactly
+   * when the safety net is the only thing left — so it has to ask the
+   * processor that took the money, and it must not ask that processor about
+   * a reference it never issued, which it answers "not found" for ever.
    */
   const routes = readFileSync(new URL("../http/routes/public.ts", import.meta.url), "utf8");
   const payments = readFileSync(new URL("../documents/payments.ts", import.meta.url), "utf8");
 
-  it("carries the provider out of the database with the payment", () => {
-    // It cannot be worked out from the reference — ours look the same for
-    // both — so it has to be the column the payment was written with.
-    assert.match(payments, /SELECT reference, provider_reference, provider/);
-    assert.match(payments, /provider: r\.provider === "paystack" \? "paystack" : "monnify"/);
+  it("records every payment it starts as Paystack's", () => {
+    const fn = payments.slice(payments.indexOf("export async function recordInitialisedPayment"));
+    assert.match(fn.slice(0, fn.indexOf("\n}\n")), /'initialised', \$8, 'paystack'\)/);
   });
 
-  it("uses it when the page confirms a payment the webhook missed", () => {
+  it("polls only Paystack's pending payments", () => {
+    const fn = payments.slice(payments.indexOf("export async function pendingPaymentsFor"));
+    assert.match(fn.slice(0, fn.indexOf("\n}\n")), /status = 'initialised' AND provider = 'paystack'/);
+  });
+
+  it("verifies against Paystack when the page confirms a payment the webhook missed", () => {
     const status = routes.slice(routes.indexOf('"/i/:token/status"'));
     const handler = status.slice(0, status.indexOf("/* -- Coming back from checkout"));
-    assert.match(handler, /verifierFor\(p\.provider\)/, "the poll verifies against whoever took it");
-    assert.match(handler, /provider: p\.provider/, "and says so, so the wording is right");
-  });
-
-  it("answers old Monnify rows without calling anybody", async () => {
-    const res = await verifierFor("monnify")("bal_old");
-    assert.equal(res.ok, false);
+    assert.match(handler, /verifyWithPaystack,/, "the poll verifies against Paystack");
   });
 });

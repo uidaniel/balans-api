@@ -64,7 +64,7 @@ describe("stopping a scheduled payout change", { skip: !HAS_DB && "no DATABASE_U
       `INSERT INTO bank_accounts
          (user_id, bank_code, bank_name, account_last4, account_number_encrypted,
           account_name, provider, status, subaccount_code, effective_at)
-       VALUES ($1, '058', 'Sterling bank', '0475', $2, 'ORIGINAL NAME', 'monnify', 'active', 'SUB_OLD',
+       VALUES ($1, '058', 'Sterling bank', '0475', $2, 'ORIGINAL NAME', 'paystack', 'active', 'SUB_OLD',
                now() - interval '2 days')`,
       [userId, Buffer.from("encrypted")],
     );

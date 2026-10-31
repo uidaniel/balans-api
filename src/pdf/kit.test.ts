@@ -38,7 +38,7 @@ describe("the reference printed on a document", () => {
     dueDate: { y: 2026, m: 9, d: 30 },
     notes: null,
     publicUrl: null,
-    legalLines: ["Issued by Studio", "Payments handled by Monnify"],
+    legalLines: ["Issued by Studio", "Payments handled by Paystack"],
     showMadeWith: false,
   };
 

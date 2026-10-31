@@ -25,9 +25,6 @@ const FILES: Record<string, { file: string; type: string }> = {
   "welcome.jpg": { file: "welcome.jpg", type: "image/jpeg" },
   "setup-done.jpg": { file: "setup-done.jpg", type: "image/jpeg" },
   "cheatsheet.jpg": { file: "cheatsheet.jpg", type: "image/jpeg" },
-  // Two, chosen by the clock. See `settlesTonight`.
-  "paid-tonight.jpg": { file: "paid-tonight.jpg", type: "image/jpeg" },
-  "paid-tomorrow.jpg": { file: "paid-tomorrow.jpg", type: "image/jpeg" },
   // The Free limit, with what Pro costs and what it removes.
   "limit.jpg": { file: "limit.jpg", type: "image/jpeg" },
   // The same offer without the "five done" headline, for anyone who asks
@@ -35,6 +32,8 @@ const FILES: Record<string, { file: string; type: string }> = {
   "upgrade.jpg": { file: "upgrade.jpg", type: "image/jpeg" },
   // The membership card, once the money is in.
   "pro.jpg": { file: "pro.jpg", type: "image/jpeg" },
+  // The gold tick, on the page a confirmed email lands on (31 October 2026).
+  "setup-tick.png": { file: "setup-tick.png", type: "image/png" },
 };
 
 /**

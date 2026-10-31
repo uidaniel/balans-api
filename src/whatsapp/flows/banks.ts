@@ -2,10 +2,10 @@
  * The banks in the setup form: Paystack's list, all of it, in two dropdowns.
  *
  * It was a hand-picked forty with an "Other" box for typing the rest, because
- * Monnify's 374 institutions were mostly routes nobody had heard of. Since 26
- * September 2026 the list is Paystack's (paystack-banks.json, refreshed with
- * `npm run banks`), every entry is a bank somebody can be paid into, and there
- * is no "Other": whatever bank a person has, they can pick it.
+ * the previous list's 374 institutions were mostly routes nobody had heard
+ * of. Since 26 September 2026 the list is Paystack's (paystack-banks.json,
+ * refreshed with `npm run banks`), every entry is a bank somebody can be paid
+ * into, and there is no "Other": whatever bank a person has, they can pick it.
  *
  * Two dropdowns because one cannot hold them. WhatsApp takes 200 options in a
  * dropdown and Paystack lists 287, 190 of them microfinance banks. So:

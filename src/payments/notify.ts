@@ -14,8 +14,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { send } from "../whatsapp/outbound.ts";
-import { settlesTonight } from "./settlement.ts";
-import { defaults, env } from "../config.ts";
+import { defaults } from "../config.ts";
 import { renderReceiptPdf } from "../documents/pdf.ts";
 import { proStarted } from "../billing/messages.ts";
 import { PRO_CARD } from "../conversation/machine.ts";
@@ -60,14 +59,6 @@ export type PaidNotice = {
   amountPaidKobo: number;
   fullyPaid: boolean;
   method: string | null;
-  /**
-   * Which processor took it, because they settle on different schedules.
-   *
-   * Defaults to Monnify, which is every naira payment and so nearly all of
-   * them. A card payment described with Monnify's wording is a promise that
-   * the money is in somebody's bank tonight when it is not.
-   */
-  provider?: "monnify" | "paystack";
 };
 
 /** "CARD" and "ACCOUNT_TRANSFER" are not words anybody says out loud. */
@@ -93,7 +84,7 @@ export function paidMessage(n: PaidNotice, at: Date = new Date()): string {
         row(label, n.documentNumber === null ? "—" : `#${n.documentNumber}`),
         how && row("Method", how.charAt(0).toUpperCase() + how.slice(1)),
       ]),
-      arrivalLine(at, n.provider),
+      arrivalLine(at),
     );
   }
 
@@ -106,7 +97,7 @@ export function paidMessage(n: PaidNotice, at: Date = new Date()): string {
       row(label, n.documentNumber === null ? "—" : `#${n.documentNumber}`),
       how && row("Method", how.charAt(0).toUpperCase() + how.slice(1)),
     ]),
-    arrivalLine(at, n.provider),
+    arrivalLine(at),
   );
 }
 
@@ -134,36 +125,18 @@ export async function notifyPaid(n: PaidNotice, log: FastifyBaseLogger): Promise
   const receipt = n.paymentId ? await renderReceiptPdf(n.paymentId, log) : null;
 
   /*
-   * Which card, decided by the clock rather than written into the message.
-   *
-   * Monnify settles once a day at 22:00 Lagos. A payment before it is in the
-   * bank tonight; after it, tomorrow night. Both cards say so in as many
-   * words, and `settlesTonight` is the same function the caption uses — so
-   * the picture and the words underneath it cannot disagree.
+   * No poster with it, deliberately. The line underneath names the working
+   * days the money lands on, which change with the date; a picture that
+   * promised a time would say something the words do not, and of the two
+   * the picture is what gets screenshotted.
    */
   const at = new Date();
-  /*
-   * No card on a Paystack payment, deliberately.
-   *
-   * Both posters say "tonight" or "tomorrow night" in as many words, and
-   * those are claims about Monnify's 22:00 run. Sending one with a card
-   * payment would put a promise in the picture that the sentence underneath
-   * it contradicts — and of the two, the picture is what gets screenshotted.
-   * A poster of its own can come later; a wrong one cannot go now.
-   */
-  const card =
-    n.provider === "paystack"
-      ? undefined
-      : `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/brand/${
-          settlesTonight(at) ? "paid-tonight.jpg" : "paid-tomorrow.jpg"
-        }`;
 
   const outcome = await send(
     {
       userId: n.userId,
       phone,
       text: paidMessage(n, at),
-      image: card,
       document: receipt ? { bytes: receipt.bytes, filename: receipt.filename } : undefined,
       // This is the message the whole product exists to send. If the window
       // has closed — and it usually has, because clients pay days later — it

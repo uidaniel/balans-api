@@ -128,7 +128,7 @@ describe("VAT on the card fee", () => {
 describe("how the international schedule differs from the local one", () => {
   it("has no cap, so a big invoice pays a big fee", () => {
     /*
-     * Monnify's cut stops at ₦2,000. Paystack's international one does not,
+     * The local cut stops at ₦2,000. Paystack's international one does not,
      * and on a $10,000 invoice that is the difference between ₦2,000 and
      * about ₦517,000. Capping it here because the local one is capped would
      * be inventing ₦515,000 of somebody else's money.

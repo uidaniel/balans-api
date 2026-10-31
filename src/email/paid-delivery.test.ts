@@ -35,7 +35,7 @@ const doc = (over: Partial<DocumentData> = {}): DocumentData => ({
   dueDate: { y: 2026, m: 9, d: 30 },
   notes: null,
   publicUrl: null,
-  legalLines: ["Issued by Studio", "Payments handled by Monnify"],
+  legalLines: ["Issued by Studio", "Payments handled by Paystack"],
   showMadeWith: false,
   ...over,
 });

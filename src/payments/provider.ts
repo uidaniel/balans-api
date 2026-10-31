@@ -1,36 +1,30 @@
 /**
- * Which processor a payment belongs to, and how to ask it what happened
+ * How to ask the processor what happened to a payment
  * (International PRD section 8: "implement through the existing payment
  * provider interface; no Paystack logic outside the provider module").
  *
- * There was no interface to speak of — `confirmPayment` called Monnify
- * directly, with the verifier as an injectable argument for tests. That
- * argument turns out to be the interface: everything `confirmPayment` does
- * afterwards is provider-agnostic and is exactly what section 8 asks for.
- * Verify by API, refuse a reference that does not match, refuse a currency
- * that is not NGN, refuse an amount short of what was asked, be idempotent
- * against redelivery, and send anything that disagrees to `needs_review`.
+ * `confirmPayment` takes the verifier as an argument, and that argument is
+ * the interface: everything `confirmPayment` does afterwards is
+ * provider-agnostic and is exactly what section 8 asks for. Verify by API,
+ * refuse a reference that does not match, refuse a currency that is not NGN,
+ * refuse an amount short of what was asked, be idempotent against
+ * redelivery, and send anything that disagrees to `needs_review`.
  *
- * So Paystack does not get a second confirmation path. It gets an adapter,
- * and the rules stay in one place — which is the only way they stay the same
- * rules. A second copy of "is this really paid?" is a second answer waiting
- * to drift from the first.
+ * So Paystack does not get a confirmation path of its own. It gets an
+ * adapter, and the rules stay in one place — which is the only way they stay
+ * the same rules. A second copy of "is this really paid?" is a second answer
+ * waiting to drift from the first.
  *
- * The shape both sides speak is Monnify's `VerifiedTransaction`, because it
- * already exists and is already what every caller reads. Its field names are
- * Monnify's, which is a small cost against rewriting the confirmation path.
+ * The shape it speaks is `VerifiedTransaction` (verified.ts), because it is
+ * already what every caller reads. Its field names are older than the
+ * adapter, which is a small cost against rewriting the confirmation path.
  */
 
 import type { VerifiedTransaction, VerifyResult, PaymentStatus } from "./verified.ts";
 import { verifyTransaction as verifyPaystack } from "./paystack.ts";
 
-export type Provider = "monnify" | "paystack";
-
-/** Which processor collects for an invoice in this currency (section 8). */
-export const providerFor = (_currency: string): Provider => "paystack";
-
 /**
- * Paystack's statuses in Monnify's vocabulary.
+ * Paystack's statuses in the confirmation path's vocabulary.
  *
  * `abandoned` is the one worth naming: Paystack answers "Verification
  * successful" for a transaction nobody ever paid, and calls it abandoned. The
@@ -58,9 +52,9 @@ const STATUS: Record<string, PaymentStatus> = {
  * initialisation and has no second identifier of its own to quote back, so
  * the reference-match check in `confirmPayment` compares ours against ours
  * and passes by construction. That is honest rather than hollow: the check
- * exists because Monnify echoes a *different* string and a mismatch there
- * means we are about to credit the wrong document. Here there is no second
- * string to disagree with.
+ * is for a verifier that answers with a *different* string of its own, where
+ * a mismatch means we are about to credit the wrong document. Here there is
+ * no second string to disagree with.
  *
  * What is emphatically still checked is the currency and the amount, and
  * those are the ones that matter on this path: a card charged in the wrong
@@ -98,17 +92,4 @@ export async function verifyWithPaystack(
   };
 
   return { ok: true, transaction, raw: t.raw };
-}
-
-/**
- * Monnify, retired on 3 October 2026. Its old rows still say "monnify", and
- * there is nobody left to ask about them, so they stay as they are.
- */
-async function monnifyRetired(): Promise<VerifyResult> {
-  return { ok: false, message: "Monnify is no longer used" };
-}
-
-/** The verifier for a provider, for `confirmPayment`'s third argument. */
-export function verifierFor(provider: Provider): (reference: string) => Promise<VerifyResult> {
-  return provider === "paystack" ? verifyWithPaystack : monnifyRetired;
 }

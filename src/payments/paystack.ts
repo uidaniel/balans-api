@@ -1,10 +1,9 @@
 /**
  * Paystack client, for invoices priced abroad (International PRD section 8).
  *
- * A second processor, not a replacement. Naira invoices go to Monnify and
- * always will — bank transfer into a reserved account, split at the moment
- * the money moves. Paystack is here for one reason: it charges international
- * cards, which Monnify does not do at all.
+ * The only processor. Naira invoices are paid straight into the sender's own
+ * bank account and never touch it; Paystack is here because it charges
+ * international cards.
  *
  * And it charges them *in naira*. The client's card is debited in naira, the
  * client's own bank does the conversion, and what reaches the subaccount is
@@ -29,9 +28,9 @@
  *     is the only place anything can confirm it;
  *   - test mode allows three live bank resolves a day and then refuses with a
  *     429 telling you to use bank code 001;
- *   - unknown fields are silently dropped, exactly like Monnify. So no field
- *     here is believed to work because it was accepted — only a rejection, or
- *     an echo, proves anything.
+ *   - unknown fields are silently dropped. So no field here is believed to
+ *     work because it was accepted — only a rejection, or an echo, proves
+ *     anything.
  */
 
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -52,12 +51,11 @@ type Envelope<T> = {
 const base = (): string => env.PAYSTACK_BASE_URL.replace(/\/+$/, "");
 
 /**
- * No auth call, unlike Monnify.
+ * No auth call.
  *
  * The secret key is the bearer token. There is no token to cache, nothing to
  * refresh, and no window in which a request can fail because a token expired
- * mid-flight — which removes the whole class of problem the Monnify client
- * has a cache and a one-minute safety margin for.
+ * mid-flight.
  */
 async function call<T>(
   path: string,
@@ -127,14 +125,12 @@ export type CreateSubAccountResult =
  * The subaccount a user's international share settles into.
  *
  * Created the first time a Pro user invoices abroad, from the bank details
- * they already gave us — not asked for again. They have one bank account and
- * may now have two references to it: Monnify's, which every naira invoice
- * splits through, and this one.
+ * they already gave us — not asked for again.
  *
  * `percentage_charge` is zero and that is the whole commercial arrangement on
  * this path: international invoicing is Pro, Pro carries no Balans fee, so
  * the subaccount keeps everything Paystack does not take. It is not a default
- * to be overridden per transaction the way Monnify's is — it is the answer.
+ * to be overridden per transaction — it is the answer.
  *
  * [Sandbox] Zero is accepted. Paystack's documentation implies a positive
  * share and does not say what happens at zero; it creates the subaccount and
@@ -196,8 +192,7 @@ export async function createSubAccount(
  * user whose rows were reset, or whose code was never saved, got a fresh
  * subaccount on their next card payment: seven existed for three bank
  * accounts by 28 September 2026. In live mode that scatters one person's
- * money across several subaccounts. Monnify's path already looks first
- * (monnify.ts); this is the same for Paystack.
+ * money across several subaccounts, so this looks first.
  *
  * Matched on the account number and on Paystack's own bank name, which is
  * what `settlement_bank` holds and what `bankName` is when it comes from
@@ -241,12 +236,12 @@ export async function findSubAccount(
 export type PaystackBank = { name: string; code: string };
 
 /**
- * Paystack's bank list, which is not Monnify's.
+ * Paystack's bank list.
  *
- * The codes differ, and a code from one used with the other is either refused
- * or — worse — accepted as a different bank. The user's stored `bank_code` is
- * Monnify's, so it has to be translated by name before a subaccount is made,
- * which is what `matchByName` is for.
+ * Accounts added before 26 September 2026 hold the previous processor's bank
+ * codes, which are a different namespace: used with Paystack, one is either
+ * refused or — worse — accepted as a different bank. So those are translated
+ * by name before a subaccount is made, which is what `matchByName` is for.
  */
 export async function listBanks(fetchImpl: typeof fetch = fetch): Promise<PaystackBank[]> {
   const res = await call<{ name?: string; code?: string }[]>(
@@ -301,19 +296,19 @@ const key = (s: string): string =>
  * The same institution, under the name each provider happens to use.
  *
  * Normalising case and punctuation is not enough, because the two lists
- * genuinely disagree about what these banks are called: we store Monnify's
- * "GTBank" and Paystack lists "Guaranty Trust Bank". No amount of string
+ * genuinely disagree about what these banks are called: older accounts hold
+ * the previous processor's "GTBank" and Paystack lists "Guaranty Trust Bank". No amount of string
  * tidying turns one into the other, so every GTBank user — one of the largest
  * banks in the country — was told card payment was unavailable, for ever.
  *
  * Every row here was checked against both live lists on 24 Sep 2026, and the
- * check is that *the two providers' codes agree*: Monnify's "GTBank" is 058
+ * check is that *the two lists' codes agree*: the old list's "GTBank" is 058
  * and Paystack's "Guaranty Trust Bank" is 058. That agreement is independent
  * corroboration that it is one institution, which is what makes this a
  * verified table rather than a list of guesses.
  *
  * Where the codes disagree there is no row, however alike the names look, and
- * Coronation is why. Monnify lists "Coronation Bank" at 946; Paystack's 946 is
+ * Coronation is why. The old list has "Coronation Bank" at 946; Paystack's 946 is
  * **Money Master PSB**, an entirely different company, while its Coronation is
  * 559. A row written from the names alone would have settled somebody's card
  * payments into a stranger's institution — the exact failure this whole module
@@ -325,7 +320,7 @@ const key = (s: string): string =>
 const ALIASES = new Map(
   (
     [
-      // Monnify's name              Paystack's name          Shared code
+      // Old list's name             Paystack's name          Shared code
       ["GTBank", "Guaranty Trust Bank"], //                    058
       ["First bank", "First Bank of Nigeria"], //              011
       ["Union bank", "Union Bank of Nigeria"], //              032
@@ -548,7 +543,7 @@ export type TransferResult =
  * which is the same `sub_` reference `confirmSubscription` already knows how
  * to turn into a month of Pro.
  *
- * Replaces the Monnify checkout for Pro. Nearly everybody here pays by
+ * The way Pro is paid for. Nearly everybody here pays by
  * transfer anyway, and a checkout page was a detour to reach an account
  * number; this is the account number.
  *

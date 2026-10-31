@@ -61,7 +61,7 @@ export function markSvg(size: string): string {
 export const logoAvailable = (): boolean => logoSvg("1px") !== "";
 
 /** The processors whose marks can appear on a payment page. */
-export type Processor = "monnify" | "paystack";
+export type Processor = "paystack";
 
 const processorMarks = new Map<Processor, string>();
 
@@ -75,10 +75,9 @@ const processorMarks = new Map<Processor, string>();
  * not, and a payment page missing its processor's mark looks worse than one
  * that never claimed it.
  *
- * Which mark is not a detail. Naira is collected by Monnify and anything else
- * by Paystack (International PRD section 8), and this badge is the one place
- * the page tells a stranger who is about to take their card details where
- * those details are going. Naming the wrong company there is worse than
+ * Which mark is not a detail. A card is charged by Paystack (International
+ * PRD section 8), and this badge is the one place the page tells a stranger
+ * who is about to take their card details where those details are going. Naming the wrong company there is worse than
  * naming none: it is checkable, and it will not check out.
  *
  * An empty string when the file is missing, so the caller can fall back to

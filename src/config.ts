@@ -96,8 +96,8 @@ const schema = z.object({
 
   /* -- Payments: Paystack, for invoices priced abroad ---------------------- */
   /*
-   * The only processor since Monnify was retired on 3 October 2026. Naira
-   * invoices are paid straight to the sender's own bank; Paystack is here
+   * The only processor. Naira invoices are paid straight to the sender's
+   * own bank; Paystack is here
    * because it charges cards (invoices abroad, and Pro), and
    * for nothing else. See the International PRD, section 8.
    *
@@ -329,9 +329,8 @@ export const defaults = {
      * What a user is told about when the money arrives.
      *
      * One string because it is a promise about somebody else's schedule that
-     * nobody has confirmed. Monnify's "tonight" wording must never be used
-     * for these: it is computed from a payout run at 22:00 Lagos that has
-     * nothing to do with Paystack.
+     * nobody has confirmed. Never "tonight" (section 9): nothing is known
+     * about the hour Paystack pays out.
      */
     settlementText: "Usually in your bank within 24–48 hours.",
     /**
@@ -355,14 +354,6 @@ export const defaults = {
     quietHoursStart: 20,
     quietHoursEnd: 8,
     timezone: "Africa/Lagos",
-    /**
-     * The hour in Lagos that Monnify's daily payout run goes out.
-     *
-     * Configurable because it is a claim about somebody else's schedule. It
-     * decides whether a payment notification says "tonight" or "tomorrow
-     * night", which is a promise about the reader's own money.
-     */
-    settlementHour: 22,
     /** Parser text is purged after this many days (section 10). */
     parserTextRetentionDays: 30,
     /** A conversation returns to idle after this long without a message. */

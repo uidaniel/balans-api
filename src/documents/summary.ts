@@ -168,9 +168,9 @@ export function payout(
   /*
    * Which processor, and it is not a detail.
    *
-   * A naira invoice is a bank transfer through Monnify at 1.5% capped at
-   * ₦2,000. An invoice priced abroad is an international card through
-   * Paystack at 3.9% with no cap at all. On a ₦663,500 invoice that is ₦2,000
+   * A naira payment is on the local schedule, 1.5% capped at ₦2,000. An
+   * invoice priced abroad is an international card through Paystack at 3.9%
+   * with no cap at all. On a ₦663,500 invoice that is ₦2,000
    * against ₦25,976 — and the number this produces is the one the freelancer
    * reads under "you receive" before agreeing to send it.
    */
@@ -184,7 +184,7 @@ export function payout(
   /*
    * Summed per payment, and the two fees kept apart.
    *
-   * They are not ours to blur: Monnify's cut comes out whoever we are, and
+   * They are not ours to blur: the processor's cut comes out whoever we are, and
    * the Balans fee is the one the user is choosing between plans about. A
    * receipt that showed one number called "fees" would be hiding the only
    * line Pro changes.
@@ -195,7 +195,7 @@ export function payout(
   let receivesKobo = 0;
 
   /*
-   * Our fee is capped across the invoice, Monnify's is charged per payment.
+   * Our fee is capped across the invoice, the processor's is charged per payment.
    *
    * So the running total goes in, and each payment is only charged the
    * difference it makes to the fee on everything before it. Without it a

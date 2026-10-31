@@ -18,7 +18,7 @@ import { formatNaira } from "../../core/totals.ts";
 import { formatMoney, INFO } from "../../core/currency.ts";
 import { agreedTotalMinor } from "../../core/exchange.ts";
 import { outstandingKobo, payable, payableLabel, payableNowKobo, type PublicDocument } from "./public.ts";
-import { logoAvailable, logoSvg, markSvg, processorLogo, type Processor } from "../brand/logo.ts";
+import { logoAvailable, logoSvg, markSvg, processorLogo } from "../brand/logo.ts";
 import { FONT, fontFacesForPage } from "../pdf/fonts.ts";
 import { BAND, GOLD } from "../brand/web.ts";
 import { defaults, env } from "../config.ts";
@@ -940,21 +940,18 @@ function trustBlock(doc: PublicDocument): string {
   /*
    * Whoever is actually going to take the money.
    *
-   * Naira is collected by Monnify and anything else by Paystack (section 8),
-   * and this badge is the one place the page tells a stranger where the card
-   * details they are about to type are going. It said Monnify on every
-   * document, including a dollar invoice whose only payment button opens
-   * Paystack's checkout — a claim the very next screen contradicts.
+   * Only an invoice priced abroad gets this far, and it is paid by card
+   * through Paystack (section 8). This badge is the one place the page tells
+   * a stranger where the card details they are about to type are going.
    */
-  const processor: Processor = doc.foreign ? "paystack" : "monnify";
-  const processorName = doc.foreign ? "Paystack" : "Monnify";
-  const mark = processorLogo(processor);
+  const processorName = "Paystack";
+  const mark = processorLogo("paystack");
 
   /*
    * A quote is not a payment, so it must not be described as one.
    *
-   * This block said "Payments processed by Monnify" and "This payment
-   * settles directly to..." on every document, including a quote that
+   * This block said "Payments processed by" and "This payment settles
+   * directly to..." on every document, including a quote that
    * cannot be paid at all. The disclosure itself still belongs — we are
    * not a bank and hold nothing, and that is true whatever the document is
    * — but the payment it describes has to be the conditional one.
@@ -970,11 +967,10 @@ function trustBlock(doc: PublicDocument): string {
    */
   /*
    * A naira invoice paid to the sender's own account has no processor to
-   * name: the money goes from the client's bank to theirs, and saying
-   * "processed by Monnify" beside an account number would be untrue.
+   * name: the money goes from the client's bank to theirs, and naming a
+   * processor beside an account number would be untrue. The same goes for a
+   * naira quote, which becomes such an invoice.
    */
-  // Naira is never a card of ours: paid straight to the sender's bank, or a
-  // quote that becomes such an invoice. Monnify was retired on 3 October 2026.
   if (!doc.foreign) {
     if (doc.type === "quote") {
       return `<div class="trust">
@@ -1008,7 +1004,7 @@ function trustBlock(doc: PublicDocument): string {
       ${
         mark
           ? `<img src="${mark}" alt="${processorName}" width="74" height="12">`
-          : `${processor === "paystack" ? PAYSTACK_MARK : ""}<b>${processorName}</b>`
+          : `${PAYSTACK_MARK}<b>${processorName}</b>`
       }
     </span>
     <p class="tsmall">
@@ -1150,7 +1146,8 @@ export function renderEmailConfirm(state: "ask" | "done" | "gone", email: string
   <p class="from">${email ? `Copies of your invoices and receipts will go to <b>${esc(email)}</b>.` : "Copies of your invoices and receipts will go to this address."}</p>
   <form method="post"><button class="go" type="submit">Confirm email</button></form>`
       : state === "done"
-        ? `<h1 style="margin-top:22px">Email confirmed</h1>
+        ? `<img src="/brand/setup-tick.png" alt="" width="96" height="96" style="display:block;margin-top:22px">
+  <h1 style="margin-top:14px">Email confirmed</h1>
   <p class="from">${email ? `Copies of your invoices and receipts now go to <b>${esc(email)}</b>.` : "Copies of your invoices and receipts now go to this address."} You can close this and go back to WhatsApp.</p>`
         : `<h1 style="margin-top:22px">This link has expired</h1>
   <p class="from">Send your email to Balans on WhatsApp again, and we will send you a new link.</p>`;

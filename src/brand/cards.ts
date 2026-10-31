@@ -1,7 +1,7 @@
 /**
  * The cards the bot sends in chat, drawn from code.
  *
- *   npm run cards     rewrites the eight in assets/brand/*.jpg
+ *   npm run cards     rewrites the six in assets/brand/*.jpg
  *
  * Rebranded on 29 October 2026 with balans.ng and the posters: night green,
  * one soft marigold light (a glare, a satin printed in halftone, or ribbed
@@ -37,8 +37,6 @@ export const CARDS = [
   "welcome",
   "setup-done",
   "cheatsheet",
-  "paid-tonight",
-  "paid-tomorrow",
   "limit",
   "upgrade",
   "pro",
@@ -282,19 +280,6 @@ const COMMANDS: [string, [string, string][]][] = [
   ["Your account", [["/settings", "Name, payout bank, due days"], ["/design", "How your invoices look"], ["/pro", "Unlimited invoices and more"], ["/help", "What I can do"]]],
 ];
 
-/** "You've been paid." The two differ only in when the money lands. */
-function paid(card: "paid-tonight" | "paid-tomorrow"): string {
-  const tonight = card === "paid-tonight";
-  return page(
-    card,
-    `<div class="pill">${TICK}Payment confirmed</div>
-${headline(500, "You’ve been paid.", "With Balans.", 184)}
-<p class="sub" style="top:940px;width:1060px">Your client paid. The receipt is on its way to them, and your records are updated.</p>
-<div class="foot"><p class="kick">${tonight ? "Paid before 10 PM" : "Paid after 10 PM"}</p>
-<p style="font-size:96px;letter-spacing:-.04em;line-height:1.02">${tonight ? "In your bank tonight." : "In your bank<br>tomorrow night."}</p></div>`,
-  );
-}
-
 export function cardHtml(card: Card): string {
   switch (card) {
     case "welcome":
@@ -328,9 +313,6 @@ ${headline(560, "Welcome.", "Let’s get you paid.")}
 .c{width:520px;font-size:62px;font-weight:500;color:#f5b82e;letter-spacing:-.01em}
 .d{font-size:56px;color:rgb(246 241 231/.72)}`,
       );
-    case "paid-tonight":
-    case "paid-tomorrow":
-      return paid(card);
     case "limit":
     case "upgrade":
       return offer(card);

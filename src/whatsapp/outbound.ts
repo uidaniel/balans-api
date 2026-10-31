@@ -18,7 +18,22 @@ import { sendButtons, sendCta, sendDocument, sendImage, sendTemplate, sendText, 
 
 /** On the receipt when a card carried the words already. */
 const RECEIPT_CAPTION = "Receipt, for your records.";
-import { costOf, windowFor, TEMPLATES, TEMPLATE_LANGUAGE, type TemplateName } from "./window.ts";
+import { costOf, titledOf, windowFor, TEMPLATES, TEMPLATE_LANGUAGE, type TemplateName } from "./window.ts";
+
+/**
+ * The titled version of a template once Meta has approved it, else the one
+ * asked for (31 October 2026). Same words and the same placeholders, with a
+ * bold line on top; see TITLES in window.ts. The approval is read from what
+ * the hourly job last recorded, so a template still in review is never tried.
+ */
+export async function preferTitled(name: TemplateName): Promise<TemplateName> {
+  const titled = titledOf(name);
+  if (!titled) return name;
+  const { rows } = await db()
+    .query<{ s: string | null }>(`SELECT value_json ->> $1 AS s FROM config WHERE key = 'template_status'`, [titled])
+    .catch(() => ({ rows: [] as { s: string | null }[] }));
+  return rows[0]?.s === "APPROVED" ? titled : name;
+}
 
 export type Outbound = {
   userId: string;
@@ -106,7 +121,7 @@ export async function send(msg: Outbound, log: FastifyBaseLogger): Promise<SendO
       return { kind: "skipped", why: "outside_window_no_template" };
     }
 
-    const spec = TEMPLATES[msg.fallback.template];
+    const spec = TEMPLATES[await preferTitled(msg.fallback.template)];
     // A template whose parameter count does not match what Meta approved is
     // rejected on arrival. Catching it here names the bug instead.
     if (msg.fallback.params.length !== spec.params.length) {
@@ -129,7 +144,7 @@ export async function send(msg: Outbound, log: FastifyBaseLogger): Promise<SendO
         { userId: msg.userId, template: used.name, reason: res.reason },
         "template refused; sending the version before it",
       );
-      used = TEMPLATES[orElse.template];
+      used = TEMPLATES[await preferTitled(orElse.template)];
       res = await sendTemplate(msg.phone, used.name, orElse.params, { language: TEMPLATE_LANGUAGE, ...urlSuffix });
     }
 

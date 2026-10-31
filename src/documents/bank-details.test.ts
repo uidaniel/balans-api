@@ -48,7 +48,7 @@ describe("the page a naira invoice's link opens", () => {
 
   it("says a direct payment is not tracked, and names no processor", () => {
     assert.match(html, /not tracked automatically/);
-    assert.doesNotMatch(html, /Monnify/);
+    assert.doesNotMatch(html, /Paystack|processed by/);
   });
 
   it("still says paid once it is", () => {

@@ -1,8 +1,5 @@
 /**
  * Which bank somebody means, from what they typed.
- *
- * Kept from the Monnify module when Monnify was retired (3 October 2026):
- * the matcher never depended on Monnify, only lived there.
  */
 
 /**
@@ -33,8 +30,8 @@ const ALIASES: Record<string, string[]> = {
   "kuda microfinance bank": ["kuda"],
   "opay digital services limited": ["opay"],
   "palmpay": ["palm pay"],
-  // Monnify lists the bank as "First City Monument Bank Plc" and a separate
-  // wallet as "FCMB MOBILE". Without this, the abbreviation everybody uses
+  // Bank lists carry the bank as "First City Monument Bank Plc" and a
+  // separate wallet as "FCMB MOBILE". Without this, the abbreviation everybody uses
   // matches only the wallet.
   "first city monument bank": ["fcmb", "first city monument"],
   "jaiz bank": ["jaiz"],
@@ -78,8 +75,8 @@ export function matchBank<B extends { name: string; code: string }>(query: strin
     Number(isLicensedBank(b)) - Number(isLicensedBank(a)) || a.name.length - b.name.length;
 
   // Aliases before exact matches. An alias is a curated statement about what
-  // people mean; an exact match is a coincidence of spelling, and Monnify's
-  // list contains both "Globus" (a NIP route) and "Globus Bank" (the bank).
+  // people mean; an exact match is a coincidence of spelling, and a bank
+  // list can contain both "Globus" (a NIP route) and "Globus Bank" (the bank).
   // Someone typing "globus" means the bank.
   for (const [canonical, alts] of Object.entries(ALIASES)) {
     if (!alts.includes(q) && q !== canonical) continue;

@@ -13,11 +13,10 @@
  * file reads the environment or the clock, so every number below is a pure
  * function of its inputs and every worked example in the PRD is a test.
  *
- * NOTE ON RATES. Section 9's numbers describe Paystack, which the PRD was
- * written against. Balans now settles through Monnify, whose schedule differs
- * — so the processor rates are configuration, defaulted to the documented
- * figures and overridable without a deploy. They must be confirmed against the
- * live Monnify contract before real money moves.
+ * NOTE ON RATES. Section 9's numbers describe Paystack's published schedule.
+ * The processor rates are configuration, defaulted to the documented figures
+ * and overridable without a deploy, because a processor's contract can
+ * differ from its price list.
  */
 
 export type ProcessorRates = {
@@ -116,8 +115,8 @@ export function balansFee(
  * floor behaves the same way: ₦100 is met once by the invoice and not once by
  * every instalment of it.
  *
- * Monnify's cut is per payment and stays per payment. Theirs is a charge for
- * moving money and two transfers really are two transfers.
+ * The processor's cut is per payment and stays per payment. Theirs is a
+ * charge for moving money and two payments really are two payments.
  */
 export function balansFeeStep(
   paidBeforeKobo: number,

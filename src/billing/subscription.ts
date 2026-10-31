@@ -458,7 +458,7 @@ export type SubscriptionPayment = {
  * Turns a paid reference into an active month.
  *
  * Called only from the verified confirmation path, so by the time it runs
- * Monnify has already been asked whether this reference was really paid.
+ * Paystack has already been asked whether this reference was really paid.
  *
  * Idempotent by the same rule as everything else that moves money: the update
  * only matches a subscription that is not already active, so a redelivered

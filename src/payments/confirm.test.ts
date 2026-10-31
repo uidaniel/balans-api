@@ -75,27 +75,26 @@ describe("the message that says you got paid", () => {
     assert.doesNotMatch(m, /\bPAID\b/);
   });
 
-  it("names the night the money lands, and never sooner", () => {
+  it("names the working days the money lands on, and never sooner", () => {
     /*
-     * This used to say "on its way", deliberately vague because the
-     * settlement schedule was unknown. It is known now — Monnify runs once a
-     * day at 22:00 Lagos — so the message names a night instead.
+     * Paystack pays out on working days, so the message names them from the
+     * day it was paid: Friday 16 October 2026 is Monday or Tuesday.
      *
      * The time is passed in rather than read from the clock: a test whose
-     * result depends on when it runs would pass all afternoon and fail at
-     * eleven at night.
+     * result depends on when it runs would pass on a Monday and fail on a
+     * Friday.
      */
-    const lagos = (hour: number) => new Date(Date.UTC(2026, 8, 22, hour - 1, 0));
+    const lagos = (day: number, hour: number) => new Date(Date.UTC(2026, 9, day, hour - 1, 0));
 
-    const before = paidMessage(notice(), lagos(15));
-    assert.match(before, /arrives in your bank tonight/i);
+    const friday = paidMessage(notice(), lagos(16, 15));
+    assert.match(friday, /between Monday 19 Oct and Tuesday 20 Oct/);
 
-    const after = paidMessage(notice(), lagos(23));
-    assert.match(after, /arrives in your bank tomorrow night/i);
+    const lateFriday = paidMessage(notice(), lagos(16, 23));
+    assert.match(lateFriday, /between Monday 19 Oct and Tuesday 20 Oct/);
 
-    // Still nothing that claims the money is already there.
-    for (const m of [before, after]) {
-      assert.doesNotMatch(m, /instantly|immediately|within \d/i);
+    // Still nothing that claims the money is already there, or tonight.
+    for (const m of [friday, lateFriday]) {
+      assert.doesNotMatch(m, /instantly|immediately|within \d|tonight/i);
     }
   });
 });

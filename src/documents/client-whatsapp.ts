@@ -18,6 +18,7 @@
  * it instead — the invoice itself went out regardless.
  */
 
+import { preferTitled } from "../whatsapp/outbound.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
 import { formatNaira } from "../../core/totals.ts";
@@ -224,9 +225,9 @@ export async function whatsappReminderToClient(
   const business = d.business_name ?? "A Balans user";
   const word = d.type === "payment_request" ? "payment request" : "invoice";
   const opts = { language: TEMPLATE_LANGUAGE, urlSuffix: d.public_token };
-  let sent = await sendTemplate(d.client_phone, "client_reminder_doc", [who, word, business, owed, due], opts);
+  let sent = await sendTemplate(d.client_phone, await preferTitled("client_reminder_doc"), [who, word, business, owed, due], opts);
   if (!sent.ok && d.type === "invoice") {
-    sent = await sendTemplate(d.client_phone, "client_reminder", [who, business, owed, due], opts);
+    sent = await sendTemplate(d.client_phone, await preferTitled("client_reminder"), [who, business, owed, due], opts);
   }
 
   if (!sent.ok) {

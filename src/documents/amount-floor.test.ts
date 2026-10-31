@@ -34,7 +34,7 @@ describe("the floor under an invoice", () => {
     /*
      * The failure it exists to prevent. Below roughly ₦102 the fees exceed
      * the invoice, so `userReceivesKobo` is negative and the split sent to
-     * Monnify is a subaccount share of less than zero.
+     * the processor is a subaccount share of less than zero.
      */
     assert.ok(payout(draft(MIN_INVOICE_KOBO), "free").receivesKobo > 0);
 

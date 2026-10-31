@@ -89,7 +89,9 @@ async function uploadSample(address: string): Promise<{ ok: true; handle: string
 
 async function create(spec: TemplateSpec): Promise<{ ok: boolean; detail: string }> {
   let header: Record<string, unknown> | null = null;
-  if (spec.header) {
+  if (spec.header?.type === "text") {
+    header = { type: "HEADER", format: "TEXT", text: spec.header.text };
+  } else if (spec.header) {
     const sample = await uploadSample(spec.header.sample);
     if (!sample.ok) return { ok: false, detail: `header ${spec.header.type}: ${sample.detail}` };
     header = {

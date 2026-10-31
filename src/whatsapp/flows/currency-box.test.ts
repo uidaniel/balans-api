@@ -16,7 +16,7 @@
  *     and refuses it — "Property 'visible_nonsense_xyz' is not allowed in
  *     'Dropdown' component" — so a property it accepts silently is one it
  *     recognises. That negative control is what makes the acceptance mean
- *     anything, and it is the same trap Monnify sets.
+ *     anything, and it is the same trap Paystack sets.
  *   - `helper-text` takes a data binding, so the line under Amount can say
  *     "Naira" to almost everybody and something true to the rest.
  *   - `init-value` on a Dropdown is refused outright, so the box cannot be

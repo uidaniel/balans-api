@@ -331,8 +331,8 @@ export const nextPayable = (parts: Part[]): Part | null =>
 /**
  * Marks a part paid and opens the one after it.
  *
- * Driven by amount rather than by id, because the payment came back from
- * Monnify with a reference and a figure, not with our part id. The smallest
+ * Driven by amount rather than by id, because the payment comes back from
+ * the processor with a reference and a figure, not with our part id. The smallest
  * unpaid part that the payment covers is the one it settled.
  */
 export async function settleParts(

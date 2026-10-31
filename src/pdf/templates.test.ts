@@ -38,7 +38,7 @@ const DOC: DocumentData = {
   publicUrl: "https://payment.balans.ng/i/abc123",
   legalLines: [
     "Balans is a product of Balans Technologies Ltd. Balans is not a bank and does not hold customer funds.",
-    "Payments are processed by Monnify and settle directly to the merchant's bank account.",
+    "Payments are processed by Paystack and settle directly to the merchant's bank account.",
   ],
   showMadeWith: true,
 };
@@ -93,7 +93,7 @@ test("every layout", async (t) => {
     await t.test(`${spec.name} carries the two lines section 12 requires`, () => {
       const html = renderTemplate(spec.id, DOC)!;
       assert.ok(html.includes("is not a bank and does not hold customer funds"));
-      assert.ok(html.includes("Payments are processed by Monnify"));
+      assert.ok(html.includes("Payments are processed by Paystack"));
     });
 
     await t.test(`${spec.name} fetches nothing`, () => {

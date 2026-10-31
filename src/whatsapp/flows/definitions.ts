@@ -68,6 +68,7 @@
  * endpoint.ts). The others have nothing to ask.
  */
 
+import { readFileSync } from "node:fs";
 import { bankOptions, mfbOptions } from "./banks.ts";
 import { PAY_METHODS } from "./pay-methods.ts";
 import { defaults, env } from "../../config.ts";
@@ -77,6 +78,16 @@ import { DEFAULT_TEMPLATE, TEMPLATES } from "../../pdf/templates.ts";
 
 /** The marketing site, which owns the legal documents. */
 const site = env.SITE_URL.replace(/[/]$/, "");
+
+/**
+ * The gold tick at the top of "You're set up" (31 October 2026). A Flow can
+ * only show an image carried inside its own JSON, as base64, so it is kept
+ * small: 300px, transparent, so it sits on the light and the dark form alike.
+ */
+const SETUP_TICK = readFileSync(new URL("../../../assets/brand/setup-tick.png", import.meta.url)).toString("base64");
+
+/** The gold shield, at the end of a bank change: the same treatment, about safety. */
+const BANK_SHIELD = readFileSync(new URL("../../../assets/brand/bank-shield.png", import.meta.url)).toString("base64");
 
 /*
  * Meta validates against this and rejects anything it has retired.
@@ -210,6 +221,7 @@ const onboarding: FlowDefinition = {
         layout: {
           type: "SingleColumnLayout",
           children: [
+            { type: "Image", src: SETUP_TICK, width: 120, height: 120, "scale-type": "contain", "alt-text": "Done" },
             { type: "TextHeading", text: "You're all set" },
             { type: "TextBody", text: "You are ready to send invoices." },
             { type: "TextSubheading", text: "Clients pay into" },
@@ -666,6 +678,7 @@ const payoutChange: FlowDefinition = {
         layout: {
           type: "SingleColumnLayout",
           children: [
+            { type: "Image", src: BANK_SHIELD, width: 120, height: 120, "scale-type": "contain", "alt-text": "Done" },
             { type: "TextHeading", text: "Change scheduled" },
             { type: "TextSubheading", text: "New payout account" },
             { type: "TextBody", text: "${data.account_name}" },
@@ -1060,7 +1073,7 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
    * and the acceptance means something: Meta names a property it does not
    * know and refuses it — "Property 'visible_nonsense_xyz' is not allowed in
    * 'Dropdown' component" — so a property it accepts silently is one it
-   * recognises. The same trap Monnify sets, checked the same way.
+   * recognises. The same trap Paystack sets, checked the same way.
    *
    * Off for everyone but Pro. Dollars and pounds are a Pro feature, and a box
    * that exists only to be ignored is a cost paid by every freelancer sending

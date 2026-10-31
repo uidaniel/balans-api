@@ -41,11 +41,8 @@ import { documentLink } from "../../documents/links.ts";
 import { icsFor } from "../../documents/calendar.ts";
 import {
   liveCardCheckoutFor,
-  liveTransferFor,
   pendingPaymentsFor,
   recordInitialisedPayment,
-  recordTransferAccount,
-  type LiveTransfer,
 } from "../../documents/payments.ts";
 import { renderSummary } from "../../documents/summary-page.ts";
 import { summaryFor, userForSummaryToken } from "../../documents/queries.ts";
@@ -59,7 +56,7 @@ import {
   cardPaymentAvailable,
   paystackSubaccountFor,
 } from "../../payments/paystack-subaccount.ts";
-import { verifierFor } from "../../payments/provider.ts";
+import { verifyWithPaystack } from "../../payments/provider.ts";
 import { notifyPaid } from "../../payments/notify.ts";
 import { get as getFile, getCard } from "../../storage/files.ts";
 import { fileName } from "../../storage/files.ts";
@@ -76,7 +73,7 @@ function ratesFor(plan: "free" | "pro"): BalansRates {
 /**
  * A few pay attempts per token per minute.
  *
- * Each one costs a call to Monnify, so this is the difference between somebody
+ * Each one costs a call to Paystack, so this is the difference between somebody
  * refreshing and somebody using an invoice link as a way to hammer our
  * processor account. In memory because it only has to survive a minute; a
  * restart losing the counters is not worth a Redis.
@@ -510,7 +507,6 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       invoiceAmountKobo: outstandingKobo,
       balansFeeKobo: split.balansFeeKobo,
       expectedProcessorFeeKobo: split.processorFeeKobo,
-      provider: "paystack",
       // So the next press of Pay comes back here rather than opening another.
       checkoutUrl: init.authorizationUrl,
     });
@@ -567,10 +563,9 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
     /*
      * An invoice priced abroad is a card payment, and cards are Paystack.
      *
-     * There is no naira path below it any more. A naira invoice carries the
-     * sender's own bank account and is paid straight into it; the Monnify
-     * transfer accounts that used to be minted here were retired on
-     * 3 October 2026.
+     * There is no naira path below it. A naira invoice carries the sender's
+     * own bank account and is paid straight into it, so nothing is opened
+     * here for it.
      *
      * The charge is the naira figure on the document. It is not recomputed
      * from the foreign price here and must never be: the rate was locked when
@@ -655,12 +650,12 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       const outcome = await confirmPayment(
         { paymentReference: p.reference, transactionReference: p.providerReference },
         req.log,
-        // Asked of whoever took it. The wrong provider does not know the
-        // reference, so it answers "not found" for ever.
-        verifierFor(p.provider),
+        // Paystack's, because only Paystack payments are pending here
+        // (`pendingPaymentsFor`).
+        verifyWithPaystack,
       );
       if (outcome.kind === "confirmed") {
-        void notifyPaid({ ...outcome, provider: p.provider }, req.log).catch((err: unknown) => req.log.error({ err }, "paid notice failed"));
+        void notifyPaid(outcome, req.log).catch((err: unknown) => req.log.error({ err }, "paid notice failed"));
         return reply
           .header("cache-control", "no-store")
           .send({ paidKobo: outcome.amountPaidKobo, fullyPaid: outcome.fullyPaid });
@@ -686,13 +681,12 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
    * the client back to the document, which shows the truth.
    */
   app.get<{
-    Querystring: { ref?: string; paymentReference?: string; reference?: string; trxref?: string };
+    Querystring: { ref?: string; reference?: string; trxref?: string };
   }>("/pay/callback", async (req, reply) => {
       /*
-       * Four names for one thing, because two processors send a payer back
-       * here and neither asked what we called it. `ref` is ours, on the URL
-       * we hand over; `paymentReference` is Monnify's; Paystack appends both
-       * `reference` and `trxref` to whatever callback it was given, and
+       * Three names for one thing, because Paystack never asked what we
+       * called it. `ref` is ours, on the URL we hand over; Paystack appends
+       * both `reference` and `trxref` to whatever callback it was given, and
        * appends them whether or not ours is already there.
        *
        * Ours first. It is the one we control and the one the payment row is
@@ -700,7 +694,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
        * names cannot strand somebody who has just paid on the marketing site.
        */
       const reference =
-        req.query.ref ?? req.query.paymentReference ?? req.query.reference ?? req.query.trxref;
+        req.query.ref ?? req.query.reference ?? req.query.trxref;
       if (!reference) return reply.redirect(SITE, 303);
 
       /*

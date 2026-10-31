@@ -1,16 +1,15 @@
 /**
  * Paystack webhook (International PRD section 8).
  *
- * Built the same way as the Monnify one and for the same reason: the work
- * happens *before* the 200. A webhook that is acknowledged and then dropped on
- * a crash is a payment somebody's client made and the freelancer never heard
- * about, and no amount of logging fixes that afterwards. Paystack retries what
- * it does not see acknowledged, so doing the work first turns a crash into a
- * retry.
+ * The work happens *before* the 200. A webhook that is acknowledged and then
+ * dropped on a crash is a payment somebody's client made and the freelancer
+ * never heard about, and no amount of logging fixes that afterwards.
+ * Paystack retries what it does not see acknowledged, so doing the work
+ * first turns a crash into a retry.
  *
  * Three rules, and none of them is new — they are the ones `confirmPayment`
- * already enforces for Monnify, reached through the provider adapter so that
- * there is one answer to "is this really paid?" rather than two:
+ * already enforces, reached through the provider adapter so that there is
+ * one answer to "is this really paid?" rather than two:
  *
  *   1. A signed body proves who sent it, not what happened. Nothing is marked
  *      paid until Paystack's own verify endpoint says so.
@@ -210,9 +209,7 @@ export async function paystackRoutes(app: FastifyInstance): Promise<void> {
       case "confirmed":
         // Not awaited: the money is recorded, and a WhatsApp outage must not
         // make Paystack retry a payment that is already applied.
-        // With the provider on it, so the message does not promise Monnify's
-        // "tonight" about a card on somebody else's settlement schedule.
-        void notifyPaid({ ...outcome, provider: "paystack" }, req.log).catch((err: unknown) => req.log.error({ err }, "paid notice failed"));
+        void notifyPaid(outcome, req.log).catch((err: unknown) => req.log.error({ err }, "paid notice failed"));
         void recordCard(reference, req.log);
         return reply.send({ ok: true });
 

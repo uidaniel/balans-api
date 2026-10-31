@@ -12,7 +12,8 @@ import { costOf, MESSAGE_COST_KOBO, TEMPLATES, type TemplateName } from "./windo
 import { withinQuietHours, promptMessage, remindedHow, isLastReminder } from "../jobs/overdue.ts";
 
 describe("the templates we register with Meta", () => {
-  const names = Object.keys(TEMPLATES) as TemplateName[];
+  // The titled copies (31 October 2026) are checked on their own below.
+  const names = (Object.keys(TEMPLATES) as TemplateName[]).filter((n) => !n.endsWith("_titled"));
 
   it("covers every template we register", () => {
     assert.deepEqual(
@@ -299,5 +300,33 @@ describe("the reminder prompt", () => {
     });
     assert.match(abroad, /\$500\.00/);
     assert.doesNotMatch(abroad, /₦664,480/);
+  });
+});
+
+describe("titled templates (31 October 2026)", async () => {
+  const { TITLES, titledOf } = await import("./window.ts");
+
+  it("are the same words, with a header Meta will take", () => {
+    for (const [base, title] of Object.entries(TITLES)) {
+      const plain = TEMPLATES[base as TemplateName];
+      const titled = TEMPLATES[`${base}_titled` as TemplateName];
+      assert.equal(titled.body, plain.body, base);
+      assert.deepEqual(titled.params, plain.params, base);
+      assert.deepEqual(titled.header, { type: "text", text: title }, base);
+      assert.ok(title.length <= 60, `${base}: a header is at most 60 characters`);
+      assert.doesNotMatch(title, /\p{Extended_Pictographic}|[*_~]/u, `${base}: no emoji or formatting in a header`);
+    }
+  });
+
+  it("never replace a picture or a document header", () => {
+    for (const base of Object.keys(TITLES)) {
+      const h = TEMPLATES[base as TemplateName].header;
+      assert.ok(!h, `${base} already has a header`);
+    }
+  });
+
+  it("are found by the name they title", () => {
+    assert.equal(titledOf("payment_received"), "payment_received_titled");
+    assert.equal(titledOf("client_invoice_pdf"), null);
   });
 });

@@ -4,13 +4,13 @@
  * This is the only code in the system that moves a document to paid, and it is
  * written to be boring. Four rules shape all of it:
  *
- *   1. A webhook is a claim, not a fact. Nothing is marked paid until Monnify's
- *      own API has been asked and has agreed — same reference, same amount,
+ *   1. A webhook is a claim, not a fact. Nothing is marked paid until the
+ *      processor's own API has been asked and has agreed — same reference, same amount,
  *      same currency. A signed webhook proves who sent it, not what happened.
  *   2. Nothing is believed about the amount. What the client owed was written
  *      at initialisation, and what arrived is compared against that. A payment
  *      that does not match becomes `needs_review` for a person, never paid.
- *   3. It is idempotent. Monnify retries, and it retries on anything it does
+ *   3. It is idempotent. Paystack retries, and it retries on anything it does
  *      not see acknowledged. The second delivery of a payment must change
  *      nothing at all.
  *   4. It never touches a document twice. The increment and the status change
@@ -53,16 +53,16 @@ export type ConfirmOutcome =
   | { kind: "needs_review"; reference: string; why: string }
   /** Not paid, and not an error: abandoned checkouts are the common case. */
   | { kind: "not_paid"; reference: string; status: string }
-  /** We could not ask. Monnify should retry, so this must not return 200. */
+  /** We could not ask. Paystack should retry, so this must not return 200. */
   | { kind: "unverifiable"; reference: string; why: string };
 
-/** The states in which Monnify says money actually arrived. */
+/** The states in which the processor says money actually arrived. */
 const PAID_STATES = new Set(["PAID", "OVERPAID"]);
 
 /**
  * A payment that turned out to be for Pro, not for an invoice.
  *
- * Verified against Monnify first, exactly as an invoice payment is — this
+ * Verified against Paystack first, exactly as an invoice payment is — this
  * runs on a signed webhook, but a signature says the message came from them,
  * not that the money arrived. Nothing here trusts the amount in the event.
  *
@@ -224,7 +224,7 @@ export async function confirmPayment(
     return { kind: "needs_review", reference, why: "bank-details invoice cannot be paid by a processor" };
   }
 
-  /* Rule 1: ask Monnify. ---------------------------------------------------- */
+  /* Rule 1: ask the processor. --------------------------------------------- */
   const verified = await verify(input.transactionReference);
   if (!verified.ok) {
     log.error({ reference, message: verified.message }, "could not verify transaction");
@@ -348,8 +348,8 @@ export async function confirmPayment(
 
 /** What would make this payment wrong, if anything. */
 function mismatch(t: VerifiedTransaction, reference: string, expectedKobo: number): string | null {
-  // The reference Monnify echoes must be the one we asked about. Anything else
-  // means we are about to credit the wrong document.
+  // The reference the processor echoes must be the one we asked about.
+  // Anything else means we are about to credit the wrong document.
   if (t.paymentReference !== reference) {
     return `reference mismatch: asked about ${reference}, got ${t.paymentReference}`;
   }
@@ -402,7 +402,7 @@ async function apply(
       [
         paymentId,
         t.paymentMethod,
-        // What the processor actually took, if Monnify told us: the gap
+        // What the processor actually took, if it told us: the gap
         // between what was payable and what settles.
         t.settlementAmountKobo === null ? null : t.totalPayableKobo - t.settlementAmountKobo,
         JSON.stringify(t),

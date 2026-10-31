@@ -65,7 +65,7 @@ describe("what the user is told they will receive", () => {
 
   it("charges the processor per payment, because that is what it charges", () => {
     /*
-     * Monnify's cut is a charge for moving money, so the flat ₦100 is met
+     * The processor's cut is a charge for moving money, so the flat ₦100 is met
      * once for a single payment and three times for three instalments.
      * Taking it off the total instead would have understated a deposit
      * invoice by ₦100 and a three-part plan by ₦200 — small enough to look

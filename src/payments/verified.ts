@@ -4,8 +4,8 @@
 
 /**
  * Where a transaction stands, in the vocabulary the confirmation path reads
- * (first Monnify's, kept when Monnify was retired; Paystack's statuses are
- * mapped onto it in provider.ts).
+ * (older than Paystack here, and kept; Paystack's statuses are mapped onto
+ * it in provider.ts).
  *
  * Only PAID and OVERPAID mean money arrived. PARTIALLY_PAID is a real state
  * here — a client can pay a bank transfer short — and it is not "paid".

@@ -75,8 +75,8 @@ export type PublicDocument = {
    *
    * What a card payment needs: its Paystack subaccount is made from this
    * account the first time a client pays (see paystack-subaccount.ts), so
-   * the Monnify code above is not asked about. Optional so older fixtures
-   * without it read as "has one only if it has a Monnify code".
+   * the subaccount code above is not asked about. Optional so older
+   * fixtures without it read as "has one only if it has a subaccount code".
    */
   hasPayoutAccount?: boolean;
   /** "BL-0019": what the client reads as the number (see client-number.ts). */
@@ -337,15 +337,14 @@ export function payable(d: PublicDocument): { ok: true } | { ok: false; why: str
   /*
    * Priced abroad: a card payment through Paystack, settling to the sender's
    * own bank account through a subaccount made on the first payment. So it
-   * needs a bank account, not a Monnify subaccount. Asking for the Monnify
-   * one turned every dollar invoice into "Online payment is not set up" once
+   * needs a bank account, not a stored subaccount code. Asking for one
+   * turned every dollar invoice into "Online payment is not set up" once
    * setup stopped making them, on 26 September 2026.
    */
   if (d.foreign) {
     return d.hasPayoutAccount || d.subAccountCode ? { ok: true } : { ok: false, why: "no_account" };
   }
   // A naira invoice with no account on it. Balans has nothing of its own to
-  // take naira through since Monnify was retired, so the client is sent to
-  // the sender.
+  // take naira through, so the client is sent to the sender.
   return { ok: false, why: "no_account" };
 }

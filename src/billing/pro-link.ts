@@ -1,15 +1,15 @@
 /**
  * The link behind "Pay Now".
  *
- * The obvious way to make that button work is to create the Monnify checkout
- * when the offer is shown and put its URL on the button. It does not survive
+ * The obvious way to make that button work is to create the checkout when
+ * the offer is shown and put its URL on the button. It does not survive
  * contact with WhatsApp: the message sits in the chat for ever, and a
  * checkout URL does not. Somebody who scrolls back three days later taps a
  * dead link, and the one thing they were trying to do was give us money.
  *
  * So the button points here instead, and the checkout is created when it is
  * pressed. The link is good for as long as the message is, and nobody who
- * only reads the offer costs us a transaction at Monnify.
+ * only reads the offer costs us a transaction at Paystack.
  *
  * The token is signed rather than stored, because a row would be a row per
  * offer shown and this needs no state. It says which user, and that we wrote

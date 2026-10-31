@@ -1,12 +1,10 @@
 /**
  * Which bank, and whose account: one place to ask both.
  *
- * Paystack's list since 26 September 2026. It used to be Monnify's, back when
- * every naira payment settled through a Monnify subaccount and the bank had to
- * be one Monnify could pay out to — which is why wallets like OPay, PalmPay
- * and Moniepoint were turned away. Naira invoices now carry the user's own
- * account for the client to transfer into, so any account a Nigerian bank app
- * can send to is a good one, and the list is simply the banks.
+ * Paystack's list. Naira invoices carry the user's own account for the
+ * client to transfer into, so any account a Nigerian bank app can send to is
+ * a good one — wallets like OPay, PalmPay and Moniepoint included — and the
+ * list is simply the banks.
  *
  * The code stored for an account is Paystack's. For licensed banks it is the
  * CBN code, the same everywhere; for wallets and microfinance banks it is
@@ -36,9 +34,7 @@ export async function findBank(query: string): Promise<PaystackBank | null> {
 /**
  * Whose account this is, by the bank's own records.
  *
- * Paystack's answer, alone. Monnify used to be asked when Paystack could not
- * answer; it was retired on 3 October 2026, and a second opinion from a
- * sandbox was no opinion at all.
+ * Paystack's answer, alone.
  */
 export async function checkAccount(accountNumber: string, bank: PaystackBank): Promise<AccountCheck> {
   return resolveAccountNumber(accountNumber, bank.code);

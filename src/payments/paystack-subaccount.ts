@@ -2,12 +2,11 @@
  * The Paystack subaccount a user's international share settles into
  * (International PRD section 8).
  *
- * One bank account, two references to it. Every naira invoice splits through
- * Monnify's subaccount; an invoice priced abroad is a card payment and splits
- * through this one. They are two processors' names for the same account, kept
- * as two columns on one row rather than as two rows, because the thing the
- * user verified and owns is the bank account — and a bank change that had to
- * remember to move both would be a bank change that eventually forgot.
+ * An invoice priced abroad is a card payment and splits through this
+ * subaccount. Its code is kept on the bank account row rather than on the
+ * user, because the thing the user verified and owns is the bank account —
+ * and a bank change that had to remember to move it would be a bank change
+ * that eventually forgot.
  *
  * Made on demand rather than during onboarding. Almost nobody invoices
  * abroad, and asking Paystack to create an account for every freelancer who
@@ -15,10 +14,10 @@
  * users who need it — and one more thing that can fail between somebody
  * typing their account number and being told they are set up.
  *
- * The bank code is the awkward part and it is worth being loud about: the two
- * providers' codes are different namespaces with no mapping between them.
- * Accounts added before 26 September 2026 hold Monnify's code; later ones
- * hold Paystack's (`provider = 'paystack'`), which is used as it is. Sent to Paystack it is refused at best,
+ * The bank code is the awkward part and it is worth being loud about.
+ * Accounts added before 26 September 2026 hold the previous processor's
+ * code, a different namespace with no mapping to Paystack's; later ones hold
+ * Paystack's (`provider = 'paystack'`), which is used as it is. Sent to Paystack it is refused at best,
  * and at worst names a different institution — which is somebody's money
  * settling somewhere else. So it is translated by *name*, exactly, and a name
  * that does not match produces no subaccount rather than a near miss.
@@ -80,8 +79,8 @@ export async function paystackSubaccountFor(
   // would mean a button that appears and then refuses.
   const banks = await cachedBanks();
   // An account chosen from Paystack's list (every one since 26 September
-  // 2026) already holds Paystack's code; only older, Monnify-coded rows have
-  // to be translated by name.
+  // 2026) already holds Paystack's code; only older rows, coded for the
+  // previous processor, have to be translated by name.
   const match =
     bank.provider === "paystack"
       ? (banks.find((b) => b.code === bank.bank_code) ?? { name: bank.bank_name, code: bank.bank_code })

@@ -2,10 +2,9 @@
  * The Paystack client, tested against what the sandbox actually returned.
  *
  * Every fixture below is a real response, trimmed. That matters more here
- * than usual: unknown fields are silently dropped by this API, exactly as
- * they are by Monnify, so a request that is accepted proves nothing about
- * whether it did what we meant. What proves it is the shape that comes back,
- * and these are those shapes.
+ * than usual: unknown fields are silently dropped by this API, so a request
+ * that is accepted proves nothing about whether it did what we meant. What
+ * proves it is the shape that comes back, and these are those shapes.
  *
  * The one that would otherwise go unnoticed is the bearer. `bearer:
  * "subaccount"` is what stops Paystack taking its fee out of the *main*
@@ -386,7 +385,7 @@ describe("finding out what actually happened", () => {
   });
 });
 
-describe("Paystack's bank codes, which are not Monnify's", () => {
+describe("Paystack's bank codes, which are not the old list's", () => {
 
   const banks = [
     { name: "Zenith Bank", code: "057" },
@@ -397,10 +396,10 @@ describe("Paystack's bank codes, which are not Monnify's", () => {
 
   it("matches a bank by name, through the noise in a name", async () => {
     /*
-     * By name and never by code, because the two providers' codes are
-     * different namespaces with no mapping between them. A stored Monnify
-     * code sent to Paystack is refused at best; at worst it names a different
-     * institution, and the user's money settles somewhere else.
+     * By name and never by code, because the two lists' codes are different
+     * namespaces with no mapping between them. A code stored for the previous
+     * processor sent to Paystack is refused at best; at worst it names a
+     * different institution, and the user's money settles somewhere else.
      */
     assert.deepEqual(matchByName("Guaranty Trust Bank Plc", banks), { name: "Guaranty Trust Bank", code: "058" });
     assert.deepEqual(matchByName("zenith bank", banks), { name: "Zenith Bank", code: "057" });
@@ -417,9 +416,9 @@ describe("Paystack's bank codes, which are not Monnify's", () => {
 
   it("knows the banks the two providers call different things", () => {
     /*
-     * The outage this exists because of. A payout account is stored under
-     * Monnify's name for the bank, and for several of the largest banks in
-     * the country that name is not Paystack's: we hold "GTBank", Paystack
+     * The outage this exists because of. An older payout account is stored
+     * under the previous processor's name for the bank, and for several of
+     * the largest banks in the country that name is not Paystack's: we hold "GTBank", Paystack
      * lists "Guaranty Trust Bank". Normalising case and punctuation cannot
      * bridge that, so `gtbank` never equalled `guarantytrust` and every
      * GTBank user was told, permanently, that card payment was unavailable.
@@ -438,8 +437,8 @@ describe("Paystack's bank codes, which are not Monnify's", () => {
   it("will not alias a bank whose two codes disagree", () => {
     /*
      * The table is verified by the codes agreeing, not by the names looking
-     * alike, and Coronation is the reason. Monnify lists "Coronation Bank" at
-     * 946; Paystack's 946 is Money Master PSB, a different company entirely,
+     * alike, and Coronation is the reason. The old list has "Coronation Bank"
+     * at 946; Paystack's 946 is Money Master PSB, a different company entirely,
      * and its Coronation is 559. Written from the names, that row would have
      * settled card payments into a stranger's institution.
      *

@@ -65,7 +65,7 @@ export async function windowFor(userId: string, now = Date.now()): Promise<Windo
  * is the order the arguments go in, and getting it wrong sends a client's name
  * where an amount belongs.
  */
-export type TemplateName =
+type BaseTemplateName =
   | "payment_received"
   | "invoice_viewed"
   | "invoice_viewed_v2"
@@ -96,6 +96,43 @@ export type TemplateName =
   | "pro_free_pay"
   | "setup_reminder";
 
+/**
+ * A bold line above the words, for the templates that say one thing
+ * (31 October 2026): "You've been paid", "Payment reminder". The way
+ * WhatsApp shows a sign-in alert from Meta itself.
+ *
+ * Only where it earns its place. Not on those that already lead with a
+ * picture or the PDF (a template has one header), and not on anything that
+ * reads as a conversation. Each is a new template beside the old one, named
+ * `…_titled`: Meta reviews the header like any other wording, and until it
+ * has, the old one goes out instead (`preferTitled`, outbound.ts).
+ *
+ * Plain text, under sixty characters, no emoji: Meta's rules for a header.
+ */
+export const TITLES = {
+  payment_received: "You've been paid",
+  payout_paid: "Paid out to your bank",
+  security_alert: "Security alert",
+  invoice_viewed_v2: "Your invoice was opened",
+  invoice_overdue_prompt: "Invoice still unpaid",
+  monthly_summary_ready: "Your monthly summary",
+  client_reminder: "Payment reminder",
+  client_reminder_doc: "Payment reminder",
+  client_reminded_doc: "Your client was reminded",
+  pro_ending_pay_v2: "Your Pro ends soon",
+  pro_ended_pay: "Your Pro has ended",
+  pro_last_day_pay_v2: "Your Pro features stop soon",
+  pro_back_pay: "Your Pro has ended",
+} as const satisfies Partial<Record<BaseTemplateName, string>>;
+
+export type TitledName = `${keyof typeof TITLES}_titled`;
+export type TemplateName = BaseTemplateName | TitledName;
+
+/** The titled version of a template, if it has one. */
+export function titledOf(name: TemplateName): TitledName | null {
+  return name in TITLES ? (`${name}_titled` as TitledName) : null;
+}
+
 export type TemplateSpec = {
   name: TemplateName;
   /** Meta's category. Utility covers transactional; marketing costs more. */
@@ -122,13 +159,13 @@ export type TemplateSpec = {
    * submission and the real one by address on every send; `sample` is the
    * address the sample is fetched from.
    */
-  header?: { type: "image" | "document"; sample: string };
+  header?: { type: "image" | "document"; sample: string } | { type: "text"; text: string };
 };
 
 /** Where the Pro Pay button goes: billing/pro-link.ts builds the same address. */
 const PRO_START = `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/pro/start`;
 
-export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
+const BASE_TEMPLATES: Record<BaseTemplateName, TemplateSpec> = {
   payment_received: {
     name: "payment_received",
     category: "UTILITY",
@@ -523,6 +560,17 @@ export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
     params: ["what changed", "when"],
     example: ["your payout bank was changed", "14:20 today"],
   },
+};
+
+export const TEMPLATES: Record<TemplateName, TemplateSpec> = {
+  ...BASE_TEMPLATES,
+  ...(Object.fromEntries(
+    Object.entries(TITLES).map(([base, title]) => {
+      const spec = BASE_TEMPLATES[base as keyof typeof TITLES];
+      const name = `${base}_titled` as TitledName;
+      return [name, { ...spec, name, header: { type: "text", text: title } }];
+    }),
+  ) as Record<TitledName, TemplateSpec>),
 };
 
 /** Meta wants a language code alongside the name on every send. */
