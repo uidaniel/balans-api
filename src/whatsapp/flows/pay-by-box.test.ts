@@ -18,10 +18,14 @@ describe("the pay-by box", () => {
   const terms = invoice.screens.find((s) => s.id === "TERMS")!;
   const nodes = walk(terms);
 
-  it("is on the last screen, only for whoever can bill abroad", () => {
+  it("is on the last screen, only on an invoice priced in another currency", () => {
     const box = nodes.find((n) => n.name === "pay_by")!;
     assert.equal(box.type, "Dropdown");
-    assert.equal(box.visible, "${data.can_bill_abroad}");
+    // Not on a naira invoice (31 October 2026), where its only option said
+    // "Not for naira".
+    const gate = nodes.find((n) => n.type === "If" && JSON.stringify(n).includes('"pay_by"')) as { condition?: string } | undefined;
+    assert.match(String(gate?.condition), /can_bill_abroad/);
+    assert.match(String(gate?.condition), /currency\} != 'NGN'/);
     assert.equal(box.required, false, "required while hidden would make the form unsendable");
     assert.equal(box["data-source"], "${data.pay_options}");
   });

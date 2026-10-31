@@ -1897,7 +1897,10 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           children: [
             {
               type: "TextSubheading",
-              text: "Leave this alone for one payment on the due date.",
+              // Says what happens if they change nothing (31 October 2026).
+              // It said "Leave this alone for one payment on the due date",
+              // which reads as an instruction rather than a default.
+              text: "One payment on the due date, unless you choose a deposit or parts below.",
             },
             {
               type: "Form",
@@ -1945,23 +1948,25 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                 /*
                  * Abroad: a Balans card link, or the sender's own details
                  * (PayPal, Wise…) printed on the invoice instead (6 October
-                 * 2026). Shown to whoever can bill in other currencies; the
-                 * currency was picked screens back and this screen cannot see
-                 * it, so the server ignores the answer on a naira invoice.
+                 * 2026). Only on an invoice priced in another currency (31
+                 * October 2026): it was on every invoice of anybody who could
+                 * bill abroad, naira ones included, with one option saying
+                 * "Not for naira", which new users read as broken. The
+                 * currency comes from WORK as `data.currency`, empty for naira.
                  * Left empty, their default from settings applies.
                  */
                 {
-                  type: "TextCaption",
-                  text: "Only for invoices not in naira. Naira is always paid by bank transfer to your account.",
-                  visible: "${data.can_bill_abroad}",
-                },
-                {
-                  type: "Dropdown",
-                  name: "pay_by",
-                  label: "Paid by",
-                  required: false,
-                  visible: "${data.can_bill_abroad}",
-                  "data-source": "${data.pay_options}",
+                  type: "If",
+                  condition: "${data.can_bill_abroad} && ${data.currency} != '' && ${data.currency} != 'NGN'",
+                  then: [
+                    {
+                      type: "Dropdown",
+                      name: "pay_by",
+                      label: "Paid by",
+                      required: false,
+                      "data-source": "${data.pay_options}",
+                    },
+                  ],
                 },
                 {
                   type: "OptIn",
