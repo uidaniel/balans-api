@@ -15,19 +15,21 @@ const walk = (n: unknown): Node[] =>
 
 describe("the pay-by box", () => {
   const invoice = FLOWS.find((f) => f.key === "invoice")!.json as { screens: { id: string }[] };
+  const work = invoice.screens.find((s) => s.id === "WORK")!;
   const terms = invoice.screens.find((s) => s.id === "TERMS")!;
-  const nodes = walk(terms);
+  const nodes = walk(work);
 
-  it("is on the last screen, only on an invoice priced in another currency", () => {
+  it("sits under the Amount, only once a currency other than naira is picked (31 October 2026)", () => {
     const box = nodes.find((n) => n.name === "pay_by")!;
     assert.equal(box.type, "Dropdown");
-    // Not on a naira invoice (31 October 2026), where its only option said
-    // "Not for naira".
+    // On the last screen, bound to the currency carried there, WhatsApp showed
+    // it on naira invoices, with its one option saying "Not for naira".
     const gate = nodes.find((n) => n.type === "If" && JSON.stringify(n).includes('"pay_by"')) as { condition?: string } | undefined;
-    assert.match(String(gate?.condition), /can_bill_abroad/);
-    assert.match(String(gate?.condition), /currency\} != 'NGN'/);
+    assert.match(String(gate?.condition), /\$\{form\.currency\} == 'USD'/);
+    assert.doesNotMatch(String(gate?.condition), /NGN/);
     assert.equal(box.required, false, "required while hidden would make the form unsendable");
     assert.equal(box["data-source"], "${data.pay_options}");
+    assert.ok(!walk(terms).some((n) => n.name === "pay_by"), "not on the last screen any more");
   });
 
   it("names their bank, and leaves it off when they have none", () => {
@@ -40,10 +42,11 @@ describe("the pay-by box", () => {
     for (const o of withBank) assert.ok(o.title.length <= 30, o.title);
   });
 
-  it("is sent back with the form", () => {
-    const footer = nodes.find((n) => n.type === "Footer")!;
-    const payload = (footer["on-click-action"] as { payload: Record<string, string> }).payload;
-    assert.equal(payload.pay_by, "${form.pay_by}");
+  it("is carried to the last screen and sent back with the form", () => {
+    const next = nodes.find((n) => n.type === "Footer")!;
+    assert.equal((next["on-click-action"] as { payload: Record<string, string> }).payload.pay_by, "${form.pay_by}");
+    const send = walk(terms).find((n) => n.type === "Footer")!;
+    assert.equal((send["on-click-action"] as { payload: Record<string, string> }).payload.pay_by, "${data.pay_by}");
   });
 
   it("is read onto the draft, and nothing else is", () => {

@@ -1156,6 +1156,16 @@ export const VOICE = {
     `Send me another whenever you are ready — like ${b("Invoice Tunde 20k for logo")}.`,
   ),
 
+  /**
+   * Under "Dropped that one" (31 October 2026): the next thing somebody
+   * usually wants, a tap away. The same ids as the menu card's buttons.
+   */
+  afterDiscardButtons: (): ReplyButton[] => [
+    { id: "/invoice", title: "New invoice" },
+    { id: "/owed", title: "Who owes me" },
+    { id: "help", title: "Menu" },
+  ],
+
   /** "Keep them", under "Cancel 6 invoices?" (14 October 2026). */
   keptDocuments: `👍 Okay, ${b("nothing was cancelled")}.`,
 
@@ -2735,6 +2745,7 @@ export function formValues(doc: PendingDoc, now: Civil): {
     // it shows, so an empty start would make everybody pick naira on every
     // invoice; this way the ordinary case is already chosen.
     currency: doc.foreign?.currency ?? "NGN",
+    pay_by: doc.payBy ?? "",
     can_bill_abroad: false,
     show_currency: false,
     currencies: currencyOptions(false),
@@ -2888,7 +2899,7 @@ function walkAway(state: State, ctx: Context, msg: Inbound, strict: boolean): St
   // Typed or tapped: "Drop it" under the assistant's answer is a tapped "no",
   // and it used to be ignored here and the amount asked for again.
   if (intent === "reject") {
-    return { replies: [VOICE.draftDiscarded], next: "idle", context: forget(ctx), effects: [{ type: "discard_draft" }] };
+    return { replies: [VOICE.draftDiscarded], buttons: VOICE.afterDiscardButtons(), next: "idle", context: forget(ctx), effects: [{ type: "discard_draft" }] };
   }
   const talk =
     intent === "question" ||
@@ -3094,6 +3105,7 @@ function atConfirm(text: string, ctx: Context, msg: Inbound): Step {
   if (intent === "reject") {
     return {
       replies: [VOICE.draftDiscarded],
+      buttons: VOICE.afterDiscardButtons(),
       next: "idle",
       context: forget(ctx),
       effects: [{ type: "discard_draft" }],

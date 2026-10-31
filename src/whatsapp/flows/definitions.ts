@@ -1021,6 +1021,8 @@ const CURRENCIES_SCHEMA = {
 };
 
 const carriedData = (numbers: "string" | "number"): Record<string, unknown> => ({
+  // "Paid by", chosen on the item screen under Currency (31 October 2026).
+  pay_by: { type: "string", __example__: "" },
   client_name: { type: "string", __example__: "Daniel Uwak" },
   client_email: { type: "string", __example__: "" },
   client_phone: { type: "string", __example__: "" },
@@ -1134,6 +1136,7 @@ const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<str
   due_date: `\${${from}.due_date}`,
   // Chosen on the form screens, so it is read wherever the others are.
   currency: `\${${from}.currency}`,
+  pay_by: `\${${from}.pay_by}`,
   // Typed on the work screens, above the first item (9 October 2026).
   title: `\${${from}.title}`,
   // These three are only ever set on TERMS, at the end, so every screen
@@ -1768,6 +1771,31 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
               "input-type": entry ? "number" : "text",
               "max-chars": 12,
             },
+            /*
+             * "Paid by", under the Amount and only once a currency other than
+             * naira is picked (31 October 2026): a Balans card link, their
+             * own details (PayPal, Wise…), or their Nigerian account.
+             *
+             * It was on the last screen, bound to the currency carried there,
+             * and WhatsApp showed it on naira invoices all the same, with its
+             * one option saying "Not for naira". A condition on this screen's
+             * own form is the shape the custom deposit already uses, and the
+             * one that works on a phone. Each currency is named, so a blank
+             * box (naira for anybody who cannot bill abroad) shows nothing.
+             */
+            {
+              type: "If",
+              condition: "${form.currency} == 'USD' || ${form.currency} == 'GBP' || ${form.currency} == 'EUR' || ${form.currency} == 'CAD' || ${form.currency} == 'AUD' || ${form.currency} == 'GHS' || ${form.currency} == 'KES' || ${form.currency} == 'ZAR' || ${form.currency} == 'AED'",
+              then: [
+                {
+                  type: "Dropdown",
+                  name: "pay_by",
+                  label: "Paid by",
+                  required: false,
+                  "data-source": "${data.pay_options}",
+                },
+              ],
+            },
             ...itemBoxes,
             ...(items === 5
               ? [
@@ -1879,6 +1907,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
            * Both mean naira.
            */
           currency: { type: "string", __example__: "" },
+          pay_by: { type: "string", __example__: "" },
           // Never shown on this screen and never edited here; TERMS only has
           // to declare them because it is the screen that hands everything on.
           can_bill_abroad: { type: "boolean", __example__: false },
@@ -1945,29 +1974,6 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                     },
                   ],
                 },
-                /*
-                 * Abroad: a Balans card link, or the sender's own details
-                 * (PayPal, Wise…) printed on the invoice instead (6 October
-                 * 2026). Only on an invoice priced in another currency (31
-                 * October 2026): it was on every invoice of anybody who could
-                 * bill abroad, naira ones included, with one option saying
-                 * "Not for naira", which new users read as broken. The
-                 * currency comes from WORK as `data.currency`, empty for naira.
-                 * Left empty, their default from settings applies.
-                 */
-                {
-                  type: "If",
-                  condition: "${data.can_bill_abroad} && ${data.currency} != '' && ${data.currency} != 'NGN'",
-                  then: [
-                    {
-                      type: "Dropdown",
-                      name: "pay_by",
-                      label: "Paid by",
-                      required: false,
-                      "data-source": "${data.pay_options}",
-                    },
-                  ],
-                },
                 {
                   type: "OptIn",
                   name: "vat",
@@ -2029,7 +2035,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       plan: "${form.plan}",
                       deposit: "${form.deposit}",
                       design: "${form.design}",
-                      pay_by: "${form.pay_by}",
+                      pay_by: "${data.pay_by}",
                       vat: "${form.vat}",
                       notes: "${form.notes}",
                       title: "${data.title}",

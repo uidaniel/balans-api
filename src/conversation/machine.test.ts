@@ -680,6 +680,7 @@ describe("a tapped button", () => {
       // Naira already chosen: the box is required whenever it shows, and an
       // empty start would make everybody pick naira on every invoice.
       currency: "NGN",
+      pay_by: "",
       can_bill_abroad: false,
       // Hidden until the caller finds international invoicing on; then Free
       // sees it with only naira choosable, which is this list.

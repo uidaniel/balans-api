@@ -520,7 +520,15 @@ describe("line items on the document forms", () => {
            * carries the rest.
            */
           if (!forms().includes(String(s.id))) continue;
+          // A box inside an If is never named in init-values: Meta breaks the
+          // form when one names a field that is not showing (see EXTRA_ITEMS).
+          const gated = new Set(
+            walk(s.layout)
+              .filter((n) => n.type === "If")
+              .flatMap((n) => walk(n).filter((c) => typeof c.name === "string").map((c) => String(c.name))),
+          );
           for (const name of fields) {
+            if (gated.has(name)) continue;
             assert.ok(init[name], `${s.id}: "${name}" is on screen with no starting value`);
           }
         }
