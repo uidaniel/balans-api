@@ -1780,12 +1780,14 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
              * and WhatsApp showed it on naira invoices all the same, with its
              * one option saying "Not for naira". A condition on this screen's
              * own form is the shape the custom deposit already uses, and the
-             * one that works on a phone. Each currency is named, so a blank
-             * box (naira for anybody who cannot bill abroad) shows nothing.
+             * one that works on a phone.
              */
             {
               type: "If",
-              condition: "${form.currency} == 'USD' || ${form.currency} == 'GBP' || ${form.currency} == 'EUR' || ${form.currency} == 'CAD' || ${form.currency} == 'AUD' || ${form.currency} == 'GHS' || ${form.currency} == 'KES' || ${form.currency} == 'ZAR' || ${form.currency} == 'AED'",
+              // One comparison (31 October 2026): the same check written as
+              // "== 'USD' || == 'GBP' || …" never showed the box on a phone.
+              // The form opens on naira (formValues), so anything else shows it.
+              condition: "${form.currency} != 'NGN'",
               then: [
                 {
                   type: "Dropdown",

@@ -25,8 +25,7 @@ describe("the pay-by box", () => {
     // On the last screen, bound to the currency carried there, WhatsApp showed
     // it on naira invoices, with its one option saying "Not for naira".
     const gate = nodes.find((n) => n.type === "If" && JSON.stringify(n).includes('"pay_by"')) as { condition?: string } | undefined;
-    assert.match(String(gate?.condition), /\$\{form\.currency\} == 'USD'/);
-    assert.doesNotMatch(String(gate?.condition), /NGN/);
+    assert.equal(gate?.condition, "${form.currency} != 'NGN'");
     assert.equal(box.required, false, "required while hidden would make the form unsendable");
     assert.equal(box["data-source"], "${data.pay_options}");
     assert.ok(!walk(terms).some((n) => n.name === "pay_by"), "not on the last screen any more");
