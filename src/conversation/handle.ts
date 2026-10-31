@@ -17,6 +17,7 @@ import { markRead, normalisePhone, sendButtons, sendText, type ReplyButton } fro
 import { checkAccount, findBank } from "../payments/bank-directory.ts";
 import { checkCode, issueCode } from "../lib/codes.ts";
 import { sendEmail, transport, verificationEmail } from "../email/send.ts";
+import { linkSentWords, sendEmailLink } from "../email/confirm.ts";
 import { markEmailVerified, setEmail, recordConsent, saveBankAccount, activateBankAccount, getPendingBank } from "./store.ts";
 import type { Inbound } from "../whatsapp/inbound.ts";
 import {
@@ -430,8 +431,22 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
    * who was probably just handed the number by somebody else.
    */
   if (msg.kind === "welcome") {
+    /*
+     * The same card and form a first message gets (31 October 2026).
+     *
+     * This used to ask "What is your business called?" as plain text and
+     * save nothing, so the answer arrived at a `new` conversation, was taken
+     * as an opening "hi", and got the card and the form anyway: the name they
+     * typed was dropped. Now the form is open from the start, and a name typed
+     * instead of filling it in is kept, because `onboarding:form` reads typed
+     * words as the business name.
+     */
     if (state === "new") {
-      await reply(user.id, msg.from, [VOICE.askBusinessName], log);
+      const today = todayIn(defaults.behaviour.timezone);
+      const opening = step("new", {}, { text: "", today }, legalConsentVersion);
+      const outcome = await runEffects(opening.effects, user.id, undefined, log, { today, phone: msg.from });
+      await saveConversation(user.id, outcome.failed ? "new" : (outcome.holdAt ?? opening.next), opening.context);
+      if (outcome.lines.length) await reply(user.id, msg.from, outcome.lines, log);
       return;
     }
     const words = await sendMenu(user.id, msg.from, VOICE.helpIdle, log);
@@ -1192,6 +1207,22 @@ async function runEffects(
           break;
         }
 
+        // The terms, straight after the bank since 31 October 2026: the email
+        // is no longer asked for in between.
+        case "ask_consent": {
+          if (!(await sendConsentForm(userId, ctx.phone, log))) {
+            extra.push(VOICE.confirmedAskConsent);
+            buttons = VOICE.consentButtons();
+          }
+          break;
+        }
+
+        case "send_email_link": {
+          const sent = await sendEmailLink(userId, effect.email, log);
+          if (!effect.quiet) extra.push(linkSentWords(sent));
+          break;
+        }
+
         case "send_flow": {
           /*
            * The plan limit, asked before the form opens.
@@ -1829,6 +1860,28 @@ async function runEffects(
             extra.push(trialSentLine(t));
           };
 
+          /*
+           * The email, asked for after the first document and once more after
+           * the third (31 October 2026). Setup no longer collects it, and
+           * without it they get no copies and no receipts.
+           */
+          const askEmail = async (): Promise<void> => {
+            if (ctx.editingId || confirmed.updatedFrom) return;
+            const { rows } = await db().query<{ verified: boolean }>(
+              `SELECT email_verified_at IS NOT NULL AS verified FROM users WHERE id = $1`,
+              [userId],
+            );
+            if (rows[0]?.verified) return;
+            const ever = await documentsEverSent(userId);
+            if (ever !== 1 && ever !== 3) return;
+            extra.push(
+              para(
+                `📧 ${b("Add your email")} so copies of your invoices and receipts reach you.`,
+                `Send it here, like ${b("kemi@gmail.com")}.`,
+              ),
+            );
+          };
+
           const offerDesigns = async (): Promise<void> => {
             if (!ctx.phone || ctx.editingId || confirmed.updatedFrom) return;
             const ever = await documentsEverSent(userId);
@@ -1887,6 +1940,7 @@ async function runEffects(
                 await offerQuoteActions();
                 await offerDesigns();
                 await trialNote();
+                await askEmail();
                 break;
               }
               log.error({ userId, reason: sent.reason }, "could not send the document");
@@ -1903,6 +1957,7 @@ async function runEffects(
           await offerQuoteActions();
           await offerDesigns();
           await trialNote();
+          await askEmail();
           break;
         }
 
@@ -2252,9 +2307,9 @@ async function runEffects(
           if (!email) {
             extra.push(
               para(
-                b("You need a verified email before you can change your bank."),
+                b("You need a confirmed email before you can change your bank."),
                 "It is what we send the security code to.",
-                `Email ${b("hello@balans.ng")} and a person will help.`,
+                `Send your email here first, like ${b("kemi@gmail.com")}, and tap the link we email you. Then ask again.`,
               ),
             );
             holdAt = "idle";
@@ -3179,7 +3234,9 @@ async function finishSetupFromForm(userId: string, phone: string, log: FastifyBa
        FROM users WHERE id = $1`,
     [userId],
   );
-  if (!rows[0]?.verified || !rows[0]?.agreed) {
+  // Agreeing is what finishes setup. The email has not been part of it since
+  // 31 October 2026, so an unconfirmed one is not a setup left unfinished.
+  if (!rows[0]?.agreed) {
     log.warn({ userId }, "setup form said done for somebody who is not finished");
     await saveConversation(userId, "onboarding:business_name", {});
     await reply(userId, phone, [VOICE.setupByHand], log);

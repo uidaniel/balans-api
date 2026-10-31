@@ -1,14 +1,10 @@
 /**
- * The setup form's email survives a bank that does not resolve.
+ * Confirming the account, now that setup asks for no email (31 October 2026).
  *
- * The form collects the business name, the email and the bank in one submit.
- * When the bank half fails — a typo, a bank Monnify will not resolve, an
- * account that does not exist — the conversation picks up the bank on its own
- * and the rest of the form must not be thrown away with it.
- *
- * It was. The account was re-entered, resolved, and the bot then asked for an
- * email address that had been typed into the form two minutes earlier, which
- * reads as though nothing you did was saved.
+ * The email and its code came between the bank and the terms, and more than
+ * half of everybody who signed up stopped there. Confirming the account now
+ * leads straight to the terms, whatever the conversation knows about an
+ * email; the address is asked for after the first invoice.
  */
 
 import assert from "node:assert/strict";
@@ -23,58 +19,28 @@ const EMAIL = "danny@balans.ng";
 const confirm = (ctx: Record<string, unknown>, text: string) =>
   step("onboarding:confirm_account", ctx, { text, today: { y: 2026, m: 9, d: 22 } }, V);
 
-describe("confirming the account when the email is already known", () => {
-  it("goes straight to the code, without asking again", () => {
-    const out = confirm({ resolvedAccountName: NAME, email: EMAIL }, "yes");
-
-    assert.equal(out.next, "onboarding:verify_email");
-    assert.deepEqual(
-      out.effects.map((e) => e.type).sort(),
-      ["create_subaccount", "send_email_code"],
-      "the code has to actually be sent, not just promised",
-    );
-    assert.match(out.replies.join(" "), new RegExp(EMAIL), "it should name the address it used");
+describe("confirming the account", () => {
+  it("goes straight to the terms on a yes, email or no email", () => {
+    for (const ctx of [{ resolvedAccountName: NAME, email: EMAIL }, { resolvedAccountName: NAME }]) {
+      const out = confirm(ctx, "yes");
+      assert.equal(out.next, "onboarding:consent");
+      assert.deepEqual(out.effects.map((e) => e.type), ["create_subaccount", "ask_consent"]);
+    }
   });
 
-  it("sends the code to the address the form gave", () => {
-    const out = confirm({ resolvedAccountName: NAME, email: EMAIL }, "yes");
-    const sent = out.effects.find((e) => e.type === "send_email_code");
-    assert.equal(sent?.email, EMAIL);
+  it("takes the button's own words", () => {
+    assert.equal(confirm({ resolvedAccountName: NAME }, "✅ That's me".replace("✅ ", "")).next, "onboarding:consent");
   });
 
-  it("still asks when there is no email yet", () => {
-    // Someone who typed their bank in words from the start never filled a
-    // form, so there is nothing to remember and the question is right.
-    const out = confirm({ resolvedAccountName: NAME }, "yes");
-    assert.equal(out.next, "onboarding:email");
-    assert.deepEqual(out.effects.map((e) => e.type), ["create_subaccount"]);
+  it("asks for a yes, never for an email, when the answer is unclear", () => {
+    const said = confirm({ resolvedAccountName: NAME }, "???").replies.join(" ");
+    assert.doesNotMatch(said, /send your email/i);
+    assert.match(said, /yes/i);
   });
 
-  it("asks for a yes, not an email, when it already has one", () => {
-    const known = confirm({ resolvedAccountName: NAME, email: EMAIL }, "???").replies.join(" ");
-    assert.doesNotMatch(known, /send your email/i, "it asked for something it already had");
-    assert.match(known, /yes/i);
-
-    const unknown = confirm({ resolvedAccountName: NAME }, "???").replies.join(" ");
-    assert.match(unknown, /email/i, "without one, it must still ask");
-  });
-
-  it("lets a different address override the one on file", () => {
-    // The question is "is this you?", and answering with an address is still
-    // a yes — to a different address. Somebody correcting a typo must be able
-    // to, without starting over.
-    const out = confirm({ resolvedAccountName: NAME, email: EMAIL }, "other@balans.ng");
-    assert.equal(out.next, "onboarding:verify_email");
-    assert.equal(out.context.email, "other@balans.ng");
-    assert.equal(
-      out.effects.find((e) => e.type === "send_email_code")?.email,
-      "other@balans.ng",
-    );
-  });
-
-  it("goes back to the bank on a no, keeping the email", () => {
+  it("goes back to the bank on a no, keeping anything else it knew", () => {
     const out = confirm({ resolvedAccountName: NAME, email: EMAIL }, "no");
     assert.equal(out.next, "onboarding:bank");
-    assert.equal(out.context.email, EMAIL, "a wrong bank is not a reason to re-ask the email");
+    assert.equal(out.context.email, EMAIL);
   });
 });

@@ -218,6 +218,8 @@ export async function notifyProActive(
   until: Date,
   log: FastifyBaseLogger,
   paidKobo?: number,
+  /** Paystack's channel, so the receipt names how they paid. */
+  method?: string | null,
 ): Promise<void> {
   const { rows } = await db()
     .query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [userId])
@@ -233,7 +235,7 @@ export async function notifyProActive(
     {
       userId,
       phone,
-      text: proStarted(paidKobo ? { paidKobo, until } : undefined),
+      text: proStarted(paidKobo ? { paidKobo, until, method } : undefined),
       /*
        * The card, with the confirmation underneath it.
        *

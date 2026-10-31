@@ -302,7 +302,7 @@ export function cardHtml(card: Card): string {
         card,
         `<div class="pill">You’re in</div>
 ${headline(560, "Welcome.", "Let’s get you paid.")}
-<p class="sub" style="top:1010px;width:1100px">Your business name, your email, your bank. Then your first invoice is one message.</p>
+<p class="sub" style="top:1010px;width:1100px">Your business name and your bank. Then your first invoice is one message.</p>
 <div class="foot"><p class="kick">Then just type</p><p class="chip">Invoice Tunde 150k</p></div>`,
       );
     case "setup-done":

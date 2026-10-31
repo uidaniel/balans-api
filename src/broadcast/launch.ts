@@ -52,7 +52,7 @@ export const LAUNCH = {
     steps: [
       {
         title: "Set up in the chat",
-        text: "Your business name, your email and the bank account you want paid into. About three minutes.",
+        text: "Your business name and the bank account you want paid into. About a minute.",
       },
       {
         title: "Send one line",

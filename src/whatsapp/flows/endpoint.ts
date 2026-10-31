@@ -264,7 +264,15 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
   const setup = key === "onboarding";
   const version = versionOf(data);
 
-  /* -- Setup, first screen: the business and the address ----------------- */
+  /* -- Setup, first screen, since 31 October 2026: the business alone ---- */
+  if (setup && req.screen === "BUSINESS" && data.form_version === "4") {
+    const businessName = str("business_name").trim().slice(0, 80);
+    await act.startSetupNameOnly(userId, businessName, log);
+    if (await act.isAbroad(userId)) return { screen: "ABROAD", data: { error_messages: {} } };
+    return { screen: "PAYOUT", data: { error_messages: {} } };
+  }
+
+  /* -- Setup, first screen, before: the business and the address --------- */
   if (setup && req.screen === "BUSINESS") {
     const businessName = str("business_name").trim();
     const email = str("email").trim().toLowerCase();

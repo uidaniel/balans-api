@@ -19,6 +19,7 @@ import { paystackRoutes } from "./routes/paystack.ts";
 import { templateRoutes } from "./routes/templates.ts";
 import { signatureRoutes } from "./routes/signature.ts";
 import { settingsPageRoutes } from "./routes/settings-page.ts";
+import { emailConfirmRoutes } from "../email/confirm.ts";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -180,6 +181,7 @@ export function buildServer(): FastifyInstance {
   // Also unprefixed and opened from a phone: /signature/{token}.
   app.register(signatureRoutes);
   app.register(settingsPageRoutes);
+  app.register(emailConfirmRoutes);
 
   /*
    * Cloudflare's Email Obfuscation rewrites every address in our HTML to

@@ -164,8 +164,25 @@ export function proActive(state: SubscriptionState): string {
  * With what was paid, when it is known, as the receipt: the same facts the
  * email carries, for somebody who will never open the email.
  */
+/**
+ * How a Pro payment was made, in the receipt's words, from Paystack's channel.
+ *
+ * It said "by bank transfer" on every receipt (31 October 2026), from when
+ * Pro could only be paid that way; the checkout has since taken cards and
+ * USSD too. A channel not listed here is left out rather than guessed.
+ */
+const PAID_BY: Record<string, string> = {
+  card: "by card",
+  apple_pay: "with Apple Pay",
+  bank_transfer: "by bank transfer",
+  bank: "from your bank account",
+  ussd: "by USSD",
+  mobile_money: "by mobile money",
+  qr: "by QR code",
+};
+
 export function proStarted(
-  receipt?: { paidKobo: number; until: Date },
+  receipt?: { paidKobo: number; until: Date; method?: string | null },
   /** Given by Balans rather than paid for: until when, or null for no end. */
   granted?: { until: Date | null },
 ): string {
@@ -181,7 +198,9 @@ export function proStarted(
       ? [
           lines(
             `🧾 ${b("Receipt")}`,
-            `Paid: ${b(formatNaira(receipt.paidKobo))}, by bank transfer, ${day(new Date())}`,
+            `Paid: ${b(formatNaira(receipt.paidKobo))}, ${
+              receipt.method && PAID_BY[receipt.method] ? `${PAID_BY[receipt.method]}, ` : ""
+            }${day(new Date())}`,
             `Pro until: ${b(day(receipt.until))}`,
             "A copy is in your email.",
           ),
@@ -225,24 +244,37 @@ export function onDayWords(d: Date, now = new Date()): string {
 /** The same after "until": "until tomorrow", "until 17 October". */
 const untilWords = (d: Date, now = new Date()): string => onDayWords(d, now).replace(/^on /, "");
 
+/**
+ * The price a renewal message quotes (31 October 2026).
+ *
+ * The month, as it always was, unless the Pro ending was a year: then the
+ * year first, with the month as the other choice. It quoted the month to
+ * everybody, so somebody who had paid ₦30,000 was offered ₦3,000 a month as
+ * though that were their plan. Both are on the page the button opens.
+ */
+const renewalPrice = (month: ProPrice, year?: ProPrice): string =>
+  year ? `${year.label} a year, or ${month.label} a month` : `${month.label} a month`;
+
 /** Three days before. It does not renew by itself, so this says how to. */
-export function proEndingSoon(end: Date, price: ProPrice = NAIRA_PRICE, now = new Date()): string {
+export function proEndingSoon(end: Date, price: ProPrice = NAIRA_PRICE, now = new Date(), year?: ProPrice): string {
   return para(
     `⭐ ${b(`Your Balans Pro ends ${onDayWords(end, now)}.`)}`,
     lines(
       "It does not renew by itself.",
-      `Tap below to pay ${price.label} for another month. It starts when this one ends, so renewing early costs you nothing.`,
+      year
+        ? `Tap below to pay ${year.label} for another year, or ${price.label} for a month. It starts when this one ends, so renewing early costs you nothing.`
+        : `Tap below to pay ${price.label} for another month. It starts when this one ends, so renewing early costs you nothing.`,
     ),
   );
 }
 
 /** The day it ends. The grace week has started. */
-export function proEnded(end: Date, price: ProPrice = NAIRA_PRICE, now = new Date()): string {
+export function proEnded(end: Date, price: ProPrice = NAIRA_PRICE, now = new Date(), year?: ProPrice): string {
   return para(
     `⏳ ${b("Your Balans Pro ended today.")}`,
     lines(
       `You keep every Pro feature until ${untilWords(graceEnd(end), now)}.`,
-      `Tap below to renew for ${price.label} a month.`,
+      `Tap below to renew for ${renewalPrice(price, year)}.`,
     ),
   );
 }
@@ -257,18 +289,24 @@ const afterPro = (left: number): string =>
     ? `After that you have ${left} free ${left === 1 ? "document" : "documents"} left, then new invoices need Pro.`
     : "After that, new invoices need Pro.";
 
-export function proGraceEnding(end: Date, price: ProPrice = NAIRA_PRICE, now = new Date(), left = 0): string {
+export function proGraceEnding(
+  end: Date,
+  price: ProPrice = NAIRA_PRICE,
+  now = new Date(),
+  left = 0,
+  year?: ProPrice,
+): string {
   return para(
     `⏳ ${b(`Your Pro features stop ${onDayWords(graceEnd(end), now)}.`)}`,
     lines(
       `${afterPro(left)} Everything you have sent stays, and your clients can still pay.`,
-      `Tap below to keep Pro for ${price.label}.`,
+      `Tap below to keep Pro for ${year ? renewalPrice(price, year) : price.label}.`,
     ),
   );
 }
 
 /** The day they move to Free. */
-export function proLapsed(price: ProPrice = NAIRA_PRICE, left = 0): string {
+export function proLapsed(price: ProPrice = NAIRA_PRICE, left = 0, year?: ProPrice): string {
   return para(
     `📋 ${b("Your Pro has ended.")}`,
     lines(
@@ -276,18 +314,18 @@ export function proLapsed(price: ProPrice = NAIRA_PRICE, left = 0): string {
         ? `You have ${left} free ${left === 1 ? "document" : "documents"} left, then new invoices need Pro.`
         : "New invoices need Pro.",
       "Everything you have sent stays, and your logo and settings are saved for when you come back.",
-      `Tap below to get Pro back for ${price.label} a month.`,
+      `Tap below to get Pro back for ${renewalPrice(price, year)}.`,
     ),
   );
 }
 
 /** A week later, once, and then nothing more. */
-export function proWinBack(price: ProPrice = NAIRA_PRICE): string {
+export function proWinBack(price: ProPrice = NAIRA_PRICE, year?: ProPrice): string {
   return para(
     `⭐ ${b("Still want Pro?")}`,
     lines(
       "Unlimited invoices, your logo on them, and reminders sent to your clients for you.",
-      `Tap below: ${price.label} a month.`,
+      `Tap below: ${renewalPrice(price, year)}.`,
     ),
   );
 }

@@ -129,6 +129,15 @@ export async function startSetup(
   return emailCode(userId, "email_verify", input.email, input.businessName, log);
 }
 
+/**
+ * The first screen since 31 October 2026: the name, and on to the bank. The
+ * email is asked for in the chat after the first invoice (email/confirm.ts).
+ */
+export async function startSetupNameOnly(userId: string, businessName: string, log: FastifyBaseLogger): Promise<void> {
+  if (businessName) await setBusinessName(userId, businessName);
+  log.info({ userId }, "setup form saved the business");
+}
+
 /** The second: the code checked and the address proved. Nothing else yet. */
 export async function verifySetupEmail(
   userId: string,
@@ -154,14 +163,6 @@ export async function verifySetupEmail(
  * set up all the same.
  */
 export async function completeSetup(userId: string, checked: Checked, log: FastifyBaseLogger): Promise<Done> {
-  const { rows } = await db().query<{ verified: boolean }>(
-    `SELECT email_verified_at IS NOT NULL AS verified FROM users WHERE id = $1`,
-    [userId],
-  );
-  if (!rows[0]?.verified) {
-    return { ok: false, message: "Your email is not verified yet. Go back to the code screen." };
-  }
-
   await saveBankAccount(userId, {
     bankCode: checked.bankCode,
     bankName: checked.bankName,
@@ -195,14 +196,6 @@ export async function completeAbroadSetup(
   pay: { method: string; details: string },
   log: FastifyBaseLogger,
 ): Promise<Done> {
-  const { rows } = await db().query<{ verified: boolean }>(
-    `SELECT email_verified_at IS NOT NULL AS verified FROM users WHERE id = $1`,
-    [userId],
-  );
-  if (!rows[0]?.verified) {
-    return { ok: false, message: "Your email is not verified yet. Go back to the code screen." };
-  }
-
   await db().query(
     `UPDATE users SET payment_method = $2, payment_details = $3, abroad_pay_by = 'own' WHERE id = $1`,
     [userId, pay.method.slice(0, 40), pay.details.slice(0, 600)],

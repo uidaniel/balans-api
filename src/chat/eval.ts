@@ -220,6 +220,15 @@ const CASES: Case[] = [
   // The end of the month given as the day Pro stopped, with a week to go.
   { q: "when does my pro end", account: IN_GRACE, must: [/tomorrow/i] },
   { q: "i'm not paying the balans pro plan", account: IN_GRACE, must: [/tomorrow|15 Oct/i], mustNot: [/ending Wed, 7 Oct/i] },
+  // 31 October 2026: "no web version", "2 to 4 instalments", client
+  // reminders "on Pro" only, and a voice note "coming to Pro".
+  { q: "is there a web version of balans?", must: [/web page|settings|designs/i], mustNot: [/planned|dashboard/i] },
+  { q: "how many parts can I split one invoice into?", must: [/\b12\b/], mustNot: [/2 to 4|up to 4|four/i] },
+  { q: "will my client get reminders on my free invoices?", must: [/yes/i, /3 and 7|free documents/i] },
+  { q: "can I just send you a photo of the invoice and you read it?", must: [/not yet/i], mustNot: [/\byes\b|coming|soon/i] },
+  { q: "can I send voice notes on pro?", must: [/not yet/i], mustNot: [/coming|soon|on pro you can/i] },
+  { q: "why do you need my email?", must: [/link|copies|receipts/i], mustNot: [/code/i] },
+  { q: "can I set up recurring invoices?", must: [/not yet/i] },
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -227,7 +236,7 @@ const CASES: Case[] = [
 const MONEY = /₦\d{1,3}(?:,\d{3})*(?:\.\d+)?/g;
 const DATE = /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/g;
 /** Prices quoted from the instructions are allowed even with no lookup. */
-const KNOWN = ["₦3,000", "₦30,000", "₦6,000", "₦100"];
+const KNOWN = ["₦3,000", "₦30,000", "₦6,000", "₦2,500", "₦100", "₦1,000", "₦50,000,000"];
 
 const SNAPSHOT = {
   account: ACCOUNT,

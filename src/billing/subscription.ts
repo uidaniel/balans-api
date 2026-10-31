@@ -383,9 +383,15 @@ const STAGE_WHERE: Record<ProStage, string> = {
 
 export async function proRemindersDue(
   stage: ProStage,
-): Promise<{ userId: string; waPhone: string; expiresAt: Date; priceKobo: number }[]> {
-  const { rows } = await db().query<{ id: string; wa_phone: string; plan_expires_at: Date }>(
-    `SELECT u.id, u.wa_phone, u.plan_expires_at
+): Promise<{ userId: string; waPhone: string; expiresAt: Date; priceKobo: number; yearly: boolean }[]> {
+  const { rows } = await db().query<{ id: string; wa_phone: string; plan_expires_at: Date; yearly: boolean | null }>(
+    // `yearly`: their last paid stretch was a year, so the reminder offers
+    // the year again before the month (31 October 2026).
+    `SELECT u.id, u.wa_phone, u.plan_expires_at,
+            (SELECT s.period_end - s.period_start > interval '300 days'
+               FROM subscriptions s
+              WHERE s.user_id = u.id AND s.paid_at IS NOT NULL
+              ORDER BY s.period_end DESC LIMIT 1) AS yearly
        FROM users u
       WHERE u.status = 'active'
         AND u.plan_expires_at IS NOT NULL
@@ -401,6 +407,7 @@ export async function proRemindersDue(
     waPhone: r.wa_phone,
     expiresAt: r.plan_expires_at,
     priceKobo: defaults.plans.pro.priceKobo,
+    yearly: r.yearly === true,
   }));
 }
 

@@ -237,8 +237,28 @@ export async function getPendingBank(userId: string): Promise<PendingBank | null
  */
 export async function reopenAccount(userId: string): Promise<void> {
   await tx(async (c) => {
+    /*
+     * Setup is unfinished again until they agree again (31 October 2026).
+     *
+     * The old stamps stayed, so the admin counted a reopened account as set
+     * up and the setup nudges passed over it however long it sat half-way.
+     * The agreement they gave before is evidence and goes to the audit log
+     * first; the nudges are cleared so a second stall is nudged like a first.
+     */
     await c.query(
-      `UPDATE users SET status = 'active', deleted_at = NULL, business_name = NULL WHERE id = $1`,
+      `INSERT INTO audit_log (actor_type, actor_id, action, target_type, target_id, before_json)
+       SELECT 'user', $1::text, 'account.reopen', 'user', $1::text,
+              jsonb_build_object('consent_version', consent_version, 'consented_at', consented_at,
+                                 'activated_setup_at', activated_setup_at)
+         FROM users WHERE id = $1::uuid`,
+      [userId],
+    );
+    await c.query(
+      `UPDATE users
+          SET status = 'active', deleted_at = NULL, business_name = NULL,
+              consent_version = NULL, consented_at = NULL, activated_setup_at = NULL,
+              setup_nudge_at = NULL, setup_followup_at = NULL
+        WHERE id = $1`,
       [userId],
     );
 

@@ -1117,6 +1117,43 @@ export function renderProPlans(o: {
 </body></html>`;
 }
 
+/**
+ * The link in the "confirm your email" email (31 October 2026).
+ *
+ * `ask` is a button rather than the confirmation itself: mail scanners open
+ * every link in an email before the person does, and a link that confirmed
+ * on sight would be confirmed by the scanner. A press is a POST, which they
+ * do not make.
+ */
+export function renderEmailConfirm(state: "ask" | "done" | "gone", email: string | null): string {
+  const body =
+    state === "ask"
+      ? `<h1 style="margin-top:22px">Confirm your email</h1>
+  <p class="from">${email ? `Copies of your invoices and receipts will go to <b>${esc(email)}</b>.` : "Copies of your invoices and receipts will go to this address."}</p>
+  <form method="post"><button class="go" type="submit">Confirm email</button></form>`
+      : state === "done"
+        ? `<h1 style="margin-top:22px">Email confirmed</h1>
+  <p class="from">${email ? `Copies of your invoices and receipts now go to <b>${esc(email)}</b>.` : "Copies of your invoices and receipts now go to this address."} You can close this and go back to WhatsApp.</p>`
+        : `<h1 style="margin-top:22px">This link has expired</h1>
+  <p class="from">Send your email to Balans on WhatsApp again, and we will send you a new link.</p>`;
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="format-detection" content="telephone=no">
+<title>Confirm your email</title><meta name="robots" content="noindex,nofollow">
+<style>${CSS}
+form{margin-top:22px}
+.go{display:block;width:100%;border:0;font:inherit;font-weight:500;font-size:16px;border-radius:999px;padding:14px;cursor:pointer;${GOLD}}
+</style></head><body>
+<div class="band" aria-hidden="true"></div>
+<div class="sheet"><div class="top">
+  <div class="brand">${logoAvailable() ? logoSvg("28px") : `<span class="dot"></span>balans`}</div>
+  ${body}
+</div></div>
+<p class="foot">${markSvg("16px")}<a href="https://balans.ng">balans.ng</a></p>
+</body></html>`;
+}
+
 /** A 404 that does not confirm whether the token was ever real. */
 export function renderNotFound(): string {
   return `<!doctype html>

@@ -40,22 +40,20 @@ describe("onboarding: the happy path", () => {
     "Hi",
     "Kemi Adeyemi Studio",
     "GTBank 0123456789",
-    "kemi@studio.ng",
-    "123456",
+    "yes",
     "I agree",
   ]);
 
   it("ends idle, set up", () => assert.equal(states.at(-1), "idle"));
   it("visits each step once, in order", () => {
-    // No separate email step: confirming the account and giving the address are
-    // the same turn, because the confirm question asks for the address.
+    // No email step (31 October 2026): the account confirmed, then the terms.
+    // The email is asked for after the first invoice.
     assert.deepEqual(states, [
       // "Hi" opens the setup form. Typing instead of filling it in is the
       // supported fallback, and what this walk does from here.
       "onboarding:form",
       "onboarding:bank",
       "onboarding:confirm_account",
-      "onboarding:verify_email",
       "onboarding:consent",
       "idle",
     ]);
@@ -64,7 +62,6 @@ describe("onboarding: the happy path", () => {
     assert.equal(ctx.businessName, "Kemi Adeyemi Studio");
     assert.equal(ctx.bankName, "GTBank");
     assert.equal(ctx.accountNumber, "0123456789");
-    assert.equal(ctx.email, "kemi@studio.ng");
   });
 });
 
@@ -251,7 +248,7 @@ describe("what setup costs to run", () => {
     // Except where an effect owns the answer: the code check and the bank
     // lookup both reply from the caller, which is the only thing that knows,
     // and a Flow's words travel on the form message itself.
-    const effectOwned = ["resolve_account", "verify_email_code", "send_flow"];
+    const effectOwned = ["resolve_account", "verify_email_code", "send_flow", "ask_consent"];
     const turns: [State, Context, string][] = [
       ["new", {}, "Hi"],
       ["onboarding:business_name", {}, "Kemi Adeyemi Studio"],
@@ -398,21 +395,22 @@ describe("how the messages read", () => {
 });
 
 describe("confirming the account", () => {
-  it("an email address is the confirmation, and saves a turn", () => {
-    const out = go("onboarding:confirm_account", { resolvedAccountName: "KEMI A" }, "kemi@studio.ng");
-    assert.equal(out.next, "onboarding:verify_email");
-    assert.equal(out.context.email, "kemi@studio.ng");
+  it("yes goes straight to the terms, with no email step (31 October 2026)", () => {
+    const out = go("onboarding:confirm_account", { resolvedAccountName: "KEMI A" }, "yes");
+    assert.equal(out.next, "onboarding:consent");
     assert.deepEqual(
       out.effects.map((e) => e.type),
-      ["create_subaccount", "send_email_code"],
-      "the account must be set up before the code goes out",
+      ["create_subaccount", "ask_consent"],
+      "the account must be saved before the terms are asked",
     );
   });
 
-  it("yes still works, and asks for the address on its own", () => {
-    const out = go("onboarding:confirm_account", { resolvedAccountName: "KEMI A" }, "yes");
-    assert.equal(out.next, "onboarding:email");
-    assert.equal(out.effects[0]?.type, "create_subaccount");
+  it("an address typed anyway is a yes, and its link goes out quietly", () => {
+    const out = go("onboarding:confirm_account", { resolvedAccountName: "KEMI A" }, "kemi@studio.ng");
+    assert.equal(out.next, "onboarding:consent");
+    assert.deepEqual(out.effects.map((e) => e.type), ["create_subaccount", "send_email_link", "ask_consent"]);
+    const link = out.effects.find((e) => e.type === "send_email_link");
+    assert.equal(link?.type === "send_email_link" && link.quiet, true);
   });
 
   it("no goes back and forgets the details", () => {

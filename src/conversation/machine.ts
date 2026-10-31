@@ -263,6 +263,14 @@ export type Effect =
     }
   | { type: "create_subaccount" }
   | { type: "send_email_code"; email: string }
+  /** The terms, as a form or in words: the last step of setup. */
+  | { type: "ask_consent" }
+  /**
+   * An email to confirm by tapping a link (31 October 2026), asked for after
+   * setup rather than during it. `quiet` sends it without a line in the chat,
+   * for the address somebody typed in the middle of setup.
+   */
+  | { type: "send_email_link"; email: string; quiet?: boolean }
   /**
    * Open a Flow on the user's phone.
    *
@@ -622,11 +630,16 @@ export const ABROAD_HELP = "Before VAT, in the currency above. Digits only.";
 export const VOICE = {
   /** The invitation that carries the setup form. */
   /*
-   * Short on purpose: the card above it already says welcome, and already
-   * lists the three things. Saying them again underneath is the same sentence
-   * twice, and the only thing left to say is what to do next.
+   * What Balans does in one line, with the sentence they will type, then what
+   * to do (31 October 2026). The first thing the Click-to-WhatsApp ads land
+   * on: "Hi Balans, I want to try it" from somebody who has seen one advert
+   * and nothing else, and for whom "Tap below to set up" said what to press
+   * but not why.
    */
-  setupInvite: para(`\u{1F44B} ${b("Tap below to set up.")}`, "It takes about a minute."),
+  setupInvite: para(
+    `\u{1F44B} ${b("Welcome to Balans.")} Type an invoice like a text, ${i("Invoice Tunde 150k for logo design")}, and your client pays straight into your bank.`,
+    `${b("Tap below to set up.")} It takes about a minute: your business name and your bank.`,
+  ),
 
   /** Somebody who backed out and is being offered the same beginning again. */
   setupAgain: para(
@@ -891,8 +904,10 @@ export const VOICE = {
    * which copy to trust. The message says what is coming; the screen holds
    * the summary and the documents.
    */
+  // "Confirmed" rather than "Email confirmed": since 31 October 2026 this
+  // follows the bank account, and the email comes after setup.
   consentFormBody: para(
-    "✅ Email confirmed.",
+    "✅ Confirmed.",
     "One last thing — our terms and privacy notice.",
     b("Agree to finish?"),
   ),
@@ -905,7 +920,7 @@ export const VOICE = {
    * able to read what they are agreeing to before they agree to it.
    */
   confirmedAskConsent: para(
-    "✅ Email confirmed.",
+    "✅ Confirmed.",
     lines("One last thing — our terms and privacy notice:", TERMS_URL, PRIVACY_URL),
     b("Agree to finish?"),
   ),
@@ -1674,7 +1689,13 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
         };
       }
 
-      if (GREETING.test(text)) {
+      /*
+       * Nobody asked for the name here, so only something that reads as one
+       * is taken (31 October 2026). Anything else — a greeting, "Hi Balans",
+       * "I want to try it", a question — gets the question asked properly,
+       * and the next message is the answer to it.
+       */
+      if (GREETING.test(text) || nameProblem(text.replace(/\s+/g, " ").trim())) {
         return { replies: [VOICE.setupByHand], next: "onboarding:business_name", context, effects: [] };
       }
       return takeBusinessName(text, context, msg);
@@ -1742,6 +1763,16 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
        */
       if (GREETING.test(text)) {
         return { replies: [], next: "idle", context, effects: [{ type: "chat", fallback: VOICE.helpIdle }] };
+      }
+      /*
+       * An email address on its own (31 October 2026): the answer to "add
+       * your email", asked after the first invoice now that setup no longer
+       * collects one. A link goes to it; the effect refuses quietly to
+       * replace an address that is already confirmed.
+       */
+      const typedEmail = text.trim().toLowerCase();
+      if (EMAIL.test(typedEmail) && typedEmail.length <= 254) {
+        return { replies: [], next: "idle", context, effects: [{ type: "send_email_link", email: typedEmail }] };
       }
       // Answers to the Pro offer. Read here rather than by the model, because
       // "pay now" is a decision about money and its meaning is fixed.
@@ -3531,6 +3562,28 @@ const NOT_A_NAME: { test: RegExp; why: string }[] = [
     why: "That is something you can tell me to do, not a name.",
   },
   { test: /^(?:help|menu|settings?|upgrade|cancel|stop|yes|no|start|restart)$/i, why: "That is a command, not a name." },
+  /*
+   * Greetings and chatter (31 October 2026).
+   *
+   * Accounts were set up as "Hi Balans": the greeting check above only knew a
+   * bare "hi", and anything typed while the setup form was open was taken as
+   * the name. The Click-to-WhatsApp ads open with "Hi Balans, I want to try
+   * it", which would have named every one of those accounts after it.
+   */
+  {
+    // Followed by a space, punctuation or nothing: "Hi-Tech Solutions" starts
+    // with the word, not the greeting.
+    test: /^(?:hi+|hello|hey+|hiya|hola|howfa|how far|good (?:morning|afternoon|evening|day)|greetings)(?=[\s,.!?]|$)/i,
+    why: "That looks like a greeting, not a business name.",
+  },
+  { test: /\bbalans\b/i, why: "Balans is our name. Send yours, the one your clients know." },
+  { test: /\b\d{10}\b/, why: "That looks like an account number." },
+  {
+    // The short words only as the whole message: "Sure Prints" and "OK
+    // Motors" are businesses, "ok" on its own is not.
+    test: /^(?:i want|i'?d like|i would like|i need|how (?:do|does|can|far)|what (?:is|does|do)|can i|is it|please|pls)\b|^(?:ok(?:ay)?|thanks?|thank you|sure|alright)[.!]*$|^(?=.*\p{L}).*\?\s*$/iu,
+    why: "That looks like a message, not a business name.",
+  },
   // Last, so the ones above get to name themselves first.
   { test: /^\P{L}+$/u, why: "A name needs at least one letter in it." },
 ];
@@ -3545,7 +3598,7 @@ const NOT_A_NAME: { test: RegExp; why: string }[] = [
  * either caller; this does not take that on trust, because this is the field
  * that was actually corrupted by one.
  */
-function nameProblem(name: string): string | null {
+export function nameProblem(name: string): string | null {
   if (name.length < 2 || name.length > 80 || name.startsWith("/")) {
     return "That does not look like a business name.";
   }
@@ -3608,7 +3661,9 @@ function takeBank(text: string, ctx: Context): Step {
     // The caller resolves the name with the provider. We never take the user's
     // word for whose account it is (F17).
     effects: [
-      { type: "resolve_account", bankQuery: bank, accountNumber: account, haveEmail: Boolean(ctx.email) },
+      // Always "Is that you?" with buttons since 31 October 2026: the email is
+      // no longer asked for here, so there is nothing to collect in this turn.
+      { type: "resolve_account", bankQuery: bank, accountNumber: account, haveEmail: true },
     ],
   };
 }
@@ -3616,39 +3671,29 @@ function takeBank(text: string, ctx: Context): Step {
 const EMAIL = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 
 function confirmAccount(text: string, ctx: Context): Step {
-  // Confirming and giving the email are one turn, not two. The question asks
-  // for the address, so an address *is* the yes — which removes a round trip
-  // and the message that went with it. Someone who just says "yes" is still
-  // right, and gets asked for the address on its own.
+  /*
+   * The account confirmed, and straight on to the terms (31 October 2026).
+   *
+   * This used to ask for an email and a 6-digit code from the inbox here, and
+   * more than half of everybody who signed up stopped at it: leaving WhatsApp
+   * to find a code is where setup was lost. The email is now asked for after
+   * the first invoice, and confirmed by a link (`send_email_link`).
+   *
+   * An address typed here anyway — the old question asked for one — counts
+   * as the yes, and its link goes out at the same time.
+   */
   const email = text.trim().toLowerCase();
-  if (EMAIL.test(email) && email.length <= 254) {
+  const typedEmail = EMAIL.test(email) && email.length <= 254;
+  if (typedEmail || /^(yes|yeah|yep|correct|that is right|that'?s me|na me|ok|okay)\b/i.test(text)) {
     return {
-      replies: [VOICE.askCode(email)],
-      buttons: VOICE.codeButtons(),
-      next: "onboarding:verify_email",
-      context: { ...ctx, email, attempts: 0 },
-      effects: [{ type: "create_subaccount" }, { type: "send_email_code", email }],
-    };
-  }
-
-  if (/^(yes|yeah|yep|correct|that is right|na me|ok|okay)\b/i.test(text)) {
-    // The form already gave us one. Asking again for something somebody has
-    // typed once is the single most irritating thing software does, and it
-    // reads as though nothing they did was saved.
-    if (ctx.email) {
-      return {
-        replies: [VOICE.askCode(ctx.email)],
-        buttons: VOICE.codeButtons(),
-        next: "onboarding:verify_email",
-        context: { ...ctx, attempts: 0 },
-        effects: [{ type: "create_subaccount" }, { type: "send_email_code", email: ctx.email }],
-      };
-    }
-    return {
-      replies: [VOICE.askEmail],
-      next: "onboarding:email",
+      replies: [],
+      next: "onboarding:consent",
       context: { ...ctx, attempts: 0 },
-      effects: [{ type: "create_subaccount" }],
+      effects: [
+        { type: "create_subaccount" },
+        ...(typedEmail ? [{ type: "send_email_link" as const, email, quiet: true }] : []),
+        { type: "ask_consent" },
+      ],
     };
   }
   if (/^(no|nope|wrong|not me|that is wrong)\b/i.test(text)) {
@@ -3659,9 +3704,7 @@ function confirmAccount(text: string, ctx: Context): Step {
       effects: [],
     };
   }
-  const confirm = ctx.email
-    ? `Reply ${b("yes")} if it is, or ${b("no")} to send different details.`
-    : `Send your email address if it is, or reply ${b("no")}.`;
+  const confirm = `Reply ${b("yes")} if it is, or ${b("no")} to send different details.`;
 
   return retry(
     "onboarding:confirm_account",

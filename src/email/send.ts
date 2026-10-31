@@ -538,6 +538,92 @@ export function setupReminderEmail(opts: {
   };
 }
 
+/**
+ * Confirm your email, by a link (31 October 2026).
+ *
+ * Asked for after setup now, not during it: a code in the inbox in the
+ * middle of signing up was where most people stopped. A link needs nothing
+ * copied back into the chat.
+ */
+export function confirmEmailLink(opts: { url: string; businessName?: string | null }): Omit<Email, "to"> {
+  const business = opts.businessName?.trim() || null;
+  const line = business
+    ? `Tap below to confirm this is the email for ${business} on Balans. Copies of your invoices and receipts will come here.`
+    : "Tap below to confirm this is your email on Balans. Copies of your invoices and receipts will come here.";
+  return {
+    subject: "Confirm your email for Balans",
+    replyTo: env.SUPPORT_EMAIL,
+    text: [
+      line,
+      "",
+      `Confirm: ${opts.url}`,
+      "",
+      "The link works for a day. If you did not ask for this, you can ignore this email.",
+      "",
+      "—",
+      `Balans is a product of ${env.LEGAL_ENTITY_NAME}.`,
+      "Balans is not a bank and never holds your money.",
+    ].join("\n"),
+    html: layout({
+      preheader: "One tap and your copies and receipts come here.",
+      eyebrow: "Balans account",
+      heading: "Confirm your email",
+      body: [
+        paragraph(esc(line)),
+        button("Confirm email", opts.url),
+        paragraph("The link works for a day. If you did not ask for this, you can ignore this email.", true),
+      ].join("\n"),
+    }),
+  };
+}
+
+/**
+ * A client's bank has disputed a card payment (31 October 2026).
+ *
+ * The chat message has always said "We have emailed you", and nothing did.
+ * This is that email. It matters more than the chat: a dispute arrives
+ * whenever the bank sends it, usually outside the 24 hours in which WhatsApp
+ * lets us write freely, so the chat message is often never delivered at all.
+ */
+export function disputeEmail(opts: {
+  businessName: string | null;
+  /** "₦50,000". */
+  amount: string;
+  /** "Invoice #7", or "an invoice". */
+  which: string;
+  clientName: string;
+}): Omit<Email, "to"> {
+  const lines = [
+    `${opts.clientName}'s bank has disputed ${opts.amount} they paid on ${opts.which}, and is reversing it while they look into it.`,
+    "New invoices are on hold on your account until we have reviewed it. Payments on invoices you already sent still work.",
+    "If you have anything that shows the work was done or delivered (messages, files, a signed quote), reply to this email with it. It helps us answer the bank.",
+  ];
+
+  return {
+    subject: `A payment on ${opts.which} has been disputed`,
+    replyTo: env.SUPPORT_EMAIL,
+    text: [
+      ...lines.flatMap((l) => [l, ""]),
+      `Questions? Reply to this email, or write to ${env.SUPPORT_EMAIL}.`,
+      "",
+      "—",
+      `Balans is a product of ${env.LEGAL_ENTITY_NAME}.`,
+      "Balans is not a bank and never holds your money.",
+    ].join("\n"),
+    html: layout({
+      preheader: "Payments on invoices you already sent still work.",
+      heading: opts.businessName?.trim() ? `${opts.businessName.trim()}: a payment was disputed` : "A payment was disputed",
+      body: [
+        ...lines.map((l) => paragraph(esc(l))),
+        paragraph(
+          `Questions? Reply to this email, or write to <a href="mailto:${esc(env.SUPPORT_EMAIL)}" style="color:inherit;">${esc(env.SUPPORT_EMAIL)}</a>.`,
+          true,
+        ),
+      ].join("\n"),
+    }),
+  };
+}
+
 export function trialUsedEmail(opts: {
   businessName: string | null;
   allowance: number;

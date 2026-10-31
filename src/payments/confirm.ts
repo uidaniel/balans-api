@@ -31,7 +31,7 @@ export type ConfirmOutcome =
   | { kind: "already_confirmed"; reference: string }
   | { kind: "unknown_reference"; reference: string }
   /** Somebody paid for Pro rather than an invoice (F18). */
-  | { kind: "pro_activated"; reference: string; userId: string; until: Date; paidKobo: number }
+  | { kind: "pro_activated"; reference: string; userId: string; until: Date; paidKobo: number; method: string | null }
   /** Verified and applied. Everything needed to tell the user. */
   | {
       kind: "confirmed";
@@ -150,6 +150,8 @@ async function confirmSubscription(
     userId: activated.userId,
     until: activated.until,
     paidKobo: t.amountPaidKobo,
+    // Paystack's channel, for the receipt: "card", "bank_transfer", "ussd"…
+    method: t.paymentMethod,
   };
 }
 

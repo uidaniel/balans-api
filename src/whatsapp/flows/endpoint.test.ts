@@ -303,7 +303,9 @@ describe("finishing setup inside the form", () => {
       await answer(onboarding("CONFIRM", confirm), { recall, actions }),
       await answer(onboarding("CODE", { code: "123456", email: "d@x.ng" }), { recall, actions }),
     ] as { screen: string; data: Record<string, unknown> }[]) {
-      assert.deepEqual(Object.keys(r.data).sort(), declared("onboarding", r.screen), r.screen);
+      // The code screen left setup on 31 October 2026; the bank change keeps
+      // the same one, which is what a v2 phone still open on it is shown.
+      assert.deepEqual(Object.keys(r.data).sort(), declared(r.screen === "CODE" ? "payout_change" : "onboarding", r.screen), r.screen);
     }
   });
 });
@@ -477,18 +479,43 @@ describe("setup, email code first", () => {
     assert.deepEqual(seen, []);
   });
 
-  it("asks for the code straight after the email", () => {
-    assert.deepEqual(screens.routing_model.BUSINESS, ["CODE"]);
-    assert.deepEqual(screens.routing_model.CODE, ["PAYOUT", "ABROAD"]);
+  it("goes from the business straight to the bank, with no email code (31 October 2026)", () => {
+    assert.deepEqual(screens.routing_model.BUSINESS, ["PAYOUT", "ABROAD"]);
+    assert.equal(screens.routing_model.CODE, undefined);
+    assert.equal(screens.screens.some((s) => s.id === "CODE"), false);
   });
 
-  it("sends the code from the first screen and shows the box for it", async () => {
+  it("asks the first screen for the name alone", () => {
+    const business = JSON.stringify(screens.screens.find((s) => s.id === "BUSINESS"));
+    assert.doesNotMatch(business, /"email"/);
+    assert.match(business, /"form_version":"4"/);
+  });
+
+  it("saves the name and opens the bank on the current form", async () => {
+    const named: string[] = [];
+    const v4 = { ...deps, actions: { ...actions, startSetupNameOnly: async (_u: string, n: string) => void named.push(n) } };
+    const out = (await answer(
+      { action: "data_exchange", screen: "BUSINESS", flow_token: "onboarding:user-1", data: { business_name: "Danny Codes Ltd", form_version: "4" } },
+      v4,
+    )) as Out;
+    assert.equal(out.screen, "PAYOUT");
+    assert.deepEqual(named, ["Danny Codes Ltd"]);
+    assert.deepEqual(Object.keys(out.data).sort(), declared("PAYOUT"));
+
+    const abroad = { ...v4, actions: { ...v4.actions, isAbroad: async () => true } };
+    const there = (await answer(
+      { action: "data_exchange", screen: "BUSINESS", flow_token: "onboarding:user-1", data: { business_name: "Danny", form_version: "4" } },
+      abroad,
+    )) as Out;
+    assert.equal(there.screen, "ABROAD");
+  });
+
+  it("still sends the code from the first screen of a form opened before the change", async () => {
     calls.length = 0;
     const out = (await answer(v3("BUSINESS", { business_name: "Danny Codes Ltd", email: "Danny@X.ng" }), deps)) as Out;
     assert.equal(out.screen, "CODE");
     assert.deepEqual(calls, ["start"]);
     assert.equal(out.data.email, "danny@x.ng");
-    assert.deepEqual(Object.keys(out.data).sort(), declared("CODE"));
   });
 
   it("says a bad address on the code screen instead of sending anything", async () => {

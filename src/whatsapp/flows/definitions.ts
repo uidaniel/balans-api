@@ -106,16 +106,19 @@ export type FlowDefinition = {
 /**
  * Setup, start to finish, inside one form.
  *
- * In the order a person is ready for each thing (since 27 September 2026):
+ * In the order a person is ready for each thing:
  *
- *   BUSINESS  the name on the invoices, and an email
- *   CODE      the code just sent to that email — asked while they are still
- *             holding the address in their head, not after the bank
+ *   BUSINESS  the name on the invoices
  *   PAYOUT    the bank and the account, checked with the bank on the spot
  *   MFB       only for somebody who picked "Other microfinance bank"
  *   CONFIRM   the name the bank gave, "the details above are correct", and
  *             the terms
  *   DONE      it worked
+ *
+ * The email and its 6-digit code came between BUSINESS and PAYOUT until 31
+ * October 2026, and more than half of everybody who signed up stopped at the
+ * code. The email is now asked for in the chat after the first invoice, and
+ * confirmed by a link (email/confirm.ts).
  *
  * Every step asks the endpoint, so a wrong code or an account the bank does
  * not know is said on the same screen, with everything still filled in. The
@@ -132,9 +135,9 @@ const onboarding: FlowDefinition = {
     version: VERSION,
     data_api_version: "3.0",
     routing_model: {
-      BUSINESS: ["CODE"],
-      // Outside Nigeria the code leads to ABROAD instead of the bank screens.
-      CODE: ["PAYOUT", "ABROAD"],
+      // Outside Nigeria the business leads to ABROAD instead of the bank
+      // screens. No email code since 31 October 2026 (see below).
+      BUSINESS: ["PAYOUT", "ABROAD"],
       PAYOUT: ["MFB", "CONFIRM"],
       MFB: ["CONFIRM"],
       CONFIRM: ["DONE"],
@@ -144,8 +147,8 @@ const onboarding: FlowDefinition = {
     screens: [
       {
         // No data: the form opens here with none, and a screen that declares
-        // data must be given it. A problem with what is typed here is said on
-        // the code screen, which can show it.
+        // data must be given it. The name is required, and a box labelled
+        // "Business" is answered with one, so it is taken as typed.
         id: "BUSINESS",
         title: "Your business",
         terminal: false,
@@ -167,20 +170,13 @@ const onboarding: FlowDefinition = {
                   "max-chars": 80,
                 },
                 {
-                  type: "TextInput",
-                  name: "email",
-                  label: "Email",
-                  "helper-text": "We will send a 6-digit code here to check it is yours.",
-                  required: true,
-                  "input-type": "email",
-                  "max-chars": 120,
-                },
-                {
                   type: "Footer",
-                  label: "Send code",
+                  label: "Next",
                   "on-click-action": {
                     name: "data_exchange",
-                    payload: { business_name: "${form.business_name}", email: "${form.email}", form_version: "3" },
+                    // "4": the name alone. The endpoint still answers "3",
+                    // with its email, for a form opened before the change.
+                    payload: { business_name: "${form.business_name}", form_version: "4" },
                   },
                 },
               ],
@@ -188,7 +184,6 @@ const onboarding: FlowDefinition = {
           ],
         },
       },
-      codeScreen("onboarding"),
       payoutScreen("onboarding"),
       mfbScreen("onboarding"),
       confirmScreen("onboarding"),

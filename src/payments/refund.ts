@@ -20,6 +20,7 @@ import { b, lines, para } from "../whatsapp/format.ts";
 import { sendText } from "../whatsapp/client.ts";
 import { recordOutbound } from "../conversation/store.ts";
 import { REMINDER_KINDS } from "../documents/actions.ts";
+import { disputeEmail, sendEmail } from "../email/send.ts";
 
 export type ReversalOutcome =
   | { kind: "reversed"; reference: string; partial: boolean }
@@ -236,6 +237,8 @@ type ReversedNotice = {
   reversedKobo: number;
   to: "refunded" | "disputed";
   stillPaidKobo: number;
+  /** Whether the dispute email went, so the chat only says so when it did. */
+  emailed?: boolean;
 };
 
 export function reversedMessage(n: ReversedNotice): string {
@@ -249,7 +252,9 @@ export function reversedMessage(n: ReversedNotice): string {
         "Their bank is reversing it while they look into it.",
         "New invoices are on hold until we have reviewed it — payments on invoices you already sent still work.",
       ),
-      "We have emailed you. Reply here if you want to talk it through.",
+      n.emailed
+        ? "We have emailed you too. Reply here if you want to talk it through."
+        : "Reply here if you want to talk it through.",
     );
   }
 
@@ -266,14 +271,38 @@ export function reversedMessage(n: ReversedNotice): string {
 
 async function notifyReversed(n: ReversedNotice, log: FastifyBaseLogger): Promise<void> {
   try {
-    const { rows } = await db().query<{ wa_phone: string }>(
-      `SELECT wa_phone FROM users WHERE id = $1`,
+    const { rows } = await db().query<{ wa_phone: string; business_name: string | null; email: string | null }>(
+      `SELECT wa_phone, business_name, CASE WHEN email_verified_at IS NOT NULL THEN email END AS email
+         FROM users WHERE id = $1`,
       [n.userId],
     );
-    const phone = rows[0]?.wa_phone;
+    const user = rows[0];
+    if (!user) return;
+
+    // The email first, so the chat can say whether it went.
+    let emailed = false;
+    if (n.to === "disputed" && user.email) {
+      const label = n.documentType === "quote" ? "Quote" : "Invoice";
+      const sent = await sendEmail(
+        {
+          to: user.email,
+          ...disputeEmail({
+            businessName: user.business_name,
+            amount: formatNaira(n.reversedKobo),
+            which: n.documentNumber === null ? `an ${label.toLowerCase()}` : `${label} #${n.documentNumber}`,
+            clientName: n.clientName,
+          }),
+        },
+        log,
+      );
+      emailed = sent.ok;
+      if (!sent.ok) log.warn({ userId: n.userId, reason: sent.reason }, "dispute email not sent");
+    }
+
+    const phone = user.wa_phone;
     if (!phone) return;
 
-    const res = await sendText(phone, reversedMessage(n));
+    const res = await sendText(phone, reversedMessage({ ...n, emailed }));
     await recordOutbound(n.userId, res.ok ? res.waMessageId : null, res.ok ? "sent" : "failed");
   } catch (err) {
     log.error({ err, userId: n.userId }, "could not send the reversal notice");

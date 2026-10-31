@@ -77,4 +77,9 @@ describe("a chargeback", () => {
   it("offers a person", () => {
     assert.match(reversedMessage(notice({ to: "disputed" })), /reply here|emailed you/i);
   });
+
+  it("says it emailed only when the email went", () => {
+    assert.doesNotMatch(reversedMessage(notice({ to: "disputed" })), /emailed/i);
+    assert.match(reversedMessage(notice({ to: "disputed", emailed: true })), /We have emailed you/);
+  });
 });

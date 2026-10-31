@@ -11,7 +11,7 @@
  * right one.
  */
 
-import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { db } from "../db/pool.ts";
 import { env, require_ } from "../config.ts";
 
@@ -127,6 +127,65 @@ export async function checkCode(
   // and codes are single use).
   await db().query(`UPDATE verification_codes SET consumed_at = now() WHERE id = $1`, [row.id]);
   return { ok: true };
+}
+
+/**
+ * A link instead of a code, for confirming an email after setup (31 October
+ * 2026).
+ *
+ * The same table and the same purpose as the setup code, so a new link
+ * retires any code still live and the other way round. 128 random bits rather
+ * than six digits, so it cannot be guessed and lives a day instead of fifteen
+ * minutes: it is tapped from an inbox, whenever the person gets to it.
+ */
+const LINK_TTL_HOURS = 24;
+
+export async function issueLink(
+  userId: string,
+  destination: string,
+): Promise<{ ok: true; token: string } | { ok: false; reason: "rate_limited"; retryAfterMinutes: number }> {
+  const { rows } = await db().query<{ n: string }>(
+    `SELECT count(*) AS n FROM verification_codes
+      WHERE user_id = $1 AND purpose = 'email_verify'
+        AND created_at > now() - ($2 || ' minutes')::interval`,
+    [userId, ISSUE_WINDOW_MINUTES],
+  );
+  if (Number(rows[0]?.n ?? 0) >= MAX_ISSUED) {
+    return { ok: false, reason: "rate_limited", retryAfterMinutes: ISSUE_WINDOW_MINUTES };
+  }
+
+  const token = randomBytes(16).toString("hex");
+  await db().query(
+    `UPDATE verification_codes SET consumed_at = now()
+      WHERE user_id = $1 AND purpose = 'email_verify' AND consumed_at IS NULL`,
+    [userId],
+  );
+  await db().query(
+    `INSERT INTO verification_codes (user_id, purpose, destination, code_hash, expires_at)
+     VALUES ($1, 'email_verify', $2, $3, now() + ($4 || ' hours')::interval)`,
+    [userId, destination.toLowerCase(), hash(token, "email_verify", destination), LINK_TTL_HOURS],
+  );
+  return { ok: true, token };
+}
+
+/**
+ * The address a link confirms, or null. Read-only unless `consume`: the page
+ * shows it before the press, and only the press uses the link up.
+ */
+export async function checkLink(userId: string, token: string, consume: boolean): Promise<string | null> {
+  if (!/^[0-9a-f]{32}$/.test(token)) return null;
+  const { rows } = await db().query<{ id: string; destination: string; code_hash: Buffer; expires_at: Date }>(
+    `SELECT id, destination, code_hash, expires_at FROM verification_codes
+      WHERE user_id = $1 AND purpose = 'email_verify' AND consumed_at IS NULL
+      ORDER BY created_at DESC LIMIT 1`,
+    [userId],
+  );
+  const row = rows[0];
+  if (!row || row.expires_at.getTime() < Date.now()) return null;
+  const given = hash(token, "email_verify", row.destination);
+  if (given.length !== row.code_hash.length || !timingSafeEqual(given, row.code_hash)) return null;
+  if (consume) await db().query(`UPDATE verification_codes SET consumed_at = now() WHERE id = $1`, [row.id]);
+  return row.destination;
 }
 
 /** Daily cleanup (section 10: purge expired tokens). */

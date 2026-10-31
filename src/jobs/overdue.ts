@@ -510,6 +510,9 @@ async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<nu
     // Their own price outside Nigeria (billing/price.ts).
     const p = await proPriceForPhone(r.waPhone, log);
     const price = p.label;
+    // Somebody on a year is offered the year first. The templates keep the
+    // month: their approved words say "a month", which is still on offer.
+    const y = r.yearly ? await proPriceForPhone(r.waPhone, log, undefined, "year") : undefined;
     // Free documents still to send, for somebody who paid before the trial began.
     const left = stage === "grace_ending" || stage === "lapsed" ? (await trialOf(r.userId)).left : 0;
     const words: {
@@ -520,28 +523,28 @@ async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<nu
       orElse?: { template: TemplateName; params: string[] };
     } = {
       ending_soon: {
-        text: proEndingSoon(r.expiresAt, p),
+        text: proEndingSoon(r.expiresAt, p, undefined, y),
         label: "Renew Pro",
         template: "pro_ending_pay_v2" as TemplateName,
         params: [onDayWords(r.expiresAt), price],
         orElse: { template: "pro_ending_pay" as TemplateName, params: [dayOf(r.expiresAt), price] },
       },
       ended: {
-        text: proEnded(r.expiresAt, p),
+        text: proEnded(r.expiresAt, p, undefined, y),
         label: "Renew Pro",
         template: "pro_ended_pay" as TemplateName,
         params: [dayOf(r.expiresAt), dayOf(graceEnds), price],
       },
       grace_ending: {
-        text: proGraceEnding(r.expiresAt, p, new Date(), left),
+        text: proGraceEnding(r.expiresAt, p, new Date(), left, y),
         label: "Keep Pro",
         template: "pro_last_day_pay_v2" as TemplateName,
         params: [onDayWords(graceEnds), price],
         orElse: { template: "pro_last_day_pay" as TemplateName, params: [dayOf(graceEnds), price] },
       },
       // pro_free_pay said "the Free plan, with 3 invoices a month", which stopped being true on 19 October 2026.
-      lapsed: { text: proLapsed(p, left), label: "Get Pro back", template: "pro_back_pay" as TemplateName, params: [price] },
-      win_back: { text: proWinBack(p), label: "Get Pro back", template: "pro_back_pay" as TemplateName, params: [price] },
+      lapsed: { text: proLapsed(p, left, y), label: "Get Pro back", template: "pro_back_pay" as TemplateName, params: [price] },
+      win_back: { text: proWinBack(p, y), label: "Get Pro back", template: "pro_back_pay" as TemplateName, params: [price] },
     }[stage];
 
     // The same signed link the chat's Pay button opens: a fresh Paystack
