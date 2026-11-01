@@ -61,6 +61,8 @@ export async function softReset(userId: string): Promise<void> {
           SET business_name = NULL, email = NULL, email_verified_at = NULL,
               consent_version = NULL, consented_at = NULL, activated_setup_at = NULL,
               setup_nudge_at = NULL, setup_followup_at = NULL, sent_without_bank_at = NULL,
+              business_name_confirmed_at = NULL, name_check_at = NULL, name_checks = 0,
+              name_judged = NULL, name_looks_wrong = NULL,
               address = NULL, tin = NULL, logo_url = NULL,
               plan = 'free', status = 'active', risk_tier = 'new'
         WHERE id = $1`,

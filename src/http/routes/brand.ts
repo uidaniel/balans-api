@@ -57,19 +57,20 @@ export async function brandRoutes(app: FastifyInstance): Promise<void> {
     const parts = /^(\d{4})-(\d{2})\.jpg$/.exec(req.params.file);
     const year = Number(parts?.[1]);
     const month = Number(parts?.[2]);
-    if (!parts || month < 1 || month > 12 || year < 2024 || year > 2100) {
-      return reply.status(404).send({ error: "not found" });
-    }
+    // Never cached: Cloudflare keeps a 404 for a .jpg, and one fetched while
+    // a deploy was rolling out answered for minutes after it.
+    const nope = () => reply.status(404).header("cache-control", "no-store").send({ error: "not found" });
+    if (!parts || month < 1 || month > 12 || year < 2024 || year > 2100) return nope();
     try {
       const jpg = await monthBanner(month, year);
-      if (!jpg) return reply.status(404).send({ error: "not found" });
+      if (!jpg) return nope();
       return reply
         .header("content-type", "image/jpeg")
         .header("cache-control", "public, max-age=31536000, immutable")
         .send(jpg);
     } catch (e) {
       req.log.error({ err: (e as Error).message }, "could not draw the month banner");
-      return reply.status(404).send({ error: "not found" });
+      return nope();
     }
   });
 

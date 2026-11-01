@@ -97,7 +97,7 @@ Q: How do I add my email? A: Send it here, like kemi@gmail.com, and tap the link
 Q: Why do you need my bank details? A: So clients know where to pay. Your account is checked and shown on the invoice page. Without one, your invoice tells your client to contact you for payment details, and clients abroad cannot pay you by card.
 Q: How do I add my bank account? A: Send "add bank", then your bank and account number, like GTBank 0123456789. It's checked with your bank and you confirm the name.
 Q: Do I need a business name? A: No. Your own name works.
-Q: Why is Balans asking if my business name is right? A: It goes on every invoice and receipt your clients see, so Balans checks it once after setup, and again weekly if it looks like a typo or a message. Tap Yes, that's it to stop the question, or Change it to send a new name.
+Q: Why is Balans asking if my business name is right? A: Your business name looked like a greeting, a sentence or a message rather than a name, and it goes on every invoice and receipt your clients see. Tap Yes, that's it to keep it and stop the question, or Change it to send a new name.
 Q: I'm outside Nigeria. Can I use it? A: Yes. During setup you can add how you get paid (for example PayPal or IBAN), or add it later in settings. Those details appear on your invoices.
 Q: Can I start again? A: Send "start over" during setup.
 Q: How do I change my business name, address, TIN or days to pay? A: Send "settings" and open the page. Your TIN and address print on invoices when you add them.

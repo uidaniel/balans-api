@@ -160,17 +160,20 @@ const onboarding: FlowDefinition = {
     screens: [
       {
         // No data: the form opens here with none, and a screen that declares
-        // data must be given it. The name is required, and a box labelled
-        // "Business name" is answered with one, so it is taken as typed. It
-        // said "Business" until 1 November 2026, and some people answered
-        // that with a greeting or a sentence about their work.
+        // data must be given it. The name is required, and the question
+        // above the box is answered with one, so it is taken as typed. The
+        // box said "Business" until 1 November 2026, and some people
+        // answered that with a greeting or a sentence about their work.
+        // "Business name" wraps in the label column, so the question is the
+        // heading, which runs the full width, and the box just says "Name".
         id: "BUSINESS",
         title: "Your business",
         terminal: false,
         layout: {
           type: "SingleColumnLayout",
           children: [
-            { type: "TextSubheading", text: "This is what your clients will see on every invoice." },
+            { type: "TextSubheading", text: "What is your business called?" },
+            { type: "TextBody", text: "Your clients see it at the top of every invoice." },
             {
               type: "Form",
               name: "business_form",
@@ -178,8 +181,8 @@ const onboarding: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "business_name",
-                  label: "Business name",
-                  "helper-text": "Like Tunde Studio. Your own name works if that is how you bill.",
+                  label: "Name",
+                  "helper-text": "Like Tunde Studio. Your own name works too.",
                   required: true,
                   "input-type": "text",
                   "max-chars": 80,
@@ -758,7 +761,7 @@ const businessDetails: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "business_name",
-                  label: "Business name",
+                  label: "Name",
                   required: true,
                   "input-type": "text",
                   "max-chars": 80,

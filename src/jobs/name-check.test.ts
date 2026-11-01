@@ -6,17 +6,37 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { looksWrong, nameCheckText, NAME_BUTTONS } from "./name-check.ts";
+import { judgeName, looksWrong, nameCheckText, NAME_BUTTONS } from "./name-check.ts";
 import { TEMPLATES } from "../whatsapp/window.ts";
+import { env } from "../config.ts";
 import { monthBannerHtml, monthBannerUrl } from "../brand/month-banner.ts";
 
-describe("names that still look wrong", () => {
+describe("names the rules call wrong without asking the model", () => {
   for (const name of ["Hi Balans", "I Want To Try It", "Good Morning", "Ok", "0123456789", "Test", "My Business Name Is Ada", "X"]) {
-    it(`asks again about "${name}"`, () => assert.ok(looksWrong(name)));
+    it(`"${name}"`, () => assert.ok(looksWrong(name)));
   }
   for (const name of ["Kemi Adeyemi Studio", "Sure Prints", "Hi-Tech Solutions", "Zenith Homes Ltd", "Tunde Bakare", "OK Motors"]) {
-    it(`leaves "${name}" at one ask`, () => assert.ok(!looksWrong(name)));
+    it(`leaves "${name}" to the model`, () => assert.ok(!looksWrong(name)));
   }
+});
+
+describe("the model's read", () => {
+  // A key for the request to be made at all; the answers below are canned.
+  if (!env.ANTHROPIC_API_KEY) (env as { ANTHROPIC_API_KEY?: string }).ANTHROPIC_API_KEY = "test";
+  const answering = (body: unknown, status = 200) =>
+    (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+
+  it("takes the verdict from the tool call", async () => {
+    const yes = answering({ content: [{ type: "tool_use", name: "verdict", input: { looks_wrong: true } }] });
+    const no = answering({ content: [{ type: "tool_use", name: "verdict", input: { looks_wrong: false } }] });
+    assert.equal(await judgeName("I do hair and nails", yes), true);
+    assert.equal(await judgeName("Adaeze Hair Studio", no), false);
+  });
+
+  it("says nothing rather than guess when the model fails", async () => {
+    assert.equal(await judgeName("Adaeze", answering({ error: "overloaded" }, 529)), null);
+    assert.equal(await judgeName("Adaeze", answering({ content: [] })), null);
+  });
 });
 
 describe("the question", () => {

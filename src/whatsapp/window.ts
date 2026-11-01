@@ -528,7 +528,9 @@ const BASE_TEMPLATES: Record<BaseTemplateName, TemplateSpec> = {
     params: ["month", "amount paid", "document count"],
     example: ["October", "₦675,000", "7"],
     quickReplies: ["Email my statement", "Who owes me"],
-    header: { type: "image", sample: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/brand/month/2026-10.jpg` },
+    // A file, not our own URL: at boot, during a deploy, that URL can still
+    // be answered by the container being replaced, which has no such route.
+    header: { type: "image", sample: "src/whatsapp/samples/month-sample.jpg" },
   },
 
   /*
