@@ -683,3 +683,56 @@ export function trialUsedEmail(opts: {
     }),
   };
 }
+
+/**
+ * The month as a PDF statement (1 November 2026): "Email my statement" under
+ * the summary on the 1st. The figures are in the email too, so it says
+ * something before the attachment is opened. documents/statement.ts.
+ */
+export function statementEmail(opts: {
+  businessName: string | null;
+  /** "October 2026". */
+  month: string;
+  received: string;
+  invoiced: string;
+  owed: string;
+  payments: number;
+  invoices: number;
+}): Omit<Email, "to"> {
+  const business = opts.businessName?.trim() || null;
+  const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
+  const rows = [
+    { label: "Money in", value: `${opts.received} (${count(opts.payments, "payment")})` },
+    { label: "Invoiced", value: `${opts.invoiced} (${count(opts.invoices, "invoice")})` },
+    { label: "Owed to you at the end", value: opts.owed },
+  ];
+  const intro = `Your ${opts.month} statement is attached as a PDF: what came in, every invoice you issued, your top clients, and who still owes you.`;
+
+  return {
+    subject: business ? `${business}: your ${opts.month} statement` : `Your ${opts.month} statement`,
+    replyTo: env.SUPPORT_EMAIL,
+    text: [
+      intro,
+      "",
+      ...rows.map((r) => `${r.label}: ${r.value}`),
+      "",
+      `Questions? Reply to this email, or write to ${env.SUPPORT_EMAIL}.`,
+      "",
+      "—",
+      `Balans is a product of ${env.LEGAL_ENTITY_NAME}.`,
+      "Balans is not a bank and never holds your money.",
+    ].join("\n"),
+    html: layout({
+      preheader: `${opts.received} came in. The full statement is attached.`,
+      heading: `Your ${opts.month} statement`,
+      body: [
+        paragraph(esc(intro)),
+        detailCard(rows),
+        paragraph(
+          `Questions? Reply to this email, or write to <a href="mailto:${esc(env.SUPPORT_EMAIL)}" style="color:inherit;">${esc(env.SUPPORT_EMAIL)}</a>.`,
+          true,
+        ),
+      ].join("\n"),
+    }),
+  };
+}

@@ -27,6 +27,7 @@ import { formatISO, type Civil } from "../../core/dates.ts";
 import { summarise } from "../documents/queries.ts";
 import { summaryMessage } from "../documents/reports.ts";
 import { send } from "../whatsapp/outbound.ts";
+import { monthBannerUrl } from "../brand/month-banner.ts";
 
 /**
  * Sends last month's summary to everyone who had a month worth summarising.
@@ -75,6 +76,19 @@ export async function sendMonthlySummaries(
     return 0;
   }
 
+  /*
+   * The month as a picture over the figures, and the two things somebody does
+   * next as buttons (1 November 2026). The same picture for everybody, so it
+   * is one URL, drawn once. "email statement 2026-10" names the month, so a
+   * tap a week later still emails October.
+   */
+  const banner = monthBannerUrl(period.from.m, period.from.y);
+  const ym = from.slice(0, 7);
+  const buttons = [
+    { id: `email statement ${ym}`, title: "Email my statement" },
+    { id: "who owes me", title: "Who owes me" },
+  ];
+
   let sent = 0;
 
   for (const user of rows) {
@@ -102,12 +116,21 @@ export async function sendMonthlySummaries(
           userId: user.id,
           phone: user.wa_phone,
           text: summaryMessage(summary),
+          image: banner,
+          buttons,
           // Outside the window this is a template, and a template cannot carry
           // the whole summary — so it carries the headline and invites them in,
-          // where the free-form version is waiting.
+          // where the free-form version is waiting. The picture and buttons
+          // once Meta approves monthly_statement; the words alone until then.
           fallback: {
-            template: "monthly_summary_ready",
+            template: "monthly_statement",
             params: [period.label, formatNaira(summary.paidKobo), String(summary.documents)],
+            headerImage: banner,
+            payloads: buttons.map((b) => b.id),
+            orElse: {
+              template: "monthly_summary_ready",
+              params: [period.label, formatNaira(summary.paidKobo), String(summary.documents)],
+            },
           },
         },
         log,

@@ -146,6 +146,9 @@ async function create(spec: TemplateSpec): Promise<{ ok: boolean; detail: string
             ]
           : []),
         ...(flowButton ? [{ type: "BUTTONS", buttons: [flowButton] }] : []),
+        ...(spec.quickReplies?.length
+          ? [{ type: "BUTTONS", buttons: spec.quickReplies.map((text) => ({ type: "QUICK_REPLY", text })) }]
+          : []),
       ],
     }),
   });

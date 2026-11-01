@@ -382,6 +382,7 @@ const FLOW_SCREEN = {
 import { draftCard } from "../documents/receipt-card.ts";
 import { owedCard } from "../documents/owed-card.ts";
 import { periodCard } from "../documents/period-card.ts";
+import { emailStatement, statementPeriod } from "../documents/statement.ts";
 import { invoiceableKobo } from "../../core/amount.ts";
 import { totalsFor } from "../../core/totals.ts";
 import { MFB_CHOICE } from "../whatsapp/flows/banks.ts";
@@ -395,6 +396,7 @@ import {
   reopenAccount,
   saveConversation,
   setBusinessName,
+  confirmBusinessName,
   upsertUser,
   type Conversation,
 } from "./store.ts";
@@ -1260,6 +1262,37 @@ async function runEffects(
         case "send_email_link": {
           const sent = await sendEmailLink(userId, effect.email, log);
           if (!effect.quiet) extra.push(linkSentWords(sent));
+          break;
+        }
+
+        case "email_statement": {
+          const period = statementPeriod(ctx.text ?? "", ctx.today, readPeriod);
+          const out = await emailStatement(userId, period, ctx.today, log);
+          const month = period.label;
+          extra.push(
+            out.kind === "sent"
+              ? para(
+                  `📧 ${b(`Your ${month} statement is on its way`)} to ${out.email}.`,
+                  "It has every payment, every invoice, your top clients and who still owes you, as a PDF.",
+                )
+              : out.kind === "no_email"
+                ? para(
+                    `📧 ${b("What email should it go to?")}`,
+                    `Send your email address here. I will send a link to confirm it, then ask for your statement again.`,
+                  )
+                : para(`⚠️ ${b("I could not make your statement just now.")}`, "Try again in a few minutes."),
+          );
+          break;
+        }
+
+        case "confirm_business_name": {
+          await confirmBusinessName(userId);
+          const { rows } = await db().query<{ business_name: string | null }>(
+            `SELECT business_name FROM users WHERE id = $1`,
+            [userId],
+          );
+          const name = rows[0]?.business_name;
+          extra.push(name ? `✅ Thanks. ${b(name)} stays on your invoices.` : "✅ Thanks.");
           break;
         }
 
@@ -2358,7 +2391,7 @@ async function runEffects(
         /* -- Settings (F17) ------------------------------------------------- */
 
         case "set_business_name":
-          await setBusinessName(userId, effect.name);
+          await setBusinessName(userId, effect.name, true);
           extra.push(`✅ Your business is now ${b(effect.name)}.`);
           log.info({ userId }, "business name changed");
           break;
@@ -3510,7 +3543,7 @@ async function handleDetailsForm(
     return;
   }
 
-  await setBusinessName(userId, businessName);
+  await setBusinessName(userId, businessName, true);
 
   /*
    * The starting number is clamped rather than refused.

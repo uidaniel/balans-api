@@ -17,6 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { proCard } from "../../billing/pro-card.ts";
+import { monthBanner } from "../../brand/month-banner.ts";
 
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../assets/brand");
 
@@ -48,6 +49,30 @@ const cache = new Map<string, Buffer>();
 const MONTH = /^(\d{4})-(\d{2})$/;
 
 export async function brandRoutes(app: FastifyInstance): Promise<void> {
+  /*
+   * The month over the summary on the 1st (brand/month-banner.ts): "2026-10.jpg".
+   * Only a month and a year, nothing private, so a URL like the Pro card.
+   */
+  app.get<{ Params: { file: string } }>("/brand/month/:file", async (req, reply) => {
+    const parts = /^(\d{4})-(\d{2})\.jpg$/.exec(req.params.file);
+    const year = Number(parts?.[1]);
+    const month = Number(parts?.[2]);
+    if (!parts || month < 1 || month > 12 || year < 2024 || year > 2100) {
+      return reply.status(404).send({ error: "not found" });
+    }
+    try {
+      const jpg = await monthBanner(month, year);
+      if (!jpg) return reply.status(404).send({ error: "not found" });
+      return reply
+        .header("content-type", "image/jpeg")
+        .header("cache-control", "public, max-age=31536000, immutable")
+        .send(jpg);
+    } catch (e) {
+      req.log.error({ err: (e as Error).message }, "could not draw the month banner");
+      return reply.status(404).send({ error: "not found" });
+    }
+  });
+
   app.get<{ Params: { name: string }; Querystring: { m?: string } }>(
     "/brand/:name",
     async (req, reply) => {

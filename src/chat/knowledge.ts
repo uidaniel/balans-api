@@ -97,6 +97,7 @@ Q: How do I add my email? A: Send it here, like kemi@gmail.com, and tap the link
 Q: Why do you need my bank details? A: So clients know where to pay. Your account is checked and shown on the invoice page. Without one, your invoice tells your client to contact you for payment details, and clients abroad cannot pay you by card.
 Q: How do I add my bank account? A: Send "add bank", then your bank and account number, like GTBank 0123456789. It's checked with your bank and you confirm the name.
 Q: Do I need a business name? A: No. Your own name works.
+Q: Why is Balans asking if my business name is right? A: It goes on every invoice and receipt your clients see, so Balans checks it once after setup, and again weekly if it looks like a typo or a message. Tap Yes, that's it to stop the question, or Change it to send a new name.
 Q: I'm outside Nigeria. Can I use it? A: Yes. During setup you can add how you get paid (for example PayPal or IBAN), or add it later in settings. Those details appear on your invoices.
 Q: Can I start again? A: Send "start over" during setup.
 Q: How do I change my business name, address, TIN or days to pay? A: Send "settings" and open the page. Your TIN and address print on invoices when you add them.
@@ -170,8 +171,9 @@ Q: Does my client get a receipt? A: Yes. When you mark an invoice paid, your cli
 
 ## Your money and records
 Q: Who owes me? A: Send "who owes me" to see everything unpaid, grouped by how late it is.
-Q: Can I see a summary? A: Send "this month", "last month" or any period, like "March".
-Q: Export my data? A: Not yet.
+Q: Can I see a summary? A: Send "this month", "last month" or any period, like "March". On the 1st of each month Balans also sends last month's summary, with an Email my statement button.
+Q: Can I get a statement or monthly report? A: Yes. Send "email my statement" for last month, or "statement for September" for another month. It's a PDF, emailed to your confirmed email: what you were owed at the start and end of the month, every payment that came in, every invoice you issued, your most-invoiced clients and the clients who paid you most. If you haven't confirmed an email yet, send it here first.
+Q: Export my data? A: Not yet, beyond the monthly statement.
 
 ## Account
 Q: How do I change my bank account or settings? A: Send "settings". Changing your payout bank needs a confirmed email: a code is sent to it, and the change is in force once you confirm.

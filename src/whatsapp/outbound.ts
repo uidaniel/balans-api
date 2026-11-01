@@ -59,6 +59,10 @@ export type Outbound = {
      * notice that never arrives.
      */
     orElse?: OrElse | OrElse[];
+    /** The picture, for a template with an image header. Not given to `orElse`. */
+    headerImage?: string;
+    /** What its reply buttons send back when tapped. Not given to `orElse`. */
+    payloads?: string[];
   };
   /**
    * A button under the words that opens a link, inside the window. Words and
@@ -134,6 +138,8 @@ export async function send(msg: Outbound, log: FastifyBaseLogger): Promise<SendO
     let res = await sendTemplate(msg.phone, spec.name, msg.fallback.params, {
       language: TEMPLATE_LANGUAGE,
       ...urlSuffix,
+      ...(msg.fallback.headerImage ? { headerImage: msg.fallback.headerImage } : {}),
+      ...(msg.fallback.payloads ? { payloads: msg.fallback.payloads } : {}),
     });
     let used = spec;
     // Newest first: each is tried only if the one before it was refused.
@@ -185,6 +191,17 @@ async function sendInside(msg: Outbound, log: FastifyBaseLogger): Promise<SendOu
    * so if it will not send they go with the document instead — or as text —
    * and nothing is lost but the decoration.
    */
+  /*
+   * A picture with reply buttons under it is one message (1 November 2026):
+   * the month banner over the summary, with "Email my statement". If it will
+   * not go, the picture below is tried with the words as its caption.
+   */
+  if (msg.image && msg.buttons?.length && !msg.document) {
+    const shown = await sendButtons(msg.phone, { body: msg.text, buttons: msg.buttons, headerImage: msg.image });
+    if (shown.ok) return { kind: "sent", inWindow: true };
+    log.warn({ userId: msg.userId, reason: shown.reason }, "picture with buttons failed; sending it without them");
+  }
+
   if (msg.image) {
     const shown = await sendImage(msg.phone, msg.image, msg.text);
     if (shown.ok) {

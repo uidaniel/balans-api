@@ -161,7 +161,9 @@ const onboarding: FlowDefinition = {
       {
         // No data: the form opens here with none, and a screen that declares
         // data must be given it. The name is required, and a box labelled
-        // "Business" is answered with one, so it is taken as typed.
+        // "Business name" is answered with one, so it is taken as typed. It
+        // said "Business" until 1 November 2026, and some people answered
+        // that with a greeting or a sentence about their work.
         id: "BUSINESS",
         title: "Your business",
         terminal: false,
@@ -176,8 +178,8 @@ const onboarding: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "business_name",
-                  label: "Business",
-                  "helper-text": "Or your own name, if that is how you bill.",
+                  label: "Business name",
+                  "helper-text": "Like Tunde Studio. Your own name works if that is how you bill.",
                   required: true,
                   "input-type": "text",
                   "max-chars": 80,
@@ -756,7 +758,7 @@ const businessDetails: FlowDefinition = {
                 {
                   type: "TextInput",
                   name: "business_name",
-                  label: "Business",
+                  label: "Business name",
                   required: true,
                   "input-type": "text",
                   "max-chars": 80,

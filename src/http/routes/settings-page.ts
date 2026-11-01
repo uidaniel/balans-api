@@ -199,7 +199,7 @@ export async function settingsPageRoutes(app: FastifyInstance): Promise<void> {
       const address = String(req.body?.address ?? "").trim().slice(0, 200);
       const tin = String(req.body?.tin ?? "").trim().slice(0, 30);
       if (name.length < 2 || name.length > 80) return nope(reply, "Give a business name between 2 and 80 characters.");
-      await setBusinessName(owner.id, name);
+      await setBusinessName(owner.id, name, true);
       await db().query(`UPDATE users SET address = NULLIF($2, ''), tin = NULLIF($3, '') WHERE id = $1`, [
         owner.id,
         address,

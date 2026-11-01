@@ -94,7 +94,9 @@ type BaseTemplateName =
   | "pro_back_pay"
   | "pro_last_day_pay_v2"
   | "pro_free_pay"
-  | "setup_reminder";
+  | "setup_reminder"
+  | "monthly_statement"
+  | "business_name_check";
 
 /**
  * A bold line above the words, for the templates that say one thing
@@ -154,6 +156,12 @@ export type TemplateSpec = {
    * in flows/definitions.ts) when the template is submitted.
    */
   flowButton?: { text: string; flow: string; screen: string };
+  /**
+   * Or up to three reply buttons (1 November 2026). A tap comes back as a
+   * message carrying the payload given at send time (`payloads` on
+   * sendTemplate), so it lands like the same reply button tapped in the chat.
+   */
+  quickReplies?: string[];
   /**
    * A picture above the body. Meta wants a sample uploaded with the
    * submission and the real one by address on every send; `sample` is the
@@ -506,6 +514,34 @@ const BASE_TEMPLATES: Record<BaseTemplateName, TemplateSpec> = {
     footer: "You are getting this because you started setting up Balans",
     flowButton: { text: "Finish setup", flow: "onboarding", screen: "BUSINESS" },
     header: { type: "image", sample: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/brand/welcome.jpg` },
+  },
+
+  /*
+   * The summary on the 1st, outside the window (1 November 2026): the month
+   * as a picture, and the two things somebody does next as buttons. Until
+   * Meta approves it, monthly_summary_ready goes instead.
+   */
+  monthly_statement: {
+    name: "monthly_statement",
+    category: "UTILITY",
+    body: "Your {{1}} summary is ready: {{2}} paid across {{3}} invoices. Tap below and we will email you the full statement as a PDF.",
+    params: ["month", "amount paid", "document count"],
+    example: ["October", "₦675,000", "7"],
+    quickReplies: ["Email my statement", "Who owes me"],
+    header: { type: "image", sample: `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/brand/month/2026-10.jpg` },
+  },
+
+  /*
+   * "Is this your business name?" (1 November 2026), weekly while it looks
+   * wrong. jobs/name-check.ts.
+   */
+  business_name_check: {
+    name: "business_name_check",
+    category: "UTILITY",
+    body: "Your invoices and receipts go out under the business name {{1}}. Is that the name you want your clients to see?",
+    params: ["business name"],
+    example: ["Kemi Adeyemi Studio"],
+    quickReplies: ["Yes, that's it", "Change it"],
   },
 
   launch_setup: {

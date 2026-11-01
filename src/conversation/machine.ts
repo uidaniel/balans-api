@@ -280,6 +280,10 @@ export type Effect =
    * for the address somebody typed in the middle of setup.
    */
   | { type: "send_email_link"; email: string; quiet?: boolean }
+  /** The month as a PDF, to the confirmed email (documents/statement.ts). */
+  | { type: "email_statement" }
+  /** "Yes, that's it" to the weekly name check (jobs/name-check.ts). */
+  | { type: "confirm_business_name" }
   /**
    * Open a Flow on the user's phone.
    *
@@ -1831,17 +1835,30 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       if (GREETING.test(text)) {
         return { replies: [], next: "idle", context, effects: [{ type: "chat", fallback: VOICE.helpIdle }] };
       }
+      // "add bank" (31 October 2026): the bank change, which asks for the
+      // account straight away when there is none to protect.
+      if (/^add (a |my )?bank( account)?[.!]*$/i.test(text.trim())) {
+        return { replies: [], next: "settings:bank_code", context: { ...context, attempts: 0 }, effects: [{ type: "send_bank_change_code" }] };
+      }
+      // "Email my statement" under the summary on the 1st, or typed with a
+      // month (1 November 2026). The month is read where it is sent.
+      if (STATEMENT.test(text.trim())) {
+        return { replies: [], next: "idle", context, effects: [{ type: "email_statement" }] };
+      }
+      // The weekly name check's two buttons (1 November 2026), and the same
+      // answers typed.
+      if (NAME_IS_RIGHT.test(text.trim())) {
+        return { replies: [], next: "idle", context, effects: [{ type: "confirm_business_name" }] };
+      }
+      if (/^change (my )?(business )?name[.!]*$/i.test(text.trim())) {
+        return { replies: [VOICE.askNewBusinessName], next: "settings:business_name", context: { ...context, attempts: 0 }, effects: [] };
+      }
       /*
        * An email address on its own (31 October 2026): the answer to "add
        * your email", asked after the first invoice now that setup no longer
        * collects one. A link goes to it; the effect refuses quietly to
        * replace an address that is already confirmed.
        */
-      // "add bank" (31 October 2026): the bank change, which asks for the
-      // account straight away when there is none to protect.
-      if (/^add (a |my )?bank( account)?[.!]*$/i.test(text.trim())) {
-        return { replies: [], next: "settings:bank_code", context: { ...context, attempts: 0 }, effects: [{ type: "send_bank_change_code" }] };
-      }
       const typedEmail = text.trim().toLowerCase();
       if (EMAIL.test(typedEmail) && typedEmail.length <= 254) {
         return { replies: [], next: "idle", context, effects: [{ type: "send_email_link", email: typedEmail }] };
@@ -3620,6 +3637,14 @@ const forget = (ctx: Context): Context => {
  * "Studio 54" are all real, and the letters rule already catches a bare phone
  * number, because a phone number has none.
  */
+/** "email my statement", "send me my monthly report", "statement for September", "email statement 2026-10". */
+export const STATEMENT =
+  /^(?:(?:please |pls )?(?:email|send|mail)(?: me)?(?: my| the)? (?:monthly |month'?s )?(?:statement|report)|(?:my )?(?:monthly )?statement)(?: for [a-z0-9 ]+| \d{4}-\d{2})?[.!?]*$/i;
+
+/** The name check's "Yes, that's it", by id or typed. */
+export const NAME_IS_RIGHT =
+  /^(?:name is right|yes,? that'?s it|(?:yes,? )?that'?s (?:my|the) (?:business )?name|(?:yes,? )?keep (?:it|the name|my name))[.!]*$/i;
+
 const NOT_A_NAME: { test: RegExp; why: string }[] = [
   { test: /^\S+@\S+\.\S+$/, why: "That looks like an email address." },
   { test: /^(?:https?:\/\/|www\.)/i, why: "That looks like a web address." },

@@ -463,6 +463,11 @@ export function sendTemplate(
     headerDocument?: { link: string; filename: string };
     /** The token for a template whose button opens a Flow. */
     flowToken?: string;
+    /**
+     * What each reply button sends back when tapped, in order: the same ids
+     * as the chat's own reply buttons, so a tap on either reads the same.
+     */
+    payloads?: string[];
   } = {},
 ): Promise<SendResult> {
   const phone = normalisePhone(to);
@@ -499,6 +504,12 @@ export function sendTemplate(
                 },
               ]
             : []),
+          ...(opts.payloads ?? []).map((payload, index) => ({
+            type: "button",
+            sub_type: "quick_reply",
+            index: String(index),
+            parameters: [{ type: "payload", payload }],
+          })),
           ...(opts.flowToken
             ? [
                 {

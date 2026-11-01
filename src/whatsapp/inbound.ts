@@ -178,7 +178,11 @@ export function parseInbound(payload: unknown): { messages: Inbound[]; statuses:
             }
           }
         } else if (type === "button") {
-          out.text = str(obj(msg.button)?.text);
+          // A template's reply button: the payload it was sent with, which
+          // is the id the same button carries in the chat (1 November 2026).
+          // Meta sends the button's words as the payload when none was given.
+          const button = obj(msg.button);
+          out.text = str(button?.payload) ?? str(button?.text);
         } else if (type === "image" || type === "audio" || type === "document" || type === "video") {
           const media = obj(msg[type]);
           out.mediaId = str(media?.id);

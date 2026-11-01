@@ -309,9 +309,18 @@ describe("every published Flow", () => {
          */
         const NARROW = new Set(["TextInput", "TextArea", "Dropdown", "DatePicker"]);
 
+        /*
+         * Except "Business name" (1 November 2026), at the owner's request:
+         * "Business" was being answered with greetings and sentences. It
+         * wrapped on a phone at Flow JSON 6.x; check it on the test number
+         * before taking this out.
+         */
+        const ALLOWED = new Set(["Business name"]);
+
         for (const node of walk(json.screens)) {
           if (!NARROW.has(String(node.type))) continue;
           const label = String(node.label ?? "");
+          if (ALLOWED.has(label)) continue;
           assert.ok(
             label.length <= 10,
             `${String(node.name)}: "${label}" is ${label.length} characters and will wrap`,

@@ -19,6 +19,7 @@ describe("the templates we register with Meta", () => {
     assert.deepEqual(
       [...names].sort(),
       [
+        "business_name_check",
         "client_invoice",
         "client_invoice_pdf",
         "client_invoice_updated",
@@ -34,6 +35,7 @@ describe("the templates we register with Meta", () => {
         "invoice_viewed",
         "invoice_viewed_v2",
         "launch_setup",
+        "monthly_statement",
         "monthly_summary_ready",
         "payment_received",
         "payout_paid",

@@ -131,8 +131,26 @@ export async function recordOutbound(
 }
 
 /** Keeps the business name on the user row once onboarding captures it. */
-export async function setBusinessName(userId: string, name: string): Promise<void> {
-  await db().query(`UPDATE users SET business_name = $2 WHERE id = $1`, [userId, name]);
+/**
+ * `confirmed` for a rename the person chose (settings, or "Change it" under
+ * the name check): that settles the weekly question. Setup's own save does
+ * not, since a wrong name typed there is what the question is for.
+ */
+export async function setBusinessName(userId: string, name: string, confirmed = false): Promise<void> {
+  await db().query(
+    `UPDATE users SET business_name = $2,
+            business_name_confirmed_at = CASE WHEN $3::boolean THEN now() ELSE business_name_confirmed_at END
+      WHERE id = $1`,
+    [userId, name, confirmed],
+  );
+}
+
+/** "Yes, that's it" to the name check: asked no more. */
+export async function confirmBusinessName(userId: string): Promise<void> {
+  await db().query(
+    `UPDATE users SET business_name_confirmed_at = COALESCE(business_name_confirmed_at, now()) WHERE id = $1`,
+    [userId],
+  );
 }
 
 /** Records the address a code was sent to. Not yet verified. */
