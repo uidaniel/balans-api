@@ -172,7 +172,7 @@ const onboarding: FlowDefinition = {
         layout: {
           type: "SingleColumnLayout",
           children: [
-            { type: "TextSubheading", text: "What is your business called?" },
+            { type: "TextSubheading", text: "What's the name of your business?" },
             { type: "TextBody", text: "Your clients see it at the top of every invoice." },
             {
               type: "Form",
