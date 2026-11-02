@@ -20,6 +20,7 @@ import {
   issueIdentityToken,
   ownerOfIdentityToken,
   requestReview,
+  tieAfterBank,
   verifyBusiness,
   verifyPerson,
   type BusinessOutcome,
@@ -188,6 +189,9 @@ $("yes").addEventListener("click", async () => {
   $("yes").disabled = false;
   if (!r.ok) return say("say3", r.words, "err");
   $("bank").hidden = true;
+  if (r.next === "verified") return show("verified");
+  if (r.next === "business_needed") return show("person", r.accountName);
+  show("none");
   say("say1", "Payout account added. Now your NIN and a selfie.", "ok");
 });
 if ($("bank").dataset.open === "1") openBank();
@@ -230,7 +234,7 @@ export function identityPage(
 ): string {
   const s = state === "none" ? "none" : state;
   const wa = waNumber ? `https://wa.me/${waNumber.replace(/\D/g, "")}?text=${encodeURIComponent("add bank")}` : null;
-  const bankSheet = `<div class="sheet" id="bank" data-open="${needsBank && s === "none" ? "1" : "0"}" hidden>
+  const bankSheet = `<div class="sheet" id="bank" data-open="${needsBank && (s === "none" || s === "person") ? "1" : "0"}" hidden>
   <div class="box" role="dialog" aria-modal="true" aria-labelledby="banktitle">
     <div class="grip"></div>
     <img class="art" src="/brand/bank-3d.png" alt="">
@@ -420,7 +424,14 @@ export async function identityRoutes(app: FastifyInstance): Promise<void> {
     if (!(await getPendingBank(owner.id))) return reply.headers(headers).send({ ok: false, words: "Check the account first." });
     await activateBankAccount(owner.id, null);
     req.log.info({ userId: owner.id }, "payout account added on the verify page");
-    return reply.headers(headers).send({ ok: true });
+    // NIN already passed: tie the new account to them now, so nothing is asked twice.
+    const out = await tieAfterBank(owner.id, req.log);
+    if (out?.kind === "verified") void afterVerified(owner, req.log);
+    return reply.headers(headers).send({
+      ok: true,
+      next: out?.kind ?? "person",
+      ...(out?.kind === "business_needed" ? { accountName: out.accountName } : {}),
+    });
   });
 
   app.post<{ Params: { token: string }; Body: { nin?: string; selfie?: string } }>(

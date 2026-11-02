@@ -143,9 +143,11 @@ describe("after verifying", () => {
     assert.match(h, /await reply\(\s*userId,\s*phone,[\s\S]{0,200}outcome\.buttons,\s*outcome\.buttonsImage/);
   });
 
-  it("is what both ways of passing do", () => {
+  it("is what every way of passing does", () => {
+    // NIN and selfie, the CAC register, and adding the account on the page
+    // after the NIN had passed (2 November 2026).
     const v = src("../http/routes/verify.ts");
-    assert.equal(v.match(/void afterVerified\(owner, req\.log\)/g)?.length, 2);
+    assert.equal(v.match(/void afterVerified\(owner, req\.log\)/g)?.length, 3);
   });
 });
 

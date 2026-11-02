@@ -211,6 +211,19 @@ async function tieAccount(userId: string, p: Person, log: FastifyBaseLogger): Pr
   return { kind: "business_needed", accountName: account.accountName };
 }
 
+/**
+ * The account just added on the verify page, for somebody whose NIN and
+ * selfie had already passed (2 November 2026): the step they stopped at,
+ * finished without asking for the NIN again.
+ */
+export async function tieAfterBank(userId: string, log: FastifyBaseLogger): Promise<PersonOutcome | null> {
+  const status = await identityStatusOf(userId);
+  if (status === "verified") return { kind: "verified" };
+  if (status !== "person") return null;
+  const person = await verifiedPerson(userId);
+  return person ? tieAccount(userId, person, log) : null;
+}
+
 /** The person as the NIN check recorded them, for the business step. */
 async function verifiedPerson(userId: string): Promise<Person | null> {
   const { rows } = await db().query<{ d: { first?: string; middle?: string | null; last?: string } }>(

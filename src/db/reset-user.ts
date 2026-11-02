@@ -55,6 +55,8 @@ export async function softReset(userId: string): Promise<void> {
     // Messages go too, or the next "Hi" is treated as a duplicate delivery and
     // silently ignored — the wa_message_id is already on file.
     await c.query(`DELETE FROM messages WHERE user_id = $1`, [userId]);
+    // The verification record too, so the three tries a day start again.
+    await c.query(`DELETE FROM identity_checks WHERE user_id = $1`, [userId]);
 
     await c.query(
       `UPDATE users
@@ -63,6 +65,9 @@ export async function softReset(userId: string): Promise<void> {
               setup_nudge_at = NULL, setup_followup_at = NULL, sent_without_bank_at = NULL,
               business_name_confirmed_at = NULL, name_check_at = NULL, name_checks = 0,
               name_judged = NULL, name_looks_wrong = NULL,
+              identity_status = 'none', identity_verified_at = NULL, legal_name = NULL,
+              nin_encrypted = NULL, nin_last4 = NULL, business_reg_number = NULL,
+              identity_pending_doc = NULL, identity_pending_at = NULL,
               address = NULL, tin = NULL, logo_url = NULL,
               plan = 'free', status = 'active', risk_tier = 'new'
         WHERE id = $1`,
