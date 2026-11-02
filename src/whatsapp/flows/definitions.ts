@@ -2024,7 +2024,8 @@ function paymentScreen(): Record<string, unknown> {
                * Currency box, which is the kind of showing that works on a
                * phone. Required exactly when it shows.
                */
-              type: "Dropdown",
+              // A list, like the payment choices under it (2 November 2026).
+              type: "RadioButtonsGroup",
               name: "pay_by",
               label: "Paid by",
               required: "${data.show_pay_by}",

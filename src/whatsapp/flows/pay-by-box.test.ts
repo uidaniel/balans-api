@@ -30,7 +30,7 @@ describe("the pay-by box", () => {
     it(`${key}: sits on PAYMENT, shown and required only when the server says`, () => {
       const json = FLOWS.find((f) => f.key === key)!.json as { screens: Node[]; routing_model: Record<string, string[]> };
       const box = walk(json.screens.find((s) => s.id === PAYMENT_SCREEN)).find((n) => n.name === "pay_by")!;
-      assert.equal(box.type, "Dropdown");
+      assert.equal(box.type, "RadioButtonsGroup");
       assert.equal(box.visible, "${data.show_pay_by}");
       assert.equal(box.required, "${data.show_pay_by}");
       // No condition on the phone anywhere near it.
