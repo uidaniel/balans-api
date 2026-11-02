@@ -750,7 +750,8 @@ describe("a tapped button", () => {
      * declares the fields for three items. Sending item four as an empty
      * string would be a key it has never heard of, which kills the Flow.
      */
-    assert.equal(out.effects.find((e) => e.type === "send_flow")?.screen, "WORK_THREE");
+    // EDIT_THREE: WORK_THREE's copy that the form may open on (2 November 2026).
+    assert.equal(out.effects.find((e) => e.type === "send_flow")?.screen, "EDIT_THREE");
     assert.ok(!("item_four_description" in data), "a slot the screen does not have");
     assert.ok(!("item_four_amount" in data));
 

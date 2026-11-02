@@ -36,7 +36,7 @@ import {
 import { formatNaira } from "../../core/totals.ts";
 import { resolveDueDate, saysNoDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
-import { DEFAULT_TEMPLATE, EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, formScreenId, itemFields, planIdFor, PLANS } from "../whatsapp/flows/definitions.ts";
+import { DEFAULT_TEMPLATE, EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, editScreenId, formScreenId, itemFields, planIdFor, PLANS } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION, draftButtons } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
 import { INFO, type Foreign } from "../../core/currency.ts";
@@ -2815,7 +2815,8 @@ export function formValues(doc: PendingDoc, now: Civil): {
    * draft being changed has its client, so it opens on the filled-in one.
    */
   return {
-    screen: onEntry ? (doc.clientName ? "WHO" : FRESH_WHO) : formScreenId(items),
+    // EDIT_TWO upwards, not WORK_TWO: see `editScreenId`.
+    screen: onEntry ? (doc.clientName ? "WHO" : FRESH_WHO) : editScreenId(items),
     data: values,
   };
 }

@@ -986,6 +986,15 @@ export const itemScreenId = (w: string): string => `ITEM_${w.toUpperCase()}`;
  */
 export const formScreenId = (items: number): string => `WORK_${TOTALS[items - 1]}`;
 
+/**
+ * The same form, for opening a draft that already has two to five items
+ * (2 November 2026). Meta opens a form only on a screen nothing in it leads
+ * to, and WORK_TWO upwards are where adding and removing items lead, so a
+ * two-item draft's "Change it" was refused and fell back to asking in words.
+ * These copies are only ever opened on; their links go to the usual screens.
+ */
+export const editScreenId = (items: number): string => `EDIT_${TOTALS[items - 1]}`;
+
 /*
  * The first two pages again, with nothing filled in, for a new document.
  *
@@ -1629,7 +1638,7 @@ function whoScreen(o: DocumentFlow, fresh = false, id?: string): Record<string, 
  * what to render, so `init-values` can name every box and be right, and the
  * payloads can read every box and be right.
  */
-function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = false): Record<string, unknown> {
+function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = false, id?: string): Record<string, unknown> {
   const extras = extrasOf(items);
   const mine = { ...carriedPayload("data", "form"), ...itemPayload(extras.length, "form") };
 
@@ -1718,7 +1727,7 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
   ];
 
   return {
-    id: fresh ? FRESH_WORK : entry ? "WORK" : formScreenId(items),
+    id: id ?? (fresh ? FRESH_WORK : entry ? "WORK" : formScreenId(items)),
     title: o.title,
     terminal: false,
     data: { ...carriedData(entry ? "number" : "string"), ...itemData(extras.length) },
@@ -2191,6 +2200,8 @@ function documentScreens(o: DocumentFlow): Record<string, unknown>[] {
       clientsScreen(o),
       whoScreen(o, true, NEW_CLIENT_WHO),
       ...TOTALS.map((_, i) => formScreen(o, i + 1, false)),
+      // Where a draft with two to five items opens (2 November 2026).
+      ...TOTALS.slice(1).map((_, i) => formScreen(o, i + 2, false, false, editScreenId(i + 2))),
       ...EXTRA_ITEMS.map((_, index) => itemScreen(index, o)),
       paymentScreen(),
       {

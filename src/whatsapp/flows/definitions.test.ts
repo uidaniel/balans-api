@@ -770,7 +770,7 @@ describe("line items on the document forms", () => {
             .filter((n) => n.type === "screen" && typeof n.name === "string")
             .map((n) => String(n.name)),
         );
-        for (const id of ["WHO", FRESH_WHO, CLIENTS_SCREEN]) {
+        for (const id of ["WHO", FRESH_WHO, CLIENTS_SCREEN, "EDIT_TWO", "EDIT_THREE", "EDIT_FOUR", "EDIT_FIVE"]) {
           assert.ok(!targets.has(id), `${id} is led to from another screen, so the form cannot open on it`);
         }
       });
