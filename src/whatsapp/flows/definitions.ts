@@ -848,15 +848,15 @@ const businessDetails: FlowDefinition = {
 // Titles stay within the 30 characters a Flow dropdown shows.
 export const PLANS = [
   { id: "one", title: "One payment", description: "The full amount, once" },
-  { id: "deposit_25", title: "25% deposit + balance", description: "A quarter to start, the rest later · Pro" },
-  { id: "deposit_50", title: "50% deposit + balance", description: "Half to start, the rest later · Pro" },
-  { id: "split_2", title: "2 equal payments", description: "Two parts of the same amount · Pro" },
-  { id: "split_3", title: "3 equal payments", description: "Three parts of the same amount · Pro" },
-  { id: "split_4", title: "4 equal payments", description: "Four parts of the same amount · Pro" },
-  { id: "split_6", title: "6 equal payments", description: "Six parts of the same amount · Pro" },
+  { id: "deposit_25", title: "25% deposit + balance", description: "A quarter to start, the rest later" },
+  { id: "deposit_50", title: "50% deposit + balance", description: "Half to start, the rest later" },
+  { id: "split_2", title: "2 equal payments", description: "Two parts of the same amount" },
+  { id: "split_3", title: "3 equal payments", description: "Three parts of the same amount" },
+  { id: "split_4", title: "4 equal payments", description: "Four parts of the same amount" },
+  { id: "split_6", title: "6 equal payments", description: "Six parts of the same amount" },
   // Any deposit, as an amount or a percent, typed in the Deposit box under
   // this list (13 October 2026). Last, so the common answers come first.
-  { id: "deposit_custom", title: "Custom deposit + balance", description: "Type it in the box below · Pro" },
+  { id: "deposit_custom", title: "Custom deposit + balance", description: "Type it in the box below" },
 ] as const;
 
 export type PlanId = (typeof PLANS)[number]["id"];
