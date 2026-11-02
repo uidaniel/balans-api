@@ -1042,6 +1042,22 @@ const CHOICES_SCHEMA = {
   ],
 };
 
+/** The "Paid by" choices, each with a small icon beside it. */
+const PAY_BY_SCHEMA = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      title: { type: "string" },
+      description: { type: "string" },
+      image: { type: "string" },
+      "alt-text": { type: "string" },
+    },
+  },
+  __example__: [{ id: "link", title: "Balans payment link", description: "Your client pays by card. Verify once." }],
+};
+
 /** The screen that lists saved clients, for a new document from somebody who has any. */
 export const CLIENTS_SCREEN = "CLIENTS";
 /** The blank client page that "Someone new" on CLIENTS leads to. */
@@ -1911,7 +1927,7 @@ function termsData(): Record<string, unknown> {
     pay_by: { type: "string", __example__: "link" },
     // Set by the server when the amount screen checks in (see paymentScreen).
     show_pay_by: { type: "boolean", __example__: false },
-    pay_bys: CHOICES_SCHEMA,
+    pay_bys: PAY_BY_SCHEMA,
     client_id: { type: "string", __example__: "" },
     client_name: { type: "string", __example__: "Daniel Uwak" },
     client_email: { type: "string", __example__: "" },
@@ -1979,8 +1995,29 @@ export const PAYMENT_SCREEN = "PAYMENT";
 /** Every key PAYMENT and TERMS declare: what the server hands PAYMENT. */
 export const termsKeys = (): string[] => Object.keys(termsData());
 
-/** The "Paid by" choices for a non-naira invoice: their bank, their own details, or a Balans link. */
-export function payByOptions(x: { bank: string | null; details: string | null }): CurrencyOption[] {
+/*
+ * The gold icons beside each "Paid by" choice (2 November 2026): a card, a
+ * wallet, a bank, made in Google Flow like the rest. 96px, a few kilobytes
+ * each, because they travel inside the form's data. Missing files mean no
+ * icon, never a broken form.
+ */
+const PAY_ICONS: Record<string, string | null> = Object.fromEntries(
+  (["link", "own", "bank"] as const).map((id) => {
+    try {
+      return [id, readFileSync(new URL(`../../../assets/brand/icons/pay-${id}.png`, import.meta.url)).toString("base64")];
+    } catch {
+      return [id, null];
+    }
+  }),
+);
+const ALT: Record<string, string> = { link: "Card", own: "Wallet", bank: "Bank" };
+const withIcon = (o: CurrencyOption & { id: string }): PayByOption =>
+  PAY_ICONS[o.id] ? { ...o, image: PAY_ICONS[o.id]!, "alt-text": ALT[o.id]! } : o;
+
+export type PayByOption = CurrencyOption & { image?: string; "alt-text"?: string };
+
+/** The "Paid by" choices for a non-naira invoice: a Balans link, their own details, or their bank. */
+export function payByOptions(x: { bank: string | null; details: string | null }): PayByOption[] {
   const first = (x.details ?? "").split("\n")[0]!.trim();
   return [
     { id: "link", title: "Balans payment link", description: "Your client pays by card. Verify once." },
@@ -1990,7 +2027,7 @@ export function payByOptions(x: { bank: string | null; details: string | null })
       description: first ? (first.length > 60 ? `${first.slice(0, 59)}…` : first) : "PayPal, Wise and so on. I will ask you for them.",
     },
     ...(x.bank ? [{ id: "bank", title: "My bank account", description: x.bank }] : []),
-  ];
+  ].map(withIcon);
 }
 
 /**
