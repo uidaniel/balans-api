@@ -60,6 +60,19 @@ describe("the pay-by box", () => {
   });
 
   for (const key of ["invoice", "quote"]) {
+    it(`${key}: "My own details" opens a box for them, on the same screen`, () => {
+      const json = FLOWS.find((f) => f.key === key)!.json as { screens: Node[] };
+      const screen = json.screens.find((s) => s.id === PAYMENT_SCREEN)!;
+      const branch = walk(screen).find((n) => n.type === "If" && n.condition === "${form.pay_by} == 'own'")!;
+      const box = walk(branch).find((n) => n.name === "own_details")!;
+      assert.equal(box.type, "TextArea");
+      // Neutral: their choice of how to be paid, no services named.
+      assert.doesNotMatch(JSON.stringify(screen), /PayPal|Wise/);
+      // A box inside an If is never named in init-values.
+      const form = walk(screen).find((n) => n.type === "Form")!;
+      assert.ok(!("own_details" in ((form["init-values"] as object) ?? {})));
+    });
+
     it(`${key}: the add-bank link opens a page, shown only by the server`, () => {
       const json = FLOWS.find((f) => f.key === key)!.json as { screens: Node[] };
       const link = walk(json.screens.find((s) => s.id === PAYMENT_SCREEN)).find((n) => n.type === "EmbeddedLink")!;

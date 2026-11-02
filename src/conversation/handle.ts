@@ -3810,6 +3810,16 @@ async function handleInvoiceForm(
   const phoneAllowed = !phoneTyped || pro;
   const clientPhone = phoneTyped && phoneAllowed ? normalisePhone(phoneTyped) : null;
   const notes = (fields.notes ?? "").trim();
+  /*
+   * Their own payment details, typed under "My own details" on the form
+   * (2 November 2026): saved as theirs, so the invoice and the next one use
+   * them. Only with that choice and another currency; empty keeps what is saved.
+   */
+  const ownTyped = (fields.own_details ?? "").trim().slice(0, 600);
+  if (ownTyped && fields.pay_by === "own" && fields.currency && fields.currency !== "NGN") {
+    await db().query(`UPDATE users SET payment_details = $2 WHERE id = $1`, [userId, ownTyped]);
+    log.info({ userId }, "payment details saved from the invoice form");
+  }
   const duePhrase = (fields.due_date ?? "").trim();
 
   // The form holds up to five items, four of them behind checkboxes, so what

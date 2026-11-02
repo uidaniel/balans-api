@@ -1937,6 +1937,9 @@ function termsData(): Record<string, unknown> {
     // Set by the server when the amount screen checks in (see paymentScreen).
     show_pay_by: { type: "boolean", __example__: false },
     pay_bys: PAY_BY_SCHEMA,
+    // "My own details", typed under the option (2 November 2026).
+    own_details: { type: "string", __example__: "" },
+    own_help: { type: "string", __example__: "How your client should pay you. Saved for next time." },
     // No bank account yet: a link to add one in a page (2 November 2026).
     show_add_bank: { type: "boolean", __example__: false },
     add_bank_url: { type: "string", __example__: "https://balans.ng/bank/abc" },
@@ -2036,7 +2039,7 @@ export function payByOptions(x: { bank: string | null; details: string | null })
     {
       id: "own",
       title: "My own details",
-      description: first ? (first.length > 60 ? `${first.slice(0, 59)}…` : first) : "PayPal, Wise and so on. I will ask you for them.",
+      description: first ? (first.length > 60 ? `${first.slice(0, 59)}…` : first) : "Type them below",
     },
     // Always offered (2 November 2026): without one, the link under the list adds it.
     { id: "bank", title: "My bank account", description: x.bank ?? "Add it with the link below" },
@@ -2081,6 +2084,26 @@ function paymentScreen(): Record<string, unknown> {
               required: "${data.show_pay_by}",
               visible: "${data.show_pay_by}",
               "data-source": "${data.pay_bys}",
+            },
+            /*
+             * Their own details, typed right under the choice (2 November
+             * 2026), rather than asked for in the chat after the form. A
+             * condition on a choice on this same screen, like the deposit
+             * box below; never named in init-values (see EXTRA_ITEMS).
+             */
+            {
+              type: "If",
+              condition: "${form.pay_by} == 'own'",
+              then: [
+                {
+                  type: "TextArea",
+                  name: "own_details",
+                  label: "Details",
+                  "helper-text": "${data.own_help}",
+                  required: false,
+                  "max-length": 600,
+                },
+              ],
             },
             {
               /*
@@ -2147,7 +2170,7 @@ function paymentScreen(): Record<string, unknown> {
               "on-click-action": {
                 name: "navigate",
                 next: { type: "screen", name: "TERMS" },
-                payload: { ...passData(), pay_by: "${form.pay_by}", plan: "${form.plan}", deposit: "${form.deposit}", vat: "${form.vat}" },
+                payload: { ...passData(), pay_by: "${form.pay_by}", own_details: "${form.own_details}", plan: "${form.plan}", deposit: "${form.deposit}", vat: "${form.vat}" },
               },
             },
           ],
@@ -2293,6 +2316,7 @@ function documentScreens(o: DocumentFlow): Record<string, unknown>[] {
                       currency: "${data.currency}",
                       // Chosen on PAYMENT, the screen before.
                       pay_by: "${data.pay_by}",
+                      own_details: "${data.own_details}",
                       plan: "${data.plan}",
                       deposit: "${data.deposit}",
                       design: "${form.design}",

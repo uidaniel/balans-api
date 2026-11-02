@@ -602,6 +602,7 @@ export async function paymentStep(
   let options: { id: string; title: string; description?: string }[] = [];
   let chosen = "";
   let hasBank = false;
+  let savedDetails = "";
   if (show) {
     const { rows } = await db()
       .query<{ by: string | null; details: string | null; bank: string | null; last4: string | null }>(
@@ -618,6 +619,7 @@ export async function paymentStep(
       .catch(() => ({ rows: [] as { by: string | null; details: string | null; bank: string | null; last4: string | null }[] }));
     const u = rows[0];
     hasBank = Boolean(u?.bank);
+    savedDetails = (u?.details ?? "").split("\n")[0]!.trim();
     options = payByOptions({ bank: u?.bank ? `${u.bank}${u.last4 ? ` ·· ${u.last4}` : ""}` : null, details: u?.details ?? null });
     const had = typeof sent.pay_by === "string" ? sent.pay_by : "";
     chosen = options.some((o) => o.id === had) ? had : options.some((o) => o.id === u?.by) ? (u!.by as string) : "link";
@@ -631,6 +633,17 @@ export async function paymentStep(
   for (const k of termsKeys()) if (k in sent) data[k] = sent[k];
   return {
     screen: PAYMENT_SCREEN,
-    data: { ...data, show_pay_by: show, pay_bys: options, pay_by: chosen, show_add_bank: noBank, add_bank_url: addBankUrl },
+    data: {
+      ...data,
+      show_pay_by: show,
+      pay_bys: options,
+      pay_by: chosen,
+      show_add_bank: noBank,
+      add_bank_url: addBankUrl,
+      own_details: "",
+      own_help: savedDetails
+        ? `Now: ${savedDetails.length > 60 ? `${savedDetails.slice(0, 59)}…` : savedDetails}. Leave empty to keep it.`
+        : "How your client should pay you. Saved for next time.",
+    },
   };
 }
