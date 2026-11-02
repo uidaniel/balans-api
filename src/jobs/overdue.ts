@@ -303,6 +303,12 @@ export async function sendDueReminders(
       const reminded = { email: emailed, whatsapp: whatsapped.ok };
       const how = remindedHow(reminded);
       const buttons = await paidButtons(r.document_id, r.number);
+      /*
+       * The Pro line, at the moment it is true (2 November 2026): Balans has
+       * just chased this client, on a free document. It used to be said under
+       * the first invoice, about a lateness that had not happened yet.
+       */
+      const pitch = how ? await trialReminderPitch(r.user_id, r.document_id) : null;
 
       const outcome = await send(
         {
@@ -322,7 +328,7 @@ export async function sendDueReminders(
             reminded,
             last: isLastReminder(r.kind, r.plan),
             askPaid: buttons.length > 0,
-          }),
+          }) + (pitch ? `\n\n${pitch}` : ""),
           buttons,
           fallback: how
             ? {
@@ -780,4 +786,12 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
     // A failed run must not stop the next one.
     log.error({ err }, "daily jobs failed");
   }
+}
+
+/** Under a reminder Balans sent for a free-trial document, to somebody not on Pro. */
+export async function trialReminderPitch(userId: string, documentId: string): Promise<string | null> {
+  const { rows } = await db().query<{ trial: boolean }>(`SELECT trial FROM documents WHERE id = $1`, [documentId]);
+  if (!rows[0]?.trial) return null;
+  if ((await trialOf(userId)).paid) return null;
+  return "⭐ Chasing late payers is a Pro feature, on this one free. On Pro, every invoice works this way.";
 }

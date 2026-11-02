@@ -286,6 +286,8 @@ export type Effect =
   | { type: "confirm_business_name" }
   /** "verify": the identity check for card payments from abroad, before it is needed. */
   | { type: "start_identity" }
+  /** "Add my logo" under the first invoice: the brand settings link. */
+  | { type: "offer_branding" }
   /**
    * Open a Flow on the user's phone.
    *
@@ -1850,6 +1852,13 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       // answers typed.
       if (NAME_IS_RIGHT.test(text.trim())) {
         return { replies: [], next: "idle", context, effects: [{ type: "confirm_business_name" }] };
+      }
+      // The buttons under the first invoice (2 November 2026).
+      if (/^add my email[.!]*$/i.test(text.trim())) {
+        return { replies: [VOICE.askEmail], next: "idle", context, effects: [] };
+      }
+      if (/^add my logo[.!]*$/i.test(text.trim())) {
+        return { replies: [], next: "idle", context, effects: [{ type: "offer_branding" }] };
       }
       // "verify" (2 November 2026): the NIN and selfie check for card
       // payments from abroad, taken before an invoice needs it.

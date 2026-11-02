@@ -1301,6 +1301,11 @@ async function runEffects(
           break;
         }
 
+        case "offer_branding": {
+          if (ctx.phone) await offerBranding(userId, ctx.phone, "setup", log);
+          break;
+        }
+
         case "confirm_business_name": {
           await confirmBusinessName(userId);
           const { rows } = await db().query<{ business_name: string | null }>(
@@ -2025,8 +2030,8 @@ async function runEffects(
            * October 2026): the question at the first, then a line at the
            * third, sixth and so on. Never more often.
            */
-          const remindBank = async (): Promise<void> => {
-            if (!noBank || ctx.editingId) return;
+          const bankDue = async (): Promise<string | null> => {
+            if (!noBank || ctx.editingId) return null;
             const { rows } = await db().query<{ n: number }>(
               `SELECT count(*)::int AS n FROM documents d JOIN users u ON u.id = d.user_id
                 WHERE d.user_id = $1 AND d.currency = 'NGN' AND d.delivery_type = 'payment_link'
@@ -2035,81 +2040,75 @@ async function runEffects(
               [userId],
             );
             const n = rows[0]?.n ?? 0;
-            if (n > 0 && n % 3 === 0) {
-              extra.push(
-                para(
-                  `🏦 ${b("Add your bank account")} so clients can pay you straight from the invoice.`,
-                  `Send ${b("add bank")}. It takes a minute.`,
-                ),
-              );
-            }
+            return n > 0 && n % 3 === 0
+              ? `🏦 ${b("Add your bank account")} so clients can pay you straight from the invoice. Send ${b("add bank")}.`
+              : null;
           };
 
           /*
-           * Where the free documents stand (19 October 2026), on its own line
-           * after the invoice: the caption is forwarded to the client, and
-           * this is not theirs to read. Not after a change, which uses none.
+           * Everything after the invoice, in one message (2 November 2026).
+           *
+           * It was up to four: the invoice, then the logo, then the free
+           * documents with a Pro line, then the email, each its own buzz, so
+           * the moment somebody sent their first invoice ended on chores and
+           * the invoice scrolled away. Now the invoice, then this: what
+           * happened, where the free documents stand in a quiet line, and
+           * the asks as buttons they can ignore. The bank reminder rides in
+           * the same message on the turns it is due. The Pro line about late
+           * payers moved to when a client is actually reminded (overdue.ts).
            */
-          const trialNote = async (): Promise<void> => {
-            if (ctx.editingId || confirmed.updatedFrom) return;
+          const followUp = async (): Promise<void> => {
+            if (!ctx.phone || ctx.editingId || confirmed.updatedFrom) return;
+            const extraLines: string[] = [];
+            const asks: ReplyButton[] = [];
+
             const t = await trialOf(userId);
-            if (t.paid) return;
-            const { rows } = await db().query<{ client: string; dated: boolean }>(
-              `SELECT c.name AS client, d.due_date IS NOT NULL AS dated
-                 FROM documents d JOIN clients c ON c.id = d.client_id WHERE d.id = $1`,
-              [confirmed.id],
-            );
-            const last = t.used >= t.allowance;
-            const year = last ? await proPriceFor(userId, log, "year") : null;
-            extra.push(
-              trialSentLine(t, {
-                client: rows[0]?.dated && confirmed.type !== "quote" ? rows[0].client : null,
-                perMonth: year ? perMonthOf(year) : null,
-                year: year?.label ?? null,
-              }),
-            );
-            // The way to it, under the last one. Only where nothing else
-            // has claimed this message's buttons.
-            if (last && !buttons) buttons = [{ id: "upgrade", title: "Get Pro" }];
-          };
+            if (!t.paid) {
+              const last = t.used >= t.allowance;
+              if (last) {
+                const year = await proPriceFor(userId, log, "year");
+                extraLines.push(trialSentLine(t, { perMonth: year ? perMonthOf(year) : null, year: year?.label ?? null }));
+                asks.push({ id: "upgrade", title: "Get Pro" });
+              } else {
+                extraLines.push(i(`${Math.min(t.used, t.allowance)} of your ${t.allowance} free documents used.`));
+              }
+            }
 
-          /*
-           * The email, asked for after the first document and once more after
-           * the third (31 October 2026). Setup no longer collects it, and
-           * without it they get no copies and no receipts.
-           */
-          const askEmail = async (): Promise<void> => {
-            if (ctx.editingId || confirmed.updatedFrom) return;
-            const { rows } = await db().query<{ verified: boolean }>(
-              `SELECT email_verified_at IS NOT NULL AS verified FROM users WHERE id = $1`,
+            const ever = await documentsEverSent(userId);
+            const { rows: me } = await db().query<{ verified: boolean; logo: boolean }>(
+              `SELECT email_verified_at IS NOT NULL AS verified, logo_url IS NOT NULL AS logo FROM users WHERE id = $1`,
               [userId],
             );
-            if (rows[0]?.verified) return;
-            const ever = await documentsEverSent(userId);
-            if (ever !== 1 && ever !== 3) return;
-            extra.push(
-              para(
-                `📧 ${b("Add your email")} so copies of your invoices and receipts reach you.`,
-                `Send it here, like ${b("kemi@gmail.com")}.`,
-              ),
+            if (!me[0]?.verified && (ever === 1 || ever === 3)) asks.unshift({ id: "add my email", title: "Add my email" });
+            if (!me[0]?.logo && ever === 1 && asks.length < 3) asks.splice(1, 0, { id: "add my logo", title: "Add my logo" });
+
+            const bankLine = await bankDue();
+            if (bankLine) extraLines.push(bankLine);
+
+            if (!extraLines.length && !asks.length) return;
+            const { rows: who } = await db().query<{ client: string }>(
+              `SELECT c.name AS client FROM documents d JOIN clients c ON c.id = d.client_id WHERE d.id = $1`,
+              [confirmed.id],
             );
+            const what = confirmed.type === "quote" ? "Quote" : confirmed.type === "payment_request" ? "Request" : "Invoice";
+            const body = para(`✅ ${b(`${what} sent${who[0]?.client ? ` to ${who[0].client}` : ""}`)}`, ...extraLines);
+            const out = asks.length
+              ? await sendButtons(ctx.phone, { body, buttons: asks.slice(0, 3) })
+              : await sendText(ctx.phone, body);
+            if (out.ok) {
+              await recordOutbound(userId, out.waMessageId, "sent", { kind: asks.length ? "interactive" : "text" });
+              return;
+            }
+            log.warn({ userId, reason: out.reason }, "could not send the follow-up after sending");
+            extra.push(body);
           };
 
           const offerDesigns = async (): Promise<void> => {
             if (!ctx.phone || ctx.editingId || confirmed.updatedFrom) return;
             const ever = await documentsEverSent(userId);
-            // Their first one went out with no logo: one more nudge to add it
-            // (see offerBranding), instead of the design picker.
-            if (ever === 1) {
-              const { rows } = await db().query<{ logo: boolean }>(
-                `SELECT logo_url IS NOT NULL AS logo FROM users WHERE id = $1`,
-                [userId],
-              );
-              if (!rows[0]?.logo) {
-                await offerBranding(userId, ctx.phone, "first_send", log);
-                return;
-              }
-            }
+            // The first one asks for the logo as a button on the follow-up
+            // instead (see followUp), not as a message of its own.
+            if (ever === 1) return;
             if (await hasChosenTemplate(userId)) return;
             if (ever > DESIGN_OFFER_LIMIT) return;
 
@@ -2151,10 +2150,8 @@ async function runEffects(
                 });
                 await toClient();
                 await offerQuoteActions();
+                await followUp();
                 await offerDesigns();
-                await trialNote();
-                await askEmail();
-                await remindBank();
                 break;
               }
               log.error({ userId, reason: sent.reason }, "could not send the document");
@@ -2169,10 +2166,8 @@ async function runEffects(
           if (markPaid.length) buttons = markPaid;
           await toClient();
           await offerQuoteActions();
+          await followUp();
           await offerDesigns();
-          await trialNote();
-          await askEmail();
-          await remindBank();
           break;
         }
 
