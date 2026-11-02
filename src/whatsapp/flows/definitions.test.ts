@@ -242,12 +242,21 @@ describe("every published Flow", () => {
             if (!target) continue;
 
             const declared = (target.data as Record<string, Node>) ?? {};
+            // A tick box is the exception: its value is a boolean, going in
+            // and coming out (VAT, moved to PAYMENT on 2 November 2026).
+            const ticks = new Set(
+              walk(screen.layout)
+                .filter((n) => n.type === "OptIn")
+                .map((n) => String(n.name)),
+            );
             for (const [key, ref] of Object.entries((node.payload as Record<string, string>) ?? {})) {
-              if (!/^\$\{form\.[a-z_0-9]+\}$/i.test(ref)) continue;
+              const field = /^\$\{form\.([a-z_0-9]+)\}$/i.exec(ref)?.[1];
+              if (!field) continue;
+              const wanted = ticks.has(field) ? "boolean" : "string";
               assert.equal(
                 declared[key]?.type,
-                "string",
-                `${String(target.id)}: data.${key} comes from ${ref}, which arrives as a string`,
+                wanted,
+                `${String(target.id)}: data.${key} comes from ${ref}, which arrives as a ${wanted}`,
               );
             }
           }

@@ -27,6 +27,11 @@ import {
   type PersonOutcome,
 } from "../../identity/verify.ts";
 import { sendText } from "../../whatsapp/client.ts";
+import { PAYSTACK_BANKS, bankTitle } from "../../whatsapp/flows/banks.ts";
+import { displayNumber } from "../../whatsapp/number.ts";
+import { checkAccount, findBank } from "../../payments/bank-directory.ts";
+import { accountInForce } from "../../settings/bank-change.ts";
+import { activateBankAccount, getPendingBank, saveBankAccount } from "../../conversation/store.ts";
 import { b, lines } from "../../whatsapp/format.ts";
 
 const HTML = "text/html; charset=utf-8";
@@ -100,6 +105,19 @@ input[type=text]:focus{outline:none;border-color:var(--ink)}
 .fine{margin-top:16px;color:var(--faint);font-size:12.5px;line-height:1.55}
 .link{background:none;border:0;color:var(--ink);font-family:inherit;font-weight:500;font-size:14px;line-height:1.4;text-decoration:underline;cursor:pointer;margin-top:14px}
 [hidden]{display:none!important}
+.sheet{position:fixed;inset:0;background:rgba(8,19,15,.55);display:flex;align-items:flex-end;justify-content:center;z-index:10}
+.sheet .box{width:100%;max-width:520px;background:var(--paper);border-radius:28px 28px 0 0;padding:14px 18px calc(22px + env(safe-area-inset-bottom));box-shadow:0 -20px 50px -20px rgba(0,0,0,.4);max-height:92dvh;overflow:auto}
+.sheet .grip{width:40px;height:5px;border-radius:99px;background:rgba(16,35,28,.15);margin:0 auto 6px}
+.sheet .art{display:block;width:112px;height:112px;margin:2px auto 4px;object-fit:contain}
+.sheet h2{text-align:center;font-weight:400;font-size:24px;letter-spacing:-.04em}
+.sheet .lead{text-align:center;color:var(--faint);font-size:14.5px;line-height:1.5;margin:8px auto 18px;max-width:360px}
+select{width:100%;height:50px;border-radius:14px;border:1.5px solid var(--line);padding:0 12px;font-family:inherit;font-weight:500;font-size:16px;color:var(--ink);background:#fff;-webkit-appearance:none;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--faint) 50%),linear-gradient(135deg,var(--faint) 50%,transparent 50%);background-position:calc(100% - 20px) 22px,calc(100% - 15px) 22px;background-size:5px 5px;background-repeat:no-repeat}
+select:focus{outline:none;border-color:var(--ink)}
+.found{margin-top:16px;border-radius:18px;background:var(--cream);padding:16px;text-align:center}
+.found .who{font-weight:500;font-size:18px;letter-spacing:-.01em}
+.found .bk{color:var(--faint);font-size:13.5px;margin-top:2px}
+.found .pill.gold{margin-top:14px}
+.center{text-align:center}
 `;
 
 const SCRIPT = `
@@ -143,8 +161,36 @@ $("go").addEventListener("click", async () => {
   $("go").disabled = false;
   if (r.kind === "verified") return show("verified");
   if (r.kind === "business_needed") return show("person", r.accountName);
+  if (r.kind === "no_account") { say("say1", ""); return openBank(); }
   say("say1", r.words, "err");
 });
+
+/* The payout account, added here rather than back in the chat (2 November 2026). */
+function openBank() { $("bank").hidden = false; }
+$("bankclose").addEventListener("click", () => { $("bank").hidden = true; });
+$("check").addEventListener("click", async () => {
+  const code = $("bk").value;
+  const number = $("acno").value.replace(/\\D/g, "");
+  if (!code) return say("say3", "Choose your bank.", "err");
+  if (number.length !== 10) return say("say3", "An account number is 10 digits.", "err");
+  $("check").disabled = true; say("say3", "Asking your bank…");
+  const r = await post("/bank/check", { code, number });
+  $("check").disabled = false;
+  if (!r.ok) { $("found").hidden = true; return say("say3", r.words, "err"); }
+  say("say3", "");
+  $("fname").textContent = r.name; $("fbank").textContent = r.bank + " · " + number;
+  $("found").hidden = false;
+});
+$("notme").addEventListener("click", () => { $("found").hidden = true; $("acno").value = ""; $("acno").focus(); });
+$("yes").addEventListener("click", async () => {
+  $("yes").disabled = true;
+  const r = await post("/bank/confirm", {});
+  $("yes").disabled = false;
+  if (!r.ok) return say("say3", r.words, "err");
+  $("bank").hidden = true;
+  say("say1", "Payout account added. Now your NIN and a selfie.", "ok");
+});
+if ($("bank").dataset.open === "1") openBank();
 
 $("go2").addEventListener("click", async () => {
   const type = document.querySelector('input[name=type]:checked').value;
@@ -164,8 +210,52 @@ $("mine").addEventListener("click", async () => {
 });
 `;
 
-export function identityPage(state: IdentityStatus, accountName: string | null): string {
+/** The banks for the payout account box: the everyday ones first, then everyone. */
+const POPULAR = ["058", "044", "057", "033", "011", "999992", "50515", "50211", "999991", "035", "070", "214", "232", "032", "221"];
+function bankSelect(): string {
+  const byCode = new Map(PAYSTACK_BANKS.map((b) => [b.code, b]));
+  const opt = (b: { code: string; name: string }) => `<option value="${esc(b.code)}">${esc(bankTitle(b.name))}</option>`;
+  const top = POPULAR.map((c) => byCode.get(c)).filter((b): b is { code: string; name: string } => Boolean(b));
+  const all = [...PAYSTACK_BANKS].sort((a, b) => a.name.localeCompare(b.name));
+  return `<select id="bk"><option value="">Choose your bank</option>${top.length ? `<optgroup label="Popular">${top.map(opt).join("")}</optgroup>` : ""}<optgroup label="All banks">${all.map(opt).join("")}</optgroup></select>`;
+}
+
+export function identityPage(
+  state: IdentityStatus,
+  accountName: string | null,
+  /** No payout account yet: the page opens on adding one (2 November 2026). */
+  needsBank = false,
+  /** The WhatsApp number, for adding it in the chat instead. */
+  waNumber: string | null = null,
+): string {
   const s = state === "none" ? "none" : state;
+  const wa = waNumber ? `https://wa.me/${waNumber.replace(/\D/g, "")}?text=${encodeURIComponent("add bank")}` : null;
+  const bankSheet = `<div class="sheet" id="bank" data-open="${needsBank && s === "none" ? "1" : "0"}" hidden>
+  <div class="box" role="dialog" aria-modal="true" aria-labelledby="banktitle">
+    <div class="grip"></div>
+    <img class="art" src="/brand/bank-3d.png" alt="">
+    <h2 id="banktitle">Add your payout account first</h2>
+    <p class="lead">Card payments from abroad are paid into it, and the name on it has to match your NIN.</p>
+    <div class="step">
+      <label for="bk">Bank</label>
+      ${bankSelect()}
+    </div>
+    <div class="step" style="border:0;padding-top:0;margin-top:14px">
+      <label for="acno">Account number</label>
+      <input id="acno" type="text" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="10 digits">
+    </div>
+    <button class="pill gold" id="check" type="button">Check account</button>
+    <p class="say" id="say3" role="status"></p>
+    <div class="found" id="found" hidden>
+      <p class="who" id="fname"></p>
+      <p class="bk" id="fbank"></p>
+      <button class="pill gold" id="yes" type="button">Yes, that's me</button>
+      <button class="link" id="notme" type="button">Not me, try another number</button>
+    </div>
+    <p class="center">${wa ? `<a class="link" href="${esc(wa)}">Add it in WhatsApp instead</a>` : ""}
+    <button class="link" id="bankclose" type="button" style="margin-left:14px">Close</button></p>
+  </div>
+</div>`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -230,6 +320,7 @@ export function identityPage(state: IdentityStatus, accountName: string | null):
 
   <p class="fine">Your NIN and selfie are checked by Dojah, a licensed identity provider. We keep your NIN encrypted and never keep the selfie. It's used only to confirm who receives card payments from abroad.</p>
 </div></main>
+${bankSheet}
 <script>${SCRIPT}</script>
 </body></html>`;
 }
@@ -257,6 +348,17 @@ async function afterVerified(owner: { id: string; phone: string }, log: FastifyB
   await sendText(owner.phone, VERIFIED_MESSAGE).catch(() => {});
 }
 
+/** Account lookups from this page: eight in ten minutes per person. */
+const bankTries = new Map<string, number[]>();
+function tryBank(userId: string): boolean {
+  const now = Date.now();
+  const recent = (bankTries.get(userId) ?? []).filter((t) => now - t < 10 * 60_000);
+  if (recent.length >= 8) return false;
+  recent.push(now);
+  bankTries.set(userId, recent);
+  return true;
+}
+
 export async function identityRoutes(app: FastifyInstance): Promise<void> {
   const headers = {
     "cache-control": "no-store, private",
@@ -267,9 +369,58 @@ export async function identityRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { token: string } }>("/verify/:token", async (req, reply) => {
     const owner = await ownerOfIdentityToken(req.params.token);
     if (!owner) return reply.status(404).type(HTML).headers(headers).send(gone());
-    const { accountInForce } = await import("../../settings/bank-change.ts");
-    const account = owner.status === "person" ? await accountInForce(owner.id) : null;
-    return reply.type(HTML).headers(headers).send(identityPage(owner.status, account?.accountName ?? null));
+    const account = await accountInForce(owner.id);
+    return reply
+      .type(HTML)
+      .headers(headers)
+      .send(
+        identityPage(
+          owner.status,
+          owner.status === "person" ? (account?.accountName ?? null) : null,
+          !account,
+          await displayNumber().catch(() => null),
+        ),
+      );
+  });
+
+  /*
+   * The payout account, added on this page when there is none (2 November
+   * 2026). The same lookup as setup, the name from the bank and confirmed by
+   * them, and no email code: there is no account yet to protect, which is the
+   * rule "add bank" follows in the chat. Changing an account that exists is
+   * never done here.
+   */
+  app.post<{ Params: { token: string }; Body: { code?: string; number?: string } }>(
+    "/verify/:token/bank/check",
+    async (req, reply) => {
+      const owner = await ownerOfIdentityToken(req.params.token);
+      if (!owner) return reply.status(404).send({ ok: false, words: "This link has expired." });
+      if (await accountInForce(owner.id)) return reply.headers(headers).send({ ok: false, words: "You already have a payout account. Close this and carry on." });
+      if (!tryBank(owner.id)) return reply.headers(headers).send({ ok: false, words: "That's a lot of tries. Wait a few minutes and try again." });
+      const number = String(req.body?.number ?? "").replace(/\D/g, "");
+      if (number.length !== 10) return reply.headers(headers).send({ ok: false, words: "An account number is 10 digits." });
+      const bank = await findBank(String(req.body?.code ?? ""));
+      if (!bank) return reply.headers(headers).send({ ok: false, words: "Choose your bank from the list." });
+      const found = await checkAccount(number, bank);
+      if (!found.ok) {
+        return reply.headers(headers).send({
+          ok: false,
+          words: found.reason === "invalid_details" ? `${bank.name} didn't recognise that number. Check it and try again.` : "We couldn't reach the bank just now. Try again in a moment.",
+        });
+      }
+      await saveBankAccount(owner.id, { bankCode: bank.code, bankName: bank.name, accountNumber: number, accountName: found.account.accountName });
+      return reply.headers(headers).send({ ok: true, name: found.account.accountName, bank: bankTitle(bank.name) });
+    },
+  );
+
+  app.post<{ Params: { token: string } }>("/verify/:token/bank/confirm", async (req, reply) => {
+    const owner = await ownerOfIdentityToken(req.params.token);
+    if (!owner) return reply.status(404).send({ ok: false, words: "This link has expired." });
+    if (await accountInForce(owner.id)) return reply.headers(headers).send({ ok: true });
+    if (!(await getPendingBank(owner.id))) return reply.headers(headers).send({ ok: false, words: "Check the account first." });
+    await activateBankAccount(owner.id, null);
+    req.log.info({ userId: owner.id }, "payout account added on the verify page");
+    return reply.headers(headers).send({ ok: true });
   });
 
   app.post<{ Params: { token: string }; Body: { nin?: string; selfie?: string } }>(

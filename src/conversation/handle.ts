@@ -1603,7 +1603,13 @@ async function runEffects(
                 `UPDATE users SET identity_pending_doc = $2, identity_pending_at = now() WHERE id = $1`,
                 [userId, JSON.stringify(doc)],
               );
-              await askToVerify(userId, ctx.phone, id, log, extra);
+              // Saying it is saved, and what passing gets them: asked for
+              // straight after filling in a whole form, a bare "verify"
+              // read as though the invoice was gone (2 November 2026).
+              await askToVerify(userId, ctx.phone, id, log, extra, {
+                client: doc.clientName ?? null,
+                amount: doc.foreign ? formatMoney(doc.foreign.amountMinor, doc.foreign.currency) : null,
+              });
               holdAt = "idle";
               break;
             }
@@ -3429,16 +3435,31 @@ async function askToVerify(
   status: IdentityStatus,
   log: FastifyBaseLogger,
   extra: string[],
+  /** The invoice that asked, kept and brought back after (identity_pending_doc). */
+  saved: { client: string | null; amount: string | null } | null = null,
 ): Promise<void> {
   if (status === "review") {
-    extra.push(para(`🔎 ${b("We're checking your details.")}`, "A person is looking at them, and we'll message you here when you can invoice abroad."));
+    extra.push(
+      para(
+        `🔎 ${b("We're checking your details.")}`,
+        saved ? "Your invoice is saved. A person is looking at your details, and we'll message you here when it can go out." : "A person is looking at them, and we'll message you here when you can invoice abroad.",
+      ),
+    );
     return;
   }
-  const body = para(
-    `🛡️ ${b("Verify once to get paid from abroad")}`,
-    "Card payments from clients abroad need your NIN and a quick selfie, once. After that there are no limits.",
-    "Naira invoices don't need any of this.",
-  );
+  const what = saved ? [saved.amount, "invoice", saved.client ? `for ${saved.client}` : null].filter(Boolean).join(" ") : null;
+  const body = saved
+    ? para(
+        `🛡️ ${b("One quick step before this invoice goes out")}`,
+        `Your ${what} is saved.`,
+        "Verify once with your NIN and a selfie, about a minute, and it comes straight back here ready to send.",
+        "After that, clients abroad can pay you by card, in dollars, pounds or euros, with no limits.",
+      )
+    : para(
+        `🛡️ ${b("Verify once to get paid from abroad")}`,
+        "Card payments from clients abroad need your NIN and a quick selfie, once. After that there are no limits.",
+        "Naira invoices don't need any of this.",
+      );
   if (phone) {
     const sent = await sendCta(phone, { body, label: "Verify now", url: await identityUrl(userId), footer: "Takes about a minute" });
     if (sent.ok) {

@@ -1982,7 +1982,7 @@ function paymentScreen(): Record<string, unknown> {
         {
           type: "Form",
           name: "payment_form",
-          "init-values": { plan: "${data.plan}" },
+          "init-values": { plan: "${data.plan}", vat: "${data.vat}" },
           children: [
             {
               type: "RadioButtonsGroup",
@@ -2017,13 +2017,16 @@ function paymentScreen(): Record<string, unknown> {
                 },
               ],
             },
+            // With the plan since 2 November 2026: both are about what the
+            // client pays. It was on the last screen with notes and design.
+            { type: "OptIn", name: "vat", label: "Add 7.5% VAT" },
             {
               type: "Footer",
               label: "Next",
               "on-click-action": {
                 name: "navigate",
                 next: { type: "screen", name: "TERMS" },
-                payload: { ...passData(), plan: "${form.plan}", deposit: "${form.deposit}" },
+                payload: { ...passData(), plan: "${form.plan}", deposit: "${form.deposit}", vat: "${form.vat}" },
               },
             },
           ],
@@ -2064,15 +2067,9 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
               name: "terms_form",
               "init-values": {
                 notes: "${data.notes}",
-                vat: "${data.vat}",
                 design: "${data.design}",
               },
               children: [
-                {
-                  type: "OptIn",
-                  name: "vat",
-                  label: "Add 7.5% VAT",
-                },
                 {
                   type: "TextArea",
                   name: "notes",
@@ -2131,7 +2128,8 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       plan: "${data.plan}",
                       deposit: "${data.deposit}",
                       design: "${form.design}",
-                      vat: "${form.vat}",
+                      // Chosen on PAYMENT, with the plan.
+                      vat: "${data.vat}",
                       notes: "${form.notes}",
                       title: "${data.title}",
                     },

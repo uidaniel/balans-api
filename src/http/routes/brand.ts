@@ -35,6 +35,8 @@ const FILES: Record<string, { file: string; type: string }> = {
   "pro.jpg": { file: "pro.jpg", type: "image/jpeg" },
   // The gold tick, on the page a confirmed email lands on (31 October 2026).
   "setup-tick.png": { file: "setup-tick.png", type: "image/png" },
+  // The gold bank over "Add your payout account" on the verify page (2 November 2026).
+  "bank-3d.png": { file: "bank-3d.png", type: "image/png" },
 };
 
 /**
