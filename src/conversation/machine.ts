@@ -2753,7 +2753,8 @@ export function formValues(doc: PendingDoc, now: Civil): {
       : "An amount like 100000, or a percent like 30%.",
     notes: doc.notes ?? "",
     title: doc.title ?? "",
-    vat: doc.vatPercent != null,
+    // A choice, "true" or "false", on the payment screen.
+    vat: doc.vatPercent != null ? "true" : "false",
     /*
      * What the draft is priced in, and whether the box that says so is even
      * shown (International PRD section 5).

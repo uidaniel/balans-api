@@ -1078,7 +1078,8 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
   // Under the Deposit box: what it takes, and the deposit the draft has now.
   deposit_help: { type: "string", __example__: "An amount like 100000, or a percent like 30%." },
   title: { type: "string", __example__: "" },
-  vat: { type: "boolean", __example__: false },
+  // "true" or "false": a choice on PAYMENT since 2 November 2026, not a tick box.
+  vat: { type: "string", __example__: "false" },
   /*
    * The design list on the last screen, and the one it opens on: theirs.
    * Built for whoever opens the form (`designOptions`), because Free sees
@@ -1942,7 +1943,8 @@ function termsData(): Record<string, unknown> {
     deposit: { type: "string", __example__: "" },
     deposit_help: { type: "string", __example__: "An amount like 100000, or a percent like 30%." },
     title: { type: "string", __example__: "" },
-    vat: { type: "boolean", __example__: false },
+    // "true" or "false": a choice on PAYMENT since 2 November 2026, not a tick box.
+  vat: { type: "string", __example__: "false" },
     designs: CURRENCIES_SCHEMA,
     design: { type: "string", __example__: "classic" },
     today: { type: "string", __example__: "2026-09-26" },
@@ -2064,7 +2066,18 @@ function paymentScreen(): Record<string, unknown> {
             },
             // With the plan since 2 November 2026: both are about what the
             // client pays. It was on the last screen with notes and design.
-            { type: "OptIn", name: "vat", label: "Add 7.5% VAT" },
+            {
+              // A choice rather than a tick box (2 November 2026): the box was
+              // easy to scroll past, and VAT is a decision about the amount.
+              type: "RadioButtonsGroup",
+              name: "vat",
+              label: "VAT",
+              required: true,
+              "data-source": [
+                { id: "false", title: "No VAT" },
+                { id: "true", title: "Add 7.5% VAT", description: "Added on top of the amount" },
+              ],
+            },
             {
               type: "Footer",
               label: "Next",

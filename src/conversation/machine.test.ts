@@ -663,7 +663,7 @@ describe("a tapped button", () => {
       deposit_help: "An amount like 100000, or a percent like 30%.",
       notes: "half now",
       title: "",
-      vat: true,
+      vat: "true",
       // Free's list and the default; the caller puts in their own.
       designs: designOptions(false),
       design: "classic",
