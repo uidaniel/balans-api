@@ -848,15 +848,15 @@ const businessDetails: FlowDefinition = {
 // Titles stay within the 30 characters a Flow dropdown shows.
 export const PLANS = [
   { id: "one", title: "One payment", description: "The full amount, once" },
-  { id: "deposit_25", title: "25% deposit + balance", description: "A quarter to start, the rest later" },
-  { id: "deposit_50", title: "50% deposit + balance", description: "Half to start, the rest later" },
+  { id: "deposit_25", title: "25% deposit + balance", description: "A quarter now, the rest on the due date" },
+  { id: "deposit_50", title: "50% deposit + balance", description: "Half now, the rest on the due date" },
   { id: "split_2", title: "2 equal payments", description: "Two parts of the same amount" },
   { id: "split_3", title: "3 equal payments", description: "Three parts of the same amount" },
   { id: "split_4", title: "4 equal payments", description: "Four parts of the same amount" },
   { id: "split_6", title: "6 equal payments", description: "Six parts of the same amount" },
   // Any deposit, as an amount or a percent, typed in the Deposit box under
   // this list (13 October 2026). Last, so the common answers come first.
-  { id: "deposit_custom", title: "Custom deposit + balance", description: "Type it in the box below" },
+  { id: "deposit_custom", title: "Custom deposit + balance", description: "Type the deposit below. The rest on the due date." },
 ] as const;
 
 export type PlanId = (typeof PLANS)[number]["id"];
@@ -2346,7 +2346,7 @@ const invoice = documentFlow({
   name: "Balans invoice",
   title: "New invoice",
   dateLabel: "Due",
-  dateHelp: "The day they should pay by.",
+  dateHelp: "The day they should pay by. With a deposit, the day the rest is due.",
 });
 
 const quote = documentFlow({

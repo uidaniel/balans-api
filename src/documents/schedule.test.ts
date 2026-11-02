@@ -15,6 +15,7 @@
  * three weeks puts the last one two months after the work.
  */
 
+import { addDays } from "../../core/dates.ts";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
@@ -147,11 +148,35 @@ describe("what the user reads before they send it", () => {
       today,
     );
 
-    assert.deepEqual(lines, [
+    assert.deepEqual(lines.slice(0, 3), [
       "Payment plan:",
       "- 50% deposit — ₦25,000 (due now)",
       "- Balance — ₦25,000 (due Fri, 25 Sep)",
     ]);
+  });
+
+  it("says so when the balance is due right after the deposit (2 November 2026)", () => {
+    const soon = planLines({ totalKobo: N(50_000), depositPercent: 50, instalments: null, dueDate: addDays(today, 1) }, today);
+    assert.equal(soon.at(-1), "_The balance is due 1 day after the deposit. Tap Change it to give more time._");
+    const later = planLines({ totalKobo: N(50_000), depositPercent: 50, instalments: null, dueDate: addDays(today, 14) }, today);
+    assert.ok(!later.some((l) => l.includes("Tap Change it")));
+  });
+
+  it("lists the parts in the invoice's own currency", () => {
+    const dollar = planLines(
+      {
+        totalKobo: N(1_000_000),
+        subtotalKobo: N(1_000_000),
+        vatKobo: 0,
+        depositPercent: 50,
+        instalments: null,
+        dueDate: addDays(today, 14),
+        foreign: { amountMinor: 75_000, currency: "USD" },
+      },
+      today,
+    );
+    assert.match(dollar[1]!, /\$375\.00/);
+    assert.ok(!dollar.join("\n").includes("₦"));
   });
 
   it("dates every instalment after the first", () => {

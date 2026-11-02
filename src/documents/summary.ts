@@ -13,9 +13,9 @@ import { formatFriendly, type Civil, compare } from "../../core/dates.ts";
 import { DEFAULT_INTL_PROCESSOR, settle, withVat } from "../../core/fees.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { defaults } from "../config.ts";
-import { formatMoney, INFO } from "../../core/currency.ts";
+import { formatMoney, INFO, type Currency } from "../../core/currency.ts";
 import { agreedTotalMinor } from "../../core/exchange.ts";
-import { b, block, BULLET, lines, para, row } from "../whatsapp/format.ts";
+import { b, block, BULLET, i, lines, para, row } from "../whatsapp/format.ts";
 import { shapeFor, stagesFor, type Stage, dueDateWithStages } from "./parts.ts";
 import type { Draft } from "./store.ts";
 import { documentLink } from "./links.ts";
@@ -89,11 +89,25 @@ export function planLines(
     instalments: number | null;
     dueDate: Civil | null;
     stageDueDates?: (Civil | null)[] | null;
+    subtotalKobo?: number;
+    vatKobo?: number;
+    foreign?: { amountMinor: number; currency: Currency } | null;
   },
   today: Civil,
 ): string[] {
   const stages = stagesFor(draft, draft.totalKobo, today);
   if (!stages) return [];
+
+  /*
+   * Each part in the invoice's own currency (2 November 2026): a dollar
+   * invoice listed its deposit and balance in naira, a second currency on a
+   * draft that says $752.50 everywhere else. Split in proportion to the
+   * agreed total, so the parts add up to it.
+   */
+  const f = draft.foreign;
+  const agreed = f ? agreedTotalMinor(f.amountMinor, draft.subtotalKobo ?? draft.totalKobo, draft.vatKobo ?? 0) : 0;
+  const money = (kobo: number): string =>
+    f && draft.totalKobo > 0 ? formatMoney(Math.round((kobo * agreed) / draft.totalKobo), f.currency) : formatNaira(kobo);
 
   /*
    * "Due now" only while it really is now.
@@ -110,11 +124,29 @@ export function planLines(
     return isToday && i === 0 ? " (due now)" : ` (due ${formatFriendly(s.dueOn, today)})`;
   };
 
+  /*
+   * A deposit and its balance days apart (2 November 2026): the balance is
+   * due on the date they set, and a date set for one payment can sit right
+   * after the deposit. Said once, plainly; nothing is blocked.
+   */
+  const deposit = (draft.depositPercent ?? 0) > 0 || (draft.depositKobo ?? 0) > 0;
+  const first = stages[0]?.dueOn ?? today;
+  const rest = stages[1]?.dueOn ?? null;
+  const gap = deposit && stages.length === 2 && rest ? daysBetween(first, rest) : null;
+  const close =
+    gap !== null && gap <= 3
+      ? i(`The balance is due ${gap === 0 ? "the same day as" : gap === 1 ? "1 day after" : `${gap} days after`} the deposit. Tap Change it to give more time.`)
+      : null;
+
   return [
     "Payment plan:",
-    ...stages.map((s, i) => `${BULLET}${s.label} — ${formatNaira(s.amountKobo)}${when(s, i)}`),
+    ...stages.map((s, i) => `${BULLET}${s.label} — ${money(s.amountKobo)}${when(s, i)}`),
+    ...(close ? [close] : []),
   ];
 }
+
+const daysBetween = (a: Civil, b: Civil): number =>
+  Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86_400_000);
 
 /**
  * What actually lands in the user's bank, once every fee has come out.

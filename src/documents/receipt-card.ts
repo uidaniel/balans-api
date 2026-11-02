@@ -142,7 +142,12 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
    * the stored parts agree with, so the picture cannot drift from either. The
    * "Payment plan:" heading it puts first is dropped — the card has its own.
    */
-  const stages = planLines(draft, today).slice(1).map((s) => s.replace(/^\s*[-·]\s*/, ""));
+  // The parts only: the note under them (a balance due right after the
+  // deposit) is for the chat, not a row on the card.
+  const stages = planLines(draft, today)
+    .slice(1)
+    .filter((s) => /^\s*[-·]\s/.test(s))
+    .map((s) => s.replace(/^\s*[-·]\s*/, ""));
 
   /*
    * The items, each with its quantity — 1 included, because a card that says
