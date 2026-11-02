@@ -16,7 +16,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { FLOWS, PLANS, planIdFor, splitForPlan } from "./definitions.ts";
+import { CLIENTS_SCREEN, FLOWS, PLANS, planIdFor, splitForPlan } from "./definitions.ts";
 import { MFB_CHOICE, PAYSTACK_BANKS, DROPDOWN_MAX, bankOptions, bankTitle, isMicrofinance, mfbOptions } from "./banks.ts";
 import { shapeFor } from "../../documents/parts.ts";
 import { matchBank } from "../../payments/bank-match.ts";
@@ -503,7 +503,7 @@ describe("line items on the document forms", () => {
           const init = (form?.["init-values"] ?? {}) as Record<string, string>;
           const fields = new Set(
             walk(s.layout)
-              .filter((n) => typeof n.name === "string" && /Input|TextArea|OptIn|Dropdown|DatePicker/.test(String(n.type)))
+              .filter((n) => typeof n.name === "string" && /Input|TextArea|OptIn|Dropdown|DatePicker|RadioButtonsGroup/.test(String(n.type)))
               .map((n) => String(n.name)),
           );
 
@@ -740,12 +740,21 @@ describe("line items on the document forms", () => {
         }
       });
 
-      it("picks the date on a calendar that starts today", () => {
+      it("offers the due date as choices with their dates (2 November 2026)", () => {
         for (const id of forms().slice(1)) {
-          const picker = walk(screen(id)).find((n) => n.name === "due_date")!;
-          assert.equal(picker.type, "DatePicker", `${id} still takes the date as words`);
-          assert.equal(picker["min-date"], "${data.today}");
+          const box = walk(screen(id)).find((n) => n.name === "due_date")!;
+          assert.equal(box.type, "Dropdown", `${id} does not offer due choices`);
+          assert.equal(box["data-source"], "${data.due_options}");
         }
+      });
+
+      it("opens on saved clients, with a way to type a new one", () => {
+        const s = screen(CLIENTS_SCREEN);
+        const list = walk(s).find((n) => n.name === "client_id")!;
+        assert.equal(list.type, "RadioButtonsGroup");
+        assert.equal(list["data-source"], "${data.clients}");
+        const links = walk(s).filter((n) => n.type === "EmbeddedLink");
+        assert.equal(links.length, 1);
       });
 
       it("no longer offers to pass the fee to the client", () => {

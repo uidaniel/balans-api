@@ -4,7 +4,7 @@ import { step, VOICE, type Context, type State } from "./machine.ts";
 import type { Parsed } from "../parser/schema.ts";
 import type { Civil } from "../../core/dates.ts";
 import type { Correction } from "../parser/corrections.ts";
-import { FLOWS, currencyOptions, designOptions } from "../whatsapp/flows/definitions.ts";
+import { FLOWS, currencyOptions, designOptions, dueOptions } from "../whatsapp/flows/definitions.ts";
 import { readCorrection } from "../parser/corrections.ts";
 import { asCommand } from "../parser/commands.ts";
 import { settingsMenu } from "../settings/messages.ts";
@@ -687,6 +687,10 @@ describe("a tapped button", () => {
       currencies: currencyOptions(false),
       // The "Paid by" list before the caller names their bank and details.
       amount_help: "Naira, before VAT. Digits only.",
+      // Typed, not a saved client; and the Due box's choices, from today,
+      // with the date the draft already has among them.
+      client_id: "",
+      due_options: dueOptions("invoice", { y: 2026, m: 9, d: 23 }, { y: 2026, m: 10, d: 8 }),
       // The Phone box, greyed out until the caller finds the sender on Pro.
       can_whatsapp_client: false,
       phone_help: "Sending to their WhatsApp is a Pro feature. Upgrade to turn it on.",

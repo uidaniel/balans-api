@@ -36,7 +36,7 @@ import {
   type State,
   formValues,
 } from "./machine.ts";
-import { EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, keepChosen, planIdFor, splitForPlan } from "../whatsapp/flows/definitions.ts";
+import { CLIENTS_SCREEN, EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, keepChosen, planIdFor, splitForPlan } from "../whatsapp/flows/definitions.ts";
 import { VAT_PERCENT } from "../parser/extract.ts";
 import { forLog, type Parsed } from "../parser/schema.ts";
 import { b, i, lines, para, row } from "../whatsapp/format.ts";
@@ -1345,6 +1345,35 @@ async function runEffects(
             break;
           }
 
+          // The document forms pick their own, by how many items the
+          // draft has. Everything else opens where it always does.
+          let screen: string = effect.screen ?? FLOW_SCREEN[effect.key];
+          // The invoice form carries its starting values on the effect;
+          // business details are read here because only this side has a
+          // database.
+          let data = await openedForPlan(
+            userId,
+            effect.data ??
+              (effect.key === "business_details"
+                ? await detailsFor(userId)
+                : effect.key === "invoice" || effect.key === "quote" || effect.key === "request"
+                  ? blankForm(effect.key, ctx.today).data
+                  : undefined),
+          );
+          /*
+           * A new invoice or quote from somebody who has billed before opens
+           * on their saved clients, to tap (2 November 2026). The key goes
+           * only to that screen: every other screen is handed exactly the
+           * keys it declares, and `clients` is not one of them.
+           */
+          if ((effect.key === "invoice" || effect.key === "quote") && screen === FRESH_WHO && data) {
+            const clients = await recentClients(userId);
+            if (clients.length) {
+              screen = CLIENTS_SCREEN;
+              data = { ...data, clients };
+            }
+          }
+
           const sent = await sendFlow(ctx.phone, {
             body: effect.body,
             cta: effect.cta,
@@ -1353,21 +1382,8 @@ async function runEffects(
             // Ties the submission back to this person. Read on the way in, and
             // never trusted for anything the sender could have chosen.
             token: `${effect.key}:${userId}${effect.tokenTail ? `:${effect.tokenTail}` : ""}`,
-            // The document forms pick their own, by how many items the
-            // draft has. Everything else opens where it always does.
-            screen: effect.screen ?? FLOW_SCREEN[effect.key],
-            // The invoice form carries its starting values on the effect;
-            // business details are read here because only this side has a
-            // database.
-            data: await openedForPlan(
-              userId,
-              effect.data ??
-                (effect.key === "business_details"
-                  ? await detailsFor(userId)
-                  : effect.key === "invoice" || effect.key === "quote" || effect.key === "request"
-                    ? blankForm(effect.key, ctx.today).data
-                    : undefined),
-            ),
+            screen,
+            data,
             // A draft flow opens for anyone with developer access to the app,
             // which is how this is tested before verification comes through.
             draft: env.WA_FLOWS_DRAFT === "true",
@@ -3629,14 +3645,22 @@ async function handleInvoiceForm(
   /** The sent invoice this form changes, from its token; null for a new one. */
   editId: string | null = null,
 ): Promise<void> {
-  const clientName = (fields.client_name ?? "").trim();
-  const email = (fields.client_email ?? "").trim().toLowerCase();
-  const phoneTyped = (fields.client_phone ?? "").trim();
+  /*
+   * A saved client tapped on the first page (2 November 2026): its id, and
+   * nothing typed. Looked up for this user only, so an id from anywhere else
+   * finds nothing. Its WhatsApp number is used on Pro only, quietly, since
+   * nobody typed it.
+   */
+  const saved = (fields.client_name ?? "").trim() ? null : await savedClient(userId, fields.client_id);
+  const pro = (await planOf(userId)) === "pro";
+  const clientName = (fields.client_name ?? "").trim() || saved?.name || "";
+  const email = ((fields.client_email ?? "").trim() || saved?.email || "").toLowerCase();
+  const phoneTyped = (fields.client_phone ?? "").trim() || (pro ? (saved?.phone ?? "") : "");
   // Anything a WhatsApp number could be, or nothing. A number we cannot use
   // is dropped rather than refusing the invoice; the draft says so below.
   // The box is greyed out on Free, so a number here means Pro — but the plan
   // is checked rather than trusted from what the form sent.
-  const phoneAllowed = !phoneTyped || (await planOf(userId)) === "pro";
+  const phoneAllowed = !phoneTyped || pro;
   const clientPhone = phoneTyped && phoneAllowed ? normalisePhone(phoneTyped) : null;
   const notes = (fields.notes ?? "").trim();
   const duePhrase = (fields.due_date ?? "").trim();
@@ -4155,6 +4179,45 @@ function clientWhatsAppIsPro(): string {
 async function phoneOf(userId: string): Promise<string | null> {
   const { rows } = await db().query<{ wa_phone: string }>(`SELECT wa_phone FROM users WHERE id = $1`, [userId]);
   return rows[0]?.wa_phone ?? null;
+}
+
+/**
+ * The clients somebody has billed most recently, for the first page of a new
+ * invoice (2 November 2026). Eight, newest first, with what we have for each
+ * under the name. Titles are cut to the thirty characters a list row shows.
+ */
+async function recentClients(userId: string): Promise<{ id: string; title: string; description: string }[]> {
+  const { rows } = await db().query<{ id: string; name: string; email: string | null; phone: string | null }>(
+    `SELECT c.id, c.name, c.email, c.phone
+       FROM clients c
+       LEFT JOIN LATERAL (
+         SELECT MAX(d.created_at) AS last FROM documents d
+          WHERE d.client_id = c.id AND d.status <> 'draft'
+       ) used ON true
+      WHERE c.user_id = $1 AND c.deleted_at IS NULL
+        AND used.last IS NOT NULL
+      ORDER BY used.last DESC
+      LIMIT 8`,
+    [userId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.name.length > 30 ? `${r.name.slice(0, 29)}…` : r.name,
+    description: [r.email, r.phone].filter(Boolean).join(" · ") || "No email or number saved",
+  }));
+}
+
+/** A saved client of this user's, by the id the form sent back. */
+async function savedClient(
+  userId: string,
+  id: string | undefined,
+): Promise<{ name: string; email: string | null; phone: string | null } | null> {
+  if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const { rows } = await db().query<{ name: string; email: string | null; phone: string | null }>(
+    `SELECT name, email, phone FROM clients WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
+    [id, userId],
+  );
+  return rows[0] ?? null;
 }
 
 async function openedForPlan(
