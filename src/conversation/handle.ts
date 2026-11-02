@@ -7,6 +7,8 @@
  * which is why the interesting logic stays testable without a database.
  */
 
+import { identityRequired, identityStatusOf, type IdentityStatus } from "../identity/verify.ts";
+import { identityUrl } from "../http/routes/verify.ts";
 import { NAIRA_PRICE, perMonthOf, proPriceFor, type ProPrice } from "../billing/price.ts";
 import { brandedLimitCard } from "../billing/limit-card.ts";
 import { abroadCurrencyFor, homeCurrencyFor } from "../../core/home-currency.ts";
@@ -1285,6 +1287,20 @@ async function runEffects(
           break;
         }
 
+        case "start_identity": {
+          if (!identityRequired()) {
+            extra.push(para(`🛡️ ${b("No need to verify yet.")}`, "Invoices to clients abroad work as they are."));
+            break;
+          }
+          const status = await identityStatusOf(userId);
+          if (status === "verified") {
+            extra.push(para(`✅ ${b("You're already verified.")}`, "Clients abroad can pay you by card, with no limits."));
+            break;
+          }
+          await askToVerify(userId, ctx.phone, status, log, extra);
+          break;
+        }
+
         case "confirm_business_name": {
           await confirmBusinessName(userId);
           const { rows } = await db().query<{ business_name: string | null }>(
@@ -1572,8 +1588,29 @@ async function runEffects(
            */
           // Abroad they are paid to their own details, with no card of ours to
           // be charged back, so the cap has nothing to protect.
-          const capped = doc.foreign && !abroadCurrencyFor(ctx.phone)
-            ? await overForeignCap(userId, doc.foreign, ctx.today)
+          const cardAbroad = Boolean(doc.foreign) && !abroadCurrencyFor(ctx.phone);
+
+          /*
+           * Who is behind a card payment from abroad (identity/verify.ts),
+           * once the provider is set up: verified, and no ceilings; not yet,
+           * and the invoice waits for a NIN and a selfie.
+           */
+          if (cardAbroad && identityRequired()) {
+            const id = await identityStatusOf(userId);
+            if (id !== "verified") {
+              // Kept, so it comes back as a draft the moment they pass.
+              await db().query(
+                `UPDATE users SET identity_pending_doc = $2, identity_pending_at = now() WHERE id = $1`,
+                [userId, JSON.stringify(doc)],
+              );
+              await askToVerify(userId, ctx.phone, id, log, extra);
+              holdAt = "idle";
+              break;
+            }
+          }
+
+          const capped = cardAbroad && !identityRequired()
+            ? await overForeignCap(userId, doc.foreign!, ctx.today)
             : null;
           if (capped) {
             extra.push(capped);
@@ -3336,6 +3373,83 @@ async function handleOnboardingForm(
  * What is recorded is the version, not the words. That is what makes it
  * possible to say later which terms a given person accepted.
  */
+/**
+ * Back to the invoice that asked for verification, the moment it passes
+ * (20 October 2026): the same draft, with its card and its three buttons,
+ * as if it had gone through the first time. Taken off the account as it is
+ * read, so it can only come back once, and not at all after a day.
+ *
+ * True when there was one to bring back, so the caller does not also send
+ * its own "you're verified".
+ */
+export async function resumeAfterVerification(userId: string, phone: string, log: FastifyBaseLogger): Promise<boolean> {
+  const { rows } = await db().query<{ doc: PendingDoc | null; fresh: boolean; business_name: string | null }>(
+    `WITH was AS (
+       SELECT identity_pending_doc AS doc, identity_pending_at > now() - interval '1 day' AS fresh
+         FROM users WHERE id = $1 FOR UPDATE
+     )
+     UPDATE users u SET identity_pending_doc = NULL, identity_pending_at = NULL
+       FROM was WHERE u.id = $1
+     RETURNING was.doc, was.fresh, u.business_name`,
+    [userId],
+  );
+  const r = rows[0];
+  if (!r?.doc || !r.fresh) return false;
+
+  const outcome = await runEffects([{ type: "save_draft", doc: r.doc }], userId, r.business_name ?? undefined, log, {
+    today: todayIn(defaults.behaviour.timezone),
+    phone,
+  });
+  await saveConversation(
+    userId,
+    outcome.holdAt ?? (outcome.draftId ? "awaiting_confirm" : "idle"),
+    outcome.draftId ? { doc: r.doc, draftId: outcome.draftId } : {},
+  );
+  await reply(
+    userId,
+    phone,
+    [`✅ ${b("You're verified.")} Clients abroad can pay you by card with no limits. Here's your invoice:`, ...outcome.lines],
+    log,
+    outcome.buttons,
+    outcome.buttonsImage,
+  );
+  log.info({ userId, draftId: outcome.draftId ?? null }, "invoice brought back after verification");
+  return true;
+}
+
+/**
+ * The way into identity checks, when a card invoice abroad needs them.
+ *
+ * One message with one button to the page. When a person is already looking
+ * at their details, it says that instead of sending them round again.
+ */
+async function askToVerify(
+  userId: string,
+  phone: string | undefined,
+  status: IdentityStatus,
+  log: FastifyBaseLogger,
+  extra: string[],
+): Promise<void> {
+  if (status === "review") {
+    extra.push(para(`🔎 ${b("We're checking your details.")}`, "A person is looking at them, and we'll message you here when you can invoice abroad."));
+    return;
+  }
+  const body = para(
+    `🛡️ ${b("Verify once to get paid from abroad")}`,
+    "Card payments from clients abroad need your NIN and a quick selfie, once. After that there are no limits.",
+    "Naira invoices don't need any of this.",
+  );
+  if (phone) {
+    const sent = await sendCta(phone, { body, label: "Verify now", url: await identityUrl(userId), footer: "Takes about a minute" });
+    if (sent.ok) {
+      await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+      return;
+    }
+    log.warn({ userId, reason: sent.reason }, "could not send the verify button");
+  }
+  extra.push(para(body, `Verify here: ${await identityUrl(userId)}`));
+}
+
 /**
  * The Pro line for somebody whose free documents are used (20 October 2026).
  *

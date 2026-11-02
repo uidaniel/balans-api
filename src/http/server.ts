@@ -18,6 +18,7 @@ import { proRoutes } from "./routes/pro.ts";
 import { paystackRoutes } from "./routes/paystack.ts";
 import { templateRoutes } from "./routes/templates.ts";
 import { signatureRoutes } from "./routes/signature.ts";
+import { identityRoutes } from "./routes/verify.ts";
 import { settingsPageRoutes } from "./routes/settings-page.ts";
 import { emailConfirmRoutes } from "../email/confirm.ts";
 
@@ -180,6 +181,7 @@ export function buildServer(): FastifyInstance {
   app.register(templateRoutes);
   // Also unprefixed and opened from a phone: /signature/{token}.
   app.register(signatureRoutes);
+  app.register(identityRoutes);
   app.register(settingsPageRoutes);
   app.register(emailConfirmRoutes);
 

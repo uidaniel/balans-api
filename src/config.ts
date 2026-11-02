@@ -109,6 +109,22 @@ const schema = z.object({
   /** Account-name checks and the bank list only; for staging. See paystack.ts `call`. */
   PAYSTACK_LOOKUP_SECRET_KEY: z.string().optional(),
 
+  /*
+   * Identity checks for card payments from abroad (identity/verify.ts):
+   * NIN with a selfie, and the CAC register for a business account. Absent
+   * means not switched on, and invoices abroad keep their ceilings.
+   * `https://sandbox.dojah.io` with sandbox keys for testing.
+   */
+  DOJAH_APP_ID: z.string().optional(),
+  DOJAH_SECRET_KEY: z.string().optional(),
+  DOJAH_BASE_URL: z.string().url().default("https://api.dojah.io"),
+  /**
+   * The separate liveness check before the NIN selfie match. On by default:
+   * it is what stops a printed photo from a stolen NIN slip. "false" halves
+   * the calls a verification makes, at that risk.
+   */
+  IDENTITY_LIVENESS: z.enum(["true", "false"]).default("true"),
+
   /* -- International invoices ---------------------------------------------- */
   /**
    * The master switch (section 10). Off by default, and off everywhere until

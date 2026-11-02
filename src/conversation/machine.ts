@@ -284,6 +284,8 @@ export type Effect =
   | { type: "email_statement" }
   /** "Yes, that's it" to the weekly name check (jobs/name-check.ts). */
   | { type: "confirm_business_name" }
+  /** "verify": the identity check for card payments from abroad, before it is needed. */
+  | { type: "start_identity" }
   /**
    * Open a Flow on the user's phone.
    *
@@ -1848,6 +1850,11 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       // answers typed.
       if (NAME_IS_RIGHT.test(text.trim())) {
         return { replies: [], next: "idle", context, effects: [{ type: "confirm_business_name" }] };
+      }
+      // "verify" (2 November 2026): the NIN and selfie check for card
+      // payments from abroad, taken before an invoice needs it.
+      if (/^(verify|verify me|verify my (identity|account|nin)|kyc|get verified)[.!]*$/i.test(text.trim())) {
+        return { replies: [], next: "idle", context, effects: [{ type: "start_identity" }] };
       }
       if (/^change (my )?(business )?name[.!]*$/i.test(text.trim())) {
         return { replies: [VOICE.askNewBusinessName], next: "settings:business_name", context: { ...context, attempts: 0 }, effects: [] };

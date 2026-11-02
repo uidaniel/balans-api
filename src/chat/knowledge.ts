@@ -32,6 +32,7 @@
  * costs almost nothing per answer. Change it here, then run src/chat/eval.ts.
  */
 
+import { identityConfigured } from "../identity/dojah.ts";
 import { defaults, env } from "../config.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { MAX_INVOICE_KOBO } from "../../core/amount.ts";
@@ -157,7 +158,7 @@ Q: Does my client get the invoice by email or WhatsApp? A: By email on every pla
 Q: Cash, cheque, POS or USSD? A: Balans doesn't process those, but you can take payment however you like and mark the invoice paid yourself.
 Q: Can my client pay by card? A: Naira invoices are paid by bank transfer.${abroad ? " Foreign-currency invoices (Pro) can be paid by card." : ""}
 Q: Which countries can I receive money from? A: Clients in Nigeria pay by bank transfer in naira.${abroad ? " A client in any country can pay a card link, as long as Paystack accepts their card, or pay your own details directly." : ""} For a specific country, email hello@balans.ng.
-${abroad ? `Q: International limits and fees? A: Card payments: about ${formatMoney(intl.invoiceCapMinor.USD, "USD").replace(/\.00$/, "")} per invoice (exactly: ${caps}) and about ${formatMoney(intl.invoiceCapMinor.USD * 2, "USD").replace(/\.00$/, "")} a day across all currencies together. Paystack charges ${fee} per card payment, and Balans charges a flat ${formatNaira(intl.balansFeeKobo)} per card payment. Both are taken from what you receive. Payments to your own details have no Balans limit or fee.\n` : ""}Q: Does Balans take a cut? A: No fee on naira invoices paid by transfer to your bank account.${abroad ? ` A card payment from abroad carries a flat ${formatNaira(intl.balansFeeKobo)} Balans fee.` : ""}
+${abroad ? `Q: International limits and fees? A: Card payments: about ${formatMoney(intl.invoiceCapMinor.USD, "USD").replace(/\.00$/, "")} per invoice (exactly: ${caps}) and about ${formatMoney(intl.invoiceCapMinor.USD * 2, "USD").replace(/\.00$/, "")} a day across all currencies together. Paystack charges ${fee} per card payment, and Balans charges a flat ${formatNaira(intl.balansFeeKobo)} per card payment. Both are taken from what you receive. Payments to your own details have no Balans limit or fee.\n` : ""}${abroad && identityConfigured() ? `Q: Why do I need to verify to bill clients abroad? A: A card payment from abroad can be reversed months later, so before clients abroad can pay you by card, you verify once with your NIN and a selfie (and your CAC number if your payout account is a business's). It takes about a minute: send "verify" any time, or you're asked when you first send a card invoice abroad. After that there are no limits. Your NIN is kept encrypted and the selfie is never stored. Naira invoices don't need it.\n` : ""}Q: Does Balans take a cut? A: No fee on naira invoices paid by transfer to your bank account.${abroad ? ` A card payment from abroad carries a flat ${formatNaira(intl.balansFeeKobo)} Balans fee.` : ""}
 Q: Who pays the transfer fee? A: Your client pays their own bank's fee.
 Q: Crypto, or dollars into a dollar account? A: No.
 
