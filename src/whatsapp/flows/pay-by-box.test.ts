@@ -82,23 +82,28 @@ describe("the pay-by box", () => {
     });
   }
 
-  it("is only read for another currency", () => {
+  it("reads their bank or own details in any currency, the card link only for others", () => {
     const handle = readFileSync(new URL("../../conversation/handle.ts", import.meta.url), "utf8");
-    assert.match(handle, /fields\.currency && fields\.currency !== "NGN" && \(fields\.pay_by === "own"/);
+    assert.match(handle, /fields\.pay_by === "own" \|\| fields\.pay_by === "bank" \|\| \(fields\.pay_by === "link" && fields\.currency && fields\.currency !== "NGN"\)/);
+  });
+
+  it("has no card link for naira (2 November 2026)", () => {
+    assert.deepEqual(payByOptions({ bank: null, details: null, naira: true }).map((o) => o.id), ["bank", "own"]);
   });
 });
 
 describe("what the server answers the amount screen with", () => {
   const sent = Object.fromEntries(termsKeys().map((k) => [k, k === "vat" ? false : ""]));
 
-  it("hides the box on a naira invoice, and hands everything else on", async () => {
+  it("offers their bank first on a naira invoice, and hands everything else on", async () => {
     const out = (await paymentStep("u1", { ...sent, currency: "NGN", amount: "50000" }, { actions: { isAbroad: async () => false } })) as {
       screen: string;
       data: Record<string, unknown>;
     };
     assert.equal(out.screen, PAYMENT_SCREEN);
-    assert.equal(out.data.show_pay_by, false);
-    assert.deepEqual(out.data.pay_bys, []);
+    assert.equal(out.data.show_pay_by, true);
+    assert.deepEqual((out.data.pay_bys as { id: string }[]).map((o) => o.id), ["bank", "own"]);
+    assert.equal(out.data.pay_by, "bank");
     assert.equal(out.data.amount, "50000");
     // Exactly what PAYMENT declares, no more.
     assert.deepEqual(Object.keys(out.data).sort(), termsKeys().sort());

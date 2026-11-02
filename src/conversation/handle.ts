@@ -1653,14 +1653,10 @@ async function runEffects(
            * currency, so a card link or custom details picked on a naira
            * invoice is said back plainly rather than ignored in silence.
            */
-          if (!doc.foreign && (payBy === "link" || payBy === "own") && doc.type !== "quote") {
-            extra.push(
-              i(
-                payBy === "link"
-                  ? "Naira invoices are paid by bank transfer to your account. The card link is for invoices in other currencies."
-                  : "Naira invoices are paid by bank transfer to your account. Custom payment details are for invoices in other currencies.",
-              ),
-            );
+          // Their own details are fine in naira too (2 November 2026); only
+          // the card link is for other currencies.
+          if (!doc.foreign && payBy === "link" && doc.type !== "quote") {
+            extra.push(i("Naira invoices are paid by bank transfer to your account. The card link is for invoices in other currencies."));
             payBy = null;
           }
           /*
@@ -1681,14 +1677,14 @@ async function runEffects(
               i(`You have no bank account yet, so this one uses the card link. Send ${b("add bank")} to add one.`),
             );
           }
-          if (payBy === "own" && doc.foreign) {
+          if (payBy === "own") {
             const { rows: own } = await db().query<{ d: string | null }>(
               `SELECT payment_details AS d FROM users WHERE id = $1`,
               [userId],
             );
             if (!own[0]?.d?.trim()) {
-              payBy = "link";
-              extra.push(noOwnDetailsYet());
+              payBy = doc.foreign ? "link" : null;
+              extra.push(noOwnDetailsYet(Boolean(doc.foreign)));
             }
           }
 
@@ -1727,7 +1723,7 @@ async function runEffects(
            */
           const [card, bank] = await Promise.all([
             draftCard(draft, gate.plan, ctx.today, log),
-            !draft.foreign && deliveryFor(draft.type, "NGN") === "bank_details"
+            !draft.foreign && deliveryFor(draft.type, "NGN") === "bank_details" && draft.payBy !== "own"
               ? accountToStamp(userId)
               : null,
           ]);
@@ -3817,7 +3813,7 @@ async function handleInvoiceForm(
    * them. Only with that choice and another currency; empty keeps what is saved.
    */
   const ownTyped = (fields.own_details ?? "").trim().slice(0, 600);
-  if (ownTyped && fields.pay_by === "own" && fields.currency && fields.currency !== "NGN") {
+  if (ownTyped && fields.pay_by === "own") {
     await db().query(`UPDATE users SET payment_details = $2 WHERE id = $1`, [userId, ownTyped]);
     log.info({ userId }, "payment details saved from the invoice form");
   }
@@ -3912,8 +3908,10 @@ async function handleInvoiceForm(
     // Abroad only: their own details or a Balans link. Empty is their default.
     // Only for another currency: the box is hidden on a naira invoice and
     // whatever it carried there means nothing.
+    // Naira offers their bank or their own details; other currencies add the
+    // card link (2 November 2026).
     payBy:
-      fields.currency && fields.currency !== "NGN" && (fields.pay_by === "own" || fields.pay_by === "link" || fields.pay_by === "bank")
+      fields.pay_by === "own" || fields.pay_by === "bank" || (fields.pay_by === "link" && fields.currency && fields.currency !== "NGN")
         ? fields.pay_by
         : null,
   };
@@ -4318,10 +4316,12 @@ function askPayDetails(): string {
   );
 }
 
-function noOwnDetailsYet(): string {
+function noOwnDetailsYet(foreign = true): string {
   return para(
     `💳 ${b("You have not added your payment details yet.")}`,
-    `This one goes out with a payment link. Reply ${b("settings")} to add your PayPal, Wise or bank details for clients abroad.`,
+    foreign
+      ? `This one goes out with a payment link. Type them in "My own details" on the form, or reply ${b("settings")}.`
+      : `This one goes out with your bank account. Type them in "My own details" on the form, or reply ${b("settings")}.`,
   );
 }
 

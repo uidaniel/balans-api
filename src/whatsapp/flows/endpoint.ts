@@ -597,15 +597,19 @@ export async function paymentStep(
 ): Promise<Record<string, unknown>> {
   const act = { ...actions, ...deps.actions };
   const currency = typeof sent.currency === "string" && sent.currency ? sent.currency : "NGN";
-  const show = currency !== "NGN" && !(await act.isAbroad(userId).catch(() => false));
+  // Naira too since 2 November 2026: their bank or their own details.
+  const naira = currency === "NGN";
+  const show = !(await act.isAbroad(userId).catch(() => false));
 
   let options: { id: string; title: string; description?: string }[] = [];
   let chosen = "";
   let hasBank = false;
   let savedDetails = "";
   if (show) {
-    const { rows } = await db()
-      .query<{ by: string | null; details: string | null; bank: string | null; last4: string | null }>(
+    type Row = { by: string | null; details: string | null; bank: string | null; last4: string | null };
+    let rows: Row[] = [];
+    try {
+      ({ rows } = await db().query<Row>(
         `SELECT u.abroad_pay_by AS by, u.payment_details AS details,
                 b.bank_name AS bank, b.account_last4 AS last4
            FROM users u
@@ -615,19 +619,35 @@ export async function paymentStep(
            ) b ON true
           WHERE u.id = $1`,
         [userId],
-      )
-      .catch(() => ({ rows: [] as { by: string | null; details: string | null; bank: string | null; last4: string | null }[] }));
+      ));
+    } catch {
+      // No answer about them: the choices still show, without their details.
+    }
     const u = rows[0];
     hasBank = Boolean(u?.bank);
     savedDetails = (u?.details ?? "").split("\n")[0]!.trim();
-    options = payByOptions({ bank: u?.bank ? `${u.bank}${u.last4 ? ` ·· ${u.last4}` : ""}` : null, details: u?.details ?? null });
+    options = payByOptions({ bank: u?.bank ? `${u.bank}${u.last4 ? ` ·· ${u.last4}` : ""}` : null, details: u?.details ?? null, naira });
     const had = typeof sent.pay_by === "string" ? sent.pay_by : "";
-    chosen = options.some((o) => o.id === had) ? had : options.some((o) => o.id === u?.by) ? (u!.by as string) : "link";
+    // Naira opens on their bank; abroad on their default (link or own).
+    const fallback = naira ? "bank" : "link";
+    chosen = options.some((o) => o.id === had)
+      ? had
+      : !naira && options.some((o) => o.id === u?.by)
+        ? (u!.by as string)
+        : fallback;
   }
 
   const base = env.PUBLIC_BASE_URL.replace(/\/$/, "");
-  const noBank = show && !hasBank;
-  const addBankUrl = noBank ? `${base}/bank/${await issueIdentityToken(userId)}` : base;
+  let noBank = show && !hasBank;
+  let addBankUrl = base;
+  if (noBank) {
+    try {
+      addBankUrl = `${base}/bank/${await issueIdentityToken(userId)}`;
+    } catch {
+      // No link rather than a broken one; "add bank" in the chat still works.
+      noBank = false;
+    }
+  }
 
   const data: Record<string, unknown> = {};
   for (const k of termsKeys()) if (k in sent) data[k] = sent[k];

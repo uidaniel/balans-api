@@ -2037,10 +2037,11 @@ const withIcon = (o: CurrencyOption & { id: string }): PayByOption =>
 export type PayByOption = CurrencyOption & { image?: string; "alt-text"?: string };
 
 /** The "Paid by" choices for a non-naira invoice: a Balans link, their own details, or their bank. */
-export function payByOptions(x: { bank: string | null; details: string | null }): PayByOption[] {
+export function payByOptions(x: { bank: string | null; details: string | null; naira?: boolean }): PayByOption[] {
   const first = (x.details ?? "").split("\n")[0]!.trim();
   return [
-    { id: "link", title: "Balans payment link", description: "Your client pays by card. Verify once." },
+    // Not for naira (2 November 2026): a naira invoice is paid to them directly.
+    ...(x.naira ? [] : [{ id: "link", title: "Balans payment link", description: "Your client pays by card. Verify once." }]),
     // Always offered (2 November 2026): without one, the link under the list adds it.
     { id: "bank", title: "My bank account", description: x.bank ?? "Add it with the link below" },
     // Last, so the box it opens sits at the foot of the list.

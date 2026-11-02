@@ -530,8 +530,10 @@ export async function confirmDraft(userId: string, draftId: string): Promise<Con
 
     // A naira invoice goes out with the sender's own account on it, taken
     // now and kept (see bank-details.ts). Abroad, and quotes, keep a link.
+    // "My own details" on a naira invoice (2 November 2026): their details
+    // instead of their account, so the bank is not stamped.
     const bank =
-      deliveryFor(draft.type, draft.currency) === "bank_details" ||
+      (deliveryFor(draft.type, draft.currency) === "bank_details" && draft.pay_by !== "own") ||
       // Abroad, paid into their own Nigerian account if that is what they chose.
       (draft.pay_by === "bank" && draft.type !== "quote")
         ? await attachBankDetails(c, draft.id, userId)
@@ -651,7 +653,8 @@ export async function applyEdit(userId: string, draftId: string, originalId: str
     ]);
 
     const bank =
-      deliveryFor(original.type, draft.currency) === "bank_details" || (draft.pay_by === "bank" && original.type !== "quote")
+      (deliveryFor(original.type, draft.currency) === "bank_details" && draft.pay_by !== "own") ||
+      (draft.pay_by === "bank" && original.type !== "quote")
         ? await attachBankDetails(c, original.id, userId)
         : null;
     const ownDetails = bank ? null : await attachOwnDetails(c, original.id, userId);

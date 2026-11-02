@@ -375,6 +375,9 @@ export function draftSummary(
     ]);
   } else if (draft.foreign) {
     sections.push([row("Paid to", draft.payBy === "own" ? "Your own payment details" : "Your bank account")]);
+  } else if (draft.payBy === "own") {
+    // A naira invoice to their own details rather than their account.
+    sections.push([row("Paid to", "Your own payment details")]);
   }
 
   /*

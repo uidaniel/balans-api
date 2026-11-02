@@ -180,8 +180,9 @@ export async function attachOwnDetails(
     [documentId, userId],
   );
   const r = rows[0];
-  // Naira too: this is only reached when there is no Nigerian account to
-  // stamp, which is somebody outside Nigeria billing in naira.
+  // Naira too: chosen on the form ("Paid by: My own details", 2 November
+  // 2026), or with no Nigerian account to stamp, which is somebody outside
+  // Nigeria billing in naira.
   if (!r || r.type === "quote" || r.choice !== "own" || !r.details?.trim()) return null;
   const text = ownDetailsText(r.method, r.details);
   await c.query(
