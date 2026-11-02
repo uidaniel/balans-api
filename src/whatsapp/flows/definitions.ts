@@ -1773,6 +1773,17 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
               }),
           children: [
             {
+              // What the whole invoice is for, the headline on the PDF and the
+              // page (9 October 2026). At the top: it heads the invoice.
+              type: "TextInput",
+              name: "title",
+              label: "Title",
+              "helper-text": "E.g. Website redesign, Phase 1.",
+              required: false,
+              "input-type": "text",
+              "max-chars": 120,
+            },
+            {
               type: "TextInput",
               name: "description",
               // No helper text. "Item" over a box on a form called New
@@ -1896,17 +1907,6 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
               "helper-text": o.dateHelp,
               required: false,
               "min-date": "${data.today}",
-            },
-            {
-              // What the whole invoice is for (9 October 2026). Last since 2 November:
-              // optional, and most people skip it, so it does not open the screen.
-              type: "TextInput",
-              name: "title",
-              label: "Title",
-              "helper-text": "E.g. Website redesign, Phase 1.",
-              required: false,
-              "input-type": "text",
-              "max-chars": 120,
             },
             {
               type: "Footer",
