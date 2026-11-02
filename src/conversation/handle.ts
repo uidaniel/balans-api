@@ -3543,7 +3543,6 @@ async function offerBranding(
           ),
     label: when === "setup" ? "Style my invoices" : "Add my logo",
     url: `${await settingsUrlFor(userId)}#brand`,
-    footer: "Optional · the link works for 24 hours",
   });
   if (sent.ok) {
     await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
