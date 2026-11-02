@@ -3540,7 +3540,7 @@ async function offerBranding(
     body:
       when === "setup"
         ? para(
-            `🎨 ${b("Make your invoices look like you")}`,
+            `🎨 ${b("Make your invoices look like your business")}`,
             "Add your logo, pick your colour and a design. It takes a minute, and every invoice after that carries them.",
             "Or just send your logo here as a picture.",
           )
@@ -3548,7 +3548,8 @@ async function offerBranding(
             `🎨 ${b("That one went out without your logo.")}`,
             "Add it, with your colour and design, before the next one. Or send the logo here as a picture.",
           ),
-    label: when === "setup" ? "Style my invoices" : "Add my logo",
+    // WhatsApp cuts a link button at 20 characters: "Customize my invoices" is 21.
+    label: when === "setup" ? "Customize invoices" : "Add my logo",
     url: `${await settingsUrlFor(userId)}#brand`,
   });
   if (sent.ok) {
