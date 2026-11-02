@@ -740,11 +740,11 @@ describe("line items on the document forms", () => {
         }
       });
 
-      it("offers the due date as choices with their dates (2 November 2026)", () => {
+      it("picks the date on a calendar that starts today", () => {
         for (const id of forms().slice(1)) {
-          const box = walk(screen(id)).find((n) => n.name === "due_date")!;
-          assert.equal(box.type, "Dropdown", `${id} does not offer due choices`);
-          assert.equal(box["data-source"], "${data.due_options}");
+          const picker = walk(screen(id)).find((n) => n.name === "due_date")!;
+          assert.equal(picker.type, "DatePicker", `${id} still takes the date as words`);
+          assert.equal(picker["min-date"], "${data.today}");
         }
       });
 

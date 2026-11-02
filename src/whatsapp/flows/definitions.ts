@@ -75,7 +75,6 @@ import { defaults, env } from "../../config.ts";
 import { formatNaira } from "../../../core/totals.ts";
 import { CURRENCIES, INFO, type Currency } from "../../../core/currency.ts";
 import { DEFAULT_TEMPLATE, TEMPLATES } from "../../pdf/templates.ts";
-import { addDays, weekdayOf, type Civil } from "../../../core/dates.ts";
 
 /** The marketing site, which owns the legal documents. */
 const site = env.SITE_URL.replace(/[/]$/, "");
@@ -848,16 +847,16 @@ const businessDetails: FlowDefinition = {
 // option: a Free user who picks one gets a one-payment draft and a note why.
 // Titles stay within the 30 characters a Flow dropdown shows.
 export const PLANS = [
-  { id: "one", title: "One payment", description: "The full amount, once" },
-  { id: "deposit_25", title: "25% deposit + balance", description: "A quarter to start, the rest later · Pro" },
-  { id: "deposit_50", title: "50% deposit + balance", description: "Half to start, the rest later · Pro" },
-  { id: "split_2", title: "2 equal payments", description: "Two parts of the same amount · Pro" },
-  { id: "split_3", title: "3 equal payments", description: "Three parts of the same amount · Pro" },
-  { id: "split_4", title: "4 equal payments", description: "Four parts of the same amount · Pro" },
-  { id: "split_6", title: "6 equal payments", description: "Six parts of the same amount · Pro" },
+  { id: "one", title: "One payment" },
+  { id: "deposit_25", title: "25% deposit + balance" },
+  { id: "deposit_50", title: "50% deposit + balance" },
+  { id: "split_2", title: "2 equal payments" },
+  { id: "split_3", title: "3 equal payments" },
+  { id: "split_4", title: "4 equal payments" },
+  { id: "split_6", title: "6 equal payments" },
   // Any deposit, as an amount or a percent, typed in the Deposit box under
   // this list (13 October 2026). Last, so the common answers come first.
-  { id: "deposit_custom", title: "Custom deposit + balance", description: "Type it in the box below · Pro" },
+  { id: "deposit_custom", title: "Custom deposit + balance" },
 ] as const;
 
 export type PlanId = (typeof PLANS)[number]["id"];
@@ -1026,7 +1025,7 @@ const CURRENCIES_SCHEMA = {
   ],
 };
 
-/** A list to choose from, as the form is handed it: saved clients, due dates. */
+/** Saved clients, as the first page lists them. */
 const CHOICES_SCHEMA = {
   type: "array",
   items: {
@@ -1038,8 +1037,8 @@ const CHOICES_SCHEMA = {
     },
   },
   __example__: [
-    { id: "2026-11-09", title: "In 7 days", description: "Mon 9 Nov" },
-    { id: "2026-11-16", title: "In 14 days", description: "Mon 16 Nov" },
+    { id: "4f1c2a9e-0000-4000-8000-000000000001", title: "Zenith Homes", description: "pay@zenith.ng" },
+    { id: "4f1c2a9e-0000-4000-8000-000000000002", title: "Tunde Bakare", description: "+234 803 000 0000" },
   ],
 };
 
@@ -1048,33 +1047,6 @@ export const CLIENTS_SCREEN = "CLIENTS";
 /** The blank client page that "Someone new" on CLIENTS leads to. */
 export const NEW_CLIENT_WHO = "WHO_TYPED";
 
-/**
- * The Due box's choices (2 November 2026): on receipt and the usual spans,
- * each with the real date under it, and the date a draft already has, so an
- * edit opens on it. A calendar was three taps and a squint for what is
- * nearly always "in a week" or "in two"; a date nobody listed is still a
- * sentence away ("due the 23rd").
- */
-export function dueOptions(type: "invoice" | "quote", now: Civil, current: Civil | null = null): CurrencyOption[] {
-  const day = (c: Civil) => `${WEEKDAY[weekdayOf(c)]} ${c.d} ${MONTH[c.m - 1]}`;
-  const spans: [number, string][] =
-    type === "quote"
-      ? [[7, "7 days"], [14, "14 days"], [30, "30 days"]]
-      : [[0, "On receipt"], [3, "In 3 days"], [7, "In 7 days"], [14, "In 14 days"], [30, "In 30 days"]];
-  const out: CurrencyOption[] = spans.map(([n, title]) => {
-    const c = addDays(now, n);
-    return { id: isoOf(c), title, description: n === 0 ? `Today, ${day(c)}` : day(c) };
-  });
-  if (current && !out.some((o) => o.id === isoOf(current))) {
-    out.unshift({ id: isoOf(current), title: day(current), description: "The date it has now" });
-  }
-  return out;
-}
-
-const isoOf = (c: Civil): string => `${c.y}-${String(c.m).padStart(2, "0")}-${String(c.d).padStart(2, "0")}`;
-const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 const carriedData = (numbers: "string" | "number"): Record<string, unknown> => ({
   /*
    * A saved client picked on CLIENTS (2 November 2026): its id, with the name
@@ -1082,7 +1054,6 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
    * comes back. Empty when the client was typed.
    */
   client_id: { type: "string", __example__: "" },
-  due_options: CHOICES_SCHEMA,
   client_name: { type: "string", __example__: "Daniel Uwak" },
   client_email: { type: "string", __example__: "" },
   client_phone: { type: "string", __example__: "" },
@@ -1182,7 +1153,6 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
  */
 const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<string, string> => ({
   client_id: "${data.client_id}",
-  due_options: "${data.due_options}",
   client_name: `\${${who}.client_name}`,
   client_email: `\${${who}.client_email}`,
   client_phone: `\${${who}.client_phone}`,
@@ -1887,19 +1857,24 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
             ...links,
             {
               /*
-               * Choices, not a calendar (2 November 2026): "On receipt", "In
-               * 7 days" and so on, each with its date under it. It was a
-               * DatePicker, which is three taps and a squint for what is
-               * nearly always a week or two; see `dueOptions`. The value is
-               * still YYYY-MM-DD, which `handleInvoiceForm` reads first.
+               * A calendar, not words.
+               *
+               * The box used to take "Friday" or "in two weeks" and send it
+               * through the same reader as a sentence, which worked and which
+               * nobody could see working until the draft came back. A picker
+               * shows the day being chosen, cannot be misspelt, and cannot go
+               * behind today. The sentence still takes words.
+               *
+               * The value comes back as YYYY-MM-DD, and `handleInvoiceForm`
+               * reads that before trying it as words.
                */
-              type: "Dropdown",
+              type: "DatePicker",
               name: "due_date",
               label: o.dateLabel,
+              "helper-text": o.dateHelp,
               required: false,
-              "data-source": "${data.due_options}",
+              "min-date": "${data.today}",
             },
-            { type: "TextCaption", text: o.dateHelp },
             {
               type: "Footer",
               label: "Next",
@@ -1942,8 +1917,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
         success: true,
         data: {
           client_id: { type: "string", __example__: "" },
-          due_options: CHOICES_SCHEMA,
-          client_name: { type: "string", __example__: "Daniel Uwak" },
+                  client_name: { type: "string", __example__: "Daniel Uwak" },
           client_email: { type: "string", __example__: "" },
           client_phone: { type: "string", __example__: "" },
           description: { type: "string", __example__: "Website design" },
@@ -2018,13 +1992,11 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
               },
               children: [
                 {
-                  // A list with a line under each choice, rather than a
-                  // dropdown of titles (2 November 2026).
-                  type: "RadioButtonsGroup",
+                  type: "Dropdown",
                   name: "plan",
-                  label: "How they pay",
+                  label: "Payment",
                   required: true,
-                  "data-source": PLANS.map((p) => ({ id: p.id, title: p.title, description: p.description })),
+                  "data-source": PLANS.map((p) => ({ id: p.id, title: p.title })),
                 },
                 /*
                  * The deposit for "Custom deposit", as an amount or a percent,

@@ -36,7 +36,7 @@ import {
 import { formatNaira } from "../../core/totals.ts";
 import { resolveDueDate, saysNoDueDate } from "../../core/dates.ts";
 import { titleCaseName } from "../../core/names.ts";
-import { DEFAULT_TEMPLATE, EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, dueOptions, formScreenId, itemFields, planIdFor, PLANS } from "../whatsapp/flows/definitions.ts";
+import { DEFAULT_TEMPLATE, EXTRA_ITEMS, FRESH_WHO, currencyOptions, designOptions, formScreenId, itemFields, planIdFor, PLANS } from "../whatsapp/flows/definitions.ts";
 import { askFor, DEFAULT_DESCRIPTION, draftButtons } from "../documents/summary.ts";
 import { defaults, env } from "../config.ts";
 import { INFO, type Foreign } from "../../core/currency.ts";
@@ -2772,7 +2772,6 @@ export function formValues(doc: PendingDoc, now: Civil): {
     // Typed clients, not a saved one; handle.ts offers the saved ones on a
     // new document (CLIENTS_SCREEN).
     client_id: "",
-    due_options: dueOptions(doc.type === "quote" ? "quote" : "invoice", now, doc.dueDate ?? null),
   };
 
   /*
