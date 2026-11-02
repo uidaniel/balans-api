@@ -2036,13 +2036,14 @@ export function payByOptions(x: { bank: string | null; details: string | null })
   const first = (x.details ?? "").split("\n")[0]!.trim();
   return [
     { id: "link", title: "Balans payment link", description: "Your client pays by card. Verify once." },
+    // Always offered (2 November 2026): without one, the link under the list adds it.
+    { id: "bank", title: "My bank account", description: x.bank ?? "Add it with the link below" },
+    // Last, so the box it opens sits at the foot of the list.
     {
       id: "own",
       title: "My own details",
       description: first ? (first.length > 60 ? `${first.slice(0, 59)}…` : first) : "Type them below",
     },
-    // Always offered (2 November 2026): without one, the link under the list adds it.
-    { id: "bank", title: "My bank account", description: x.bank ?? "Add it with the link below" },
   ].map(withIcon);
 }
 

@@ -53,10 +53,11 @@ describe("the pay-by box", () => {
   it("offers a card link, their own details, and their bank, even before they have one", () => {
     // Without one, the link under the list adds it (2 November 2026).
     const none = payByOptions({ bank: null, details: null });
-    assert.deepEqual(none.map((o) => o.id), ["link", "own", "bank"]);
-    assert.equal(none[2]!.description, "Add it with the link below");
+    // Their own details last (2 November 2026).
+    assert.deepEqual(none.map((o) => o.id), ["link", "bank", "own"]);
+    assert.equal(none[1]!.description, "Add it with the link below");
     const some = payByOptions({ bank: "GTBank ·· 1234", details: "paypal: ada@x.com" });
-    assert.equal(some[2]!.description, "GTBank ·· 1234");
+    assert.equal(some[1]!.description, "GTBank ·· 1234");
   });
 
   for (const key of ["invoice", "quote"]) {
