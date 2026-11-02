@@ -163,3 +163,25 @@ describe("asking to verify before it is needed (2 November 2026)", async () => {
     assert.ok(!out.effects.some((e) => e.type === "start_identity"));
   });
 });
+
+describe("the liveness answer as Dojah sends it now (2 November 2026)", () => {
+  const answering = (entity: unknown) =>
+    (async () => new Response(JSON.stringify({ entity }), { status: 200 })) as unknown as typeof fetch;
+
+  it("passes a live face", async () => {
+    const r = await liveness("x", answering({ liveness: { spoof: false, confidence: 97 }, face: { detected: true, message: "Face detected" } }));
+    assert.ok(r.ok && r.live && r.faces === 1 && r.probability === 97);
+  });
+
+  it("refuses a photo of a photo", async () => {
+    const r = await liveness("x", answering({ liveness: { spoof: true, confidence: 99.9 }, face: { detected: true, message: "Face detected" } }));
+    assert.ok(r.ok && !r.live);
+  });
+
+  it("refuses no face, and more than one", async () => {
+    const none = await liveness("x", answering({ liveness: { spoof: false, confidence: 90 }, face: { detected: false, message: "No face detected" } }));
+    const two = await liveness("x", answering({ liveness: { spoof: false, confidence: 90 }, face: { detected: true, message: "Multiple faces detected" } }));
+    assert.ok(none.ok && !none.live && none.faces === 0);
+    assert.ok(two.ok && !two.live && two.faces === 2);
+  });
+});

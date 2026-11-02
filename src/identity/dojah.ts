@@ -61,19 +61,38 @@ export async function liveness(
   image: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ ok: true; live: boolean; probability: number | null; faces: number } | Failure> {
+  /*
+   * Two shapes. The one documented when this was written (`liveness_check`,
+   * `face_detected`), and the one Dojah actually returns now (checked against
+   * the sandbox, 2 November 2026): `liveness: { spoof, confidence }` and
+   * `face: { detected, message }`. Read with only the old names, every selfie
+   * came back "not a live face".
+   */
   const r = await call<{
     entity?: {
-      liveness?: { liveness_check?: boolean; liveness_probability?: number };
-      face?: { face_detected?: boolean; multiface_detected?: boolean };
+      liveness?: { liveness_check?: boolean; liveness_probability?: number; spoof?: boolean; confidence?: number };
+      face?: { face_detected?: boolean; multiface_detected?: boolean; detected?: boolean; message?: string };
     };
   }>("/api/v1/ml/liveness", { method: "POST", body: { image: bareBase64(image) } }, fetchImpl);
   if (!r.ok) return r;
   const e = r.body.entity;
+  const l = e?.liveness;
+  const f = e?.face;
+  const detected = f?.detected === true || f?.face_detected === true;
+  const several = f?.multiface_detected === true || /multiple|more than one/i.test(f?.message ?? "");
+  const real = typeof l?.spoof === "boolean" ? l.spoof === false : l?.liveness_check === true;
+  const probability =
+    typeof l?.spoof === "boolean" && typeof l.confidence === "number"
+      ? // How sure it is that this is a live person, out of 100.
+        l.spoof ? 100 - l.confidence : l.confidence
+      : typeof l?.liveness_probability === "number"
+        ? l.liveness_probability
+        : null;
   return {
     ok: true,
-    live: e?.liveness?.liveness_check === true && e?.face?.face_detected === true && e?.face?.multiface_detected !== true,
-    probability: typeof e?.liveness?.liveness_probability === "number" ? e.liveness.liveness_probability : null,
-    faces: e?.face?.multiface_detected ? 2 : e?.face?.face_detected ? 1 : 0,
+    live: real && detected && !several,
+    probability,
+    faces: several ? 2 : detected ? 1 : 0,
   };
 }
 
