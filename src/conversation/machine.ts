@@ -647,14 +647,13 @@ export const ABROAD_HELP = "Before VAT, in the currency above. Digits only.";
 export const VOICE = {
   /** The invitation that carries the setup form. */
   /*
-   * What Balans does in one line, with the sentence they will type, then what
-   * to do (31 October 2026). The first thing the Click-to-WhatsApp ads land
-   * on: "Hi Balans, I want to try it" from somebody who has seen one advert
-   * and nothing else, and for whom "Tap below to set up" said what to press
-   * but not why.
+   * The welcome and what to press (2 November 2026). The first thing the
+   * Click-to-WhatsApp ads land on. It carried an example invoice for a day,
+   * "Type an invoice like a text, Invoice Tunde 150k", and people typed one
+   * straight away instead of setting up, so it says only what to do first.
    */
   setupInvite: para(
-    `\u{1F44B} ${b("Welcome to Balans.")} Type an invoice like a text, ${i("Invoice Tunde 150k for logo design")}, and your client pays straight into your bank.`,
+    `\u{1F44B} ${b("Welcome to Balans.")}`,
     `${b("Tap below to set up.")} It takes about a minute: your business name and your bank.`,
   ),
 
