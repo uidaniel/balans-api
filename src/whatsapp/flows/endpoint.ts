@@ -31,6 +31,7 @@ import {
   type KeyObject,
 } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
+import { env } from "../../config.ts";
 import { db } from "../../db/pool.ts";
 import { decrypt, encrypt } from "../../lib/crypto.ts";
 import { findBank, checkAccount } from "../../payments/bank-directory.ts";
@@ -39,6 +40,7 @@ import { MFB_CHOICE } from "./banks.ts";
 import { PAY_METHODS } from "./pay-methods.ts";
 import * as actions from "./actions.ts";
 import { PAYMENT_SCREEN, payByOptions, termsKeys } from "./definitions.ts";
+import { issueIdentityToken } from "../../identity/verify.ts";
 
 const KEY_CONFIG = "flow_endpoint.private_key";
 
@@ -599,6 +601,7 @@ export async function paymentStep(
 
   let options: { id: string; title: string; description?: string }[] = [];
   let chosen = "";
+  let hasBank = false;
   if (show) {
     const { rows } = await db()
       .query<{ by: string | null; details: string | null; bank: string | null; last4: string | null }>(
@@ -614,12 +617,20 @@ export async function paymentStep(
       )
       .catch(() => ({ rows: [] as { by: string | null; details: string | null; bank: string | null; last4: string | null }[] }));
     const u = rows[0];
+    hasBank = Boolean(u?.bank);
     options = payByOptions({ bank: u?.bank ? `${u.bank}${u.last4 ? ` ·· ${u.last4}` : ""}` : null, details: u?.details ?? null });
     const had = typeof sent.pay_by === "string" ? sent.pay_by : "";
     chosen = options.some((o) => o.id === had) ? had : options.some((o) => o.id === u?.by) ? (u!.by as string) : "link";
   }
 
+  const base = env.PUBLIC_BASE_URL.replace(/\/$/, "");
+  const noBank = show && !hasBank;
+  const addBankUrl = noBank ? `${base}/bank/${await issueIdentityToken(userId)}` : base;
+
   const data: Record<string, unknown> = {};
   for (const k of termsKeys()) if (k in sent) data[k] = sent[k];
-  return { screen: PAYMENT_SCREEN, data: { ...data, show_pay_by: show, pay_bys: options, pay_by: chosen } };
+  return {
+    screen: PAYMENT_SCREEN,
+    data: { ...data, show_pay_by: show, pay_bys: options, pay_by: chosen, show_add_bank: noBank, add_bank_url: addBankUrl },
+  };
 }

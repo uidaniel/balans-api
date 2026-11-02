@@ -1674,6 +1674,13 @@ async function runEffects(
             const { rows: def } = await db().query<{ by: string | null }>(`SELECT abroad_pay_by AS by FROM users WHERE id = $1`, [userId]);
             payBy = def[0]?.by === "own" ? "own" : "link";
           }
+          // "My bank account" with none added (the form lists it always now).
+          if (payBy === "bank" && doc.foreign && !(await accountInForce(userId))) {
+            payBy = "link";
+            extra.push(
+              i(`You have no bank account yet, so this one uses the card link. Send ${b("add bank")} to add one.`),
+            );
+          }
           if (payBy === "own" && doc.foreign) {
             const { rows: own } = await db().query<{ d: string | null }>(
               `SELECT payment_details AS d FROM users WHERE id = $1`,

@@ -50,10 +50,23 @@ describe("the pay-by box", () => {
     assert.doesNotMatch(JSON.stringify(FLOWS.find((f) => f.key === "request")!.json), /pay_by/);
   });
 
-  it("offers a card link, their own details, and their bank when they have one", () => {
-    assert.deepEqual(payByOptions({ bank: null, details: null }).map((o) => o.id), ["link", "own"]);
-    assert.deepEqual(payByOptions({ bank: "GTBank ·· 1234", details: "paypal: ada@x.com" }).map((o) => o.id), ["link", "own", "bank"]);
+  it("offers a card link, their own details, and their bank, even before they have one", () => {
+    // Without one, the link under the list adds it (2 November 2026).
+    const none = payByOptions({ bank: null, details: null });
+    assert.deepEqual(none.map((o) => o.id), ["link", "own", "bank"]);
+    assert.equal(none[2]!.description, "Add it with the link below");
+    const some = payByOptions({ bank: "GTBank ·· 1234", details: "paypal: ada@x.com" });
+    assert.equal(some[2]!.description, "GTBank ·· 1234");
   });
+
+  for (const key of ["invoice", "quote"]) {
+    it(`${key}: the add-bank link opens a page, shown only by the server`, () => {
+      const json = FLOWS.find((f) => f.key === key)!.json as { screens: Node[] };
+      const link = walk(json.screens.find((s) => s.id === PAYMENT_SCREEN)).find((n) => n.type === "EmbeddedLink")!;
+      assert.equal(link.visible, "${data.show_add_bank}");
+      assert.deepEqual(link["on-click-action"], { name: "open_url", url: "${data.add_bank_url}" });
+    });
+  }
 
   it("is only read for another currency", () => {
     const handle = readFileSync(new URL("../../conversation/handle.ts", import.meta.url), "utf8");

@@ -1937,6 +1937,9 @@ function termsData(): Record<string, unknown> {
     // Set by the server when the amount screen checks in (see paymentScreen).
     show_pay_by: { type: "boolean", __example__: false },
     pay_bys: PAY_BY_SCHEMA,
+    // No bank account yet: a link to add one in a page (2 November 2026).
+    show_add_bank: { type: "boolean", __example__: false },
+    add_bank_url: { type: "string", __example__: "https://balans.ng/bank/abc" },
     client_id: { type: "string", __example__: "" },
     client_name: { type: "string", __example__: "Daniel Uwak" },
     client_email: { type: "string", __example__: "" },
@@ -2035,7 +2038,8 @@ export function payByOptions(x: { bank: string | null; details: string | null })
       title: "My own details",
       description: first ? (first.length > 60 ? `${first.slice(0, 59)}…` : first) : "PayPal, Wise and so on. I will ask you for them.",
     },
-    ...(x.bank ? [{ id: "bank", title: "My bank account", description: x.bank }] : []),
+    // Always offered (2 November 2026): without one, the link under the list adds it.
+    { id: "bank", title: "My bank account", description: x.bank ?? "Add it with the link below" },
   ].map(withIcon);
 }
 
@@ -2077,6 +2081,18 @@ function paymentScreen(): Record<string, unknown> {
               required: "${data.show_pay_by}",
               visible: "${data.show_pay_by}",
               "data-source": "${data.pay_bys}",
+            },
+            {
+              /*
+               * For "My bank account" without one (2 November 2026). A list
+               * option cannot open a page; a link can, and the server shows
+               * it only to somebody with no bank account. The page is theirs
+               * (a token in the address), and they come back and pick it.
+               */
+              type: "EmbeddedLink",
+              text: "Add your bank account",
+              visible: "${data.show_add_bank}",
+              "on-click-action": { name: "open_url", url: "${data.add_bank_url}" },
             },
             {
               type: "RadioButtonsGroup",

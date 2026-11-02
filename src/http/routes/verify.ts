@@ -363,6 +363,76 @@ function tryBank(userId: string): boolean {
   return true;
 }
 
+/**
+ * Adding a payout account from the invoice form's "Add your bank account"
+ * link (2 November 2026): the bank sheet as a page of its own, using the same
+ * lookup and confirm as the verify page, and then back to WhatsApp.
+ */
+export function addBankPage(token: string, existing: string | null, waNumber: string | null): string {
+  const wa = waNumber ? `https://wa.me/${waNumber.replace(/\D/g, "")}` : null;
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow"><meta name="format-detection" content="telephone=no">
+<title>Add your bank account · Balans</title>
+<style>${CSS}
+.solo{text-align:center}.solo .art{display:block;width:120px;height:120px;margin:0 auto 6px;object-fit:contain}
+.solo h2{font-weight:400;font-size:26px;letter-spacing:-.04em}.solo .lead{color:var(--faint);font-size:14.5px;line-height:1.5;margin:8px auto 18px;max-width:360px}
+.solo .step{text-align:left}</style></head>
+<body>
+<header class="top"><div class="in"><div class="brand">${darkLogo("26px")}</div></div></header>
+<main class="wrap"><div class="card solo">
+  <img class="art" src="/brand/bank-3d.png" alt="">
+  <section id="add"${existing ? " hidden" : ""}>
+    <h2>Add your bank account</h2>
+    <p class="lead">Your client pays into it. The name on it comes from your bank.</p>
+    <div class="step"><label for="bk">Bank</label>${bankSelect()}</div>
+    <div class="step" style="border:0;padding-top:0;margin-top:14px"><label for="acno">Account number</label>
+      <input id="acno" type="text" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="10 digits"></div>
+    <button class="pill gold" id="check" type="button">Check account</button>
+    <p class="say" id="say3" role="status"></p>
+    <div class="found" id="found" hidden>
+      <p class="who" id="fname"></p><p class="bk" id="fbank"></p>
+      <button class="pill gold" id="yes" type="button">Yes, that's me</button>
+      <button class="link" id="notme" type="button">Not me, try another number</button>
+    </div>
+  </section>
+  <section id="done"${existing ? "" : " hidden"}>
+    <h2>Bank account added</h2>
+    <p class="lead" id="donetext">${existing ? `You already have one: ${esc(existing)}.` : ""} Close this page to go back to your invoice, and choose <b>My bank account</b>.</p>
+    ${wa ? `<a class="link" href="${esc(wa)}">Invoice already closed? Open WhatsApp</a>` : ""}
+  </section>
+</div></main>
+<script>
+const $ = (id) => document.getElementById(id);
+const say = (id, t, cls) => { const e = $(id); e.textContent = t || ""; e.className = "say" + (cls ? " " + cls : ""); };
+const base = "/verify/${esc(token)}";
+async function post(path, body) {
+  const r = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  return r.json().catch(() => ({ ok: false, words: "Something went wrong. Try again." }));
+}
+$("check") && $("check").addEventListener("click", async () => {
+  const code = $("bk").value, number = $("acno").value.replace(/\\D/g, "");
+  if (!code) return say("say3", "Choose your bank.", "err");
+  if (number.length !== 10) return say("say3", "An account number is 10 digits.", "err");
+  $("check").disabled = true; say("say3", "Asking your bank…");
+  const r = await post("/bank/check", { code, number });
+  $("check").disabled = false;
+  if (!r.ok) { $("found").hidden = true; return say("say3", r.words, "err"); }
+  say("say3", ""); $("fname").textContent = r.name; $("fbank").textContent = r.bank + " · " + number; $("found").hidden = false;
+});
+$("notme") && $("notme").addEventListener("click", () => { $("found").hidden = true; $("acno").value = ""; $("acno").focus(); });
+$("yes") && $("yes").addEventListener("click", async () => {
+  $("yes").disabled = true;
+  const r = await post("/bank/confirm", {});
+  $("yes").disabled = false;
+  if (!r.ok) return say("say3", r.words, "err");
+  $("add").hidden = true; $("done").hidden = false;
+});
+</script>
+</body></html>`;
+}
+
 export async function identityRoutes(app: FastifyInstance): Promise<void> {
   const headers = {
     "cache-control": "no-store, private",
@@ -382,6 +452,22 @@ export async function identityRoutes(app: FastifyInstance): Promise<void> {
           owner.status,
           owner.status === "person" ? (account?.accountName ?? null) : null,
           !account,
+          await displayNumber().catch(() => null),
+        ),
+      );
+  });
+
+  app.get<{ Params: { token: string } }>("/bank/:token", async (req, reply) => {
+    const owner = await ownerOfIdentityToken(req.params.token);
+    if (!owner) return reply.status(404).type(HTML).headers(headers).send(gone());
+    const account = await accountInForce(owner.id);
+    return reply
+      .type(HTML)
+      .headers(headers)
+      .send(
+        addBankPage(
+          req.params.token,
+          account ? `${account.bankName}${account.last4 ? ` ·· ${account.last4}` : ""}` : null,
           await displayNumber().catch(() => null),
         ),
       );
