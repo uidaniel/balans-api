@@ -57,6 +57,24 @@ const ABROAD: Partial<Draft> = {
   foreign: { currency: "USD", amountMinor: 1_507, rate: 1_327.2, source: "open.er-api.com", fetchedAt: "2026-09-24T06:00:00.000Z" },
 };
 
+describe("a dollar invoice not paid by card (2 November 2026)", () => {
+  const today = { y: 2026, m: 9, d: 24 };
+  for (const payBy of ["bank", "own"] as const) {
+    it(`${payBy}: the agreed price alone, no naira and no rate`, () => {
+      const html = receiptHtml(draft({ ...ABROAD, payBy }), "pro", today);
+      assert.ok(!html.includes("Naira amount"), payBy);
+      assert.ok(!html.includes("$1 →"), payBy);
+      assert.ok(html.includes("$15.07"), payBy);
+      assert.ok(html.includes(payBy === "own" ? "To you" : "To your bank"), payBy);
+    });
+  }
+
+  it("keeps the naira side for the card link", () => {
+    const html = receiptHtml(draft({ ...ABROAD, payBy: "link" }), "pro", today);
+    assert.ok(html.includes("Naira amount"));
+  });
+});
+
 describe("what the receipt says", () => {
   it("pays a naira invoice straight to the bank, with nothing taken", () => {
     // No processor touches it (bank-details.ts): no processor fee, no Balans

@@ -229,9 +229,17 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
 
 `
     : `<div class="rows">
-      ${row("Fees", "₦0", { muted: true })}
+      ${row("Fees", draft.foreign ? "None" : "₦0", { muted: true })}
     </div>
-    <div class="total"><span class="ic">${BANK}</span>${row("To your bank", formatNaira(draft.totalKobo), { strong: true })}</div>`;
+    <div class="total"><span class="ic">${BANK}</span>${row(
+      draft.payBy === "own" ? "To you" : "To your bank",
+      // Paid directly abroad, in the invoice's own currency: no conversion
+      // happens, so no naira figure is made up for it (2 November 2026).
+      draft.foreign
+        ? formatMoney(agreedTotalMinor(draft.foreign.amountMinor, draft.subtotalKobo, draft.vatKobo), draft.foreign.currency)
+        : formatNaira(draft.totalKobo),
+      { strong: true },
+    )}</div>`;
 
   return `<!doctype html>
 <html><head><meta charset="utf-8"><style>
@@ -366,7 +374,12 @@ export function receiptHtml(draft: Draft, plan: "free" | "pro", today: Civil): s
          * The agreed side includes VAT, because the naira side does: the
          * card used to set "$650.00" beside ₦927,892.70, which is $698.75.
          */
-        draft.foreign
+        // The naira side only when a card is charged in naira; paid to
+        // their own bank or details, it is the agreed price alone.
+        draft.foreign && !card
+          ? `<div class="cap">${esc(words.amount)}</div>
+             <div class="amount">${esc(formatMoney(agreedTotalMinor(draft.foreign.amountMinor, draft.subtotalKobo, draft.vatKobo), draft.foreign.currency))}</div>`
+          : draft.foreign
           ? `<div class="pair">
                <div class="side"><div class="cap">${esc(words.amount)}</div>
                  <div class="amount">${esc(formatMoney(agreedTotalMinor(draft.foreign.amountMinor, draft.subtotalKobo, draft.vatKobo), draft.foreign.currency))}</div></div>
