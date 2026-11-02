@@ -16,7 +16,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { CLIENTS_SCREEN, FLOWS, PLANS, planIdFor, splitForPlan } from "./definitions.ts";
+import { CLIENTS_SCREEN, FLOWS, FRESH_WHO, PLANS, planIdFor, splitForPlan } from "./definitions.ts";
 import { MFB_CHOICE, PAYSTACK_BANKS, DROPDOWN_MAX, bankOptions, bankTitle, isMicrofinance, mfbOptions } from "./banks.ts";
 import { shapeFor } from "../../documents/parts.ts";
 import { matchBank } from "../../payments/bank-match.ts";
@@ -745,6 +745,24 @@ describe("line items on the document forms", () => {
           const box = walk(screen(id)).find((n) => n.name === "due_date")!;
           assert.equal(box.type, "Dropdown", `${id} does not offer due choices`);
           assert.equal(box["data-source"], "${data.due_options}");
+        }
+      });
+
+      it("can still open on every screen the code opens it on", () => {
+        /*
+         * Meta lets a form open only on a screen that nothing in it leads to,
+         * and refuses the whole message otherwise: "Specified screen WHO_NEW
+         * is not allowed as first screen of this flow" (2 November 2026, when
+         * "Someone new" pointed there and every new account got the text
+         * version instead of the form).
+         */
+        const targets = new Set(
+          walk(json)
+            .filter((n) => n.type === "screen" && typeof n.name === "string")
+            .map((n) => String(n.name)),
+        );
+        for (const id of ["WHO", FRESH_WHO, CLIENTS_SCREEN]) {
+          assert.ok(!targets.has(id), `${id} is led to from another screen, so the form cannot open on it`);
         }
       });
 

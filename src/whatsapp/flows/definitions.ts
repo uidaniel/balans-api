@@ -1045,6 +1045,8 @@ const CHOICES_SCHEMA = {
 
 /** The screen that lists saved clients, for a new document from somebody who has any. */
 export const CLIENTS_SCREEN = "CLIENTS";
+/** The blank client page that "Someone new" on CLIENTS leads to. */
+export const NEW_CLIENT_WHO = "WHO_TYPED";
 
 /**
  * The Due box's choices (2 November 2026): on receipt and the usual spans,
@@ -1515,7 +1517,10 @@ function clientsScreen(o: DocumentFlow): Record<string, unknown> {
               text: "Someone new",
               "on-click-action": {
                 name: "navigate",
-                next: { type: "screen", name: FRESH_WHO },
+                // Its own copy of the blank page, not FRESH_WHO: Meta lets a
+                // form open only on a screen nothing else leads to, and a new
+                // account opens on FRESH_WHO (2 November 2026).
+                next: { type: "screen", name: NEW_CLIENT_WHO },
                 payload: { ...carriedPayload("data", "data"), client_id: "" },
               },
             },
@@ -1549,9 +1554,9 @@ function clientsScreen(o: DocumentFlow): Record<string, unknown> {
  * Everything else rides through in `data`, typed as WORK declares it, so a
  * draft reopened here still has its items when Next lands on the next page.
  */
-function whoScreen(o: DocumentFlow, fresh = false): Record<string, unknown> {
+function whoScreen(o: DocumentFlow, fresh = false, id?: string): Record<string, unknown> {
   return {
-    id: fresh ? FRESH_WHO : "WHO",
+    id: id ?? (fresh ? FRESH_WHO : "WHO"),
     title: o.title,
     terminal: false,
     data: carriedData("number"),
@@ -1927,6 +1932,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
       whoScreen(o, true),
       formScreen(o, 1, true, true),
       clientsScreen(o),
+      whoScreen(o, true, NEW_CLIENT_WHO),
       ...TOTALS.map((_, i) => formScreen(o, i + 1, false)),
       ...EXTRA_ITEMS.map((_, index) => itemScreen(index, o)),
       {
