@@ -228,6 +228,24 @@ describe("the shape of a draft on screen", () => {
     assert.doesNotMatch(text, /1,427/);
   });
 
+  it("converts to naira only for the Balans card link (2 November 2026)", () => {
+    const dollar = {
+      lines: [{ description: "Website", qty: 1, unitAmountKobo: 665_000_00, originalUnitAmountMinor: 500_00 }],
+      subtotalKobo: 665_000_00,
+      vatKobo: 0,
+      vatPercent: null,
+      totalKobo: 665_000_00,
+      depositPercent: null,
+      foreign: { currency: "USD", amountMinor: 500_00, rate: 1330, source: "open.er-api.com", fetchedAt: "2026-11-02T09:00:00Z" },
+    };
+    assert.match(shown({ ...dollar, payBy: "link" }), /Client pays: \*₦665,000\*\nRate: \$1 = ₦1,330/);
+    for (const [by, words] of [["own", "Your own payment details"], ["bank", "Your bank account"]] as const) {
+      const text = shown({ ...dollar, payBy: by });
+      assert.doesNotMatch(text, /Client pays|Rate:|₦/, by);
+      assert.match(text, new RegExp(`Paid to: ${words}`));
+    }
+  });
+
   it("leaves out the groups the draft has nothing for", () => {
     // No empty gaps where a section would have been: an invoice with no VAT,
     // no plan and no email is four short paragraphs, not four and three

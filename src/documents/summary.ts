@@ -331,11 +331,18 @@ export function draftSummary(
    * which was right until VAT: the naira total has VAT in it and the dollar
    * price did not, so a ₦1,327.93 rate was shown as ₦1,427.53.
    */
-  if (draft.foreign) {
+  /*
+   * Only for the Balans card link (2 November 2026). Paid to their own
+   * details or their bank, the client pays them directly in the invoice's
+   * currency, and a naira figure here was a charge that never happens.
+   */
+  if (draft.foreign && draft.payBy !== "own" && draft.payBy !== "bank") {
     sections.push([
       row("Client pays", b(formatNaira(draft.totalKobo))),
       row("Rate", `${INFO[draft.foreign.currency].symbol}1 = ${formatNaira(Math.round(draft.foreign.rate * 100))}`),
     ]);
+  } else if (draft.foreign) {
+    sections.push([row("Paid to", draft.payBy === "own" ? "Your own payment details" : "Your bank account")]);
   }
 
   /*

@@ -1658,6 +1658,17 @@ async function runEffects(
             );
             payBy = null;
           }
+          /*
+           * No choice of its own (a typed invoice): their default from
+           * settings, settled here so the draft, its card and the page all
+           * say the same thing (2 November 2026). It was only settled at
+           * send, so the draft showed a card conversion for an invoice going
+           * to their own details.
+           */
+          if (doc.foreign && !payBy) {
+            const { rows: def } = await db().query<{ by: string | null }>(`SELECT abroad_pay_by AS by FROM users WHERE id = $1`, [userId]);
+            payBy = def[0]?.by === "own" ? "own" : "link";
+          }
           if (payBy === "own" && doc.foreign) {
             const { rows: own } = await db().query<{ d: string | null }>(
               `SELECT payment_details AS d FROM users WHERE id = $1`,
