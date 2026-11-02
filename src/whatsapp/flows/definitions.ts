@@ -847,16 +847,16 @@ const businessDetails: FlowDefinition = {
 // option: a Free user who picks one gets a one-payment draft and a note why.
 // Titles stay within the 30 characters a Flow dropdown shows.
 export const PLANS = [
-  { id: "one", title: "One payment" },
-  { id: "deposit_25", title: "25% deposit + balance" },
-  { id: "deposit_50", title: "50% deposit + balance" },
-  { id: "split_2", title: "2 equal payments" },
-  { id: "split_3", title: "3 equal payments" },
-  { id: "split_4", title: "4 equal payments" },
-  { id: "split_6", title: "6 equal payments" },
+  { id: "one", title: "One payment", description: "The full amount, once" },
+  { id: "deposit_25", title: "25% deposit + balance", description: "A quarter to start, the rest later · Pro" },
+  { id: "deposit_50", title: "50% deposit + balance", description: "Half to start, the rest later · Pro" },
+  { id: "split_2", title: "2 equal payments", description: "Two parts of the same amount · Pro" },
+  { id: "split_3", title: "3 equal payments", description: "Three parts of the same amount · Pro" },
+  { id: "split_4", title: "4 equal payments", description: "Four parts of the same amount · Pro" },
+  { id: "split_6", title: "6 equal payments", description: "Six parts of the same amount · Pro" },
   // Any deposit, as an amount or a percent, typed in the Deposit box under
   // this list (13 October 2026). Last, so the common answers come first.
-  { id: "deposit_custom", title: "Custom deposit + balance" },
+  { id: "deposit_custom", title: "Custom deposit + balance", description: "Type it in the box below · Pro" },
 ] as const;
 
 export type PlanId = (typeof PLANS)[number]["id"];
@@ -1880,11 +1880,150 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
               label: "Next",
               "on-click-action": {
                 name: "navigate",
-                next: { type: "screen", name: "TERMS" },
-                // TERMS holds all five slots whichever way somebody got there,
+                next: { type: "screen", name: PAYMENT_SCREEN },
+                // PAYMENT and TERMS hold all five slots whichever way somebody got there,
                 // so the ones this screen does not have go as the empty
                 // strings it declares.
                 payload: { ...mine, ...emptyItems(extras.length) },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+/** What the last two screens hold: everything typed so far, and the terms. */
+function termsData(): Record<string, unknown> {
+  return {
+    client_id: { type: "string", __example__: "" },
+    client_name: { type: "string", __example__: "Daniel Uwak" },
+    client_email: { type: "string", __example__: "" },
+    client_phone: { type: "string", __example__: "" },
+    description: { type: "string", __example__: "Website design" },
+    // A string for the reason `amount` below is one.
+    qty: { type: "string", __example__: "" },
+    // A string, and not a mistake.
+    //
+    // WORK declares this a number, because it initialises a
+    // `input-type: "number"` field and Meta checks the declared type
+    // against the input it fills. But the value that comes back out of
+    // that same field — ${form.amount} in WORK's Footer payload — is a
+    // string, so this screen receives a string.
+    //
+    // Declaring it a number here passes the publish validator and then
+    // fails on a real phone, at the moment somebody taps Next:
+    //
+    //   Data Validation Error
+    //   [key=data.amount] in object should be of type <number>, but got
+    //   <string>.
+    //
+    // Nothing in the JSON connects those two declarations, which is why
+    // definitions.test.ts now checks this specific direction.
+    amount: { type: "string", __example__: "250000" },
+    due_date: { type: "string", __example__: "" },
+    plan: { type: "string", __example__: "one" },
+    notes: { type: "string", __example__: "" },
+    deposit: { type: "string", __example__: "" },
+    deposit_help: { type: "string", __example__: "An amount like 100000, or a percent like 30%." },
+    title: { type: "string", __example__: "" },
+    vat: { type: "boolean", __example__: false },
+    designs: CURRENCIES_SCHEMA,
+    design: { type: "string", __example__: "classic" },
+    today: { type: "string", __example__: "2026-09-26" },
+    /*
+     * A string for the same reason `amount` is one: it arrives out of a
+     * Dropdown on WORK as `${form.currency}`, and what a form returns is
+     * a string. Empty when nobody chose — either the box was hidden,
+     * which it is for everyone but Pro, or it was shown and left alone.
+     * Both mean naira.
+     */
+    currency: { type: "string", __example__: "" },
+    // Never shown on this screen and never edited here; TERMS only has
+    // to declare them because it is the screen that hands everything on.
+    can_bill_abroad: { type: "boolean", __example__: false },
+    show_currency: { type: "boolean", __example__: false },
+    currencies: CURRENCIES_SCHEMA,
+    amount_help: { type: "string", __example__: "Naira, before VAT. Digits only." },
+    can_whatsapp_client: { type: "boolean", __example__: false },
+    phone_help: { type: "string", __example__: "WhatsApp delivery comes with Pro." },
+    // Strings, like everywhere. TERMS initialises none of them, so it
+    // carries no starting numbers either. See itemData.
+    ...itemData(EXTRA_ITEMS.length),
+  };
+}
+
+/** Every key of `termsData`, handed on as it arrived. */
+const passData = (): Record<string, string> =>
+  Object.fromEntries(Object.keys(termsData()).map((k) => [k, `\${data.${k}}`]));
+
+export const PAYMENT_SCREEN = "PAYMENT";
+
+/**
+ * How the client pays, on a screen of its own (2 November 2026): one choice,
+ * as a list with a line under each option, before the last details. It was a
+ * dropdown among VAT, notes and design, and easy to pass over.
+ *
+ * The custom deposit box is here, under the list, appearing when "Custom
+ * deposit" is picked: a condition on a box on this same screen, the kind that
+ * works on phones. One on a value chosen a screen earlier is what did not.
+ */
+function paymentScreen(): Record<string, unknown> {
+  return {
+    id: PAYMENT_SCREEN,
+    title: "How it is paid",
+    terminal: false,
+    data: termsData(),
+    layout: {
+      type: "SingleColumnLayout",
+      children: [
+        { type: "TextSubheading", text: "How will they pay?" },
+        {
+          type: "Form",
+          name: "payment_form",
+          "init-values": { plan: "${data.plan}" },
+          children: [
+            {
+              type: "RadioButtonsGroup",
+              name: "plan",
+              label: "Payment",
+              required: true,
+              "data-source": PLANS.map((p) => ({ id: p.id, title: p.title, description: p.description })),
+            },
+            /*
+             * The deposit for "Custom deposit", as an amount or a percent,
+             * on the screen only once that is the choice (13 October 2026).
+             *
+             * Named nowhere in `init-values`, because a field inside an
+             * `If` that is not showing is not on the screen, and naming
+             * one there is what broke this form before (see EXTRA_ITEMS).
+             * So it opens empty, and an empty box on a draft that already
+             * has a custom deposit keeps that deposit (handleInvoiceForm);
+             * the helper says what it is now.
+             */
+            {
+              type: "If",
+              condition: "${form.plan} == 'deposit_custom'",
+              then: [
+                {
+                  type: "TextInput",
+                  name: "deposit",
+                  label: "Deposit",
+                  "helper-text": "${data.deposit_help}",
+                  required: false,
+                  "input-type": "text",
+                  "max-chars": 14,
+                },
+              ],
+            },
+            {
+              type: "Footer",
+              label: "Next",
+              "on-click-action": {
+                name: "navigate",
+                next: { type: "screen", name: "TERMS" },
+                payload: { ...passData(), plan: "${form.plan}", deposit: "${form.deposit}" },
               },
             },
           ],
@@ -1910,120 +2049,25 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
       whoScreen(o, true, NEW_CLIENT_WHO),
       ...TOTALS.map((_, i) => formScreen(o, i + 1, false)),
       ...EXTRA_ITEMS.map((_, index) => itemScreen(index, o)),
+      paymentScreen(),
       {
         id: "TERMS",
-        title: "How it is paid",
+        title: "Last details",
         terminal: true,
         success: true,
-        data: {
-          client_id: { type: "string", __example__: "" },
-                  client_name: { type: "string", __example__: "Daniel Uwak" },
-          client_email: { type: "string", __example__: "" },
-          client_phone: { type: "string", __example__: "" },
-          description: { type: "string", __example__: "Website design" },
-          // A string for the reason `amount` below is one.
-          qty: { type: "string", __example__: "" },
-          // A string, and not a mistake.
-          //
-          // WORK declares this a number, because it initialises a
-          // `input-type: "number"` field and Meta checks the declared type
-          // against the input it fills. But the value that comes back out of
-          // that same field — ${form.amount} in WORK's Footer payload — is a
-          // string, so this screen receives a string.
-          //
-          // Declaring it a number here passes the publish validator and then
-          // fails on a real phone, at the moment somebody taps Next:
-          //
-          //   Data Validation Error
-          //   [key=data.amount] in object should be of type <number>, but got
-          //   <string>.
-          //
-          // Nothing in the JSON connects those two declarations, which is why
-          // definitions.test.ts now checks this specific direction.
-          amount: { type: "string", __example__: "250000" },
-          due_date: { type: "string", __example__: "" },
-          plan: { type: "string", __example__: "one" },
-          notes: { type: "string", __example__: "" },
-          deposit: { type: "string", __example__: "" },
-          deposit_help: { type: "string", __example__: "An amount like 100000, or a percent like 30%." },
-          title: { type: "string", __example__: "" },
-          vat: { type: "boolean", __example__: false },
-          designs: CURRENCIES_SCHEMA,
-          design: { type: "string", __example__: "classic" },
-          today: { type: "string", __example__: "2026-09-26" },
-          /*
-           * A string for the same reason `amount` is one: it arrives out of a
-           * Dropdown on WORK as `${form.currency}`, and what a form returns is
-           * a string. Empty when nobody chose — either the box was hidden,
-           * which it is for everyone but Pro, or it was shown and left alone.
-           * Both mean naira.
-           */
-          currency: { type: "string", __example__: "" },
-          // Never shown on this screen and never edited here; TERMS only has
-          // to declare them because it is the screen that hands everything on.
-          can_bill_abroad: { type: "boolean", __example__: false },
-          show_currency: { type: "boolean", __example__: false },
-          currencies: CURRENCIES_SCHEMA,
-          amount_help: { type: "string", __example__: "Naira, before VAT. Digits only." },
-          can_whatsapp_client: { type: "boolean", __example__: false },
-          phone_help: { type: "string", __example__: "WhatsApp delivery comes with Pro." },
-          // Strings, like everywhere. TERMS initialises none of them, so it
-          // carries no starting numbers either. See itemData.
-          ...itemData(EXTRA_ITEMS.length),
-        },
+        data: termsData(),
         layout: {
           type: "SingleColumnLayout",
           children: [
             {
-              type: "TextSubheading",
-              // Says what happens if they change nothing (31 October 2026).
-              // It said "Leave this alone for one payment on the due date",
-              // which reads as an instruction rather than a default.
-              text: "One payment on the due date, unless you choose a deposit or parts below.",
-            },
-            {
               type: "Form",
               name: "terms_form",
               "init-values": {
-                plan: "${data.plan}",
                 notes: "${data.notes}",
                 vat: "${data.vat}",
                 design: "${data.design}",
               },
               children: [
-                {
-                  type: "Dropdown",
-                  name: "plan",
-                  label: "Payment",
-                  required: true,
-                  "data-source": PLANS.map((p) => ({ id: p.id, title: p.title })),
-                },
-                /*
-                 * The deposit for "Custom deposit", as an amount or a percent,
-                 * on the screen only once that is the choice (13 October 2026).
-                 *
-                 * Named nowhere in `init-values`, because a field inside an
-                 * `If` that is not showing is not on the screen, and naming
-                 * one there is what broke this form before (see EXTRA_ITEMS).
-                 * So it opens empty, and an empty box on a draft that already
-                 * has a custom deposit keeps that deposit (handleInvoiceForm);
-                 * the helper says what it is now.
-                 */
-                {
-                  type: "If",
-                  condition: "${form.plan} == 'deposit_custom'",
-                  then: [
-                    {
-                      type: "TextInput",
-                      name: "deposit",
-                      label: "Deposit",
-                      "helper-text": "${data.deposit_help}",
-                      required: false,
-                      "input-type": "text",
-                      "max-chars": 14,
-                    },
-                  ],
-                },
                 {
                   type: "OptIn",
                   name: "vat",
@@ -2083,8 +2127,9 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       // Chosen three screens back, and the only thing on the
                       // submission that says this is not a naira invoice.
                       currency: "${data.currency}",
-                      plan: "${form.plan}",
-                      deposit: "${form.deposit}",
+                      // Chosen on PAYMENT, the screen before.
+                      plan: "${data.plan}",
+                      deposit: "${data.deposit}",
                       design: "${form.design}",
                       vat: "${form.vat}",
                       notes: "${form.notes}",
