@@ -38,6 +38,7 @@ import { loadConversation, saveConversation, upsertUser } from "../../conversati
 import { MFB_CHOICE } from "./banks.ts";
 import { PAY_METHODS } from "./pay-methods.ts";
 import * as actions from "./actions.ts";
+import { PAYMENT_SCREEN, payByOptions, termsKeys } from "./definitions.ts";
 
 const KEY_CONFIG = "flow_endpoint.private_key";
 
@@ -240,6 +241,14 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
   }
 
   const [key, who, phone] = (req.flow_token ?? "").split(":");
+
+  /*
+   * The invoice and quote forms, between the amount and how it is paid
+   * (2 November 2026): "Paid by" only for a currency other than naira.
+   */
+  if ((key === "invoice" || key === "quote") && req.action === "data_exchange" && who) {
+    return paymentStep(who, (req.data ?? {}) as Record<string, unknown>, deps);
+  }
   const known = key === "onboarding" || key === "payout_change";
   /*
    * `onboarding:wa:<number>` is the setup form sent to the waitlist, to
@@ -571,4 +580,46 @@ async function recallChecked(userId: string): Promise<Remembered | null> {
     accountNumber: c.accountNumber,
     accountName: c.accountName,
   };
+}
+
+/**
+ * PAYMENT, handed everything the amount screen sent and the "Paid by" box:
+ * on for another currency, unless they bill from abroad, where their own
+ * currency is home and they are paid to their own details anyway. Opens on
+ * the draft's own choice, else their default from settings.
+ */
+export async function paymentStep(
+  userId: string,
+  sent: Record<string, unknown>,
+  deps: Deps = {},
+): Promise<Record<string, unknown>> {
+  const act = { ...actions, ...deps.actions };
+  const currency = typeof sent.currency === "string" && sent.currency ? sent.currency : "NGN";
+  const show = currency !== "NGN" && !(await act.isAbroad(userId).catch(() => false));
+
+  let options: { id: string; title: string; description?: string }[] = [];
+  let chosen = "";
+  if (show) {
+    const { rows } = await db()
+      .query<{ by: string | null; details: string | null; bank: string | null; last4: string | null }>(
+        `SELECT u.abroad_pay_by AS by, u.payment_details AS details,
+                b.bank_name AS bank, b.account_last4 AS last4
+           FROM users u
+           LEFT JOIN LATERAL (
+             SELECT bank_name, account_last4 FROM bank_accounts
+              WHERE user_id = u.id AND status = 'active' ORDER BY created_at DESC LIMIT 1
+           ) b ON true
+          WHERE u.id = $1`,
+        [userId],
+      )
+      .catch(() => ({ rows: [] as { by: string | null; details: string | null; bank: string | null; last4: string | null }[] }));
+    const u = rows[0];
+    options = payByOptions({ bank: u?.bank ? `${u.bank}${u.last4 ? ` ·· ${u.last4}` : ""}` : null, details: u?.details ?? null });
+    const had = typeof sent.pay_by === "string" ? sent.pay_by : "";
+    chosen = options.some((o) => o.id === had) ? had : options.some((o) => o.id === u?.by) ? (u!.by as string) : "link";
+  }
+
+  const data: Record<string, unknown> = {};
+  for (const k of termsKeys()) if (k in sent) data[k] = sent[k];
+  return { screen: PAYMENT_SCREEN, data: { ...data, show_pay_by: show, pay_bys: options, pay_by: chosen } };
 }

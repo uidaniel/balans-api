@@ -689,6 +689,8 @@ describe("a tapped button", () => {
       amount_help: "Naira, before VAT. Digits only.",
       // Typed, not a saved client.
       client_id: "",
+      // No "Paid by" of its own; the server picks their default.
+      pay_by: "",
       // The Phone box, greyed out until the caller finds the sender on Pro.
       can_whatsapp_client: false,
       phone_help: "Sending to their WhatsApp is a Pro feature. Upgrade to turn it on.",

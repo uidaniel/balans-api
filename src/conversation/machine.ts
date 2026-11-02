@@ -2779,6 +2779,9 @@ export function formValues(doc: PendingDoc, now: Civil): {
     // Typed clients, not a saved one; handle.ts offers the saved ones on a
     // new document (CLIENTS_SCREEN).
     client_id: "",
+    // A draft's own "Paid by", so an edit opens on it; the server fills the
+    // list and the default (whatsapp/flows/endpoint.ts).
+    pay_by: doc.payBy ?? "",
   };
 
   /*

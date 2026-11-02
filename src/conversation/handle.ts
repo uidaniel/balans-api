@@ -3887,7 +3887,12 @@ async function handleInvoiceForm(
     notes: notes || null,
     title: (fields.title ?? "").trim().slice(0, 120) || null,
     // Abroad only: their own details or a Balans link. Empty is their default.
-    payBy: fields.pay_by === "own" || fields.pay_by === "link" || fields.pay_by === "bank" ? fields.pay_by : null,
+    // Only for another currency: the box is hidden on a naira invoice and
+    // whatever it carried there means nothing.
+    payBy:
+      fields.currency && fields.currency !== "NGN" && (fields.pay_by === "own" || fields.pay_by === "link" || fields.pay_by === "bank")
+        ? fields.pay_by
+        : null,
   };
 
   /*

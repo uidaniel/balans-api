@@ -184,7 +184,7 @@ describe("what the setup form is told", () => {
   });
 
   it("answers nothing for another form's token", async () => {
-    const out = await answer({ ...ask({}), flow_token: "invoice:user-1" }, { remember, find });
+    const out = await answer({ ...ask({}), flow_token: "request:user-1" }, { remember, find });
     assert.deepEqual(out, { data: { acknowledged: true } });
   });
 });

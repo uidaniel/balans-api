@@ -1048,6 +1048,9 @@ export const CLIENTS_SCREEN = "CLIENTS";
 export const NEW_CLIENT_WHO = "WHO_TYPED";
 
 const carriedData = (numbers: "string" | "number"): Record<string, unknown> => ({
+  // How a non-naira invoice is paid, a draft's own when it has one. Chosen on
+  // PAYMENT, where the server shows the box only for other currencies.
+  pay_by: { type: "string", __example__: "" },
   /*
    * A saved client picked on CLIENTS (2 November 2026): its id, with the name
    * and the rest left empty, and filled in from the database when the form
@@ -1152,6 +1155,7 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
  * counts.
  */
 const carriedPayload = (who: "form" | "data", from: "form" | "data"): Record<string, string> => ({
+  pay_by: "${data.pay_by}",
   client_id: "${data.client_id}",
   client_name: `\${${who}.client_name}`,
   client_email: `\${${who}.client_email}`,
@@ -1879,8 +1883,14 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
               type: "Footer",
               label: "Next",
               "on-click-action": {
-                name: "navigate",
-                next: { type: "screen", name: PAYMENT_SCREEN },
+                /*
+                 * To our server, which answers with PAYMENT and whether to show
+                 * "Paid by" (2 November 2026). Only for another currency, and
+                 * a condition on the phone could not say so: a box whose
+                 * showing depended on the currency chosen did not render. One
+                 * switched on by the server's data does, like Currency itself.
+                 */
+                name: "data_exchange",
                 // PAYMENT and TERMS hold all five slots whichever way somebody got there,
                 // so the ones this screen does not have go as the empty
                 // strings it declares.
@@ -1897,6 +1907,10 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
 /** What the last two screens hold: everything typed so far, and the terms. */
 function termsData(): Record<string, unknown> {
   return {
+    pay_by: { type: "string", __example__: "link" },
+    // Set by the server when the amount screen checks in (see paymentScreen).
+    show_pay_by: { type: "boolean", __example__: false },
+    pay_bys: CHOICES_SCHEMA,
     client_id: { type: "string", __example__: "" },
     client_name: { type: "string", __example__: "Daniel Uwak" },
     client_email: { type: "string", __example__: "" },
@@ -1960,6 +1974,23 @@ const passData = (): Record<string, string> =>
 
 export const PAYMENT_SCREEN = "PAYMENT";
 
+/** Every key PAYMENT and TERMS declare: what the server hands PAYMENT. */
+export const termsKeys = (): string[] => Object.keys(termsData());
+
+/** The "Paid by" choices for a non-naira invoice: their bank, their own details, or a Balans link. */
+export function payByOptions(x: { bank: string | null; details: string | null }): CurrencyOption[] {
+  const first = (x.details ?? "").split("\n")[0]!.trim();
+  return [
+    { id: "link", title: "Balans payment link", description: "Your client pays by card. Verify once." },
+    {
+      id: "own",
+      title: "My own details",
+      description: first ? (first.length > 60 ? `${first.slice(0, 59)}…` : first) : "PayPal, Wise and so on. I will ask you for them.",
+    },
+    ...(x.bank ? [{ id: "bank", title: "My bank account", description: x.bank }] : []),
+  ];
+}
+
 /**
  * How the client pays, on a screen of its own (2 November 2026): one choice,
  * as a list with a line under each option, before the last details. It was a
@@ -1982,8 +2013,22 @@ function paymentScreen(): Record<string, unknown> {
         {
           type: "Form",
           name: "payment_form",
-          "init-values": { plan: "${data.plan}", vat: "${data.vat}" },
+          "init-values": { pay_by: "${data.pay_by}", plan: "${data.plan}", vat: "${data.vat}" },
           children: [
+            {
+              /*
+               * How a non-naira invoice reaches them, shown only when the
+               * server says so (2 November 2026): bound to data, like the
+               * Currency box, which is the kind of showing that works on a
+               * phone. Required exactly when it shows.
+               */
+              type: "Dropdown",
+              name: "pay_by",
+              label: "Paid by",
+              required: "${data.show_pay_by}",
+              visible: "${data.show_pay_by}",
+              "data-source": "${data.pay_bys}",
+            },
             {
               type: "RadioButtonsGroup",
               name: "plan",
@@ -2026,7 +2071,7 @@ function paymentScreen(): Record<string, unknown> {
               "on-click-action": {
                 name: "navigate",
                 next: { type: "screen", name: "TERMS" },
-                payload: { ...passData(), plan: "${form.plan}", deposit: "${form.deposit}", vat: "${form.vat}" },
+                payload: { ...passData(), pay_by: "${form.pay_by}", plan: "${form.plan}", deposit: "${form.deposit}", vat: "${form.vat}" },
               },
             },
           ],
@@ -2036,14 +2081,58 @@ function paymentScreen(): Record<string, unknown> {
   };
 }
 
+/**
+ * Where each screen can go, which Meta needs once a form talks to the server:
+ * every `navigate` target, and PAYMENT for the screens that ask the server.
+ */
+function routingOf(screens: { id: string; layout?: unknown }[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  const walk = (n: unknown, into: Set<string>): void => {
+    if (Array.isArray(n)) return n.forEach((x) => walk(x, into));
+    if (!n || typeof n !== "object") return;
+    const o = n as Record<string, unknown>;
+    if (o.name === "navigate" && (o.next as { name?: string } | undefined)?.name) into.add(String((o.next as { name: string }).name));
+    if (o.name === "data_exchange") into.add(PAYMENT_SCREEN);
+    Object.values(o).forEach((x) => walk(x, into));
+  };
+  for (const sc of screens) {
+    const to = new Set<string>();
+    walk(sc.layout, to);
+    to.delete(sc.id);
+    out[sc.id] = [...to];
+  }
+  /*
+   * Forward routes only: Meta refuses one that undoes another ("Backward
+   * route [ITEM_TWO->WORK_ONE] … Only forward routes can be specified"). A
+   * "Remove item" link goes back to the form it came from, so of a pair, the
+   * one from the later screen is left out.
+   */
+  const at = new Map(screens.map((sc, i) => [sc.id, i]));
+  for (const [from, tos] of Object.entries(out)) {
+    out[from] = tos.filter((to) => !(out[to]?.includes(from) && (at.get(from) ?? 0) > (at.get(to) ?? 0)));
+  }
+  return out;
+}
+
 function documentFlow(o: DocumentFlow): FlowDefinition {
+  const screens = documentScreens(o);
   return {
-  key: o.key,
-  name: o.name,
-  categories: ["OTHER"],
-  json: {
-    version: VERSION,
-    screens: [
+    key: o.key,
+    name: o.name,
+    categories: ["OTHER"],
+    // The amount screen asks the server whether to show "Paid by" (2 November 2026).
+    endpoint: true,
+    json: {
+      version: VERSION,
+      data_api_version: "3.0",
+      routing_model: routingOf(screens as { id: string; layout?: unknown }[]),
+      screens,
+    },
+  };
+}
+
+function documentScreens(o: DocumentFlow): Record<string, unknown>[] {
+  return [
       whoScreen(o),
       formScreen(o, 1, true),
       whoScreen(o, true),
@@ -2125,6 +2214,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
                       // submission that says this is not a naira invoice.
                       currency: "${data.currency}",
                       // Chosen on PAYMENT, the screen before.
+                      pay_by: "${data.pay_by}",
                       plan: "${data.plan}",
                       deposit: "${data.deposit}",
                       design: "${form.design}",
@@ -2140,9 +2230,7 @@ function documentFlow(o: DocumentFlow): FlowDefinition {
           ],
         },
       },
-    ],
-  },
-  };
+  ];
 }
 
 const invoice = documentFlow({

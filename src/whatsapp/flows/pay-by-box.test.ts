@@ -1,28 +1,84 @@
 /**
- * There is no "Paid by" box on the invoice and quote forms (31 October 2026).
+ * "Paid by", on non-naira invoices only (2 November 2026).
  *
- * It was on the last screen and showed on naira invoices too, with its one
- * option saying "Not for naira"; moved under the Amount, WhatsApp would not
- * show it at all. A foreign invoice takes the sender's default from settings,
- * and "pay by card link" or "to my PayPal" typed in the chat still changes it.
+ * It was taken off on 31 October: on the last screen it showed on naira
+ * invoices too, and moved under the Amount behind a condition on the
+ * currency, WhatsApp would not show it at all. It is back on PAYMENT, shown
+ * by the server: the amount screen asks it (data_exchange), and it switches
+ * the box on with data, the way the Currency box is shown, which works.
  */
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 
-import { FLOWS } from "./definitions.ts";
+import { FLOWS, PAYMENT_SCREEN, payByOptions, termsKeys } from "./definitions.ts";
+import { paymentStep } from "./endpoint.ts";
+
+type Node = Record<string, unknown>;
+const walk = (n: unknown, out: Node[] = []): Node[] => {
+  if (Array.isArray(n)) n.forEach((x) => walk(x, out));
+  else if (n && typeof n === "object") {
+    out.push(n as Node);
+    Object.values(n).forEach((x) => walk(x, out));
+  }
+  return out;
+};
 
 describe("the pay-by box", () => {
-  it("is on none of the document forms", () => {
-    for (const key of ["invoice", "quote", "request"]) {
-      const json = JSON.stringify(FLOWS.find((f) => f.key === key)!.json);
-      assert.doesNotMatch(json, /pay_by|pay_options/, key);
-    }
+  for (const key of ["invoice", "quote"]) {
+    it(`${key}: sits on PAYMENT, shown and required only when the server says`, () => {
+      const json = FLOWS.find((f) => f.key === key)!.json as { screens: Node[]; routing_model: Record<string, string[]> };
+      const box = walk(json.screens.find((s) => s.id === PAYMENT_SCREEN)).find((n) => n.name === "pay_by")!;
+      assert.equal(box.type, "Dropdown");
+      assert.equal(box.visible, "${data.show_pay_by}");
+      assert.equal(box.required, "${data.show_pay_by}");
+      // No condition on the phone anywhere near it.
+      assert.ok(!walk(json).some((n) => n.type === "If" && String(n.condition).includes("currency")));
+    });
+
+    it(`${key}: the amount screens ask the server, which routes to PAYMENT`, () => {
+      const json = FLOWS.find((f) => f.key === key)!.json as { data_api_version?: string; routing_model: Record<string, string[]> };
+      assert.equal(json.data_api_version, "3.0");
+      for (const id of ["WORK", "WORK_NEW", "WORK_ONE", "WORK_FIVE"]) {
+        assert.ok(json.routing_model[id]?.includes(PAYMENT_SCREEN), `${id} cannot reach PAYMENT`);
+      }
+    });
+  }
+
+  it("is not on the payment request form", () => {
+    assert.doesNotMatch(JSON.stringify(FLOWS.find((f) => f.key === "request")!.json), /pay_by/);
   });
 
-  it("is still read from a form opened before, and from what is typed", () => {
+  it("offers a card link, their own details, and their bank when they have one", () => {
+    assert.deepEqual(payByOptions({ bank: null, details: null }).map((o) => o.id), ["link", "own"]);
+    assert.deepEqual(payByOptions({ bank: "GTBank ·· 1234", details: "paypal: ada@x.com" }).map((o) => o.id), ["link", "own", "bank"]);
+  });
+
+  it("is only read for another currency", () => {
     const handle = readFileSync(new URL("../../conversation/handle.ts", import.meta.url), "utf8");
-    assert.match(handle, /payBy: fields\.pay_by === "own" \|\| fields\.pay_by === "link" \|\| fields\.pay_by === "bank" \? fields\.pay_by : null/);
+    assert.match(handle, /fields\.currency && fields\.currency !== "NGN" && \(fields\.pay_by === "own"/);
+  });
+});
+
+describe("what the server answers the amount screen with", () => {
+  const sent = Object.fromEntries(termsKeys().map((k) => [k, k === "vat" ? false : ""]));
+
+  it("hides the box on a naira invoice, and hands everything else on", async () => {
+    const out = (await paymentStep("u1", { ...sent, currency: "NGN", amount: "50000" }, { actions: { isAbroad: async () => false } })) as {
+      screen: string;
+      data: Record<string, unknown>;
+    };
+    assert.equal(out.screen, PAYMENT_SCREEN);
+    assert.equal(out.data.show_pay_by, false);
+    assert.deepEqual(out.data.pay_bys, []);
+    assert.equal(out.data.amount, "50000");
+    // Exactly what PAYMENT declares, no more.
+    assert.deepEqual(Object.keys(out.data).sort(), termsKeys().sort());
+  });
+
+  it("hides it abroad too, where their own currency is home", async () => {
+    const out = (await paymentStep("u1", { ...sent, currency: "GHS" }, { actions: { isAbroad: async () => true } })) as { data: Record<string, unknown> };
+    assert.equal(out.data.show_pay_by, false);
   });
 });
