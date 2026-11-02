@@ -168,7 +168,18 @@ function styles(): string {
         .bl-faint, .bl-faint a { color:${DARK.faint} !important; }
         .bl-mist { background:${DARK.mist} !important; }
         .bl-rule { border-color:${DARK.line} !important; }
+        /* The button's label stays dark on its gold in dark mode (2 November 2026). */
+        .bl-btn, .bl-btn span { color:${LIGHT.ink} !important; }
       }
+      /* Outlook's dark mode, which says so with these attributes. */
+      [data-ogsc] .bl-btn, [data-ogsc] .bl-btn span { color:${LIGHT.ink} !important; }
+      /*
+       * Gmail's apps recolour text in dark mode and ignore the rules above.
+       * "u + .body" is only true inside Gmail; the two blended layers undo
+       * its recolouring on the button's label, so it stays dark on the gold.
+       */
+      u + .body .bl-gmail-screen { background:#000; mix-blend-mode:screen; }
+      u + .body .bl-gmail-diff { background:#000; mix-blend-mode:difference; }
       @media only screen and (max-width: 480px) {
         /* Edge to edge. Below 480px there is no room for a card to be a
            card, so it keeps the hairline along its top and stops there. */
@@ -223,6 +234,9 @@ export function layout(opts: LayoutOptions): string {
   // marigold becomes whatever reads on theirs. Then marigold everywhere else.
   const on = onColour(colour);
   return html
+    // The dark-mode label colour follows theirs, which may be white on a dark brand.
+    .split(`.bl-btn span { color:${LIGHT.ink} !important; }`)
+    .join(`.bl-btn span { color:${on} !important; }`)
     .split(GOLD)
     .join("")
     .split(`background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};`)
@@ -250,7 +264,7 @@ function layoutHtml({ preheader, heading, eyebrow, banner, body, brand }: Layout
 <style type="text/css">${styles()}
 </style>
 </head>
-<body style="margin:0;padding:0;background:${LIGHT.canvas};" class="bl-canvas">
+<body style="margin:0;padding:0;background:${LIGHT.canvas};" class="body bl-canvas">
 <!-- Preheader: what the inbox list shows after the subject. The trailing
      entities push the body copy out of the preview, which otherwise runs on
      with whatever the first paragraph happens to start with. -->
@@ -461,7 +475,7 @@ export function button(label: string, href: string): string {
 </v:roundrect>
 <![endif]-->
 <!--[if !mso]><!-- -->
-<a href="${h}" style="background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};${GOLD}display:inline-block;font-family:${FONT};font-size:15px;font-weight:500;line-height:46px;text-align:center;text-decoration:none;min-width:200px;padding:0 28px;mso-hide:all;">${l}</a>
+<a href="${h}" class="bl-btn" style="background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};${GOLD}display:inline-block;font-family:${FONT};font-size:15px;font-weight:500;line-height:46px;text-align:center;text-decoration:none;min-width:200px;padding:0 28px;mso-hide:all;"><span class="bl-gmail-screen"><span class="bl-gmail-diff">${l}</span></span></a>
 <!--<![endif]-->
 </td></tr></table>`;
 }
