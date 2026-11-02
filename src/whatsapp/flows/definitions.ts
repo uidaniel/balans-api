@@ -1248,17 +1248,19 @@ export function designOptions(pro: boolean): CurrencyOption[] {
 
 export { DEFAULT_TEMPLATE };
 
+// With the flag first (2 November 2026): it is what people scan a list of
+// currencies for. Emoji, not pictures: exact, and native on every phone.
 const CURRENCY_TITLES: Record<Currency, string> = {
-  NGN: "Naira (₦)",
-  USD: "US Dollar ($)",
-  GBP: "Pound (£)",
-  EUR: "Euro (€)",
-  CAD: "Canadian Dollar (CA$)",
-  AUD: "Australian Dollar (A$)",
-  GHS: "Ghana Cedi (GH₵)",
-  KES: "Kenyan Shilling (KSh)",
-  ZAR: "SA Rand (R)",
-  AED: "UAE Dirham (AED)",
+  NGN: "🇳🇬 Naira (₦)",
+  USD: "🇺🇸 US Dollar ($)",
+  GBP: "🇬🇧 Pound (£)",
+  EUR: "🇪🇺 Euro (€)",
+  CAD: "🇨🇦 Canadian Dollar (CA$)",
+  AUD: "🇦🇺 Australian Dollar (A$)",
+  GHS: "🇬🇭 Ghana Cedi (GH₵)",
+  KES: "🇰🇪 Kenyan Shilling (KSh)",
+  ZAR: "🇿🇦 SA Rand (R)",
+  AED: "🇦🇪 UAE Dirham (AED)",
 };
 
 export function currencyOptions(pro: boolean, home: Currency = "NGN", abroad = false): CurrencyOption[] {
