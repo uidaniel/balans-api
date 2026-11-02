@@ -194,11 +194,11 @@ describe("the line under the Amount box", () => {
     }
   });
 
-  it("still says naira to everyone who cannot change it", () => {
+  it("says before VAT, with the currency box right above it (2 November 2026)", () => {
     // The default the machine sends, which is what a free account and every
     // naira invoice gets.
     const machine = readFileSync(new URL("../../conversation/machine.ts", import.meta.url), "utf8");
-    assert.match(machine, /NAIRA_HELP = "Naira, before VAT\. Digits only\."/);
+    assert.match(machine, /NAIRA_HELP = "Before VAT\."/);
     assert.match(machine, /amount_help: NAIRA_HELP/);
     assert.match(machine, /can_bill_abroad: false/);
   });

@@ -632,7 +632,7 @@ const SKIP_BANK = `Or reply ${b("skip")} to add it later. Your client needs it t
  * sent is decided by the same thing that decides whether the currency box is
  * shown at all.
  */
-export const NAIRA_HELP = "Naira, before VAT. Digits only.";
+export const NAIRA_HELP = "Before VAT.";
 
 /*
  * The line under the client's Phone box, by plan.
@@ -646,7 +646,7 @@ export const PHONE_PRO_HELP = "Optional. We send it to their WhatsApp too.";
 
 /** What the forms open with before anybody's plan is known. */
 export const PHONE_OFF = { can_whatsapp_client: false, phone_help: PHONE_FREE_HELP } as const;
-export const ABROAD_HELP = "Before VAT, in the currency above. Digits only.";
+export const ABROAD_HELP = "Before VAT.";
 
 export const VOICE = {
   /** The invitation that carries the setup form. */

@@ -675,7 +675,7 @@ describe("line items on the document forms", () => {
         }
       });
 
-      it("gives every item a quantity, above its amount, all the way to the submit", () => {
+      it("gives every item a quantity, under its amount, all the way to the submit", () => {
         /*
          * The sentence always read "4 stills at 20k" and every template
          * always printed a quantity; only the form could not say one. Each
@@ -687,7 +687,9 @@ describe("line items on the document forms", () => {
           const names = order(id);
           const q = names.indexOf(qty);
           assert.ok(q >= 0, `${id} has no ${qty}`);
-          assert.ok(q < names.indexOf(amount), `${id}: ${qty} should come before ${amount}`);
+          // Under the amount since 2 November 2026: optional, and it changes
+          // what Amount means, so it follows it.
+          assert.ok(q > names.indexOf(amount), `${id}: ${qty} should come after ${amount}`);
           assert.equal(named(id, qty)!.required, false, "optional: empty means one");
         };
         for (const id of forms().slice(1)) above(id, "qty", "amount");

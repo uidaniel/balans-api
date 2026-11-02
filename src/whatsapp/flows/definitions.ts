@@ -972,7 +972,7 @@ export const itemFields = (w: string): { description: string; qty: string; amoun
  * whose line is already taken by the currency (see `amount_help`).
  */
 const QTY_LABEL = "Quantity";
-const QTY_HELP = "Optional. If you fill this in, Amount is the price for one.";
+const QTY_HELP = "Fill in to bill per unit. Amount is then the price for one.";
 const QTY_CHARS = 8;
 
 /** The screen that collects one item. Letters and underscores only. */
@@ -1158,7 +1158,7 @@ const carriedData = (numbers: "string" | "number"): Record<string, unknown> => (
    * a box somebody has just set to dollars. [Probe] `helper-text` does take a
    * data binding, so it says the true thing in both cases.
    */
-  amount_help: { type: "string", __example__: "Naira, before VAT. Digits only." },
+  amount_help: { type: "string", __example__: "Before VAT." },
   /*
    * Whether the Phone box can be typed in, and the line under it.
    *
@@ -1426,21 +1426,21 @@ function itemScreen(index: number, o: DocumentFlow): Record<string, unknown> {
             },
             {
               type: "TextInput",
+              name: f.amount,
+              label: "Amount",
+              "helper-text": "Before VAT.",
+              required: true,
+              "input-type": "number",
+              "max-chars": 12,
+            },
+            {
+              type: "TextInput",
               name: f.qty,
               label: QTY_LABEL,
               "helper-text": QTY_HELP,
               required: false,
               "input-type": "number",
               "max-chars": QTY_CHARS,
-            },
-            {
-              type: "TextInput",
-              name: f.amount,
-              label: "Amount",
-              "helper-text": "Naira, before VAT. Digits only.",
-              required: true,
-              "input-type": "number",
-              "max-chars": 12,
             },
             {
               /*
@@ -1656,20 +1656,20 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
       },
       {
         type: "TextInput",
+        name: f.amount,
+        label: "Amount",
+        "helper-text": "Before VAT.",
+        required: false,
+        "input-type": "text",
+        "max-chars": 12,
+      },
+      {
+        type: "TextInput",
         name: f.qty,
         label: QTY_LABEL,
         required: false,
         "input-type": "text",
         "max-chars": QTY_CHARS,
-      },
-      {
-        type: "TextInput",
-        name: f.amount,
-        label: "Amount",
-        "helper-text": "Naira, before VAT. Digits only.",
-        required: false,
-        "input-type": "text",
-        "max-chars": 12,
       },
     ];
   });
@@ -1773,16 +1773,6 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
               }),
           children: [
             {
-              // What the whole invoice is for, above its items (9 October 2026).
-              type: "TextInput",
-              name: "title",
-              label: "Title",
-              "helper-text": "Optional. E.g. Website redesign, Phase 1.",
-              required: false,
-              "input-type": "text",
-              "max-chars": 120,
-            },
-            {
               type: "TextInput",
               name: "description",
               // No helper text. "Item" over a box on a form called New
@@ -1794,16 +1784,6 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
               required: true,
               "input-type": "text",
               "max-chars": 100,
-            },
-            {
-              type: "TextInput",
-              name: "qty",
-              label: QTY_LABEL,
-              "helper-text": QTY_HELP,
-              required: false,
-              // The number pad on WORK, for the same reason as Amount below.
-              "input-type": entry ? "number" : "text",
-              "max-chars": QTY_CHARS,
             },
             {
               /*
@@ -1875,6 +1855,18 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
               "input-type": entry ? "number" : "text",
               "max-chars": 12,
             },
+            {
+              // After the amount (2 November 2026): optional, and it changes
+              // what Amount means, so it follows it.
+              type: "TextInput",
+              name: "qty",
+              label: QTY_LABEL,
+              "helper-text": QTY_HELP,
+              required: false,
+              // The number pad on WORK, for the same reason as Amount below.
+              "input-type": entry ? "number" : "text",
+              "max-chars": QTY_CHARS,
+            },
             ...itemBoxes,
             ...(items === 5
               ? [
@@ -1904,6 +1896,17 @@ function formScreen(o: DocumentFlow, items: number, entry: boolean, fresh = fals
               "helper-text": o.dateHelp,
               required: false,
               "min-date": "${data.today}",
+            },
+            {
+              // What the whole invoice is for (9 October 2026). Last since 2 November:
+              // optional, and most people skip it, so it does not open the screen.
+              type: "TextInput",
+              name: "title",
+              label: "Title",
+              "helper-text": "E.g. Website redesign, Phase 1.",
+              required: false,
+              "input-type": "text",
+              "max-chars": 120,
             },
             {
               type: "Footer",
@@ -1992,7 +1995,7 @@ function termsData(): Record<string, unknown> {
     can_bill_abroad: { type: "boolean", __example__: false },
     show_currency: { type: "boolean", __example__: false },
     currencies: CURRENCIES_SCHEMA,
-    amount_help: { type: "string", __example__: "Naira, before VAT. Digits only." },
+    amount_help: { type: "string", __example__: "Before VAT." },
     can_whatsapp_client: { type: "boolean", __example__: false },
     phone_help: { type: "string", __example__: "WhatsApp delivery comes with Pro." },
     // Strings, like everywhere. TERMS initialises none of them, so it
@@ -2341,7 +2344,7 @@ const invoice = documentFlow({
   name: "Balans invoice",
   title: "New invoice",
   dateLabel: "Due",
-  dateHelp: "Optional. The day they should pay by.",
+  dateHelp: "The day they should pay by.",
 });
 
 const quote = documentFlow({
@@ -2351,7 +2354,7 @@ const quote = documentFlow({
   // "Valid until" is eleven characters and wraps. "Valid to" says the same
   // thing in eight, and the helper carries the rest.
   dateLabel: "Valid to",
-  dateHelp: "Optional. The last day the price stands.",
+  dateHelp: "The last day the price stands.",
 });
 
 /**

@@ -686,7 +686,7 @@ describe("a tapped button", () => {
       show_currency: false,
       currencies: currencyOptions(false),
       // The "Paid by" list before the caller names their bank and details.
-      amount_help: "Naira, before VAT. Digits only.",
+      amount_help: "Before VAT.",
       // Typed, not a saved client.
       client_id: "",
       // No "Paid by" of its own; the server picks their default.
