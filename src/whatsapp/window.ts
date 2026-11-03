@@ -97,8 +97,7 @@ type BaseTemplateName =
   | "setup_reminder"
   | "monthly_statement"
   | "business_name_check"
-  | "announcement"
-  | "terms_update";
+  | "announcement";
 
 /**
  * A bold line above the words, for the templates that say one thing
@@ -559,20 +558,6 @@ const BASE_TEMPLATES: Record<BaseTemplateName, TemplateSpec> = {
     body: "Update from Balans: {{1}}\n\nReply STOP UPDATES to stop these messages.",
     params: ["the message, one paragraph"],
     example: ["Balans now sends a summary of your month on the 1st, with your full statement by email."],
-  },
-
-  /*
-   * The notice of terms and privacy 6.0 (4 November 2026), to anybody outside
-   * the 24-hour window: a change to the agreement is an account update, which
-   * the terms promise to send 30 days ahead. legal/notice.ts.
-   */
-  terms_update: {
-    name: "terms_update",
-    category: "UTILITY",
-    body: "Balans is updating its terms and privacy notice on {{1}}. What changes, and the full text: {{2}}\n\nReply I ACCEPT to agree, including your data being processed outside Nigeria. If you do not agree, you can close your account before then.",
-    params: ["the date it takes effect", "link to the new terms"],
-    example: ["4 December 2026", "https://balans.ng/terms?v=6.0"],
-    quickReplies: ["I accept"],
   },
 
   launch_setup: {

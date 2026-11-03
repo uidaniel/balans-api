@@ -4,11 +4,13 @@
  *
  * The terms promise 30 days' notice of a material change, in the chat and by
  * email, and ask each person to accept the new version. This sends that
- * notice once to everybody who has finished setup and not accepted: a free
- * message with an "I accept" button inside WhatsApp's 24-hour window, the
- * approved `terms_update` template outside it, and an email to a confirmed
- * address. It is a service message, so it goes whether or not they said yes
- * to updates. Accepting also records the yes to processing outside Nigeria
+ * notice once to everybody who has finished setup and not accepted: a
+ * message with an "I accept" button while they are inside WhatsApp's 24-hour
+ * window, which is free, and an email to a confirmed address. No template:
+ * a paid message to every user was not worth it (4 November 2026), so
+ * somebody who does not write to Balans before then has the email and the
+ * notice on the website. It is a service message, so it goes whether or not
+ * they said yes to updates. Accepting also records the yes to processing outside Nigeria
  * (legal/consent.ts).
  */
 
@@ -17,10 +19,9 @@ import type { FastifyBaseLogger } from "fastify";
 import { NEXT_CONSENT, env } from "../config.ts";
 import { db } from "../db/pool.ts";
 import { recordOutbound } from "../conversation/store.ts";
-import { sendButtons, sendTemplate, type ReplyButton } from "../whatsapp/client.ts";
+import { sendButtons, type ReplyButton } from "../whatsapp/client.ts";
 import { b, para } from "../whatsapp/format.ts";
-import { TEMPLATE_LANGUAGE, TEMPLATES, windowFor } from "../whatsapp/window.ts";
-import { mayUseReminder } from "../jobs/setup-nudges.ts";
+import { windowFor } from "../whatsapp/window.ts";
 import { sendEmail, type Email } from "../email/send.ts";
 import { button, layout, paragraph } from "../email/layout.ts";
 
@@ -87,18 +88,6 @@ export function noticeEmail(businessName: string | null): Omit<Email, "to"> {
   };
 }
 
-async function templateUsable(): Promise<boolean> {
-  const name = TEMPLATES.terms_update.name;
-  const { rows } = await db()
-    .query<{ status: string | null; category: string | null }>(
-      `SELECT (SELECT value_json ->> $1 FROM config WHERE key = 'template_status')   AS status,
-              (SELECT value_json ->> $1 FROM config WHERE key = 'template_category') AS category`,
-      [name],
-    )
-    .catch(() => ({ rows: [] as { status: string | null; category: string | null }[] }));
-  return mayUseReminder(rows[0]?.status, rows[0]?.category);
-}
-
 /** Sends the notice to the next batch. Returns how many went, on either channel. */
 export async function sendTermsNotices(log: FastifyBaseLogger, now: number = Date.now()): Promise<number> {
   if (now < NOTICE_FROM) return 0;
@@ -123,27 +112,22 @@ export async function sendTermsNotices(log: FastifyBaseLogger, now: number = Dat
     [NEXT_CONSENT.version],
   );
 
-  const template = await templateUsable();
   let sent = 0;
   let tried = 0;
   for (const r of rows) {
     if (tried >= BATCH) break;
     try {
       if (r.wa_due) {
+        // Only inside the free window; outside it, the email and the website.
         const open = (await windowFor(r.id)).open;
-        if (open || template) {
+        if (open) {
           const claim = await db().query(`UPDATE users SET terms_notice_at = now() WHERE id = $1 AND terms_notice_at IS NULL RETURNING id`, [r.id]);
           if (claim.rows.length) {
             tried += 1;
-            const out = open
-              ? await sendButtons(r.wa_phone, { body: noticeText(), buttons: [ACCEPT_BUTTON] })
-              : await sendTemplate(r.wa_phone, TEMPLATES.terms_update.name, [NEXT_CONSENT.from, termsLink()], {
-                  language: TEMPLATE_LANGUAGE,
-                  payloads: [ACCEPT_BUTTON.id],
-                });
+            const out = await sendButtons(r.wa_phone, { body: noticeText(), buttons: [ACCEPT_BUTTON] });
             if (out.ok) {
               sent += 1;
-              await recordOutbound(r.id, out.waMessageId, "sent", open ? { kind: "interactive" } : { inWindow: false, kind: "template", template: TEMPLATES.terms_update.name });
+              await recordOutbound(r.id, out.waMessageId, "sent", { kind: "interactive" });
             } else {
               // Not delivered: let the next run try again.
               await db().query(`UPDATE users SET terms_notice_at = NULL WHERE id = $1`, [r.id]);
@@ -165,6 +149,6 @@ export async function sendTermsNotices(log: FastifyBaseLogger, now: number = Dat
       log.error({ userId: r.id, err: (e as Error).message }, "terms notice failed");
     }
   }
-  if (tried) log.info({ tried, sent, template }, "terms notices");
+  if (tried) log.info({ tried, sent }, "terms notices");
   return sent;
 }

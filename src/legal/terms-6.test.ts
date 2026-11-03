@@ -53,11 +53,11 @@ describe("the notice of 6.0", () => {
     assert.match(mail.text, /reply I ACCEPT to Balans on WhatsApp/);
   });
 
-  it("has a utility template for outside the window, with the same button", () => {
-    const t = TEMPLATES.terms_update;
-    assert.equal(t.category, "UTILITY");
-    assert.deepEqual(t.quickReplies, ["I accept"]);
-    assert.equal(t.params.length, 2);
+  it("never goes as a paid template, only inside the free window", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("./notice.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(src, /sendTemplate/);
+    assert.ok(!("terms_update" in TEMPLATES));
   });
 
   it("is accepted by the button and by typing it", () => {
