@@ -274,7 +274,12 @@ function abroadScreen(): Record<string, unknown> {
     layout: {
       type: "SingleColumnLayout",
       children: [
-        { type: "TextSubheading", text: "Your clients pay you directly. These go on every invoice, as you write them." },
+        /*
+         * One box, no list of services (3 November 2026): how they are paid
+         * is theirs to say. Optional: skipped, it is asked for with their
+         * first invoice (the payment screen's Details box, or the chat).
+         */
+        { type: "TextSubheading", text: "How do your clients pay you? It goes on every invoice, as you write it." },
         {
           type: "EmbeddedLink",
           text: "Read the Terms of use",
@@ -291,18 +296,11 @@ function abroadScreen(): Record<string, unknown> {
           "error-messages": "${data.error_messages}",
           children: [
             {
-              type: "Dropdown",
-              name: "pay_method",
-              label: "Method",
-              required: true,
-              "data-source": PAY_METHODS.map((m) => ({ ...m })),
-            },
-            {
               type: "TextArea",
               name: "pay_details",
               label: "Details",
-              "helper-text": "E.g. your PayPal email, or your IBAN and account name.",
-              required: true,
+              "helper-text": "Whatever your clients need to pay you. You can add this later.",
+              required: false,
               "max-length": 600,
             },
             { type: "OptIn", name: "agreed", label: "I agree to the Terms and the Privacy Notice", required: true },
@@ -312,7 +310,6 @@ function abroadScreen(): Record<string, unknown> {
               "on-click-action": {
                 name: "data_exchange",
                 payload: {
-                  pay_method: "${form.pay_method}",
                   pay_details: "${form.pay_details}",
                   agreed: "${form.agreed}",
                   form_version: "3",

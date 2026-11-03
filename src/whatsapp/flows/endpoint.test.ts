@@ -437,12 +437,23 @@ describe("setup, email code first", () => {
     assert.deepEqual(calls, ["abroad:PayPal"]);
   });
 
-  it("stays put outside Nigeria until everything is there", async () => {
+  it("finishes outside Nigeria with the details skipped (3 November 2026)", async () => {
+    calls.length = 0;
+    const out = (await answer(v3("ABROAD", { pay_details: "", agreed: "true" }), deps)) as Out;
+    assert.equal(out.screen, "DONE");
+    assert.deepEqual(Object.keys(out.data).sort(), declared("DONE"));
+    assert.equal(out.data.account_name, "No payment details yet");
+    assert.deepEqual(calls, ["abroad:"]);
+  });
+
+  it("stays put outside Nigeria until everything needed is there", async () => {
+    // No method list and the details may be skipped since 3 November 2026;
+    // the terms are still needed, and details too short to be any are refused.
     calls.length = 0;
     const cases: [Record<string, string>, string][] = [
-      [{ pay_method: "Gold bars", pay_details: "me@example.com", agreed: "true" }, "pay_method"],
-      [{ pay_method: "Wise", pay_details: " ", agreed: "true" }, "pay_details"],
-      [{ pay_method: "Wise", pay_details: "GB00 1234", agreed: "false" }, "agreed"],
+      [{ pay_details: "ab", agreed: "true" }, "pay_details"],
+      [{ pay_details: "GB00 1234", agreed: "false" }, "agreed"],
+      [{ pay_details: "", agreed: "false" }, "agreed"],
     ];
     for (const [data, field] of cases) {
       const out = (await answer(v3("ABROAD", data), deps)) as Out;

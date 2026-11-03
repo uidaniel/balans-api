@@ -109,8 +109,11 @@ describe("what the server answers the amount screen with", () => {
     assert.deepEqual(Object.keys(out.data).sort(), termsKeys().sort());
   });
 
-  it("hides it abroad too, where their own currency is home", async () => {
+  it("abroad, offers only their own details, so the Details box can take them (3 November 2026)", async () => {
     const out = (await paymentStep("u1", { ...sent, currency: "GHS" }, { actions: { isAbroad: async () => true } })) as { data: Record<string, unknown> };
-    assert.equal(out.data.show_pay_by, false);
+    assert.equal(out.data.show_pay_by, true);
+    assert.deepEqual((out.data.pay_bys as { id: string }[]).map((o) => o.id), ["own"]);
+    assert.equal(out.data.pay_by, "own");
+    assert.equal(out.data.show_add_bank, false);
   });
 });

@@ -210,7 +210,8 @@ export async function completeAbroadSetup(
   log: FastifyBaseLogger,
 ): Promise<Done> {
   await db().query(
-    `UPDATE users SET payment_method = $2, payment_details = $3, abroad_pay_by = 'own' WHERE id = $1`,
+    // Either may be empty since 3 November 2026: skipped at setup.
+    `UPDATE users SET payment_method = NULLIF($2, ''), payment_details = NULLIF($3, ''), abroad_pay_by = 'own' WHERE id = $1`,
     [userId, pay.method.slice(0, 40), pay.details.slice(0, 600)],
   );
   sendWelcome(userId, await recordConsent(userId, legalConsentVersion), log);

@@ -361,15 +361,19 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
       screen: "ABROAD",
       data: { error_messages: { [field]: message } },
     });
-    if (!PAY_METHODS.some((m) => m.id === method)) return back("pay_method", "Choose how your clients pay you.");
-    if (details.length < 3) return back("pay_details", "Type the details your clients need to pay you.");
+    // No method list since 3 November 2026, and the details may be skipped;
+    // a form opened before still sends a method, which is kept if valid.
+    if (details && details.length < 3) return back("pay_details", "Type the details your clients need to pay you, or leave it empty.");
     if (details.length > 600) return back("pay_details", "Keep it under 600 characters.");
     if (!ticked(data.agreed)) return back("agreed", FORM_ERRORS.notAgreed);
-    const done = await act.completeAbroadSetup(userId, { method, details }, log);
+    const known = PAY_METHODS.some((m) => m.id === method) ? method : "";
+    const done = await act.completeAbroadSetup(userId, { method: known, details }, log);
     if (!done.ok) return back("pay_details", done.message);
     return {
       screen: "DONE",
-      data: { account_name: method, account_line: details.split("\n")[0]!.slice(0, 80) },
+      data: details
+        ? { account_name: known || "Your payment details", account_line: details.split("\n")[0]!.slice(0, 80) }
+        : { account_name: "No payment details yet", account_line: "Add them with your first invoice" },
     };
   }
 
@@ -599,7 +603,10 @@ export async function paymentStep(
   const currency = typeof sent.currency === "string" && sent.currency ? sent.currency : "NGN";
   // Naira too since 2 November 2026: their bank or their own details.
   const naira = currency === "NGN";
-  const show = !(await act.isAbroad(userId).catch(() => false));
+  // Abroad (3 November 2026): their own details only, with the Details box,
+  // so somebody who skipped them at setup can add them here.
+  const abroad = await act.isAbroad(userId).catch(() => false);
+  const show = true;
 
   let options: { id: string; title: string; description?: string }[] = [];
   let chosen = "";
@@ -627,9 +634,10 @@ export async function paymentStep(
     hasBank = Boolean(u?.bank);
     savedDetails = (u?.details ?? "").split("\n")[0]!.trim();
     options = payByOptions({ bank: u?.bank ? `${u.bank}${u.last4 ? ` ·· ${u.last4}` : ""}` : null, details: u?.details ?? null, naira });
+    if (abroad) options = options.filter((o) => o.id === "own");
     const had = typeof sent.pay_by === "string" ? sent.pay_by : "";
     // Naira opens on their bank; abroad on their default (link or own).
-    const fallback = naira ? "bank" : "link";
+    const fallback = abroad ? "own" : naira ? "bank" : "link";
     chosen = options.some((o) => o.id === had)
       ? had
       : !naira && options.some((o) => o.id === u?.by)
@@ -638,7 +646,7 @@ export async function paymentStep(
   }
 
   const base = env.PUBLIC_BASE_URL.replace(/\/$/, "");
-  let noBank = show && !hasBank;
+  let noBank = show && !hasBank && !abroad;
   let addBankUrl = base;
   if (noBank) {
     try {

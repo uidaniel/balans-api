@@ -900,6 +900,7 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   // of the effect rather than going in with it.
   if (outcome.draftId) context = { ...context, draftId: outcome.draftId };
   if (outcome.pendingBankChange) context = { ...context, changing: outcome.pendingBankChange };
+  if (outcome.awaitPayDetails) context = { ...context, awaitingPayDetails: outcome.awaitPayDetails };
   if (outcome.clearDraft) {
     const { doc: _doc, draftId: _id, editingId: _e, editingNumber: _n, ...rest } = context;
     context = rest;
@@ -1044,6 +1045,8 @@ type EffectOutcome = {
    * outright. See `sendButtons`.
    */
   buttonsImage?: string;
+  /** An invoice held until they say how their client pays (abroad, none saved). */
+  awaitPayDetails?: PendingDoc;
   /** A resolved bank change, waiting on the user's yes. */
   pendingBankChange?: {
     bankCode: string;
@@ -1121,6 +1124,7 @@ async function runEffects(
   } | undefined;
   // The bank's answer, so the machine's context carries it into the next turn.
   let resolvedName: string | undefined;
+  let awaitPayDetails: PendingDoc | undefined;
   let draftId: string | undefined;
   /** Tappable answers for the last line an effect pushed into `extra`. */
   let buttons: ReplyButton[] | undefined;
@@ -1683,6 +1687,15 @@ async function runEffects(
               [userId],
             );
             if (!own[0]?.d?.trim()) {
+              // Abroad there is no link or bank to fall back to (3 November
+              // 2026): ask how their client pays, and hold the invoice until
+              // they say, as the form does.
+              if (abroadCurrencyFor(ctx.phone)) {
+                extra.push(askPayDetails());
+                awaitPayDetails = doc;
+                holdAt = "idle";
+                break;
+              }
               payBy = doc.foreign ? "link" : null;
               extra.push(noOwnDetailsYet(Boolean(doc.foreign)));
             }
@@ -3211,6 +3224,7 @@ async function runEffects(
     clearDraft,
     editing,
     pendingBankChange,
+    awaitPayDetails,
     buttons,
     buttonsImage,
     flowFell,
@@ -4307,11 +4321,8 @@ async function savedPaymentDetails(userId: string): Promise<string | null> {
 function askPayDetails(): string {
   return para(
     `💳 ${b("How should your client pay you?")}`,
-    lines(
-      "Send me the details to put on this invoice, for example:",
-      i("PayPal: you@email.com"),
-      i("Wise: IBAN GB00 0000 0000 0000 00, Kemi Adeyemi"),
-    ),
+    // No services named (3 November 2026): how they are paid is theirs to say.
+    "Send me the details to put on this invoice: whatever your client needs to pay you.",
     "I will save them for next time, then show you the draft.",
   );
 }
