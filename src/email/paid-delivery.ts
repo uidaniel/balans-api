@@ -218,6 +218,7 @@ export async function emailPaidToClient(
     const sent = await sendEmail(
       {
         to: d.client_email,
+        sender: "invoicing",
         // The business they paid, not us. A receipt from a company the client
         // has never heard of is a receipt they query. "via Balans" on every plan.
         fromName: as.fromName,
@@ -335,6 +336,7 @@ export async function emailPaidToUser(
     const sent = await sendEmail(
       {
         to: d.business_email,
+        sender: "invoicing",
         subject: `You’ve been paid — ${got} from ${d.client_name}`,
         html: layout({
           preheader: `${d.client_name} paid ${got}.`,

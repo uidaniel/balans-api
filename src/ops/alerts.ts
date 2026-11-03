@@ -94,7 +94,7 @@ async function mail(subject: string, text: string, html: string, log: FastifyBas
     const sent = await sendEmail(
       // No logo: these never show it, and an unshown inline image arrives as
       // a stretched attachment under the alert (24 October 2026).
-      { to, subject, text, html, noMark: true },
+      { to, sender: "support", subject, text, html, noMark: true },
       log,
     ).catch(() => ({ ok: false as const }));
     if (!sent.ok) log.warn({ to, subject }, "alert email not sent");

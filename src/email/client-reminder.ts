@@ -31,6 +31,8 @@ const esc = (s: string): string =>
 export type ReminderEmail = {
   to: string;
   fromName: string;
+  /** From invoicing@ (4 November 2026). */
+  sender: "invoicing";
   replyTo?: string;
   subject: string;
   html: string;
@@ -80,6 +82,7 @@ export function reminderEmail(x: {
   ].join("\n");
 
   return {
+    sender: "invoicing",
     to: x.to,
     ...sentAs(x.business, x.brand ?? null),
     replyTo: x.businessEmail ?? undefined,

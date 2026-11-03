@@ -17,9 +17,9 @@ describe("the button in dark mode", () => {
     assert.match(html, /\[data-ogsc\] \.bl-btn/);
   });
 
-  it("is the label as plain text, with nothing blended over it", () => {
+  it("is the label as a picture with its words as alt text, nothing blended over it", () => {
     assert.doesNotMatch(html, /mix-blend-mode|bl-gmail/);
-    assert.match(html, /class="bl-btn"[^>]*>Pay \$860\.00<\/a>/);
+    assert.match(html, /class="bl-btn"[^>]*><img [^>]*alt="Pay \$860\.00"[^>]*><\/a>/);
   });
 
   it("follows a brand's own label colour", () => {

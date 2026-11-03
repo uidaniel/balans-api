@@ -153,7 +153,7 @@ export async function emailUnverifiedDigest(log: FastifyBaseLogger, now = new Da
     `Open: ${PAYSTACK_SUBACCOUNTS_URL}`,
   ].join("\n");
 
-  for (const a of admins) await sendEmail({ to: a.email, subject, html, text }, log).catch(() => undefined);
+  for (const a of admins) await sendEmail({ to: a.email, sender: "support", subject, html, text }, log).catch(() => undefined);
   await db().query(
     `INSERT INTO config (key, value_json, updated_by) VALUES ('subaccount_digest_sent_on', $1::jsonb, 'subaccounts')
        ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = now()`,

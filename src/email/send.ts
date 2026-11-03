@@ -74,7 +74,21 @@ export type Email = {
 
   /** A Pro business's email to its client: our coin is neither shown nor attached. */
   noMark?: boolean;
+
+  /**
+   * Which of our addresses it comes from (4 November 2026): each kind of mail
+   * from its own, as a fintech's should. Unset is the default address,
+   * onboarding@, which is what everything used before.
+   */
+  sender?: Sender;
 };
+
+/**
+ * invoicing@ for invoices, reminders, receipts, statements and Pro billing;
+ * onboarding@ for setup, codes and welcome; disputes@ for disputes; support@
+ * for the rest. All on the domain that holds the SPF and DKIM records.
+ */
+export type Sender = "onboarding" | "invoicing" | "disputes" | "support";
 
 /**
  * The same address, under a different display name.
@@ -82,12 +96,23 @@ export type Email = {
  * Only the name changes: the address must stay on the domain that holds the
  * SPF and DKIM records, or the mail lands in spam.
  */
-function withName(name: string): string {
-  const address = from().match(/<([^>]+)>/)?.[1] ?? from();
+function withName(name: string, sender?: Sender): string {
   // Quotes and angle brackets in a display name break the header.
   const safe = name.replace(/["<>\r\n]/g, "").trim().slice(0, 60) || "Balans";
-  return `${safe} <${address}>`;
+  return `${safe} <${addressFor(sender)}>`;
 }
+
+/** The address for a kind of mail, on the configured domain. */
+export function addressFor(sender?: Sender): string {
+  const address = from().match(/<([^>]+)>/)?.[1] ?? from();
+  const domain = address.split("@")[1];
+  // Resend's test domain sends only from its own address.
+  if (!sender || !domain || domain.endsWith("resend.dev")) return address;
+  return `${sender}@${domain}`;
+}
+
+/** The display name the configured address carries, "Balans" by default. */
+const defaultName = (): string => from().match(/^\s*"?([^"<]+?)"?\s*</)?.[1]?.trim() || "Balans";
 
 export type SendResult =
   | { ok: true; id: string; delivered: boolean }
@@ -126,7 +151,7 @@ export async function sendEmail(
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        from: email.fromName ? withName(email.fromName) : from(),
+        from: withName(email.fromName ?? defaultName(), email.sender),
         to: [email.to],
         ...(email.replyTo ? { reply_to: email.replyTo } : {}),
         // One line, whatever a title or a name had in it.
@@ -191,6 +216,7 @@ export function verificationEmail(code: string, businessName?: string): Omit<Ema
   const who = businessName ? ` for ${businessName}` : "";
 
   return {
+    sender: "onboarding",
     // The code goes in the subject so it can be read off a lock-screen
     // notification without opening anything, which is what people actually do.
     subject: `${code} is your Balans code`,
@@ -268,6 +294,7 @@ export function welcomeEmail(opts: {
   const example = "Invoice Tunde 150k for logo design, due Friday";
 
   return {
+    sender: "onboarding",
     subject: business ? `Welcome to Balans, ${business}` : "Welcome to Balans",
     // The closing line invites a reply, so it has to land somewhere read.
     replyTo: env.SUPPORT_EMAIL,
@@ -401,6 +428,7 @@ export function proEmail(opts: {
 
   if (!opts.first) {
     return {
+      sender: "invoicing",
       subject: `Balans Pro renewed until ${until}`,
       replyTo: env.SUPPORT_EMAIL,
       text: [
@@ -440,6 +468,7 @@ export function proEmail(opts: {
   ];
 
   return {
+    sender: "invoicing",
     subject: "You're on Balans Pro",
     replyTo: env.SUPPORT_EMAIL,
     images: [PRO_BANNER],
@@ -510,6 +539,7 @@ export function setupReminderEmail(opts: {
   ];
 
   return {
+    sender: "onboarding",
     subject: "Your Balans setup is almost done",
     replyTo: env.SUPPORT_EMAIL,
     text: [
@@ -551,6 +581,7 @@ export function confirmEmailLink(opts: { url: string; businessName?: string | nu
     ? `Tap below to confirm this is the email for ${business} on Balans. Copies of your invoices and receipts will come here.`
     : "Tap below to confirm this is your email on Balans. Copies of your invoices and receipts will come here.";
   return {
+    sender: "onboarding",
     subject: "Confirm your email for Balans",
     replyTo: env.SUPPORT_EMAIL,
     text: [
@@ -600,6 +631,7 @@ export function disputeEmail(opts: {
   ];
 
   return {
+    sender: "disputes",
     subject: `A payment on ${opts.which} has been disputed`,
     replyTo: env.SUPPORT_EMAIL,
     text: [
@@ -651,6 +683,7 @@ export function trialUsedEmail(opts: {
   ];
 
   return {
+    sender: "invoicing",
     subject: business ? `${business}: your free invoices are used` : "Your free invoices are used",
     replyTo: env.SUPPORT_EMAIL,
     ...(card ? { images: [card] } : {}),
@@ -709,6 +742,7 @@ export function statementEmail(opts: {
   const intro = `Your ${opts.month} statement is attached as a PDF: what came in, every invoice you issued, your top clients, and who still owes you.`;
 
   return {
+    sender: "invoicing",
     subject: business ? `${business}: your ${opts.month} statement` : `Your ${opts.month} statement`,
     replyTo: env.SUPPORT_EMAIL,
     text: [

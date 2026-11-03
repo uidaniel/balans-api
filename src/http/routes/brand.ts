@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { proCard } from "../../billing/pro-card.ts";
 import { monthBanner } from "../../brand/month-banner.ts";
+import { buttonLabelPng, validColour, validLabel } from "../../brand/button-label.ts";
 
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../assets/brand");
 
@@ -51,6 +52,25 @@ const cache = new Map<string, Buffer>();
 const MONTH = /^(\d{4})-(\d{2})$/;
 
 export async function brandRoutes(app: FastifyInstance): Promise<void> {
+  /*
+   * An email button's label as a picture (brand/button-label.ts, 4 November
+   * 2026): Gmail recolours text in dark mode but never a picture. Only the
+   * words and a colour, nothing about who it is for.
+   */
+  app.get<{ Querystring: { t?: string; c?: string } }>("/brand/label.png", async (req, reply) => {
+    const text = String(req.query.t ?? "");
+    const colour = String(req.query.c ?? "");
+    // Never cached, so a label drawn after a hiccup is not refused for a year.
+    const nope = () => reply.status(404).header("cache-control", "no-store").send({ error: "not found" });
+    if (!validLabel(text) || !validColour(colour)) return nope();
+    const png = await buttonLabelPng(text, colour);
+    if (!png) return nope();
+    return reply
+      .header("content-type", "image/png")
+      .header("cache-control", "public, max-age=31536000, immutable")
+      .send(png);
+  });
+
   /*
    * The month over the summary on the 1st (brand/month-banner.ts): "2026-10.jpg".
    * Only a month and a year, nothing private, so a URL like the Pro card.

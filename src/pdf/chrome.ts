@@ -557,12 +557,19 @@ export async function renderPng(
      * about half a megabyte as a JPEG. WhatsApp takes 5MB at most.
      */
     jpeg?: boolean;
+    /** See-through wherever the page has no background of its own. */
+    transparent?: boolean;
   } = {},
 ): Promise<Buffer> {
   return timed(opts.sheet ? "render.sheet" : "render.card", () => drawPng(html, width, height, opts));
 }
 
-async function drawPng(html: string, width: number, height: number, opts: { sheet?: boolean; jpeg?: boolean }): Promise<Buffer> {
+async function drawPng(
+  html: string,
+  width: number,
+  height: number,
+  opts: { sheet?: boolean; jpeg?: boolean; transparent?: boolean },
+): Promise<Buffer> {
   return onTab(async (t) => {
     // A tab that last printed a PDF was measuring in print media; a card is a screen.
     await t.send("Emulation.setEmulatedMedia", { media: opts.sheet ? "print" : "" });
@@ -576,12 +583,19 @@ async function drawPng(html: string, width: number, height: number, opts: { shee
     await t.send("Page.setDocumentContent", { frameId: t.frameId, html: await withLocalFonts(html) });
     await settled(t);
     if (opts.sheet) await fitSheets(t);
-    const res = await t.send("Page.captureScreenshot", {
-      ...(opts.jpeg ? { format: "jpeg", quality: 88 } : { format: "png" }),
-      clip: { x: 0, y: 0, width, height, scale: 1 },
-      captureBeyondViewport: true,
-    });
-    return Buffer.from(res.result.data, "base64");
+    // See-through where the page is (an email button's label, 4 November
+    // 2026), and put back straight after, since the tab is shared.
+    if (opts.transparent) await t.send("Emulation.setDefaultBackgroundColorOverride", { color: { r: 0, g: 0, b: 0, a: 0 } });
+    try {
+      const res = await t.send("Page.captureScreenshot", {
+        ...(opts.jpeg ? { format: "jpeg", quality: 88 } : { format: "png" }),
+        clip: { x: 0, y: 0, width, height, scale: 1 },
+        captureBeyondViewport: true,
+      });
+      return Buffer.from(res.result.data, "base64");
+    } finally {
+      if (opts.transparent) await t.send("Emulation.setDefaultBackgroundColorOverride", {});
+    }
   });
 }
 

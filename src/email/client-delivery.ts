@@ -242,6 +242,7 @@ export async function emailDocumentToClient(
   const sent = await sendEmail(
     {
       to: d.client_email,
+      sender: "invoicing",
       // F21: the user's business name, "via Balans" on Free. The client hired
       // them; "via Balans" on every plan, Pro included (29 September 2026).
       fromName: as.fromName,

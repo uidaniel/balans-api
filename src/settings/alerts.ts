@@ -124,7 +124,7 @@ export async function raiseSecurityAlert(e: SecurityEvent, log: FastifyBaseLogge
 
   if (user.email) {
     const mail = alertEmail(e, user.business_name, when);
-    await sendEmail({ to: user.email, ...mail }, log).catch((err: unknown) =>
+    await sendEmail({ to: user.email, sender: "support", ...mail }, log).catch((err: unknown) =>
       log.error({ err, userId: e.userId }, "security alert: email failed"),
     );
   } else {

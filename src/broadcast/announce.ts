@@ -41,6 +41,7 @@ export function announcementEmail(o: { subject: string; message: string; userId:
   const paras = o.message.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   const stop = o.userId ? stopUrl(o.userId) : null;
   return {
+    sender: "support",
     subject: o.subject,
     replyTo: env.SUPPORT_EMAIL,
     text: [...paras.flatMap((p) => [p, ""]), "—", stop ? `Stop Balans updates: ${stop}` : "", `Balans is a product of ${env.LEGAL_ENTITY_NAME}.`].join("\n"),
