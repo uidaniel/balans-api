@@ -27,7 +27,13 @@ export function db(): pg.Pool {
   pool = new pg.Pool({
     connectionString: env.DATABASE_URL,
     ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : undefined,
-    max: 10,
+    /*
+     * Live and staging share one Supabase pooler, in session mode, which
+     * allows 15 connections in all (3 November 2026: "max clients reached in
+     * session mode", once, with each side allowed 10). So staging, marked by
+     * its schema, takes at most 4 and live keeps its 10: 14 together.
+     */
+    max: env.DATABASE_SCHEMA ? 4 : 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
   });
