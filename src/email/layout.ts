@@ -474,11 +474,13 @@ export function noteBlock(lines: string[]): string {
  * alt text, which is what shows on the gold when pictures are off. A label the
  * picture route would refuse stays as text.
  */
+// Centred by the button's equal padding and the picture's auto margins, not
+// by line height, which Gmail does not apply to a picture (4 November 2026).
 function labelFor(label: string): string {
   const l = esc(label);
   if (!validLabel(label)) return l;
   const w = labelWidth(label);
-  return `<img src="${esc(buttonLabelUrl(label, LIGHT.ink))}" width="${w}" height="${LABEL_H}" alt="${l}" style="display:inline-block;vertical-align:middle;border:0;outline:none;width:${w}px;height:${LABEL_H}px;color:${LIGHT.ink};font-family:${FONT};font-size:15px;font-weight:500;line-height:${LABEL_H}px;">`;
+  return `<img src="${esc(buttonLabelUrl(label, LIGHT.ink))}" width="${w}" height="${LABEL_H}" alt="${l}" style="display:block;margin:0 auto;border:0;outline:none;width:${w}px;height:${LABEL_H}px;color:${LIGHT.ink};font-family:${FONT};font-size:15px;font-weight:500;line-height:${LABEL_H}px;">`;
 }
 
 export function button(label: string, href: string): string {
@@ -491,7 +493,7 @@ export function button(label: string, href: string): string {
 </v:roundrect>
 <![endif]-->
 <!--[if !mso]><!-- -->
-<a href="${h}" class="bl-btn" style="background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};${GOLD}display:inline-block;font-family:${FONT};font-size:15px;font-weight:500;line-height:46px;text-align:center;text-decoration:none;min-width:200px;padding:0 28px;mso-hide:all;">${labelFor(label)}</a>
+<a href="${h}" class="bl-btn" style="background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};${GOLD}display:block;font-family:${FONT};font-size:15px;font-weight:500;line-height:${LABEL_H}px;text-align:center;text-decoration:none;min-width:200px;padding:12px 28px;mso-hide:all;">${labelFor(label)}</a>
 <!--<![endif]-->
 </td></tr></table>`;
 }
