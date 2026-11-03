@@ -174,12 +174,11 @@ function styles(): string {
       /* Outlook's dark mode, which says so with these attributes. */
       [data-ogsc] .bl-btn, [data-ogsc] .bl-btn span { color:${LIGHT.ink} !important; }
       /*
-       * Gmail's apps recolour text in dark mode and ignore the rules above.
-       * "u + .body" is only true inside Gmail; the two blended layers undo
-       * its recolouring on the button's label, so it stays dark on the gold.
+       * No trick for Gmail's dark mode (4 November 2026). Blended layers meant
+       * to keep the label dark drew it as two white bars in the Gmail iPhone
+       * app, so nobody could read the button. Gmail may now show the label
+       * light on the gold, which is readable, and readable is the point.
        */
-      u + .body .bl-gmail-screen { background:#000; mix-blend-mode:screen; }
-      u + .body .bl-gmail-diff { background:#000; mix-blend-mode:difference; }
       @media only screen and (max-width: 480px) {
         /* Edge to edge. Below 480px there is no room for a card to be a
            card, so it keeps the hairline along its top and stops there. */
@@ -475,7 +474,7 @@ export function button(label: string, href: string): string {
 </v:roundrect>
 <![endif]-->
 <!--[if !mso]><!-- -->
-<a href="${h}" class="bl-btn" style="background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};${GOLD}display:inline-block;font-family:${FONT};font-size:15px;font-weight:500;line-height:46px;text-align:center;text-decoration:none;min-width:200px;padding:0 28px;mso-hide:all;"><span class="bl-gmail-screen"><span class="bl-gmail-diff">${l}</span></span></a>
+<a href="${h}" class="bl-btn" style="background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};${GOLD}display:inline-block;font-family:${FONT};font-size:15px;font-weight:500;line-height:46px;text-align:center;text-decoration:none;min-width:200px;padding:0 28px;mso-hide:all;">${l}</a>
 <!--<![endif]-->
 </td></tr></table>`;
 }

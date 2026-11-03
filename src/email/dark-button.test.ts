@@ -1,7 +1,7 @@
 /**
- * The button's label in dark mode (2 November 2026): Gmail recoloured the
- * dark text on the gold to light. Pinned for Apple Mail and Outlook, and
- * undone for Gmail with blended layers that only Gmail's markup matches.
+ * The button's label in dark mode. Pinned dark for Apple Mail and Outlook
+ * (2 November 2026). Gmail gets no trick since 4 November 2026: blended
+ * layers drew the label as two white bars in the Gmail iPhone app.
  */
 
 import assert from "node:assert/strict";
@@ -17,10 +17,9 @@ describe("the button in dark mode", () => {
     assert.match(html, /\[data-ogsc\] \.bl-btn/);
   });
 
-  it("undoes Gmail's recolouring, only inside Gmail", () => {
-    assert.match(html, /u \+ \.body \.bl-gmail-screen \{ background:#000; mix-blend-mode:screen; \}/);
-    assert.match(html, /<body[^>]*class="body bl-canvas"/);
-    assert.match(html, /<span class="bl-gmail-screen"><span class="bl-gmail-diff">Pay \$860\.00<\/span><\/span>/);
+  it("is the label as plain text, with nothing blended over it", () => {
+    assert.doesNotMatch(html, /mix-blend-mode|bl-gmail/);
+    assert.match(html, /class="bl-btn"[^>]*>Pay \$860\.00<\/a>/);
   });
 
   it("follows a brand's own label colour", () => {
