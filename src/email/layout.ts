@@ -31,7 +31,6 @@
 
 import { normaliseHex, onColour } from "../brand/colour.ts";
 import { env } from "../config.ts";
-import { buttonLabelUrl, LABEL_H, labelWidth, validLabel } from "../brand/button-label.ts";
 
 /**
  * Hex, because email has no custom properties.
@@ -237,9 +236,6 @@ export function layout(opts: LayoutOptions): string {
     // The dark-mode label colour follows theirs, which may be white on a dark brand.
     .split(`.bl-btn span { color:${LIGHT.ink} !important; }`)
     .join(`.bl-btn span { color:${on} !important; }`)
-    // The label picture in the same colour (4 November 2026).
-    .split(`c=${LIGHT.ink.slice(1).toUpperCase()}`)
-    .join(`c=${on.replace(/^#/, "").toUpperCase()}`)
     .split(GOLD)
     .join("")
     .split(`background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};`)
@@ -467,22 +463,12 @@ export function noteBlock(lines: string[]): string {
  * looks most broken. The VML shape behind the conditional comment is the
  * long-standing fix: Outlook draws the shape, and every other client ignores
  * the comment and uses the anchor.
+ *
+ * The label is text, centred by the button's equal padding (4 November 2026).
+ * Drawn as a picture it stayed dark in Gmail's dark mode, but Gmail then filed
+ * the email under Promotions, and an invoice nobody sees is worse than a light
+ * label on the gold. Gmail's dark mode shows this one light; it reads fine.
  */
-/**
- * The label as a picture when it can be drawn (brand/button-label.ts, 4
- * November 2026), so Gmail's dark mode cannot turn it white. Its words are the
- * alt text, which is what shows on the gold when pictures are off. A label the
- * picture route would refuse stays as text.
- */
-// Centred by the button's equal padding and the picture's auto margins, not
-// by line height, which Gmail does not apply to a picture (4 November 2026).
-function labelFor(label: string): string {
-  const l = esc(label);
-  if (!validLabel(label)) return l;
-  const w = labelWidth(label);
-  return `<img src="${esc(buttonLabelUrl(label, LIGHT.ink))}" width="${w}" height="${LABEL_H}" alt="${l}" style="display:block;margin:0 auto;border:0;outline:none;width:${w}px;height:${LABEL_H}px;color:${LIGHT.ink};font-family:${FONT};font-size:15px;font-weight:500;line-height:${LABEL_H}px;">`;
-}
-
 export function button(label: string, href: string): string {
   const h = esc(href);
   const l = esc(label);
@@ -493,7 +479,7 @@ export function button(label: string, href: string): string {
 </v:roundrect>
 <![endif]-->
 <!--[if !mso]><!-- -->
-<a href="${h}" class="bl-btn" style="background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};${GOLD}display:block;font-family:${FONT};font-size:15px;font-weight:500;line-height:${LABEL_H}px;text-align:center;text-decoration:none;min-width:200px;padding:12px 28px;mso-hide:all;">${labelFor(label)}</a>
+<a href="${h}" class="bl-btn" style="background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};${GOLD}display:block;font-family:${FONT};font-size:15px;font-weight:500;line-height:22px;text-align:center;text-decoration:none;min-width:200px;padding:12px 28px;mso-hide:all;">${l}</a>
 <!--<![endif]-->
 </td></tr></table>`;
 }
