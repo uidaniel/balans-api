@@ -40,6 +40,7 @@ import { MFB_CHOICE } from "./banks.ts";
 import { PAY_METHODS } from "./pay-methods.ts";
 import * as actions from "./actions.ts";
 import { recordSource } from "../../conversation/source.ts";
+import { setUpdates } from "../../broadcast/announce.ts";
 import { PAYMENT_SCREEN, payByOptions, termsKeys } from "./definitions.ts";
 import { issueIdentityToken } from "../../identity/verify.ts";
 
@@ -372,6 +373,8 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
     const known = PAY_METHODS.some((m) => m.id === method) ? method : "";
     const done = await act.completeAbroadSetup(userId, { method: known, details }, log);
     if (!done.ok) return back("pay_details", done.message);
+    // The unticked box under the terms (3 November 2026): updates only with a yes.
+    if (ticked(data.updates)) await setUpdates(userId, true);
     return {
       screen: "DONE",
       data: details
@@ -389,6 +392,7 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
     }
     const done = await act.completeSetupNoBank(userId, log);
     if (!done.ok) return { screen: "TERMS", data: {} };
+    if (ticked(data.updates)) await setUpdates(userId, true);
     return {
       screen: "DONE",
       data: { account_name: "No bank account yet", account_line: "Send add bank in the chat to add it" },
@@ -416,6 +420,7 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
       if (version === "v3") {
         const done = await act.completeSetup(userId, checked, log);
         if (!done.ok) return back("confirmed", done.message);
+        if (ticked(data.updates)) await setUpdates(userId, true);
         return {
           screen: "DONE",
           data: { account_name: checked.accountName, account_line: `${checked.bankName} · ${checked.accountNumber}` },
@@ -608,18 +613,15 @@ export async function paymentStep(
   const naira = currency === "NGN";
   // Abroad (3 November 2026): their own details only, with the Details box,
   // so somebody who skipped them at setup can add them here.
-  const abroad = await act.isAbroad(userId).catch(() => false);
   const show = true;
-
-  let options: { id: string; title: string; description?: string }[] = [];
-  let chosen = "";
-  let hasBank = false;
-  let savedDetails = "";
-  if (show) {
-    type Row = { by: string | null; details: string | null; bank: string | null; last4: string | null };
-    let rows: Row[] = [];
-    try {
-      ({ rows } = await db().query<Row>(
+  type Row = { by: string | null; details: string | null; bank: string | null; last4: string | null };
+  // Both at once (3 November 2026): the phone shows a spinner until this answers.
+  const [abroad, rows] = await Promise.all([
+    act.isAbroad(userId).catch(() => false),
+    // Inside a promise, so even a missing database is "no answer", not a throw.
+    Promise.resolve()
+      .then(() =>
+        db().query<Row>(
         `SELECT u.abroad_pay_by AS by, u.payment_details AS details,
                 b.bank_name AS bank, b.account_last4 AS last4
            FROM users u
@@ -629,10 +631,18 @@ export async function paymentStep(
            ) b ON true
           WHERE u.id = $1`,
         [userId],
-      ));
-    } catch {
+        ),
+      )
+      .then((r) => r.rows)
       // No answer about them: the choices still show, without their details.
-    }
+      .catch((): Row[] => []),
+  ]);
+
+  let options: { id: string; title: string; description?: string }[] = [];
+  let chosen = "";
+  let hasBank = false;
+  let savedDetails = "";
+  if (show) {
     const u = rows[0];
     hasBank = Boolean(u?.bank);
     savedDetails = (u?.details ?? "").split("\n")[0]!.trim();

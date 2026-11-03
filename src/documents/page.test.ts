@@ -527,3 +527,12 @@ describe("a card payment in progress (31 October 2026)", () => {
     assert.doesNotMatch(renderDocument(doc(), TODAY, { token: "a".repeat(32) }), /\/status'/);
   });
 });
+
+describe("their own payment details (3 November 2026)", () => {
+  it("say Balans has not checked them, and how to tell us", () => {
+    const html = renderDocument(doc({ paymentDetails: "PayPal: ada@example.com" }), TODAY, { token: "a".repeat(32) });
+    assert.match(html, /PayPal: ada@example\.com/);
+    assert.match(html, /gave these details\. Balans has not checked them/);
+    assert.match(html, /href="mailto:[^"?]+\?subject=Payment%20details/);
+  });
+});

@@ -19,6 +19,7 @@
 import { env } from "../config.ts";
 import { formatISO, type Civil } from "../../core/dates.ts";
 import { COMMAND_ONLY, INTENTS, rawParse, type RawParse } from "./schema.ts";
+import { timed } from "../lib/timing.ts";
 
 const ENDPOINT = "https://api.anthropic.com/v1/messages";
 const API_VERSION = "2023-06-01";
@@ -293,6 +294,15 @@ export async function parseWithModel(
   text: string,
   today: Civil,
   fetchImpl: typeof fetch = fetch,
+  onScreen: string | null = null,
+): Promise<ModelResult> {
+  return timed("ai.parse", () => askModel(text, today, fetchImpl, onScreen));
+}
+
+async function askModel(
+  text: string,
+  today: Civil,
+  fetchImpl: typeof fetch = fetch,
   /**
    * The draft on screen, if there is one, as the user can see it.
    *
@@ -334,7 +344,11 @@ Label the message above.`;
         // Haiku 5.5 counts the same text as about 30% more tokens than 4.5
         // did, and a long invoice is a long tool call.
         max_tokens: 2048,
-        system: onScreen ? SYSTEM + DRAFT_RULES : SYSTEM,
+        // Cached (3 November 2026): the tools and these instructions are the
+        // same for everybody, so after the first call the model reads them
+        // from cache, which is quicker and cheaper. The date and the message
+        // come after, in the user turn, so they never break the cache.
+        system: [{ type: "text", text: onScreen ? SYSTEM + DRAFT_RULES : SYSTEM, cache_control: { type: "ephemeral" } }],
         tools: [toolFor(onScreen)],
         // Forced, so there is always exactly one tool call and never prose.
         tool_choice: { type: "tool", name: TOOL.name },

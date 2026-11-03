@@ -88,7 +88,9 @@ describe("the request we send", () => {
 
     const prompt: string = calls[0]!.body.messages[0].content;
     assert.match(prompt, /2026-09-23/);
-    assert.match(calls[0]!.body.system, /Never work out a date/i);
+    assert.match(calls[0]!.body.system[0].text, /Never work out a date/i);
+    // Cached: the instructions are one block marked for the prompt cache.
+    assert.deepEqual(calls[0]!.body.system[0].cache_control, { type: "ephemeral" });
   });
 });
 
@@ -645,7 +647,7 @@ describe("what a message pays for", () => {
     await parseWithModel("invoice Tunde 20k for logo", TODAY, impl);
 
     const body = calls[0]!.body;
-    assert.ok(!String(body.system).includes("<draft>"), "the draft rules went out anyway");
+    assert.ok(!String(body.system[0].text).includes("<draft>"), "the draft rules went out anyway");
     assert.equal(
       body.tools[0].input_schema.properties.correction,
       undefined,
@@ -653,7 +655,7 @@ describe("what a message pays for", () => {
     );
     // The intent stays on the list either way: the enum is one line, and a
     // model that returns it without a draft is handled by the parser.
-    assert.match(body.system, /correct_draft/);
+    assert.match(body.system[0].text, /correct_draft/);
   });
 
   it("sends them when there is one", async () => {
@@ -661,7 +663,7 @@ describe("what a message pays for", () => {
     await parseWithModel("make it 400k", TODAY, impl, "kind: invoice\nclient: Daniel");
 
     const body = calls[0]!.body;
-    assert.match(String(body.system), /<draft> block appears/);
+    assert.match(String(body.system[0].text), /<draft> block appears/);
     assert.ok(body.tools[0].input_schema.properties.correction, "no correction schema");
   });
 });

@@ -304,6 +304,8 @@ function abroadScreen(): Record<string, unknown> {
               "max-length": 600,
             },
             { type: "OptIn", name: "agreed", label: "I agree to the Terms and the Privacy Notice", required: true },
+            // Unticked, and not required (3 November 2026): updates need a yes.
+            { type: "OptIn", name: "updates", label: "Send me occasional updates from Balans", required: false },
             {
               type: "Footer",
               label: "Finish setup",
@@ -312,6 +314,7 @@ function abroadScreen(): Record<string, unknown> {
                 payload: {
                   pay_details: "${form.pay_details}",
                   agreed: "${form.agreed}",
+                  updates: "${form.updates}",
                   form_version: "3",
                 },
               },
@@ -435,12 +438,13 @@ function termsOnlyScreen(): Record<string, unknown> {
           name: "terms_form",
           children: [
             { type: "OptIn", name: "agreed", label: "I agree to the Terms and the Privacy Notice", required: true },
+            { type: "OptIn", name: "updates", label: "Send me occasional updates from Balans", required: false },
             {
               type: "Footer",
               label: "Finish setup",
               "on-click-action": {
                 name: "data_exchange",
-                payload: { agreed: "${form.agreed}", skipped_bank: "1", form_version: "4" },
+                payload: { agreed: "${form.agreed}", updates: "${form.updates}", skipped_bank: "1", form_version: "4" },
               },
             },
           ],
@@ -547,7 +551,10 @@ function confirmScreen(form: AccountForm): Record<string, unknown> {
           children: [
             { type: "OptIn", name: "confirmed", label: "The details above are correct", required: true },
             ...(setup
-              ? [{ type: "OptIn", name: "agreed", label: "I agree to the Terms and the Privacy Notice", required: true }]
+              ? [
+                  { type: "OptIn", name: "agreed", label: "I agree to the Terms and the Privacy Notice", required: true },
+                  { type: "OptIn", name: "updates", label: "Send me occasional updates from Balans", required: false },
+                ]
               : []),
             {
               type: "Footer",
@@ -558,7 +565,7 @@ function confirmScreen(form: AccountForm): Record<string, unknown> {
                   account_name: "${data.account_name}",
                   account_line: "${data.account_line}",
                   confirmed: "${form.confirmed}",
-                  ...(setup ? { agreed: "${form.agreed}" } : {}),
+                  ...(setup ? { agreed: "${form.agreed}", updates: "${form.updates}" } : {}),
                   ...v3(form),
                 },
               },

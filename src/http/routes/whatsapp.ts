@@ -13,6 +13,7 @@
 import type { FastifyInstance } from "fastify";
 import { env, require_ } from "../../config.ts";
 import { db } from "../../db/pool.ts";
+import { fromArrival, timed } from "../../lib/timing.ts";
 import { safeEqual, verifyMetaSignature } from "../../lib/crypto.ts";
 import { parseInbound, type Inbound } from "../../whatsapp/inbound.ts";
 import { handleInbound } from "../../conversation/handle.ts";
@@ -203,7 +204,8 @@ const inflight = new Set<Promise<void>>();
 
 /** Handles one message, remembering it is in progress and marking it done. */
 function track(m: Inbound, log: Log): void {
-  const job: Promise<void> = handleInbound(m, log as never)
+  // Timed from here, so "reply.first" is what the person waits (lib/timing.ts).
+  const job: Promise<void> = fromArrival(() => timed("handle.total", () => handleInbound(m, log as never)))
     .catch((err: unknown) => log.error({ err, waMessageId: m.waMessageId }, "failed to handle message"))
     .then(() =>
       db()

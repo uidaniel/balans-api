@@ -26,6 +26,10 @@ import { logoDataUri } from "../brand/user-logo.ts";
 import { documentLink } from "./links.ts";
 import { signatureDataUri } from "../brand/signature.ts";
 import { bankDetailsOf } from "./bank-details.ts";
+import type { PoolClient } from "pg";
+import { confirmIn, reserveIdentity } from "./store.ts";
+import { uploadDocument } from "../whatsapp/client.ts";
+import { note } from "../lib/timing.ts";
 
 /**
  * Section 12: both lines appear on everything a client sees.
@@ -48,7 +52,13 @@ const civil = (d: Date | null): Civil | null =>
 
 /* -------------------------------------------------------------------------- */
 
-export type Rendered = { key: string; bytes: Buffer; filename: string };
+export type Rendered = {
+  key: string;
+  bytes: Buffer;
+  filename: string;
+  /** Already on WhatsApp's side, when it was prepared before "Send it". */
+  mediaId?: string | null;
+};
 
 /**
  * Renders a document and stores it.
@@ -92,6 +102,79 @@ export async function renderDocumentPdf(
 
 const recent = new Map<string, Promise<Rendered | null>>();
 
+/* -------------------------------------------------------------------------- */
+/* Prepared before "Send it" (3 November 2026)                                */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * After "Send it" the PDF used to be drawn, then uploaded to WhatsApp, then
+ * sent: each step up to a second or more, one after the other, at the moment
+ * people wait hardest. So while they read the draft it is drawn and uploaded
+ * already, from what the confirm WOULD produce: the confirm is run inside a
+ * transaction and rolled back, which gives the exact number, bank stamp and
+ * date, and the draft keeps the link token and reference it will be sent
+ * with (reserveIdentity).
+ *
+ * It is used only if the page drawn from the real, committed document is
+ * byte for byte the page prepared. Anything different — a number taken in
+ * between, a correction, midnight — and it is drawn fresh as before, so a
+ * prepared PDF can make a send quicker and never make it wrong.
+ */
+
+type Prepared = { html: string; bytes: Buffer; mediaId: string | null };
+
+const prepared = new Map<string, Promise<Prepared | null>>();
+
+/** How long a prepared PDF waits for "Send it". Meta keeps an upload far longer. */
+const PREPARED_FOR_MS = 30 * 60_000;
+/** How long "Send it" waits for one still being drawn before drawing its own. */
+const WAIT_FOR_PREPARED_MS = 6_000;
+
+/** Starts drawing a draft's PDF as it would be sent. Never throws, never waits. */
+export function prepareDocumentPdf(userId: string, draftId: string, log: FastifyBaseLogger): void {
+  if (!rendererAvailable()) return;
+  const job = (async (): Promise<Prepared | null> => {
+    await reserveIdentity(draftId);
+    const data = await previewConfirmed(userId, draftId);
+    if (!data) return null;
+    const html = renderTemplate(data.templateId, data.doc) ?? renderDocumentHtml(data.doc);
+    const bytes = await renderPdf(html);
+    const up = await uploadDocument(bytes, fileName(labelFor(data.doc.variant), data.doc.number, data.doc.clientName));
+    return { html, bytes, mediaId: up.ok ? up.mediaId : null };
+  })().catch((err: unknown) => {
+    log.warn({ err, draftId }, "could not prepare the pdf early; it is drawn on send instead");
+    return null;
+  });
+  prepared.set(draftId, job);
+  setTimeout(() => {
+    if (prepared.get(draftId) === job) prepared.delete(draftId);
+  }, PREPARED_FOR_MS).unref?.();
+}
+
+/** The confirm, run and undone: the document exactly as "Send it" would make it. */
+async function previewConfirmed(userId: string, draftId: string) {
+  const c = await db().connect();
+  try {
+    await c.query("BEGIN");
+    if (!(await confirmIn(c, userId, draftId))) return null;
+    return await loadForRender(draftId, c);
+  } finally {
+    await c.query("ROLLBACK").catch(() => {});
+    c.release();
+  }
+}
+
+/** The prepared PDF for this document, if it is exactly this page. */
+async function preparedFor(documentId: string, html: string): Promise<Prepared | null> {
+  const job = prepared.get(documentId);
+  if (!job) return null;
+  prepared.delete(documentId);
+  const ready = await Promise.race([job, new Promise<null>((done) => setTimeout(() => done(null), WAIT_FOR_PREPARED_MS).unref?.())]);
+  const hit = ready !== null && ready.html === html;
+  note(hit ? "pdf.prepared.hit" : "pdf.prepared.miss", 0);
+  return hit ? ready : null;
+}
+
 /**
  * A document's sheet as HTML, in the sender's own design, logo and colour:
  * for drawing it as a picture (billing/limit-card.ts) rather than printing it.
@@ -115,18 +198,21 @@ async function drawDocument(
     // The user's chosen layout, or the one the product shipped with. A
     // template that was withdrawn falls back rather than failing to render.
     const html = renderTemplate(templateId, doc) ?? renderDocumentHtml(doc);
-    const bytes = await renderPdf(html);
+    // Drawn while they read the draft, if it is the very same page.
+    const ready = await preparedFor(documentId, html);
+    const bytes = ready ? ready.bytes : await renderPdf(html);
     const key = documentKey(documentId, version);
 
     await put(key, bytes, "application/pdf", userId);
     await recordVersion(documentId, version, doc, key);
 
-    log.info({ documentId, version, bytes: bytes.length, ms: Date.now() - started }, "pdf rendered");
+    log.info({ documentId, version, bytes: bytes.length, ms: Date.now() - started, prepared: Boolean(ready) }, "pdf rendered");
 
     return {
       key,
       bytes,
       filename: fileName(labelFor(doc.variant), doc.number, doc.clientName),
+      mediaId: ready?.mediaId ?? null,
     };
   } catch (err) {
     // The invoice exists, is numbered and is payable. A missing PDF is a
@@ -231,8 +317,10 @@ const labelFor = (v: Variant): string =>
 /** Everything the template needs, in one query per document. */
 async function loadForRender(
   documentId: string,
+  // A held connection when it must see a transaction's own writes (the PDF prepared early).
+  q: Pick<PoolClient, "query"> = db(),
 ): Promise<{ doc: DocumentData; userId: string; version: number; templateId: string | null } | null> {
-  const { rows } = await db().query<{
+  const { rows } = await q.query<{
     user_id: string;
     type: string;
     number: number | null;
@@ -282,7 +370,7 @@ async function loadForRender(
   const r = rows[0];
   if (!r) return null;
 
-  const { rows: items } = await db().query<{
+  const { rows: items } = await q.query<{
     description: string;
     qty: string;
     unit_amount_kobo: number;
@@ -314,7 +402,7 @@ async function loadForRender(
       // render must never fetch anything.
       logoDataUri: await logoDataUri(r.user_id, r.plan, r.logo_url),
       signatureDataUri: await signatureDataUri(r.signature_url),
-      bankDetails: await bankDetailsOf(documentId),
+      bankDetails: await bankDetailsOf(documentId, q),
       paymentDetails: r.delivery_type === "own_details" ? r.payment_details : null,
       clientName: r.client_name,
       clientEmail: r.client_email,

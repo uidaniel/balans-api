@@ -27,6 +27,7 @@ setGlobalDispatcher(new Agent({ connect: { family: 4 } }));
 import { env } from "./config.ts";
 import { closeDb } from "./db/pool.ts";
 import { closeRenderer, warmRenderer } from "./pdf/chrome.ts";
+import { flush as flushTimings } from "./lib/timing.ts";
 import { buildServer } from "./http/server.ts";
 import { emailTransport } from "./conversation/handle.ts";
 import { modelConfigured } from "./parser/model.ts";
@@ -141,6 +142,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     if (waited) app.log.info({ waited }, "let in-flight replies finish");
     await app.close();
     await closeRenderer();
+    // The last few seconds of step timings, before the database goes.
+    await flushTimings();
     await closeDb();
     process.exit(0);
   });

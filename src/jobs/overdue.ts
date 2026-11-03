@@ -752,6 +752,24 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
     if (purged) log.info({ count: purged }, "message text purged");
     const codes = await purgeExpiredCodes();
     if (codes) log.info({ count: codes }, "expired codes purged");
+    // The raw WhatsApp message as Meta delivered it, words and all, kept
+    // only as long as typed text is (3 November 2026): the privacy notice
+    // promises 30 days. The row stays, since its id is what stops a
+    // redelivery being handled twice. Delivery reports carry no words and
+    // feed the WhatsApp cost figures, so they are left alone.
+    const emptied = await db()
+      .query(
+        `UPDATE webhook_events SET payload_json = '{"emptied": true}'::jsonb
+          WHERE provider = 'whatsapp' AND event_type LIKE 'message.%'
+            AND received_at < now() - make_interval(days => $1::int)
+            AND NOT payload_json ? 'emptied'`,
+        [defaults.behaviour.parserTextRetentionDays],
+      )
+      .then((r) => r.rowCount ?? 0)
+      .catch(() => 0);
+    if (emptied) log.info({ count: emptied }, "old whatsapp message payloads emptied");
+    // Step timings (migration 0064) are for spotting slow steps, not history.
+    await db().query(`DELETE FROM step_timings WHERE at < now() - interval '30 days'`).catch(() => {});
 
     // F15. Returns early on every day but the 1st.
     await sendMonthlySummaries(today, log);

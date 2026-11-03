@@ -919,6 +919,9 @@ function ownDetailsBlock(doc: PublicDocument, amount: number, partLabel: string 
           : `the ${LABEL[doc.type].toLowerCase()} number`,
       )} in the reference.
       ${esc(doc.businessName)} will confirm when it arrives.</p>
+    <p class="tsmall own-note">${esc(doc.businessName)} gave these details. Balans has not checked them and does not
+      receive this payment. Something not right?
+      <a href="mailto:${esc(env.SUPPORT_EMAIL)}?subject=${encodeURIComponent(`Payment details on ${clientNumber(doc.ref, doc.number) ?? "an invoice"}`)}">Tell us</a>.</p>
   </div>`;
 }
 

@@ -117,8 +117,8 @@ export async function accountToStamp(userId: string): Promise<BankDetails | null
 }
 
 /** The account stamped on a document, or null for one sent with a link. */
-export async function bankDetailsOf(documentId: string): Promise<BankDetails | null> {
-  const { rows } = await db().query<{
+export async function bankDetailsOf(documentId: string, q: Pick<pg.PoolClient, "query"> = db()): Promise<BankDetails | null> {
+  const { rows } = await q.query<{
     bank_details_bank_name: string | null;
     bank_details_account_name: string | null;
     bank_details_account_last4: string | null;

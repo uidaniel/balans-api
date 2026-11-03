@@ -141,7 +141,8 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       req.log.error({ err: e, documentId: doc.id }, "could not tell the sender it was opened"),
     );
 
-    const canPay = payable(doc).ok;
+    // Paid to their own details: shown on the page, never a card of ours.
+    const canPay = payable(doc).ok && !doc.paymentDetails;
 
     /*
      * Asked before the button is drawn, and only where it can matter. A naira

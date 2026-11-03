@@ -440,6 +440,8 @@ export async function discardDraft(userId: string): Promise<void> {
 export type Confirmed = {
   id: string;
   number: number;
+  /** The platform-wide reference, "BL-0042". */
+  ref?: string;
   publicToken: string;
   type: DocumentType;
   /** The account a naira invoice was sent with, or null if it has a link. */
@@ -462,11 +464,27 @@ export type Confirmed = {
  * for the same user queue, and confirms for different users do not.
  */
 export async function confirmDraft(userId: string, draftId: string): Promise<Confirmed | null> {
-  return tx(async (c) => {
+  return tx((c) => confirmIn(c, userId, draftId));
+}
+
+/**
+ * The confirm itself, on a connection the caller holds. `confirmDraft` commits
+ * it; the PDF prepared before "Send it" (pdf.ts, 3 November 2026) runs it and
+ * rolls it back, to draw exactly what the confirm would produce.
+ */
+export async function confirmIn(c: PoolClient, userId: string, draftId: string): Promise<Confirmed | null> {
+  {
     await c.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [userId]);
 
-    const { rows } = await c.query<{ id: string; type: DocumentType; currency: string; pay_by: string | null }>(
-      `SELECT id, type, currency, pay_by FROM documents
+    const { rows } = await c.query<{
+      id: string;
+      type: DocumentType;
+      currency: string;
+      pay_by: string | null;
+      public_token: string | null;
+      ref: string | null;
+    }>(
+      `SELECT id, type, currency, pay_by, public_token, ref FROM documents
         WHERE id = $1 AND user_id = $2 AND status = 'draft'
         FOR UPDATE`,
       [draftId, userId],
@@ -497,7 +515,9 @@ export async function confirmDraft(userId: string, draftId: string): Promise<Con
 
     // Unguessable, and the only key a client needs (section 11). 32 hex
     // characters is 128 bits: not enumerable, and short enough for a URL.
-    const publicToken = randomBytes(16).toString("hex");
+    // Reserved on the draft when its PDF is prepared early (reserveIdentity);
+    // a draft's token opens nothing, since the page refuses drafts.
+    const publicToken = draft.public_token ?? randomBytes(16).toString("hex");
 
     /*
      * The reference, which belongs to nobody's sequence.
@@ -515,10 +535,9 @@ export async function confirmDraft(userId: string, draftId: string): Promise<Con
      * Padded to four digits and then simply longer. "BL-0042" survives being
      * written on paper and read back down a phone, which is the entire job.
      */
-    const { rows: refs } = await c.query<{ ref: string }>(
-      `SELECT 'BL-' || LPAD(nextval('document_ref_seq')::text, 4, '0') AS ref`,
-    );
-    const ref = refs[0]!.ref;
+    const ref =
+      draft.ref ??
+      (await c.query<{ ref: string }>(`SELECT 'BL-' || LPAD(nextval('document_ref_seq')::text, 4, '0') AS ref`)).rows[0]!.ref;
 
     await c.query(
       `UPDATE documents
@@ -542,7 +561,22 @@ export async function confirmDraft(userId: string, draftId: string): Promise<Con
     const ownDetails = bank ? null : await attachOwnDetails(c, draft.id, userId);
 
     return { id: draft.id, number, ref, publicToken, type: draft.type, bank, ownDetails };
-  });
+  }
+}
+
+/**
+ * Gives a draft the link token and reference it will be sent with, so a PDF
+ * drawn now matches the one "Send it" produces. A reference taken for a draft
+ * nobody sends is skipped, which is fine: references belong to no sequence.
+ */
+export async function reserveIdentity(draftId: string): Promise<void> {
+  await db().query(
+    `UPDATE documents
+        SET public_token = COALESCE(public_token, $2),
+            ref = CASE WHEN ref IS NULL THEN 'BL-' || LPAD(nextval('document_ref_seq')::text, 4, '0') ELSE ref END
+      WHERE id = $1 AND status = 'draft'`,
+    [draftId, randomBytes(16).toString("hex")],
+  );
 }
 
 /**

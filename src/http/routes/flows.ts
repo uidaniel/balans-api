@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { env } from "../../config.ts";
 import { verifyMetaSignature } from "../../lib/crypto.ts";
 import { answer, endpointKey, openEnvelope, sealResponse, type Envelope } from "../../whatsapp/flows/endpoint.ts";
+import { timed } from "../../lib/timing.ts";
 
 export async function flowRoutes(app: FastifyInstance): Promise<void> {
   app.post("/flows/endpoint", async (req, reply) => {
@@ -40,7 +41,9 @@ export async function flowRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(421).send();
     }
 
-    const out = await answer(opened.request, { log: req.log }).catch((err: unknown) => {
+    // Timed per screen: while this runs the person looks at a spinner in the form.
+    const step = `flow.${String((opened.request as { screen?: unknown }).screen ?? "init").toLowerCase().slice(0, 30)}`;
+    const out = await timed(step, () => answer(opened.request, { log: req.log })).catch((err: unknown) => {
       req.log.error({ err }, "flow endpoint answer failed");
       // Better a line under the box than a form that says "Something went wrong".
       return {

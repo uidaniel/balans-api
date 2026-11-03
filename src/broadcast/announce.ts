@@ -57,11 +57,52 @@ export function announcementEmail(o: { subject: string; message: string; userId:
   };
 }
 
-/** Turns announcements off or on. Never throws. */
+/**
+ * Turns announcements off or on. On is a yes (3 November 2026): it records
+ * the opt-in an announcement needs (migration 0065). Never throws, even
+ * without a database.
+ */
 export async function setUpdates(userId: string, on: boolean): Promise<void> {
-  await db()
-    .query(`UPDATE users SET updates_off_at = ${on ? "NULL" : "COALESCE(updates_off_at, now())"} WHERE id = $1`, [userId])
+  await Promise.resolve()
+    .then(() =>
+      db().query(
+        on
+          ? `UPDATE users SET updates_off_at = NULL, updates_opt_in_at = COALESCE(updates_opt_in_at, now()),
+                              updates_asked_at = COALESCE(updates_asked_at, now()) WHERE id = $1`
+          : `UPDATE users SET updates_off_at = COALESCE(updates_off_at, now()),
+                              updates_asked_at = COALESCE(updates_asked_at, now()) WHERE id = $1`,
+        [userId],
+      ),
+    )
     .catch(() => {});
+}
+
+/** The two answers to the one-time question, and to the box at setup. */
+export const UPDATES_BUTTONS = [
+  { id: "start updates", title: "Yes, send updates" },
+  { id: "no updates", title: "No updates" },
+] as const;
+
+export const UPDATES_QUESTION =
+  "📣 Want the occasional update from Balans, like new features and tips? A few a month at most, and you can stop any time.";
+
+/**
+ * Whether to ask: somebody who finished setup and has never been asked, said
+ * yes, or said stop. Marks them asked in the same statement, so two invoices
+ * sent at once cannot ask twice. Never throws.
+ */
+export async function claimUpdatesQuestion(userId: string): Promise<boolean> {
+  return Promise.resolve()
+    .then(() =>
+      db().query(
+        `UPDATE users SET updates_asked_at = now()
+          WHERE id = $1 AND consented_at IS NOT NULL AND updates_asked_at IS NULL
+            AND updates_opt_in_at IS NULL AND updates_off_at IS NULL`,
+        [userId],
+      ),
+    )
+    .then((r) => (r.rowCount ?? 0) > 0)
+    .catch(() => false);
 }
 
 /** The email's "Stop Balans updates" link. */

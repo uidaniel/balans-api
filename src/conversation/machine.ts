@@ -1856,10 +1856,11 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
         return { replies: [], next: "idle", context, effects: [{ type: "confirm_business_name" }] };
       }
       // Announcements from the admin (3 November 2026): their way out, and back.
-      if (/^(stop|unsubscribe)( from)? updates[.!]*$/i.test(text.trim())) {
+      // "No updates" is the button under the one-time question (3 November 2026).
+      if (/^((stop|unsubscribe)( from)? updates|no updates)[.!]*$/i.test(text.trim())) {
         return { replies: [], next: "idle", context, effects: [{ type: "set_updates", on: false }] };
       }
-      if (/^(start|resume) updates[.!]*$/i.test(text.trim())) {
+      if (/^((start|resume) updates|yes, send updates)[.!]*$/i.test(text.trim())) {
         return { replies: [], next: "idle", context, effects: [{ type: "set_updates", on: true }] };
       }
       // The buttons under the first invoice (2 November 2026).

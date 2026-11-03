@@ -20,6 +20,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { env } from "../config.ts";
 import { embeddedFonts, FONT_FILES } from "./fonts.ts";
+import { timed } from "../lib/timing.ts";
 
 const CANDIDATES = [
   process.env.CHROME_PATH,
@@ -506,6 +507,11 @@ export const A4: PageSize = { widthInches: 8.27, heightInches: 11.69 };
  * which invoices are being made by requesting a font.
  */
 export async function renderPdf(html: string, size: PageSize = A4): Promise<Buffer> {
+  // Timed with the wait for a free tab, because that is part of what people wait.
+  return timed("render.pdf", () => drawPdf(html, size));
+}
+
+async function drawPdf(html: string, size: PageSize): Promise<Buffer> {
   return onTab(async (t) => {
     // A tab that last drew a card has that card's viewport; a PDF wants none.
     await t.send("Emulation.clearDeviceMetricsOverride");
@@ -553,6 +559,10 @@ export async function renderPng(
     jpeg?: boolean;
   } = {},
 ): Promise<Buffer> {
+  return timed(opts.sheet ? "render.sheet" : "render.card", () => drawPng(html, width, height, opts));
+}
+
+async function drawPng(html: string, width: number, height: number, opts: { sheet?: boolean; jpeg?: boolean }): Promise<Buffer> {
   return onTab(async (t) => {
     // A tab that last printed a PDF was measuring in print media; a card is a screen.
     await t.send("Emulation.setEmulatedMedia", { media: opts.sheet ? "print" : "" });

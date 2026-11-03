@@ -152,7 +152,7 @@ async function sendMail(b: Broadcast, r: Recipient, log: FastifyBaseLogger): Pro
  */
 async function announceWhatsApp(b: Broadcast, r: Recipient): Promise<{ status: string; via?: string; error?: string }> {
   if (!b.channels.includes("whatsapp") || !r.phone || !b.message) return { status: "skipped" };
-  if (r.user_id && (await updatesOff(r.user_id))) return { status: "skipped", error: "turned updates off" };
+  if (b.kind === "live" && !(await mayAnnounce(r.user_id))) return { status: "skipped", error: "has not said yes to updates" };
   const open = r.user_id ? (await windowFor(r.user_id).catch(() => ({ open: false }))).open : false;
   if (open || b.kind === "test") {
     const sent = await sendText(r.phone, announcementText(b.message));
@@ -168,14 +168,23 @@ async function announceWhatsApp(b: Broadcast, r: Recipient): Promise<{ status: s
 
 async function announceMail(b: Broadcast, r: Recipient, log: FastifyBaseLogger): Promise<{ status: string; error?: string }> {
   if (!b.channels.includes("email") || !r.email || !b.message) return { status: "skipped" };
-  if (r.user_id && (await updatesOff(r.user_id))) return { status: "skipped", error: "turned updates off" };
+  if (b.kind === "live" && !(await mayAnnounce(r.user_id))) return { status: "skipped", error: "has not said yes to updates" };
   const sent = await sendEmail({ to: r.email, ...announcementEmail({ subject: b.subject || "An update from Balans", message: b.message, userId: r.user_id ?? null }) }, log);
   return sent.ok ? { status: "sent" } : { status: "failed", error: sent.reason };
 }
 
-async function updatesOff(userId: string): Promise<boolean> {
-  const { rows } = await db().query<{ off: boolean }>(`SELECT updates_off_at IS NOT NULL AS off FROM users WHERE id = $1`, [userId]);
-  return rows[0]?.off ?? false;
+/**
+ * Only somebody who said yes and has not said stop (migrations 0061, 0065),
+ * checked at the moment of sending, since either can change after a
+ * broadcast is queued. A test is the admin's own number and is not asked.
+ */
+async function mayAnnounce(userId: string | null | undefined): Promise<boolean> {
+  if (!userId) return false;
+  const { rows } = await db().query<{ ok: boolean }>(
+    `SELECT updates_opt_in_at IS NOT NULL AND updates_off_at IS NULL AS ok FROM users WHERE id = $1`,
+    [userId],
+  );
+  return rows[0]?.ok ?? false;
 }
 
 /** One broadcast, start to finish, resuming where a restart left it. */

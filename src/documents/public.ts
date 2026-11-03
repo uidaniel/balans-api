@@ -331,6 +331,14 @@ export function payable(d: PublicDocument): { ok: true } | { ok: false; why: str
   if (d.status === "paid" || outstandingKobo(d) === 0) return { ok: false, why: "paid" };
   // Every part settled but the document not yet marked paid: nothing to take.
   if (d.parts.length && payableNowKobo(d) === 0) return { ok: false, why: "paid" };
+  /*
+   * Paid to the sender's own details, in any currency (3 November 2026): the
+   * page shows them, with no button of ours. This came after the currency
+   * checks below, so a naira invoice, or one from somebody outside Nigeria
+   * with no account here, said "contact the sender" and hid the very details
+   * it was sent with. The card route refuses these on its own (public.ts).
+   */
+  if (d.paymentDetails) return { ok: true };
   // A naira invoice is paid by transfer to the sender's own account, which
   // the page shows instead of a Pay button (see bank-details.ts).
   if (d.bank) return { ok: false, why: "bank_details" };

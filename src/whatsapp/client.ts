@@ -13,6 +13,7 @@
  */
 
 import { env, require_ } from "../config.ts";
+import { note, sentReply } from "../lib/timing.ts";
 
 export type SendResult =
   | { ok: true; waMessageId: string }
@@ -85,6 +86,7 @@ async function call(
   if (bubble) await bubble;
 
   let res: Response;
+  const sentAt = performance.now();
   try {
     res = await fetchImpl(graphUrl(path), {
       method: "POST",
@@ -95,6 +97,7 @@ async function call(
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(15_000),
     });
+    note(to ? "wa.send" : "wa.read", performance.now() - sentAt);
   } catch (e) {
     // A timeout or socket error says nothing about whether Meta acted on it,
     // so it is retryable but never assumed delivered.
@@ -112,6 +115,7 @@ async function call(
   if (res.ok) {
     const messages = (json.messages as { id?: string }[] | undefined) ?? [];
     const id = messages[0]?.id;
+    if (id) sentReply();
     return id
       ? { ok: true, waMessageId: id }
       : { ok: false, retryable: false, reason: "accepted but no message id returned" };
@@ -265,6 +269,7 @@ export async function uploadDocument(
   form.set("file", new Blob([new Uint8Array(bytes)], { type: contentType }), filename);
 
   let res: Response;
+  const upAt = performance.now();
   try {
     res = await fetchImpl(graphUrl(`${env.WA_PHONE_NUMBER_ID}/media`), {
       method: "POST",
@@ -278,6 +283,7 @@ export async function uploadDocument(
   }
 
   const body = (await res.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
+  note("wa.upload", performance.now() - upAt);
   if (!res.ok || !body.id) {
     return { ok: false, reason: body.error?.message ?? `HTTP ${res.status}` };
   }

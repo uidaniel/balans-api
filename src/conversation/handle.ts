@@ -94,7 +94,7 @@ import {
 } from "../documents/reports.ts";
 import { defaultPeriod, readPeriod } from "../../core/period.ts";
 import { converse, type ChatMemory } from "../chat/assistant.ts";
-import { renderDocumentPdf } from "../documents/pdf.ts";
+import { prepareDocumentPdf, renderDocumentPdf } from "../documents/pdf.ts";
 import { deliverPaidToClient, receiptForDocument } from "../email/paid-delivery.ts";
 import { emailDocumentToClient } from "../email/client-delivery.ts";
 import { whatsappDocumentToClient } from "../documents/client-whatsapp.ts";
@@ -404,7 +404,7 @@ import {
 } from "./store.ts";
 import { documentLink } from "../documents/links.ts";
 import { recordSource, sourceOf } from "./source.ts";
-import { setUpdates } from "../broadcast/announce.ts";
+import { claimUpdatesQuestion, setUpdates, UPDATES_BUTTONS, UPDATES_QUESTION } from "../broadcast/announce.ts";
 import { clearSignature, issueSignatureToken } from "../brand/signature.ts";
 import { signatureUrl } from "../http/routes/signature.ts";
 import { accountToStamp, bankDetailsOf, deliveryFor } from "../documents/bank-details.ts";
@@ -1313,7 +1313,7 @@ async function runEffects(
           await setUpdates(userId, effect.on);
           extra.push(
             effect.on
-              ? `🔔 ${b("Updates are back on.")} Send ${b("STOP UPDATES")} any time to stop them.`
+              ? `🔔 ${b("You'll get the occasional update from Balans.")} Send ${b("STOP UPDATES")} any time to stop them.`
               : `🔕 ${b("No more updates from Balans.")} Your invoices, receipts and reminders are not affected. Send ${b("START UPDATES")} to get them again.`,
           );
           break;
@@ -1766,6 +1766,10 @@ async function runEffects(
           extra.push(draftSummary(draft, ctx.today, gate.plan, card === null, bank));
           buttons = draftButtons();
           if (card) buttonsImage = card;
+          // The PDF drawn and uploaded while they read this, so "Send it" is
+          // quick (3 November 2026). Not for a change to a sent invoice, which
+          // keeps its own number, and not for a request, which has no PDF.
+          if (!ctx.editingId && draft.type !== "payment_request") prepareDocumentPdf(userId, draft.id, log);
 
           log.info(
             { userId, draftId: draft.id, totalKobo: draft.totalKobo, card: card !== null },
@@ -2142,6 +2146,22 @@ async function runEffects(
             extra.push(body);
           };
 
+          /*
+           * Updates from Balans, asked once (3 November 2026): an announcement
+           * goes only to somebody who said yes. Never on the first invoice,
+           * which has its own follow-up, nor beside the design offer, so a
+           * send carries one extra message at most. See broadcast/announce.ts.
+           */
+          const askUpdates = async (): Promise<void> => {
+            if (!ctx.phone || ctx.editingId || confirmed.updatedFrom) return;
+            const ever = await documentsEverSent(userId);
+            if (ever < 2) return;
+            if (ever <= DESIGN_OFFER_LIMIT && !(await hasChosenTemplate(userId))) return;
+            if (!(await claimUpdatesQuestion(userId))) return;
+            const out = await sendButtons(ctx.phone, { body: UPDATES_QUESTION, buttons: [...UPDATES_BUTTONS] });
+            if (out.ok) await recordOutbound(userId, out.waMessageId, "sent", { kind: "interactive" });
+          };
+
           const offerDesigns = async (): Promise<void> => {
             if (!ctx.phone || ctx.editingId || confirmed.updatedFrom) return;
             const ever = await documentsEverSent(userId);
@@ -2166,7 +2186,8 @@ async function runEffects(
           };
 
           if (pdf && ctx.phone) {
-            const up = await uploadDocument(pdf.bytes, pdf.filename);
+            // Uploaded already if it was prepared while they read the draft.
+            const up = pdf.mediaId ? { ok: true as const, mediaId: pdf.mediaId } : await uploadDocument(pdf.bytes, pdf.filename);
             if (up.ok) {
               // With the button when there is one; a plain document if Meta
               // will not take that, since the invoice matters more than the tap.
@@ -2191,6 +2212,7 @@ async function runEffects(
                 await offerQuoteActions();
                 await followUp();
                 await offerDesigns();
+                await askUpdates();
                 break;
               }
               log.error({ userId, reason: sent.reason }, "could not send the document");
@@ -2207,6 +2229,7 @@ async function runEffects(
           await offerQuoteActions();
           await followUp();
           await offerDesigns();
+          await askUpdates();
           break;
         }
 
