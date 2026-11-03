@@ -67,13 +67,6 @@ const DARK = {
 const FONT =
   "'Onest', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 
-/**
- * The site's gold button: light at the top, marigold at the foot, with a lit
- * top edge. Laid over a solid marigold, which is what Outlook and anything
- * else without gradients shows. Taken off whole when a Pro business's colour
- * replaces ours (see `layout`), so their button is their colour, flat.
- */
-const GOLD = "background-image:linear-gradient(180deg,#FFD877,#F5B82E);box-shadow:inset 0 1px 0 rgba(255,250,230,0.6);";
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 const WIDTH = 600;
@@ -236,8 +229,6 @@ export function layout(opts: LayoutOptions): string {
     // The dark-mode label colour follows theirs, which may be white on a dark brand.
     .split(`.bl-btn span { color:${LIGHT.ink} !important; }`)
     .join(`.bl-btn span { color:${on} !important; }`)
-    .split(GOLD)
-    .join("")
     .split(`background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};`)
     .join(`background:${colour};border-radius:999px;color:${on};`)
     .split(`fillcolor="${LIGHT.marigold}">\n<w:anchorlock/><center style="color:${LIGHT.ink};`)
@@ -467,7 +458,11 @@ export function noteBlock(lines: string[]): string {
  * The label is text, centred by the button's equal padding (4 November 2026).
  * Drawn as a picture it stayed dark in Gmail's dark mode, but Gmail then filed
  * the email under Promotions, and an invoice nobody sees is worse than a light
- * label on the gold. Gmail's dark mode shows this one light; it reads fine.
+ * label on the gold.
+ *
+ * Solid marigold, no gradient, as before the rebrand (4 November 2026). Gmail's
+ * dark mode cannot see the colour of a gradient, takes the button for dark and
+ * turns the label white; on a solid gold it keeps the label dark.
  */
 export function button(label: string, href: string): string {
   const h = esc(href);
@@ -479,7 +474,7 @@ export function button(label: string, href: string): string {
 </v:roundrect>
 <![endif]-->
 <!--[if !mso]><!-- -->
-<a href="${h}" class="bl-btn" style="background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};${GOLD}display:block;font-family:${FONT};font-size:15px;font-weight:500;line-height:22px;text-align:center;text-decoration:none;min-width:200px;padding:12px 28px;mso-hide:all;">${l}</a>
+<a href="${h}" class="bl-btn" style="background:${LIGHT.marigold};border-radius:999px;color:${LIGHT.ink};display:block;font-family:${FONT};font-size:15px;font-weight:600;line-height:22px;text-align:center;text-decoration:none;min-width:200px;padding:12px 28px;mso-hide:all;">${l}</a>
 <!--<![endif]-->
 </td></tr></table>`;
 }
