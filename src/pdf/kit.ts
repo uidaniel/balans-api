@@ -20,6 +20,7 @@
  */
 
 import { applyBrand, brandTokens, type BrandTokens } from "../brand/colour.ts";
+import { env } from "../config.ts";
 import { formatFriendly, type Civil } from "../../core/dates.ts";
 import { formatNaira } from "../../core/totals.ts";
 import { formatMoney, type Currency } from "../../core/currency.ts";
@@ -275,7 +276,7 @@ text-underline-offset:.22em}
 /* The small print section 12 requires ------------------------------------ */
 .legal{margin-top:.9em;padding-top:.7em;border-top:1px solid ${ink(0.1)};
 font-size:.46em;line-height:1.6;color:${ink(0.42)}}
-.made{display:flex;align-items:center;gap:.4em;white-space:nowrap;font-size:.58em;color:${ink(0.45)}}
+.made{display:flex;align-items:center;gap:.4em;white-space:nowrap;font-size:.58em;color:${ink(0.45)};text-decoration:none}
 .made svg{display:block;width:1.1em;height:1.1em;flex:none}
 
 .mark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-28deg);
@@ -787,9 +788,14 @@ export function signature(d: DocumentData, className = ""): string {
   </div>`;
 }
 
-/** The house line every Free document carries (PRD F9). */
+/**
+ * The house line every Free document carries (PRD F9). A link since
+ * 3 November 2026: a client who taps it lands in the chat with "(ref:
+ * invoice)", so the admin can count the users invoices bring in.
+ */
+export const madeWithUrl = (): string => `${env.SITE_URL.replace(/\/$/, "")}/start?ref=invoice`;
 export const madeWith = (d: DocumentData): string =>
-  d.showMadeWith ? `<p class="made">${COIN}Made with Balans</p>` : "";
+  d.showMadeWith ? `<a class="made" href="${madeWithUrl()}" target="_blank" rel="noopener">${COIN}Made with Balans</a>` : "";
 
 /** Section 12's two lines, on everything a client sees. */
 export const legal = (d: DocumentData, className = ""): string =>

@@ -164,7 +164,7 @@ color:${ink(0.45)};overflow-wrap:anywhere}
 .foot .where b{font-weight:600;color:${INK}}
 .slip .legal{margin-top:.9em;padding-bottom:1.1em;font-size:.5em;line-height:1.5;color:${ink(0.4)}}
 .slip .made{display:flex;align-items:center;justify-content:center;gap:.35em;
-margin-top:.75em;font-size:.55em;color:${ink(0.45)}}
+margin-top:.75em;font-size:.55em;color:${ink(0.45)};text-decoration:none}
 /*
  * The support reference, under the slip rather than in the corner of the
  * page. Every other layout fills its sheet, so a corner is the quiet place;
