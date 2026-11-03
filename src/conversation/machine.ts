@@ -290,6 +290,8 @@ export type Effect =
   | { type: "offer_branding" }
   /** "STOP UPDATES" / "START UPDATES": announcements off or on. */
   | { type: "set_updates"; on: boolean }
+  /** "I accept" under the notice of terms 6.0 (legal/notice.ts). */
+  | { type: "accept_terms" }
   /**
    * Open a Flow on the user's phone.
    *
@@ -1854,6 +1856,10 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       // answers typed.
       if (NAME_IS_RIGHT.test(text.trim())) {
         return { replies: [], next: "idle", context, effects: [{ type: "confirm_business_name" }] };
+      }
+      // The notice of terms 6.0 (4 November 2026): its button and the template's reply.
+      if (/^(i accept|accept new terms|i accept the new terms|accept the new terms)[.!]*$/i.test(text.trim())) {
+        return { replies: [], next: "idle", context, effects: [{ type: "accept_terms" }] };
       }
       // Announcements from the admin (3 November 2026): their way out, and back.
       // "No updates" is the button under the one-time question (3 November 2026).

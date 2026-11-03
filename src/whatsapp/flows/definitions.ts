@@ -75,6 +75,7 @@ import { defaults, env } from "../../config.ts";
 import { formatNaira } from "../../../core/totals.ts";
 import { CURRENCIES, INFO, type Currency } from "../../../core/currency.ts";
 import { DEFAULT_TEMPLATE, TEMPLATES } from "../../pdf/templates.ts";
+import { TRANSFER_LABEL } from "../../legal/consent.ts";
 
 /** The marketing site, which owns the legal documents. */
 const site = env.SITE_URL.replace(/[/]$/, "");
@@ -305,6 +306,7 @@ function abroadScreen(): Record<string, unknown> {
             },
             { type: "OptIn", name: "agreed", label: "I agree to the Terms and the Privacy Notice", required: true },
             // Unticked, and not required (3 November 2026): updates need a yes.
+            { type: "OptIn", name: "abroad_ok", label: TRANSFER_LABEL, required: true },
             { type: "OptIn", name: "updates", label: "Send me occasional updates from Balans", required: false },
             {
               type: "Footer",
@@ -315,6 +317,7 @@ function abroadScreen(): Record<string, unknown> {
                   pay_details: "${form.pay_details}",
                   agreed: "${form.agreed}",
                   updates: "${form.updates}",
+                  abroad_ok: "${form.abroad_ok}",
                   form_version: "3",
                 },
               },
@@ -438,13 +441,14 @@ function termsOnlyScreen(): Record<string, unknown> {
           name: "terms_form",
           children: [
             { type: "OptIn", name: "agreed", label: "I agree to the Terms and the Privacy Notice", required: true },
+            { type: "OptIn", name: "abroad_ok", label: TRANSFER_LABEL, required: true },
             { type: "OptIn", name: "updates", label: "Send me occasional updates from Balans", required: false },
             {
               type: "Footer",
               label: "Finish setup",
               "on-click-action": {
                 name: "data_exchange",
-                payload: { agreed: "${form.agreed}", updates: "${form.updates}", skipped_bank: "1", form_version: "4" },
+                payload: { agreed: "${form.agreed}", updates: "${form.updates}", abroad_ok: "${form.abroad_ok}", skipped_bank: "1", form_version: "4" },
               },
             },
           ],
@@ -553,7 +557,8 @@ function confirmScreen(form: AccountForm): Record<string, unknown> {
             ...(setup
               ? [
                   { type: "OptIn", name: "agreed", label: "I agree to the Terms and the Privacy Notice", required: true },
-                  { type: "OptIn", name: "updates", label: "Send me occasional updates from Balans", required: false },
+                  { type: "OptIn", name: "abroad_ok", label: TRANSFER_LABEL, required: true },
+            { type: "OptIn", name: "updates", label: "Send me occasional updates from Balans", required: false },
                 ]
               : []),
             {
@@ -565,7 +570,7 @@ function confirmScreen(form: AccountForm): Record<string, unknown> {
                   account_name: "${data.account_name}",
                   account_line: "${data.account_line}",
                   confirmed: "${form.confirmed}",
-                  ...(setup ? { agreed: "${form.agreed}", updates: "${form.updates}" } : {}),
+                  ...(setup ? { agreed: "${form.agreed}", updates: "${form.updates}", abroad_ok: "${form.abroad_ok}" } : {}),
                   ...v3(form),
                 },
               },

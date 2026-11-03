@@ -13,7 +13,8 @@ import { NAIRA_PRICE, perMonthOf, proPriceFor, type ProPrice } from "../billing/
 import { brandedLimitCard } from "../billing/limit-card.ts";
 import { abroadCurrencyFor, homeCurrencyFor } from "../../core/home-currency.ts";
 import type { FastifyBaseLogger } from "fastify";
-import { legalConsentVersion } from "../config.ts";
+import { consentVersion, NEXT_CONSENT, nextConsentInForce } from "../config.ts";
+import { acceptNextTerms } from "../legal/consent.ts";
 import { db, tx } from "../db/pool.ts";
 import { markRead, normalisePhone, sendButtons, sendText, type ReplyButton } from "../whatsapp/client.ts";
 import { checkAccount, findBank } from "../payments/bank-directory.ts";
@@ -493,7 +494,7 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
      */
     if (state === "new") {
       const today = todayIn(defaults.behaviour.timezone);
-      const opening = step("new", {}, { text: "", today }, legalConsentVersion);
+      const opening = step("new", {}, { text: "", today }, consentVersion());
       const outcome = await runEffects(opening.effects, user.id, undefined, log, { today, phone: msg.from });
       await saveConversation(user.id, outcome.failed ? "new" : (outcome.holdAt ?? opening.next), opening.context);
       if (outcome.lines.length) await reply(user.id, msg.from, outcome.lines, log);
@@ -857,7 +858,7 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
       // tell from the text alone: a row id arrives as ordinary words.
       tapped: msg.kind === "interactive",
     },
-    legalConsentVersion,
+    consentVersion(),
   );
 
   if (reading) {
@@ -1315,6 +1316,16 @@ async function runEffects(
             effect.on
               ? `🔔 ${b("You'll get the occasional update from Balans.")} Send ${b("STOP UPDATES")} any time to stop them.`
               : `🔕 ${b("No more updates from Balans.")} Your invoices, receipts and reminders are not affected. Send ${b("START UPDATES")} to get them again.`,
+          );
+          break;
+        }
+
+        case "accept_terms": {
+          const ok = await acceptNextTerms(userId);
+          extra.push(
+            ok
+              ? `✅ ${b(`Thank you. You've accepted version ${NEXT_CONSENT.version}`)} of our terms and privacy notice${nextConsentInForce() ? "" : `, which takes effect on ${NEXT_CONSENT.from}`}. That includes your data being processed outside Nigeria.`
+              : "Finish setting up first, then you can accept the terms.",
           );
           break;
         }
@@ -3695,8 +3706,8 @@ async function handleConsentForm(
     return;
   }
 
-  sendWelcome(userId, await recordConsent(userId, legalConsentVersion), log);
-  log.info({ userId, version: legalConsentVersion }, "consent recorded");
+  sendWelcome(userId, await recordConsent(userId, consentVersion()), log);
+  log.info({ userId, version: consentVersion() }, "consent recorded");
 
   await saveConversation(userId, "idle", {});
 

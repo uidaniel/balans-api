@@ -17,7 +17,7 @@
 import { abroadCurrencyFor } from "../../../core/home-currency.ts";
 import type { FastifyBaseLogger } from "fastify";
 
-import { env, legalConsentVersion } from "../../config.ts";
+import { consentVersion, env } from "../../config.ts";
 import { sendText } from "../client.ts";
 import { recordOutbound } from "../../conversation/store.ts";
 import { db } from "../../db/pool.ts";
@@ -170,12 +170,12 @@ export async function completeSetup(userId: string, checked: Checked, log: Fasti
     accountName: checked.accountName,
   });
   await activateBankAccount(userId, null);
-  sendWelcome(userId, await recordConsent(userId, legalConsentVersion), log);
+  sendWelcome(userId, await recordConsent(userId, consentVersion()), log);
 
   const { context } = await loadConversation(userId);
   await saveConversation(userId, "idle", context.opener ? { opener: context.opener } : {});
 
-  log.info({ userId, version: legalConsentVersion }, "set up entirely inside the form");
+  log.info({ userId, version: consentVersion() }, "set up entirely inside the form");
   return { ok: true };
 }
 
@@ -185,10 +185,10 @@ export async function completeSetup(userId: string, checked: Checked, log: Fasti
  * adds it any time.
  */
 export async function completeSetupNoBank(userId: string, log: FastifyBaseLogger): Promise<Done> {
-  sendWelcome(userId, await recordConsent(userId, legalConsentVersion), log);
+  sendWelcome(userId, await recordConsent(userId, consentVersion()), log);
   const { context } = await loadConversation(userId);
   await saveConversation(userId, "idle", context.opener ? { opener: context.opener } : {});
-  log.info({ userId, version: legalConsentVersion }, "set up without a bank account");
+  log.info({ userId, version: consentVersion() }, "set up without a bank account");
   return { ok: true };
 }
 
@@ -214,7 +214,7 @@ export async function completeAbroadSetup(
     `UPDATE users SET payment_method = NULLIF($2, ''), payment_details = NULLIF($3, ''), abroad_pay_by = 'own' WHERE id = $1`,
     [userId, pay.method.slice(0, 40), pay.details.slice(0, 600)],
   );
-  sendWelcome(userId, await recordConsent(userId, legalConsentVersion), log);
+  sendWelcome(userId, await recordConsent(userId, consentVersion()), log);
 
   const { context } = await loadConversation(userId);
   await saveConversation(userId, "idle", context.opener ? { opener: context.opener } : {});
@@ -292,12 +292,12 @@ export async function finishOnboarding(
   if (!check.ok) return { ok: false, message: codeRefusal(check) };
 
   await markEmailVerified(userId, email);
-  sendWelcome(userId, await recordConsent(userId, legalConsentVersion), log);
+  sendWelcome(userId, await recordConsent(userId, consentVersion()), log);
 
   const { context } = await loadConversation(userId);
   await saveConversation(userId, "idle", context.opener ? { opener: context.opener } : {});
 
-  log.info({ userId, version: legalConsentVersion }, "set up entirely inside the form");
+  log.info({ userId, version: consentVersion() }, "set up entirely inside the form");
   return { ok: true };
 }
 

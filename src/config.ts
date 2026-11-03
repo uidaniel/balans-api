@@ -256,6 +256,19 @@ export function require_(...keys: (keyof typeof env)[]): void {
  */
 export const legalConsentVersion = process.env.LEGAL_CONSENT_VERSION ?? "5.2";
 
+/*
+ * 6.0, published on 4 November 2026 for 30 days' notice, in force from
+ * midnight in Lagos on 4 December 2026: in step with `nextLegal` in the web
+ * repo's src/lib/config.ts. Before then setup records 5.2; from then, 6.0.
+ */
+export const NEXT_CONSENT = { version: "6.0", from: "4 December 2026", fromOn: "2026-12-04" } as const;
+export const nextConsentInForce = (now: number = Date.now()): boolean =>
+  now >= Date.parse(`${NEXT_CONSENT.fromOn}T00:00:00+01:00`);
+
+/** The version a person accepts right now. A function, so the day it changes needs no restart. */
+export const consentVersion = (now: number = Date.now()): string =>
+  process.env.LEGAL_CONSENT_VERSION ?? (nextConsentInForce(now) ? NEXT_CONSENT.version : legalConsentVersion);
+
 export const defaults = {
   plans: {
     /*

@@ -51,6 +51,7 @@ describe("the templates we register with Meta", () => {
         "pro_renewal",
         "security_alert",
         "setup_reminder",
+        "terms_update",
       ],
     );
   });

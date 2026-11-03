@@ -17,6 +17,7 @@ import { recordTemplateStatuses } from "../whatsapp/register-templates.ts";
 import { purgeParserText, sendTrialNotices } from "./trial-notices.ts";
 import { sendSetupFollowups, sendSetupNudges } from "./setup-nudges.ts";
 import { sendNameChecks } from "./name-check.ts";
+import { sendTermsNotices } from "../legal/notice.ts";
 import { syncWhatsAppSpend } from "../whatsapp/spend.ts";
 import { purgeExpiredCodes } from "../lib/codes.ts";
 import { tellPayouts } from "../payments/payouts.ts";
@@ -744,6 +745,8 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
       // "Is this your business name?": once each, weekly while it looks
       // wrong (1 November 2026).
       await sendNameChecks(log);
+      // Terms and privacy 6.0: the notice, once each (legal/notice.ts).
+      await sendTermsNotices(log);
     }
 
     // What the privacy policy promises: typed text gone after 30 days, and
