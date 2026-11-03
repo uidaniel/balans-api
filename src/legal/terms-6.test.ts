@@ -12,7 +12,7 @@ import { step } from "../conversation/machine.ts";
 import { FLOWS } from "../whatsapp/flows/definitions.ts";
 import { TEMPLATES } from "../whatsapp/window.ts";
 import { ACCEPT_BUTTON, noticeEmail, noticeText, termsLink } from "./notice.ts";
-import { TRANSFER_LABEL } from "./consent.ts";
+import { TERMS_LABEL, TERMS_WORDING } from "./consent.ts";
 
 const NOW = { y: 2026, m: 11, d: 4 };
 const at = (iso: string) => Date.parse(iso);
@@ -26,14 +26,18 @@ describe("which version a person accepts", () => {
   });
 });
 
-describe("the separate yes to processing outside Nigeria", () => {
-  it("is its own required box beside the terms, everywhere setup ends", () => {
+describe("the yes to processing outside Nigeria", () => {
+  it("is named in the one terms box, everywhere setup ends", () => {
     const json = JSON.stringify(FLOWS.find((f) => f.key === "onboarding")!.json);
-    const boxes = json.match(/"name":"abroad_ok","label":"[^"]+","required":true/g) ?? [];
+    const boxes = json.match(/"name":"agreed","label":"[^"]+","required":true/g) ?? [];
     assert.equal(boxes.length, 3);
-    assert.ok(json.includes(TRANSFER_LABEL));
-    assert.equal((json.match(/"abroad_ok":"\$\{form\.abroad_ok\}"/g) ?? []).length, 3);
-    assert.ok(TRANSFER_LABEL.length <= 120);
+    for (const box of boxes) assert.ok(box.includes(TERMS_LABEL));
+    assert.match(TERMS_LABEL, /outside Nigeria/);
+    assert.ok(TERMS_LABEL.length <= 120);
+    // No second box: one tick at the end of setup.
+    assert.doesNotMatch(json, /abroad_ok/);
+    // Sent with it, so only this wording records the transfer.
+    assert.equal((json.match(new RegExp(`"terms_wording":"${TERMS_WORDING}"`, "g")) ?? []).length, 3);
   });
 });
 

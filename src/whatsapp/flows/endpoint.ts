@@ -41,7 +41,7 @@ import { PAY_METHODS } from "./pay-methods.ts";
 import * as actions from "./actions.ts";
 import { recordSource } from "../../conversation/source.ts";
 import { setUpdates } from "../../broadcast/announce.ts";
-import { recordTransferConsent } from "../../legal/consent.ts";
+import { recordTransferConsent, TERMS_WORDING } from "../../legal/consent.ts";
 import { PAYMENT_SCREEN, payByOptions, termsKeys } from "./definitions.ts";
 import { issueIdentityToken } from "../../identity/verify.ts";
 
@@ -376,8 +376,9 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
     if (!done.ok) return back("pay_details", done.message);
     // The unticked box under the terms (3 November 2026): updates only with a yes.
     if (ticked(data.updates)) await setUpdates(userId, true);
-    // The separate yes to processing outside Nigeria (terms 6.0, GAID Art. 18(1)(e)).
-    if (ticked(data.abroad_ok)) await recordTransferConsent(userId);
+    // The terms box names processing outside Nigeria (terms 6.0, GAID Art. 18(1)(e)):
+    // recorded only from a form that showed that wording.
+    if (data.terms_wording === TERMS_WORDING) await recordTransferConsent(userId);
     return {
       screen: "DONE",
       data: details
@@ -396,8 +397,9 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
     const done = await act.completeSetupNoBank(userId, log);
     if (!done.ok) return { screen: "TERMS", data: {} };
     if (ticked(data.updates)) await setUpdates(userId, true);
-    // The separate yes to processing outside Nigeria (terms 6.0, GAID Art. 18(1)(e)).
-    if (ticked(data.abroad_ok)) await recordTransferConsent(userId);
+    // The terms box names processing outside Nigeria (terms 6.0, GAID Art. 18(1)(e)):
+    // recorded only from a form that showed that wording.
+    if (data.terms_wording === TERMS_WORDING) await recordTransferConsent(userId);
     return {
       screen: "DONE",
       data: { account_name: "No bank account yet", account_line: "Send add bank in the chat to add it" },
@@ -426,8 +428,9 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
         const done = await act.completeSetup(userId, checked, log);
         if (!done.ok) return back("confirmed", done.message);
         if (ticked(data.updates)) await setUpdates(userId, true);
-    // The separate yes to processing outside Nigeria (terms 6.0, GAID Art. 18(1)(e)).
-    if (ticked(data.abroad_ok)) await recordTransferConsent(userId);
+    // The terms box names processing outside Nigeria (terms 6.0, GAID Art. 18(1)(e)):
+    // recorded only from a form that showed that wording.
+    if (data.terms_wording === TERMS_WORDING) await recordTransferConsent(userId);
         return {
           screen: "DONE",
           data: { account_name: checked.accountName, account_line: `${checked.bankName} · ${checked.accountNumber}` },
