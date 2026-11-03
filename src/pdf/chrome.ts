@@ -391,7 +391,10 @@ export const FIT_SHEETS = `(() => {
         const cs = getComputedStyle(el);
         if (cs.overflowY === "visible" || cs.whiteSpace === "nowrap") continue;
         if (el.scrollHeight <= el.clientHeight + 1) continue;
-        if (bottomOf(el) > el.getBoundingClientRect().bottom + 1) return false;
+        // Its bottom padding is room kept clear (the receipt's torn edge sits
+        // in it), so words that spill into it are cut off too (3 November 2026).
+        const limit = el.getBoundingClientRect().bottom - parseFloat(cs.paddingBottom || "0") - parseFloat(cs.borderBottomWidth || "0");
+        if (bottomOf(el) > limit + 1) return false;
       }
       return true;
     };
