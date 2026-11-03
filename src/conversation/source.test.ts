@@ -48,3 +48,11 @@ describe("where a sign-up came from", () => {
     assert.equal(sourceOf(messages[0]!).detail, "Invoice in one line");
   });
 });
+
+describe("recording the source", () => {
+  it("only fills it in for a new account, never for somebody from before tracking", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("./source.ts", import.meta.url), "utf8");
+    assert.match(src, /signup_source IS NULL AND created_at > now\(\) - interval '1 hour'/);
+  });
+});

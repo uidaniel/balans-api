@@ -28,12 +28,17 @@ export function sourceOf(msg: Pick<Inbound, "text" | "referral">): Source {
   return { source: "direct", detail: null, adId: null };
 }
 
-/** Recorded only if nothing is yet: the first channel is the one. Never throws. */
+/**
+ * Recorded only if nothing is yet: the first channel is the one. And only for
+ * an account made in the last hour, which a first message always is: somebody
+ * who joined before this was recorded stays "before tracking" rather than
+ * turning "direct" the next time they write. Never throws.
+ */
 export async function recordSource(userId: string, s: { source: string; detail: string | null; adId: string | null }): Promise<void> {
   await db()
     .query(
       `UPDATE users SET signup_source = $2, signup_detail = $3, signup_ad_id = $4
-        WHERE id = $1 AND signup_source IS NULL`,
+        WHERE id = $1 AND signup_source IS NULL AND created_at > now() - interval '1 hour'`,
       [userId, s.source, s.detail, s.adId],
     )
     .catch(() => {});
