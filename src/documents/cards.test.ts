@@ -56,16 +56,16 @@ describe("the card for what people owe you", () => {
     assert.ok(!html.includes("already late"));
   });
 
-  it("stops at six and points at the page for the rest", () => {
-    // More than six stops being a picture somebody reads at a glance and
-    // becomes a table they squint at. The page lists every one.
+  it("stops at four and points at the page for the rest", () => {
+    // Four is what fits the square under the headline (3 November 2026): six
+    // ran off the bottom of the picture. The page lists every one.
     const many = owed({
       rows: Array.from({ length: 9 }, (_, i) => debt({ clientName: `Client ${i}` })),
       more: 2,
     });
     const html = owedHtml(many as never, TODAY);
-    assert.equal(html.match(/class="who"/g)?.length, 6);
-    assert.match(html, /and 5 more — tap View Summary/);
+    assert.equal(html.match(/class="who"/g)?.length, 4);
+    assert.match(html, /and 7 more — tap View Summary/);
   });
 
   it("escapes a client's name rather than trusting it", () => {

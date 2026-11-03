@@ -29,8 +29,13 @@ import type { Debtors } from "./queries.ts";
 /** Square and large, for the same reasons as the draft card. */
 const CARD = 1080;
 
-/** How many debts fit before the card stops being glanceable. */
-const SHOWN = 6;
+/**
+ * How many debts fit. Six did not (3 November 2026): with the headline above
+ * them the card needed about 1,260px of its 1,080, so the fifth row was cut
+ * in half and the "and N more" line never showed. Four, and the rest are
+ * counted under them.
+ */
+const SHOWN = 4;
 
 const INK = "#10231C";
 const CREAM = "#F6F1E7";
@@ -58,7 +63,7 @@ body{width:${CARD}px;height:${CARD}px;background:${CREAM};font-family:${FONT.bra
 .art{position:absolute;inset:0;width:100%;height:100%}
 .card{position:relative;width:100%;height:100%;padding:72px 72px 64px;display:flex;flex-direction:column}
 .mark img{height:62px;display:block}
-h1{margin-top:64px;font-size:34px;font-weight:400;color:rgba(16,35,28,.6)}
+h1{margin-top:48px;font-size:34px;font-weight:400;color:rgba(16,35,28,.6)}
 .total{font-size:150px;font-weight:500;letter-spacing:-.055em;line-height:1;margin:16px 0 18px}
 /*
  * The late figure, which is the line this card exists for. A total tells

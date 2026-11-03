@@ -1538,7 +1538,16 @@ async function runEffects(
         /* -- Documents (F6) ------------------------------------------------- */
 
         case "save_draft": {
-          const doc = effect.doc;
+          /*
+           * VAT outside Nigeria (3 November 2026): the 7.5% Balans adds is
+           * Nigeria's, and the UK's is 20%, Ghana's 15%. The form hides it
+           * abroad; asked for in words, it is left off and said why.
+           */
+          const vatAbroad = effect.doc.vatPercent != null && Boolean(abroadCurrencyFor(ctx.phone));
+          const doc = vatAbroad ? { ...effect.doc, vatPercent: null } : effect.doc;
+          if (vatAbroad) {
+            extra.push(i("I left VAT off: the 7.5% I can add is Nigeria's rate. Add your own tax as an item if you need it."));
+          }
 
           /*
            * F6: plan limits, checked again.

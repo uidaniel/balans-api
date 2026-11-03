@@ -115,5 +115,8 @@ describe("what the server answers the amount screen with", () => {
     assert.deepEqual((out.data.pay_bys as { id: string }[]).map((o) => o.id), ["own"]);
     assert.equal(out.data.pay_by, "own");
     assert.equal(out.data.show_add_bank, false);
+    // Nigeria's 7.5% VAT is hidden and off abroad.
+    assert.equal(out.data.show_vat, false);
+    assert.equal(out.data.vat, "false");
   });
 });

@@ -1939,6 +1939,8 @@ function termsData(): Record<string, unknown> {
     // Set by the server when the amount screen checks in (see paymentScreen).
     show_pay_by: { type: "boolean", __example__: false },
     pay_bys: PAY_BY_SCHEMA,
+    // Nigeria's 7.5% VAT, hidden for somebody billing from abroad (3 November 2026).
+    show_vat: { type: "boolean", __example__: true },
     // "My own details", typed under the option (2 November 2026).
     own_details: { type: "string", __example__: "" },
     own_help: { type: "string", __example__: "How your client should pay you. Saved for next time." },
@@ -2162,7 +2164,9 @@ function paymentScreen(): Record<string, unknown> {
               type: "RadioButtonsGroup",
               name: "vat",
               label: "VAT",
-              required: true,
+              // Shown by the server: not abroad, where 7.5% is the wrong rate.
+              visible: "${data.show_vat}",
+              required: "${data.show_vat}",
               "data-source": [
                 { id: "false", title: "No VAT" },
                 { id: "true", title: "Add 7.5% VAT", description: "Added on top of the amount" },

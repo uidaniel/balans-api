@@ -668,6 +668,9 @@ export async function paymentStep(
       pay_by: chosen,
       show_add_bank: noBank,
       add_bank_url: addBankUrl,
+      show_vat: !abroad,
+      // Hidden abroad, and never added there.
+      ...(abroad ? { vat: "false" } : {}),
       own_details: "",
       own_help: savedDetails
         ? `Now: ${savedDetails.length > 60 ? `${savedDetails.slice(0, 59)}…` : savedDetails}. Leave empty to keep it.`
