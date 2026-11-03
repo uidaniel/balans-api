@@ -19,6 +19,7 @@ describe("the templates we register with Meta", () => {
     assert.deepEqual(
       [...names].sort(),
       [
+        "announcement",
         "business_name_check",
         "client_invoice",
         "client_invoice_pdf",
@@ -93,7 +94,7 @@ describe("the templates we register with Meta", () => {
     }
   });
 
-  it("is utility, not marketing, except the one message the waitlist asked for", () => {
+  it("is utility, not marketing, except the waitlist's message and admin announcements", () => {
     /*
      * Transactional messages are utility. Marketing costs about seven times
      * as much and needs opt-in — which the waitlist is: its form promises one
@@ -101,7 +102,9 @@ describe("the templates we register with Meta", () => {
      * message. It is sent only from a broadcast, never from the bot.
      */
     for (const name of names) {
-      assert.equal(TEMPLATES[name].category, name === "launch_setup" ? "MARKETING" : "UTILITY", name);
+      // `announcement` (3 November 2026): only from a broadcast an admin
+      // sends, always with STOP UPDATES on it.
+      assert.equal(TEMPLATES[name].category, name === "launch_setup" || name === "announcement" ? "MARKETING" : "UTILITY", name);
     }
   });
 });

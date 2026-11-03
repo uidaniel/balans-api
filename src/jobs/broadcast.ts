@@ -24,6 +24,9 @@ import { sendFlow, sendTemplate } from "../whatsapp/client.ts";
 import { flowId } from "../whatsapp/flows/register.ts";
 import { recordTemplateStatuses } from "../whatsapp/register-templates.ts";
 import { LAUNCH, LAUNCH_BANNER, launchEmail } from "../broadcast/launch.ts";
+import { ANNOUNCEMENT, announcementEmail, announcementText, oneParagraph } from "../broadcast/announce.ts";
+import { sendText } from "../whatsapp/client.ts";
+import { windowFor } from "../whatsapp/window.ts";
 import { MARK_CID } from "../email/layout.ts";
 
 const SITE = env.SITE_URL.replace(/\/$/, "");
@@ -33,8 +36,15 @@ const STATUS_EVERY_MS = 5 * 60_000;
 /** Between recipients: well under Meta's 80 a second, and gentle on Resend. */
 const GAP_MS = 150;
 
-type Broadcast = { id: string; campaign: string; kind: "test" | "live"; channels: string[] };
-type Recipient = { id: string; phone: string | null; email: string | null; wa_status: string; email_status: string };
+type Broadcast = {
+  id: string;
+  campaign: string;
+  kind: "test" | "live";
+  channels: string[];
+  subject?: string | null;
+  message?: string | null;
+};
+type Recipient = { id: string; phone: string | null; email: string | null; wa_status: string; email_status: string; user_id?: string | null };
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -135,9 +145,43 @@ async function sendMail(b: Broadcast, r: Recipient, log: FastifyBaseLogger): Pro
   return sent.ok ? { status: "sent" } : { status: "failed", error: sent.reason };
 }
 
+/**
+ * An announcement to one user (3 November 2026): free-form inside the 24-hour
+ * window, the approved template outside it, and nothing to somebody who has
+ * turned updates off since the broadcast was queued.
+ */
+async function announceWhatsApp(b: Broadcast, r: Recipient): Promise<{ status: string; via?: string; error?: string }> {
+  if (!b.channels.includes("whatsapp") || !r.phone || !b.message) return { status: "skipped" };
+  if (r.user_id && (await updatesOff(r.user_id))) return { status: "skipped", error: "turned updates off" };
+  const open = r.user_id ? (await windowFor(r.user_id).catch(() => ({ open: false }))).open : false;
+  if (open || b.kind === "test") {
+    const sent = await sendText(r.phone, announcementText(b.message));
+    if (sent.ok) return { status: "sent", via: "message" };
+    if (b.kind === "test" && !statuses[ANNOUNCEMENT]?.startsWith("APPROVED")) {
+      return { status: "failed", via: "message", error: `${sent.reason}. Until Meta approves the announcement template, a test reaches only a number that has messaged Balans in the last 24 hours.` };
+    }
+  }
+  if (statuses[ANNOUNCEMENT] !== "APPROVED") return { status: "skipped", error: "outside the 24-hour window, and Meta has not approved the announcement template yet" };
+  const sent = await sendTemplate(r.phone, ANNOUNCEMENT, [oneParagraph(b.message)], { language: "en" });
+  return sent.ok ? { status: "sent", via: "template" } : { status: "failed", via: "template", error: sent.reason };
+}
+
+async function announceMail(b: Broadcast, r: Recipient, log: FastifyBaseLogger): Promise<{ status: string; error?: string }> {
+  if (!b.channels.includes("email") || !r.email || !b.message) return { status: "skipped" };
+  if (r.user_id && (await updatesOff(r.user_id))) return { status: "skipped", error: "turned updates off" };
+  const sent = await sendEmail({ to: r.email, ...announcementEmail({ subject: b.subject || "An update from Balans", message: b.message, userId: r.user_id ?? null }) }, log);
+  return sent.ok ? { status: "sent" } : { status: "failed", error: sent.reason };
+}
+
+async function updatesOff(userId: string): Promise<boolean> {
+  const { rows } = await db().query<{ off: boolean }>(`SELECT updates_off_at IS NOT NULL AS off FROM users WHERE id = $1`, [userId]);
+  return rows[0]?.off ?? false;
+}
+
 /** One broadcast, start to finish, resuming where a restart left it. */
 async function work(b: Broadcast, log: FastifyBaseLogger): Promise<void> {
-  if (b.campaign !== LAUNCH.campaign) {
+  const announce = b.campaign === ANNOUNCEMENT;
+  if (!announce && b.campaign !== LAUNCH.campaign) {
     await db().query(`UPDATE broadcasts SET status = 'failed', note = $2, finished_at = now() WHERE id = $1`, [
       b.id,
       `no campaign called ${b.campaign}`,
@@ -146,7 +190,8 @@ async function work(b: Broadcast, log: FastifyBaseLogger): Promise<void> {
   }
 
   const approved = await templateApproved();
-  if (b.kind === "live" && !approved) {
+  // An announcement still reaches everybody inside the window before approval.
+  if (!announce && b.kind === "live" && !approved) {
     await db().query(
       `UPDATE broadcasts SET status = 'failed', note = 'the template is not approved by Meta yet; nothing was sent', finished_at = now() WHERE id = $1`,
       [b.id],
@@ -158,7 +203,7 @@ async function work(b: Broadcast, log: FastifyBaseLogger): Promise<void> {
   let done = 0;
   for (;;) {
     const { rows } = await db().query<Recipient>(
-      `SELECT id, phone, email, wa_status, email_status FROM broadcast_recipients
+      `SELECT id, phone, email, wa_status, email_status, user_id FROM broadcast_recipients
         WHERE broadcast_id = $1 AND (wa_status = 'pending' OR email_status = 'pending')
           -- Not one already claimed: see below.
           AND sent_at IS NULL
@@ -179,8 +224,14 @@ async function work(b: Broadcast, log: FastifyBaseLogger): Promise<void> {
         [r.id],
       );
       if (claim.rowCount === 0) continue;
-      const wa = r.wa_status === "pending" ? await sendWhatsApp(b, r, approved).catch((e: Error) => ({ status: "failed", error: e.message })) : null;
-      const mail = r.email_status === "pending" ? await sendMail(b, r, log).catch((e: Error) => ({ status: "failed", error: e.message })) : null;
+      const wa =
+        r.wa_status === "pending"
+          ? await (announce ? announceWhatsApp(b, r) : sendWhatsApp(b, r, approved)).catch((e: Error) => ({ status: "failed", error: e.message }))
+          : null;
+      const mail =
+        r.email_status === "pending"
+          ? await (announce ? announceMail(b, r, log) : sendMail(b, r, log)).catch((e: Error) => ({ status: "failed", error: e.message }))
+          : null;
       await db().query(
         `UPDATE broadcast_recipients
             SET wa_status = COALESCE($2, wa_status), wa_via = COALESCE($3, wa_via), wa_error = COALESCE($4, wa_error),
@@ -210,7 +261,7 @@ async function tick(log: FastifyBaseLogger): Promise<void> {
       `UPDATE broadcasts SET status = 'sending', started_at = COALESCE(started_at, now())
         WHERE id = (SELECT id FROM broadcasts WHERE status IN ('queued', 'sending')
                      ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
-        RETURNING id, campaign, kind, channels`,
+        RETURNING id, campaign, kind, channels, subject, message`,
     );
     if (rows[0]) await work(rows[0], log);
   } catch (err) {

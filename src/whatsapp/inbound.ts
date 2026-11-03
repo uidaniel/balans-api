@@ -67,6 +67,11 @@ export type Inbound = {
    * Meta's side to mark.
    */
   replay?: true;
+  /**
+   * What Meta says brought them, on a message that started from a
+   * Click-to-WhatsApp ad or a boosted post (3 November 2026).
+   */
+  referral?: { sourceType?: string; sourceId?: string; sourceUrl?: string; headline?: string; body?: string };
 };
 
 export type StatusUpdate = {
@@ -132,6 +137,16 @@ export function parseInbound(payload: unknown): { messages: Inbound[]; statuses:
           profileName: names.get(from),
           repliedTo: str(obj(obj(msg.context)?.id ? msg.context : undefined)?.id),
         };
+        const referral = obj(msg.referral);
+        if (referral) {
+          out.referral = {
+            sourceType: str(referral.source_type),
+            sourceId: str(referral.source_id),
+            sourceUrl: str(referral.source_url),
+            headline: str(referral.headline),
+            body: str(referral.body),
+          };
+        }
 
         if (type === "request_welcome") {
           // No words to act on: the greeting is the whole event.

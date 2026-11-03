@@ -96,7 +96,8 @@ type BaseTemplateName =
   | "pro_free_pay"
   | "setup_reminder"
   | "monthly_statement"
-  | "business_name_check";
+  | "business_name_check"
+  | "announcement";
 
 /**
  * A bold line above the words, for the templates that say one thing
@@ -544,6 +545,19 @@ const BASE_TEMPLATES: Record<BaseTemplateName, TemplateSpec> = {
     params: ["business name"],
     example: ["Kemi Adeyemi Studio"],
     quickReplies: ["Yes, that's it", "Change it"],
+  },
+
+  /*
+   * A message to every user, written in the admin (3 November 2026): sent
+   * to whoever is outside the 24-hour window. Marketing, so it costs more,
+   * and it says how to stop. See broadcast/announce.ts.
+   */
+  announcement: {
+    name: "announcement",
+    category: "MARKETING",
+    body: "Update from Balans: {{1}}\n\nReply STOP UPDATES to stop these messages.",
+    params: ["the message, one paragraph"],
+    example: ["Balans now sends a summary of your month on the 1st, with your full statement by email."],
   },
 
   launch_setup: {

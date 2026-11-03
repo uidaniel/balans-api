@@ -403,6 +403,8 @@ import {
   type Conversation,
 } from "./store.ts";
 import { documentLink } from "../documents/links.ts";
+import { recordSource, sourceOf } from "./source.ts";
+import { setUpdates } from "../broadcast/announce.ts";
 import { clearSignature, issueSignatureToken } from "../brand/signature.ts";
 import { signatureUrl } from "../http/routes/signature.ts";
 import { accountToStamp, bankDetailsOf, deliveryFor } from "../documents/bank-details.ts";
@@ -410,6 +412,8 @@ import { findPayableByNumber, recordOfflinePayment } from "../payments/offline.t
 
 export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promise<void> {
   const user = await upsertUser(msg.from);
+  // Where they came from, once, from their first message (3 November 2026).
+  if (!msg.replay) void recordSource(user.id, sourceOf(msg));
 
   /*
    * Both of these need the user and neither needs the other, so they go
@@ -1302,6 +1306,16 @@ async function runEffects(
             break;
           }
           await askToVerify(userId, ctx.phone, status, log, extra);
+          break;
+        }
+
+        case "set_updates": {
+          await setUpdates(userId, effect.on);
+          extra.push(
+            effect.on
+              ? `🔔 ${b("Updates are back on.")} Send ${b("STOP UPDATES")} any time to stop them.`
+              : `🔕 ${b("No more updates from Balans.")} Your invoices, receipts and reminders are not affected. Send ${b("START UPDATES")} to get them again.`,
+          );
           break;
         }
 

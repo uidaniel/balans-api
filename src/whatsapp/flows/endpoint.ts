@@ -39,6 +39,7 @@ import { loadConversation, saveConversation, upsertUser } from "../../conversati
 import { MFB_CHOICE } from "./banks.ts";
 import { PAY_METHODS } from "./pay-methods.ts";
 import * as actions from "./actions.ts";
+import { recordSource } from "../../conversation/source.ts";
 import { PAYMENT_SCREEN, payByOptions, termsKeys } from "./definitions.ts";
 import { issueIdentityToken } from "../../identity/verify.ts";
 
@@ -261,6 +262,8 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
   let userId = who;
   if (key === "onboarding" && who === "wa" && phone && /^\d{10,15}$/.test(phone)) {
     userId = (await (deps.userByPhone ?? upsertUser)(phone)).id;
+    // The launch message went to the waitlist: that is where they came from.
+    if (!deps.userByPhone) await recordSource(userId, { source: "waitlist", detail: null, adId: null });
   }
   if (req.action !== "data_exchange" || !known || !userId) {
     deps.log?.warn({ action: req.action, screen: req.screen, key }, "flow endpoint asked something it does not answer");

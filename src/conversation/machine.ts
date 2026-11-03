@@ -288,6 +288,8 @@ export type Effect =
   | { type: "start_identity" }
   /** "Add my logo" under the first invoice: the brand settings link. */
   | { type: "offer_branding" }
+  /** "STOP UPDATES" / "START UPDATES": announcements off or on. */
+  | { type: "set_updates"; on: boolean }
   /**
    * Open a Flow on the user's phone.
    *
@@ -1852,6 +1854,13 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       // answers typed.
       if (NAME_IS_RIGHT.test(text.trim())) {
         return { replies: [], next: "idle", context, effects: [{ type: "confirm_business_name" }] };
+      }
+      // Announcements from the admin (3 November 2026): their way out, and back.
+      if (/^(stop|unsubscribe)( from)? updates[.!]*$/i.test(text.trim())) {
+        return { replies: [], next: "idle", context, effects: [{ type: "set_updates", on: false }] };
+      }
+      if (/^(start|resume) updates[.!]*$/i.test(text.trim())) {
+        return { replies: [], next: "idle", context, effects: [{ type: "set_updates", on: true }] };
       }
       // The buttons under the first invoice (2 November 2026).
       if (/^add my email[.!]*$/i.test(text.trim())) {
