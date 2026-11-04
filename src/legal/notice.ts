@@ -27,6 +27,9 @@ import { button, layout, paragraph } from "../email/layout.ts";
 
 /** Not before the day it is published. */
 const NOTICE_FROM = Date.parse("2026-11-04T00:00:00+01:00");
+/** Off: a WhatsApp message of its own is billed now, even inside the window. */
+export const NOTICE_ON_WHATSAPP = false;
+
 /** Per run, so a few hundred go over a few hours rather than at once. */
 const BATCH = 100;
 
@@ -106,7 +109,7 @@ export async function sendTermsNotices(log: FastifyBaseLogger, now: number = Dat
        FROM users
       WHERE status = 'active' AND deleted_at IS NULL AND consented_at IS NOT NULL
         AND consent_version IS DISTINCT FROM $1
-        AND (terms_notice_at IS NULL OR (terms_email_at IS NULL AND email_verified_at IS NOT NULL))
+        AND ((${NOTICE_ON_WHATSAPP ? "TRUE" : "FALSE"} AND terms_notice_at IS NULL) OR (terms_email_at IS NULL AND email_verified_at IS NOT NULL))
       ORDER BY consented_at
       LIMIT 400`,
     [NEXT_CONSENT.version],
@@ -117,8 +120,10 @@ export async function sendTermsNotices(log: FastifyBaseLogger, now: number = Dat
   for (const r of rows) {
     if (tried >= BATCH) break;
     try {
-      if (r.wa_due) {
-        // Only inside the free window; outside it, the email and the website.
+      // No WhatsApp message of its own (4 November 2026): since 1 October 2026
+      // Meta bills replies inside the 24-hour window too, past 1,000 a month,
+      // so a separate notice costs money. The email and the website carry it.
+      if (r.wa_due && NOTICE_ON_WHATSAPP) {
         const open = (await windowFor(r.id)).open;
         if (open) {
           const claim = await db().query(`UPDATE users SET terms_notice_at = now() WHERE id = $1 AND terms_notice_at IS NULL RETURNING id`, [r.id]);

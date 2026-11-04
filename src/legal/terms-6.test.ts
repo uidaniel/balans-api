@@ -57,6 +57,11 @@ describe("the notice of 6.0", () => {
     assert.match(mail.text, /reply I ACCEPT to Balans on WhatsApp/);
   });
 
+  it("sends no WhatsApp message of its own, now that the window is billed too", async () => {
+    const { NOTICE_ON_WHATSAPP } = await import("./notice.ts");
+    assert.equal(NOTICE_ON_WHATSAPP, false);
+  });
+
   it("never goes as a paid template, only inside the free window", async () => {
     const { readFileSync } = await import("node:fs");
     const src = readFileSync(new URL("./notice.ts", import.meta.url), "utf8");
