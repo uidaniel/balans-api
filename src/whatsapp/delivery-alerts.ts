@@ -44,7 +44,10 @@ export function noteDeliveryFailures(events: { type: string; payload: unknown }[
   for (const f of failuresIn(events)) {
     // The reason in the message, so the digest groups them; only the last
     // digits of the number, which is enough to find it and no more.
-    log.error({ code: f.code, to: f.recipient ? `…${f.recipient.slice(-4)}` : null }, `WhatsApp message failed: ${f.title}`);
+    // An error on live, which the digest emails; a warning on staging, where
+    // the test account fails paid messages by design.
+    const say = env.DATABASE_SCHEMA ? log.warn.bind(log) : log.error.bind(log);
+    say({ code: f.code, to: f.recipient ? `…${f.recipient.slice(-4)}` : null }, `WhatsApp message failed: ${f.title}`);
     // Live only: the test account has no payment method, so on staging every
     // paid message fails this way and the alert would be noise every hour.
     if (!env.DATABASE_SCHEMA && isPaymentFailure(f) && now - lastPaymentAlert > ALERT_EVERY_MS) {
