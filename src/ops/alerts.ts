@@ -152,6 +152,25 @@ export async function healthAlert(
   await mail(subject, text, html, log);
 }
 
+/**
+ * WhatsApp can't charge us (4 November 2026). Meta first accepts a message,
+ * then reports it failed with "Business eligibility payment issue" when the
+ * account's payment method is declined or a balance is unpaid, and from then
+ * on every paid message fails: invoices and reminders to clients included. It
+ * went unnoticed for a day, because nothing read those reports.
+ */
+export async function whatsappPaymentAlert(detail: string, log: FastifyBaseLogger): Promise<void> {
+  const subject = "Balans: WhatsApp messages are failing — Meta billing";
+  const line = "Meta is refusing WhatsApp messages because it cannot charge the WhatsApp Business account.";
+  const fix = "Fix it in Meta Business Suite → Billing & payments (or WhatsApp Manager → Overview): a card that works for USD payments, or pay the balance.";
+  const effect = "Until then, invoices, quotes, receipts and reminders to clients on WhatsApp, and messages to users outside the 24-hour window, do not arrive. Email copies still go.";
+  const text = [line, "", `Meta said: ${detail}`, "", effect, "", fix].join("\n");
+  const html = `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#10231c">
+<p style="font-size:16px"><b>${esc(line)}</b></p><p>Meta said: ${esc(detail)}</p><p>${esc(effect)}</p><p><b>${esc(fix)}</b></p>
+<p style="color:#5f6f67;font-size:12px">Sent at most once an hour while it lasts.</p></div>`;
+  await mail(subject, text, html, log);
+}
+
 let timer: NodeJS.Timeout | null = null;
 
 export function startErrorDigests(log: FastifyBaseLogger): void {

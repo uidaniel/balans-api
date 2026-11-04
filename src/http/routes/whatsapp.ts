@@ -14,6 +14,7 @@ import type { FastifyInstance } from "fastify";
 import { env, require_ } from "../../config.ts";
 import { db } from "../../db/pool.ts";
 import { fromArrival, timed } from "../../lib/timing.ts";
+import { noteDeliveryFailures } from "../../whatsapp/delivery-alerts.ts";
 import { safeEqual, verifyMetaSignature } from "../../lib/crypto.ts";
 import { parseInbound, type Inbound } from "../../whatsapp/inbound.ts";
 import { handleInbound } from "../../conversation/handle.ts";
@@ -149,6 +150,8 @@ export async function whatsappRoutes(app: FastifyInstance): Promise<void> {
     // and a message that landed in that minute used to get no reply at all.
     const { messages } = parseInbound(body);
     for (const m of messages) track(m, req.log);
+    // Accepted, then not delivered: logged and, for billing, alerted (4 November 2026).
+    noteDeliveryFailures(events, req.log);
 
     req.log.info({ events: events.length, messages: messages.length }, "webhook accepted");
     return reply.status(200).send({ received: true });
