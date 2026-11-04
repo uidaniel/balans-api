@@ -10,6 +10,7 @@
 
 import type { FastifyBaseLogger } from "fastify";
 
+import { env } from "../config.ts";
 import { whatsappPaymentAlert } from "../ops/alerts.ts";
 
 /** Meta's code for "Business eligibility payment issue". */
@@ -44,7 +45,9 @@ export function noteDeliveryFailures(events: { type: string; payload: unknown }[
     // The reason in the message, so the digest groups them; only the last
     // digits of the number, which is enough to find it and no more.
     log.error({ code: f.code, to: f.recipient ? `…${f.recipient.slice(-4)}` : null }, `WhatsApp message failed: ${f.title}`);
-    if (isPaymentFailure(f) && now - lastPaymentAlert > ALERT_EVERY_MS) {
+    // Live only: the test account has no payment method, so on staging every
+    // paid message fails this way and the alert would be noise every hour.
+    if (!env.DATABASE_SCHEMA && isPaymentFailure(f) && now - lastPaymentAlert > ALERT_EVERY_MS) {
       lastPaymentAlert = now;
       void whatsappPaymentAlert(`${f.title}${f.code ? ` (code ${f.code})` : ""}`, log).catch(() => {});
     }
