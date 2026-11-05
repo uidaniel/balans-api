@@ -649,30 +649,44 @@ async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<nu
       label: string;
       template: TemplateName;
       params: string[];
-      orElse?: { template: TemplateName; params: string[] };
+      orElse?: { template: TemplateName; params: string[] } | { template: TemplateName; params: string[] }[];
     } = {
       ending_soon: {
         text: proEndingSoon(r.expiresAt, p, undefined, y),
         label: "Renew Pro",
-        template: "pro_ending_pay_v2" as TemplateName,
+        template: "pro_plan_ending" as TemplateName,
         params: [onDayWords(r.expiresAt), price],
-        orElse: { template: "pro_ending_pay" as TemplateName, params: [dayOf(r.expiresAt), price] },
+        orElse: [
+          { template: "pro_ending_pay_v2" as TemplateName, params: [onDayWords(r.expiresAt), price] },
+          { template: "pro_ending_pay" as TemplateName, params: [dayOf(r.expiresAt), price] },
+        ],
       },
       ended: {
         text: proEnded(r.expiresAt, p, undefined, y),
         label: "Renew Pro",
-        template: "pro_ended_pay" as TemplateName,
+        template: "pro_plan_ended" as TemplateName,
         params: [dayOf(r.expiresAt), dayOf(graceEnds), price],
+        orElse: { template: "pro_ended_pay" as TemplateName, params: [dayOf(r.expiresAt), dayOf(graceEnds), price] },
       },
       grace_ending: {
         text: proGraceEnding(r.expiresAt, p, new Date(), left, y),
         label: "Keep Pro",
-        template: "pro_last_day_pay_v2" as TemplateName,
+        template: "pro_plan_stops" as TemplateName,
         params: [onDayWords(graceEnds), price],
-        orElse: { template: "pro_last_day_pay" as TemplateName, params: [dayOf(graceEnds), price] },
+        orElse: [
+          { template: "pro_last_day_pay_v2" as TemplateName, params: [onDayWords(graceEnds), price] },
+          { template: "pro_last_day_pay" as TemplateName, params: [dayOf(graceEnds), price] },
+        ],
       },
       // pro_free_pay said "the Free plan, with 3 invoices a month", which stopped being true on 19 October 2026.
-      lapsed: { text: proLapsed(p, left, y), label: "Get Pro back", template: "pro_back_pay" as TemplateName, params: [price] },
+      lapsed: {
+        text: proLapsed(p, left, y),
+        label: "Get Pro back",
+        template: "pro_plan_free" as TemplateName,
+        params: [price],
+        orElse: { template: "pro_back_pay" as TemplateName, params: [price] },
+      },
+      // Selling, to somebody whose Pro ended weeks ago: marketing, and says so.
       win_back: { text: proWinBack(p, y), label: "Get Pro back", template: "pro_back_pay" as TemplateName, params: [price] },
     }[stage];
 

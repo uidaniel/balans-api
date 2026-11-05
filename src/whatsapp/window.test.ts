@@ -49,11 +49,28 @@ describe("the templates we register with Meta", () => {
         "pro_free_pay",
         "pro_last_day_pay",
         "pro_last_day_pay_v2",
+        "pro_plan_active",
+        "pro_plan_ended",
+        "pro_plan_ending",
+        "pro_plan_free",
+        "pro_plan_stops",
         "pro_renewal",
         "security_alert",
         "setup_reminder",
       ],
     );
+  });
+
+  it("words the Pro account notices as notices, not selling (5 November 2026)", () => {
+    // Meta billed every pro_* template as marketing for lines like these.
+    const plan = names.filter((n) => n.startsWith("pro_plan_"));
+    assert.equal(plan.length, 5);
+    for (const n of plan) {
+      const t = TEMPLATES[n];
+      assert.equal(t.category, "UTILITY");
+      assert.doesNotMatch(t.body, /see what|keep pro|get pro back|come back|don't miss|unlock/i, n);
+      if (t.button) assert.equal(t.button.text, "Renew plan", n);
+    }
   });
 
   it("declares a parameter for every placeholder, and no more", () => {

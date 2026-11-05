@@ -98,7 +98,12 @@ type BaseTemplateName =
   | "monthly_statement"
   | "business_name_check"
   | "announcement"
-  | "client_says_paid";
+  | "client_says_paid"
+  | "pro_plan_active"
+  | "pro_plan_ending"
+  | "pro_plan_ended"
+  | "pro_plan_stops"
+  | "pro_plan_free";
 
 /**
  * A bold line above the words, for the templates that say one thing
@@ -331,6 +336,62 @@ const BASE_TEMPLATES: Record<BaseTemplateName, TemplateSpec> = {
     params: ["free invoices a month", "price"],
     example: ["3", "₦3,000"],
     button: { text: "Get Pro back", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
+  },
+
+  /*
+   * The Pro notices again, as account notices (5 November 2026).
+   *
+   * Meta filed every pro_* template above as MARKETING, pro_renewal aside,
+   * and bills each at the marketing rate, about ₦64. What tipped them is the
+   * selling: "see what it adds", "Keep Pro", "Get Pro back". These say what
+   * happened to the account and when, the price as a fact, and a plain
+   * "Renew plan" link, which is how Meta describes a utility message about
+   * a subscription the person already has. Each is new, so until Meta
+   * approves it the old one still goes (`orElse`). The win-back to somebody
+   * whose Pro ended weeks ago is selling, honestly, and stays pro_back_pay.
+   */
+  pro_plan_active: {
+    name: "pro_plan_active",
+    category: "UTILITY",
+    body: "Your Balans account is now on the Pro plan, active until {{1}}.",
+    params: ["until"],
+    example: ["4 December"],
+  },
+
+  pro_plan_ending: {
+    name: "pro_plan_ending",
+    category: "UTILITY",
+    body: "Your Balans Pro plan ends {{1}} and does not renew automatically. To continue after that, the next month is {{2}} and starts when this one ends.",
+    params: ["when, e.g. tomorrow or on 1 October", "price"],
+    example: ["tomorrow", "₦3,000"],
+    button: { text: "Renew plan", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
+  },
+
+  pro_plan_ended: {
+    name: "pro_plan_ended",
+    category: "UTILITY",
+    body: "Your Balans Pro plan ended on {{1}}. Pro features stay on until {{2}}, then your account moves to the Free plan. Renewing is {{3}} a month.",
+    params: ["date it ended", "grace end date", "price"],
+    example: ["28 September", "5 October", "₦3,000"],
+    button: { text: "Renew plan", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
+  },
+
+  pro_plan_stops: {
+    name: "pro_plan_stops",
+    category: "UTILITY",
+    body: "Your Balans Pro features stop {{1}}, and your account moves to the Free plan. Renewing is {{2}} a month.",
+    params: ["when, e.g. tomorrow or on 5 October", "price"],
+    example: ["tomorrow", "₦3,000"],
+    button: { text: "Renew plan", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
+  },
+
+  pro_plan_free: {
+    name: "pro_plan_free",
+    category: "UTILITY",
+    body: "Your Balans account has moved to the Free plan. Your invoices, clients and settings are saved, and your clients can still pay. Renewing Pro is {{1}} a month.",
+    params: ["price"],
+    example: ["₦3,000"],
+    button: { text: "Renew plan", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
   },
 
   /*

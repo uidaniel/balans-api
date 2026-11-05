@@ -221,8 +221,9 @@ export async function notifyProActive(
       // Outside the window this is worth a template: somebody who has just
       // parted with ₦4,000 should not wait a day to hear it worked.
       fallback: {
-        template: "pro_active",
+        template: "pro_plan_active",
         params: [until.toLocaleDateString("en-GB", { day: "numeric", month: "long" })],
+        orElse: { template: "pro_active", params: [until.toLocaleDateString("en-GB", { day: "numeric", month: "long" })] },
       },
     },
     log,
@@ -255,12 +256,12 @@ export async function notifyProGranted(
       text: proStarted(undefined, { until }),
       image: proCardUrl(new Date()),
       fallback: {
-        template: "pro_active",
-        params: [
-          until
-            ? until.toLocaleDateString("en-GB", { day: "numeric", month: "long" })
-            : "no end date",
-        ],
+        template: "pro_plan_active",
+        params: [until ? until.toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "no end date"],
+        orElse: {
+          template: "pro_active",
+          params: [until ? until.toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "no end date"],
+        },
       },
     },
     log,
