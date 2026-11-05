@@ -52,10 +52,27 @@ export function trialSentLine(
   );
 }
 
+/**
+ * What Pro is worth to this person, in their own money (5 November 2026).
+ * Not a list of features: what is owed to them now, or what they usually
+ * bill, against the price. Null when there is neither.
+ */
+export function proOutcome(o: { owedKobo: number; typicalKobo: number | null }, price: ProPrice = NAIRA_PRICE): string | null {
+  if (o.owedKobo > 0) {
+    return `${b(`${formatNaira(o.owedKobo)} is still owed to you.`)} Pro chases it for you, by WhatsApp and email, in your business name.`;
+  }
+  if (o.typicalKobo && o.typicalKobo > 0) {
+    return `${b(`${price.label} a month to stop chasing ${formatNaira(o.typicalKobo)} invoices.`)} Pro reminds your clients by WhatsApp and email, in your business name.`;
+  }
+  return null;
+}
+
 export function proOffer(
   trial: { used: number; allowance: number },
   price: ProPrice = NAIRA_PRICE,
   year?: ProPrice,
+  /** Their own figures, for the line that leads (proOutcome). */
+  outcome?: { owedKobo: number; typicalKobo: number | null },
 ): string {
   /*
    * Ticks rather than bullets.
@@ -67,6 +84,8 @@ export function proOffer(
    * decoration. `voice.test.ts` allows exactly that and nothing looser.
    */
   return para(
+    // What it is worth to them first, then what it costs (5 November 2026).
+    outcome ? (proOutcome(outcome, price) ?? "") : "",
     proHeadline(price, year),
     chargedAs(price) ?? "",
     trialLine(trial),
@@ -77,7 +96,7 @@ export function proOffer(
       // remove, and saying "no transaction fee" would sell the absence of
       // something Free does not charge either.
       `✅ Invoices sent straight to your client's WhatsApp`,
-      `✅ Reminders to your clients by email, so you stop chasing`,
+      `✅ Reminders to your clients by WhatsApp and email, so you stop chasing`,
       // Only while it is switched on: an offer is a promise.
       ...(env.INTL_ENABLED ? [`✅ Invoices in dollars, pounds, euros and 6 more currencies`] : []),
       `✅ Your logo on every invoice`,

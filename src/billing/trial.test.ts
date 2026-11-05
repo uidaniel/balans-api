@@ -85,3 +85,23 @@ describe("what the trial line says Pro is doing (31 October 2026)", () => {
     assert.match(trialSentLine({ used: 3, allowance: 3 }), /upgrade/);
   });
 });
+
+describe("the Pro offer leads with their own money (5 November 2026)", () => {
+  it("says what is owed to them, when something is", async () => {
+    const { proOutcome } = await import("./messages.ts");
+    const t = proOutcome({ owedKobo: 322_500_00, typicalKobo: 150_000_00 })!;
+    assert.match(t, /₦322,500 is still owed to you/);
+    assert.match(t, /by WhatsApp and email, in your business name/);
+  });
+
+  it("otherwise weighs the price against what they usually bill", async () => {
+    const { proOutcome } = await import("./messages.ts");
+    assert.match(proOutcome({ owedKobo: 0, typicalKobo: 322_000_00 })!, /a month to stop chasing ₦322,000 invoices/);
+    assert.equal(proOutcome({ owedKobo: 0, typicalKobo: null }), null);
+  });
+
+  it("puts it above the price", () => {
+    const m = proOffer({ used: 1, allowance: 3 }, undefined, undefined, { owedKobo: 50_000_00, typicalKobo: null });
+    assert.ok(m.indexOf("still owed to you") < m.indexOf("Balans Pro"));
+  });
+});

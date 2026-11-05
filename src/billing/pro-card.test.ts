@@ -155,11 +155,11 @@ describe("the Pay button", () => {
   const branch = start.slice(0, start.indexOf('case "save_logo"'));
 
   it("is a checkout button under the upgrade card", () => {
-    assert.match(offer, /sendProButton\(userId, ctx\.phone, proOffer\(trial, price, year\), UPGRADE_CARD, log, price\)/);
+    assert.match(offer, /sendProButton\(userId, ctx\.phone, proOffer\(trial, price, year, outcome\), UPGRADE_CARD, log, price\)/);
   });
 
   it("falls back to the link in words, never to nothing", () => {
-    assert.match(offer, /proPayLink\(proOffer\(trial, price, year\), proStartUrl\(userId\)\)/);
+    assert.match(offer, /proPayLink\(proOffer\(trial, price, year, outcome\), proStartUrl\(userId\)\)/);
     assert.match(branch, /proPayLink\(proPayPrompt\(price\), proStartUrl\(userId, price\.term\)\)/);
   });
 

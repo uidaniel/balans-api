@@ -2915,8 +2915,10 @@ async function runEffects(
            * billing/pro-checkout.ts). Card, transfer, USSD, all on one page
            * people already know, instead of an account number to copy.
            */
-          if (!(await sendProButton(userId, ctx.phone, proOffer(trial, price, year), UPGRADE_CARD, log, price))) {
-            extra.push(proPayLink(proOffer(trial, price, year), proStartUrl(userId)));
+          // Their own money, for the line that leads the offer (5 November 2026).
+          const outcome = await proOutcomeFor(userId, ctx.today);
+          if (!(await sendProButton(userId, ctx.phone, proOffer(trial, price, year, outcome), UPGRADE_CARD, log, price))) {
+            extra.push(proPayLink(proOffer(trial, price, year, outcome), proStartUrl(userId)));
           }
           /*
            * The email, asked for and not required (31 October 2026). Setup no
@@ -3608,6 +3610,24 @@ async function handleOnboardingForm(
  * What is recorded is the version, not the words. That is what makes it
  * possible to say later which terms a given person accepted.
  */
+/** What is owed to them now, and what their invoices usually come to. Never throws. */
+async function proOutcomeFor(userId: string, today: Civil): Promise<{ owedKobo: number; typicalKobo: number | null }> {
+  try {
+    const owed = (await debtors(userId, today)).totalKobo;
+    const { rows } = await db().query<{ m: string | null }>(
+      `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY total_kobo)::bigint::text AS m
+         FROM documents WHERE user_id = $1 AND type = 'invoice' AND status <> 'draft' AND currency = 'NGN'`,
+      [userId],
+    );
+    const m = rows[0]?.m;
+    // Rounded to the thousand naira, as people say it.
+    const typical = m ? Math.round(Number(m) / 100_000) * 100_000 : null;
+    return { owedKobo: owed, typicalKobo: typical || null };
+  } catch {
+    return { owedKobo: 0, typicalKobo: null };
+  }
+}
+
 /**
  * Back to the invoice that asked for verification, the moment it passes
  * (20 October 2026): the same draft, with its card and its three buttons,
