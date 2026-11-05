@@ -259,7 +259,10 @@ background:#F5B82E;color:#08130F;font-weight:600;font-size:15px;text-decoration:
 button.tcopy.claim-btn{width:100%;background:transparent;color:inherit;border:1.5px solid currentColor;box-shadow:none}
 .tcard .claim{margin-top:10px}
 .tcard .claimed{background:rgba(63,143,95,.24);color:#cfeedb}
-dialog.confirm{width:min(340px,calc(100% - 32px));padding:24px 22px 18px;border:0;border-radius:24px;
+/* Centred by hand: the reset above takes away the margin a modal dialog
+   centres itself with, which left it in the top corner. */
+dialog.confirm{position:fixed;inset:0;margin:auto;height:fit-content;max-height:calc(100% - 32px);
+width:min(340px,calc(100% - 32px));padding:24px 22px 18px;border:0;border-radius:24px;
 background:var(--paper);color:var(--ink);box-shadow:0 24px 60px rgba(8,19,15,.28);text-align:center}
 dialog.confirm::backdrop{background:rgba(8,19,15,.45)}
 .confirm-head{margin:0;font-size:18px;font-weight:600;line-height:1.3}
