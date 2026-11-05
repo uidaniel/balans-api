@@ -589,8 +589,8 @@ function renderDocumentPage(
             const receipt = doc.amountPaidKobo > 0;
             const both = pdf && receipt;
             return `<div class="files">
-      ${pdf ? `<a href="${opts.base ?? "/i"}/${esc(opts.token)}/pdf">${DOWNLOAD}${both ? `${label} (PDF)` : `Download ${label.toLowerCase()} (PDF)`}</a>` : ""}
-      ${receipt ? `<a href="/i/${esc(opts.token)}/receipt">${DOWNLOAD}${both ? "Receipt (PDF)" : "Download receipt"}</a>` : ""}
+      ${pdf ? `<a href="${opts.base ?? "/i"}/${esc(opts.token)}/pdf?download" download>${DOWNLOAD}${both ? `${label} (PDF)` : `Download ${label.toLowerCase()} (PDF)`}</a>` : ""}
+      ${receipt ? `<a href="/i/${esc(opts.token)}/receipt?download" download>${DOWNLOAD}${both ? "Receipt (PDF)" : "Download receipt"}</a>` : ""}
     </div>`;
           })()
     }

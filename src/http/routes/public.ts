@@ -314,6 +314,14 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
       .send(renderDocument(doc, todayIn(defaults.behaviour.timezone), { token: req.params.token, base: "/q" }));
   });
 
+  /**
+   * How a PDF is handed over (5 November 2026). The page's Download buttons
+   * add `?download`, and get a file saved to the phone; every other link to a
+   * PDF (emails, messages) still opens it to read, as it always has.
+   */
+  const disposition = (req: FastifyRequest, name: string): string =>
+    `${req.query && typeof req.query === "object" && "download" in req.query ? "attachment" : "inline"}; filename="${name}"`;
+
   app.get<{ Params: { token: string } }>("/q/:token/pdf", (req, reply) => documentPdf(req, reply));
   app.get<{ Params: { token: string } }>("/i/:token/pdf", (req, reply) => documentPdf(req, reply));
 
@@ -351,7 +359,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
 
     return reply
       .type("application/pdf")
-      .header("content-disposition", `inline; filename="${name}"`)
+      .header("content-disposition", disposition(req, name))
       .header("cache-control", "no-store, private")
       .header("x-content-type-options", "nosniff")
       .send(file.bytes);
@@ -402,10 +410,7 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
 
     return reply
       .type("application/pdf")
-      .header(
-        "content-disposition",
-        `inline; filename="${fileName("Receipt", rows[0]!.number, doc.clientName)}"`,
-      )
+      .header("content-disposition", disposition(req, fileName("Receipt", rows[0]!.number, doc.clientName)))
       .header("cache-control", "no-store, private")
       .send(file.bytes);
   });

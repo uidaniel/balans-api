@@ -567,6 +567,14 @@ describe("I've paid asks first (5 November 2026)", () => {
   });
 });
 
+describe("the download buttons (5 November 2026)", () => {
+  it("ask for the file to be saved, not opened", () => {
+    const html = renderDocument(doc({ amountPaidKobo: 100_000_00, status: "part_paid" }), TODAY, { token: "a".repeat(32) });
+    assert.match(html, /\/pdf\?download" download>/);
+    assert.match(html, /\/receipt\?download" download>/);
+  });
+});
+
 describe("the invitation (5 November 2026)", () => {
   it("is on a Free sender's page, straight into the chat, tagged", () => {
     const html = renderDocument(doc(), TODAY, { token: "a".repeat(32) });
