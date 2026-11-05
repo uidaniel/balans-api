@@ -36,7 +36,7 @@ describe("what follows a sent invoice", () => {
     assert.doesNotMatch(handle, /offerBranding\(userId, ctx\.phone, "first_send", log\)/);
   });
 
-  it("says the Pro line about late payers when a client is actually reminded", () => {
-    assert.match(overdue, /trialReminderPitch\(r\.user_id, r\.document_id\)/);
+  it("puts no Pro line under a reminder (5 November 2026)", () => {
+    assert.doesNotMatch(overdue, /Chasing late payers is a Pro feature/);
   });
 });

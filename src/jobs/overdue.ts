@@ -370,12 +370,6 @@ export async function sendDueReminders(
         continue;
       }
       const buttons = await paidButtons(r.document_id, r.number);
-      /*
-       * The Pro line, at the moment it is true (2 November 2026): Balans has
-       * just chased this client, on a free document. It used to be said under
-       * the first invoice, about a lateness that had not happened yet.
-       */
-      const pitch = how ? await trialReminderPitch(r.user_id, r.document_id) : null;
 
       const outcome = await send(
         {
@@ -395,7 +389,7 @@ export async function sendDueReminders(
             reminded,
             last: isLastReminder(r.kind, r.plan),
             askPaid: buttons.length > 0,
-          }) + (pitch ? `\n\n${pitch}` : ""),
+          }),
           buttons,
           fallback: how
             ? {
@@ -509,12 +503,11 @@ async function warnSender(r: WarnRow, today: Civil, log: FastifyBaseLogger): Pro
   const owed = formatNaira(r.total_kobo - r.amount_paid_kobo);
   const when = lateness(due, today);
   const at = remindAt();
-  const pitch = await trialReminderPitch(r.user_id, r.document_id);
   const outcome = await send(
     {
       userId: r.user_id,
       phone: r.wa_phone,
-      text: warningText({ client: r.client_name, number: r.number, owed, when, at }) + (pitch ? `\n\n${pitch}` : ""),
+      text: warningText({ client: r.client_name, number: r.number, owed, when, at }),
       buttons,
       fallback: {
         template: "reminder_heads_up",
@@ -971,10 +964,6 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
   }
 }
 
-/** Under a reminder Balans sent for a free-trial document, to somebody not on Pro. */
-export async function trialReminderPitch(userId: string, documentId: string): Promise<string | null> {
-  const { rows } = await db().query<{ trial: boolean }>(`SELECT trial FROM documents WHERE id = $1`, [documentId]);
-  if (!rows[0]?.trial) return null;
-  if ((await trialOf(userId)).paid) return null;
-  return "⭐ Chasing late payers is a Pro feature, on this one free. On Pro, every invoice works this way.";
-}
+// The Pro line under a reminder (about chasing late payers) went on
+// 5 November 2026, at the founders' asking: it read as a sales line in the
+// middle of the sender's own business.
