@@ -3609,7 +3609,7 @@ const NO_PRO_NUDGE = new Set(["show_upgrade", "start_pro", "save_draft", "send_f
 /** The example's words, over the PDF (5 November 2026). */
 const EXAMPLE_CAPTION = para(
   `👀 ${b("This is what your client gets.")}`,
-  "Your name, your bank account, a link to pay. Made up client, marked SAMPLE: nothing went to anyone.",
+  "Your name, your bank account, a link to pay.",
 );
 
 const CREATE_INVOICE_BUTTON: ReplyButton = { id: "create invoice", title: "Create invoice" };
