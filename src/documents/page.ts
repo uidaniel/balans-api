@@ -250,10 +250,9 @@ button.tcopy{height:52px;margin-top:14px}
 .invite-sub{margin-top:6px;font-size:13.5px;line-height:1.45;color:rgba(246,241,231,.68)}
 a.invite-btn{display:inline-flex;align-items:center;justify-content:center;margin-top:14px;height:44px;padding:0 22px;border-radius:999px;
 background:#F5B82E;color:#08130F;font-weight:600;font-size:15px;text-decoration:none}
-.claim{margin-top:14px}.claim .tfine{margin-top:8px;text-align:center}
+.claim{margin-top:14px}
 button.tcopy.claim-btn{width:100%;background:transparent;color:inherit;border:1.5px solid currentColor;box-shadow:none}
 .tcard .claim{margin-top:10px}
-.tcard .claim .tfine{color:rgba(246,241,231,.6)}
 .tcard .claimed{background:rgba(63,143,95,.24);color:#cfeedb}
 dialog.confirm{width:min(340px,calc(100% - 32px));padding:24px 22px 18px;border:0;border-radius:24px;
 background:var(--paper);color:var(--ink);box-shadow:0 24px 60px rgba(8,19,15,.28);text-align:center}
@@ -915,7 +914,6 @@ function paidClaim(doc: PublicDocument, token: string): string {
   // be taken back. Without script the form still posts straight away.
   return `<form method="post" action="/i/${esc(token)}/paid" class="claim" id="paid">
     <button class="tcopy claim-btn" type="submit">I&rsquo;ve paid</button>
-    <p class="tfine">Tap after you send it, and we&rsquo;ll ask ${esc(doc.businessName)} to check.</p>
   </form>
   <dialog class="confirm" id="paid-confirm" aria-labelledby="paid-confirm-head">
     <p class="confirm-head" id="paid-confirm-head">Have you sent the payment?</p>
