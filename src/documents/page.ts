@@ -593,7 +593,7 @@ function renderDocumentPage(
     ${doc.notes ? `<div class="note">${esc(doc.notes)}</div>` : ""}
   </section>
 </main>
-${doc.plan === "pro" || doc.amountPaidKobo >= doc.totalKobo ? "" : invite(doc)}
+${(doc.senderPaid ?? doc.plan === "pro") || doc.amountPaidKobo >= doc.totalKobo ? "" : invite(doc)}
 ${doc.plan === "pro" ? "" : footer(doc)}
 ${doc.bank && can.ok === false ? `<script>${COPY_JS}</script>` : ""}
 ${opts.pending ? `<script>${pollJs(opts.token, doc.amountPaidKobo)}</script>` : ""}

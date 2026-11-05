@@ -564,9 +564,14 @@ describe("the invitation (5 November 2026)", () => {
     assert.match(html, /href="[^"]+\/start\?ref=invoice"/);
   });
 
-  it("is never on a Pro sender's page", () => {
-    const html = renderDocument(doc({ plan: "pro" }), TODAY, { token: "a".repeat(32) });
+  it("is never on a paying Pro sender's page", () => {
+    const html = renderDocument(doc({ plan: "pro", senderPaid: true }), TODAY, { token: "a".repeat(32) });
     assert.doesNotMatch(html, /class="invite"/);
+  });
+
+  it("is on a free-trial document, drawn as Pro but not paid for", () => {
+    const html = renderDocument(doc({ plan: "pro", senderPaid: false }), TODAY, { token: "a".repeat(32) });
+    assert.match(html, /class="invite"/);
   });
 });
 

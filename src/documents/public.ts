@@ -83,6 +83,13 @@ export type PublicDocument = {
   ref?: string | null;
   plan: "free" | "pro";
   /**
+   * Whether the sender pays for Pro (5 November 2026). Not `plan`, which is
+   * also "pro" on the free-trial documents: those are drawn with every Pro
+   * feature, but the "Send invoices like this" card belongs on them most of
+   * all, since they are what a new sender's first clients see.
+   */
+  senderPaid?: boolean;
+  /**
    * Pro only: the business's own logo, inlined, and its accent colour. On a
    * Pro page the client sees the business and nothing of ours; see
    * `renderDocument`. Absent on Free, and on Pro without them.
@@ -145,6 +152,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     title: string | null;
     business_name: string | null;
     plan: "free" | "pro";
+    sender_paid: boolean;
     logo_url: string | null;
     brand_color: string | null;
     currency: Foreign | "NGN";
@@ -169,7 +177,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
             d.currency, d.original_amount_minor, d.fx_rate,
             d.delivery_type, d.payment_details, d.client_paid_claim_at, d.bank_details_bank_name, d.bank_details_account_name,
             d.bank_details_account_last4, d.bank_details_account_number_encrypted,
-            u.business_name, (CASE WHEN balans_doc_pro(d, u) THEN 'pro' ELSE 'free' END) AS plan, u.logo_url, u.brand_color,
+            u.business_name, (CASE WHEN balans_doc_pro(d, u) THEN 'pro' ELSE 'free' END) AS plan, balans_paid(u) AS sender_paid, u.logo_url, u.brand_color,
             c.name AS client_name,
             -- Whether there is one, never what it is: this page is public.
             (c.email IS NOT NULL AND c.email <> '') AS client_has_email,
@@ -238,6 +246,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     subAccountCode: r.sub_account_code,
     hasPayoutAccount: r.has_payout_account,
     plan: r.plan,
+    senderPaid: r.sender_paid,
     logoDataUri: r.plan === "pro" ? await logoDataUri(r.user_id, r.plan, r.logo_url) : null,
     logoTile: r.plan === "pro" && r.logo_url ? await logoIsTile(r.user_id) : false,
     brandColor: r.plan === "pro" ? r.brand_color : null,
