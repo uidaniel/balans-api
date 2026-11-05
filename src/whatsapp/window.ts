@@ -103,7 +103,8 @@ type BaseTemplateName =
   | "pro_plan_ending"
   | "pro_plan_ended"
   | "pro_plan_stops"
-  | "pro_plan_free";
+  | "pro_plan_free"
+  | "weekly_owed";
 
 /**
  * A bold line above the words, for the templates that say one thing
@@ -336,6 +337,19 @@ const BASE_TEMPLATES: Record<BaseTemplateName, TemplateSpec> = {
     params: ["free invoices a month", "price"],
     example: ["3", "₦3,000"],
     button: { text: "Get Pro back", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
+  },
+
+  /*
+   * Monday's "who owes you" (5 November 2026, jobs/weekly-owed.ts): a fact
+   * about their own account, with the list and the way out as buttons.
+   */
+  weekly_owed: {
+    name: "weekly_owed",
+    category: "UTILITY",
+    body: "Weekly update: you are owed {{1}} on {{2}} unpaid invoices. Tap below to see who owes you.",
+    params: ["amount owed", "unpaid invoice count"],
+    example: ["₦450,000", "3"],
+    quickReplies: ["Who owes me", "Stop weekly updates"],
   },
 
   /*

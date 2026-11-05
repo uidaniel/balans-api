@@ -19,6 +19,7 @@ import { sendSetupFollowups, sendSetupNudges } from "./setup-nudges.ts";
 import { sendNameChecks } from "./name-check.ts";
 import { sendTermsNotices } from "../legal/notice.ts";
 import { sendFirstDocumentNudges } from "./first-document.ts";
+import { sendWeeklyOwed } from "./weekly-owed.ts";
 import { syncWhatsAppSpend } from "../whatsapp/spend.ts";
 import { purgeExpiredCodes } from "../lib/codes.ts";
 import { tellPayouts } from "../payments/payouts.ts";
@@ -764,6 +765,8 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
       await sendTermsNotices(log);
       // Set up, nothing sent, a few hours on: one nudge (5 November 2026).
       await sendFirstDocumentNudges(log);
+      // Monday morning: who still owes them, once a week (5 November 2026).
+      await sendWeeklyOwed(today, new Date(), log);
     }
 
     // What the privacy policy promises: typed text gone after 30 days, and

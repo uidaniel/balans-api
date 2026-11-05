@@ -168,6 +168,20 @@ export type Context = {
 };
 
 /** A document under construction. Amounts are kobo; nothing here is a string. */
+/**
+ * "Invoice Zenith again", "same as last time for Zenith", "repeat my last
+ * invoice". Null when it is not one of those. Not a bare "again", which
+ * after a hiccup means "try that again".
+ */
+export function repeatAsked(text: string): { client: string | null } | null {
+  const t = text.trim().replace(/[.!?]+$/, "");
+  let m = /^(?:invoice|bill) (.+?) again$/i.exec(t);
+  if (m) return { client: /^(them|him|her|my client|the client)$/i.test(m[1]!.trim()) ? null : m[1]!.trim() };
+  m = /^(?:same as last time|same again|repeat (?:my |the )?last invoice|invoice (?:them|him|her) again|send (?:the )?same invoice(?: again)?)(?: (?:for|to) (.+))?$/i.exec(t);
+  if (m) return { client: m[1]?.trim() || null };
+  return null;
+}
+
 export type PendingDoc = {
   type: "invoice" | "quote" | "payment_request";
   clientName?: string;
@@ -290,6 +304,8 @@ export type Effect =
   | { type: "offer_branding" }
   /** "STOP UPDATES" / "START UPDATES": announcements off or on. */
   | { type: "set_updates"; on: boolean }
+  | { type: "set_weekly_owed"; on: boolean }
+  | { type: "repeat_invoice"; client: string | null }
   /** "I accept" under the notice of terms 6.0 (legal/notice.ts). */
   | { type: "accept_terms" }
   /** "Try an example": a sample invoice in their own name (documents/sample.ts). */
@@ -1872,6 +1888,19 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       }
       if (/^((start|resume) updates|yes, send updates)[.!]*$/i.test(text.trim())) {
         return { replies: [], next: "idle", context, effects: [{ type: "set_updates", on: true }] };
+      }
+      // "Invoice them again" (5 November 2026): the last invoice, or the last
+      // to the client named, as a new draft dated today (documents/again.ts).
+      {
+        const again = repeatAsked(text);
+        if (again) return { replies: [], next: "idle", context, effects: [{ type: "repeat_invoice", client: again.client }] };
+      }
+      // Monday's "who owes you" (5 November 2026): its way out, and back.
+      if (/^(stop|no) weekly( updates?| messages?)?[.!]*$/i.test(text.trim())) {
+        return { replies: [], next: "idle", context, effects: [{ type: "set_weekly_owed", on: false }] };
+      }
+      if (/^(start|resume) weekly( updates?| messages?)?[.!]*$/i.test(text.trim())) {
+        return { replies: [], next: "idle", context, effects: [{ type: "set_weekly_owed", on: true }] };
       }
       // An example in their own name, and the way into a real one (5 November 2026).
       if (/^(try an example|show me an example|see an example|example)[.!]*$/i.test(text.trim())) {

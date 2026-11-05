@@ -7,6 +7,9 @@
  * which is why the interesting logic stays testable without a database.
  */
 
+import { setWeeklyOwed } from "../jobs/weekly-owed.ts";
+import { lastInvoiceAgain } from "../documents/again.ts";
+import { quotedDocument, QUOTABLE, type Quoted } from "./quoted.ts";
 import { identityRequired, identityStatusOf, type IdentityStatus } from "../identity/verify.ts";
 import { identityUrl } from "../http/routes/verify.ts";
 import { NAIRA_PRICE, perMonthOf, proPriceFor, type ProPrice } from "../billing/price.ts";
@@ -882,6 +885,10 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     editingId: saved.context.editingId,
     editingNumber: saved.context.editingNumber,
     chat: saved.context.chat,
+    quoted:
+      msg.kind === "text" && msg.repliedTo
+        ? await quotedDocument(user.id, msg.repliedTo).catch(() => undefined)
+        : undefined,
   });
 
   // An effect can refuse to let the conversation move on: a wrong code must not
@@ -1107,6 +1114,8 @@ async function runEffects(
     editingNumber?: number;
     /** The last few questions and answers (src/chat). */
     chat?: ChatMemory;
+    /** The message they replied to, and the document behind it (conversation/quoted.ts). */
+    quoted?: Quoted;
     /** A bank change resolved on the previous turn, waiting on a yes (F17). */
     changing?: {
       bankCode: string;
@@ -1317,6 +1326,40 @@ async function runEffects(
             effect.on
               ? `🔔 ${b("You'll get the occasional update from Balans.")} Send ${b("STOP UPDATES")} any time to stop them.`
               : `🔕 ${b("No more updates from Balans.")} Your invoices, receipts and reminders are not affected. Send ${b("START UPDATES")} to get them again.`,
+          );
+          break;
+        }
+
+        case "repeat_invoice": {
+          const again = await lastInvoiceAgain(userId, effect.client, ctx.today);
+          if (!again.ok) {
+            extra.push(again.line);
+            break;
+          }
+          const drafted = await runEffects([{ type: "save_draft", doc: again.doc }], userId, businessName, log, ctx);
+          if (drafted.draftId) {
+            extra.push(
+              `🔁 ${b(`Same as last time for ${again.doc.clientName}`)}, dated today. Tell me anything to change, or send it.`,
+              ...drafted.lines,
+            );
+            draftId = drafted.draftId;
+            wroteDoc = again.doc;
+            buttons = drafted.buttons;
+            buttonsImage = drafted.buttonsImage;
+            holdAt = "awaiting_confirm";
+            break;
+          }
+          extra.push(...drafted.lines);
+          if (drafted.holdAt) holdAt = drafted.holdAt;
+          break;
+        }
+
+        case "set_weekly_owed": {
+          await setWeeklyOwed(userId, effect.on);
+          extra.push(
+            effect.on
+              ? `📅 ${b("Weekly updates are on.")} On Mondays I'll tell you who still owes you. Send ${b("STOP WEEKLY")} to stop them.`
+              : `🔕 ${b("No more Monday updates.")} Reply ${b("who owes me")} any time to see it. Send ${b("START WEEKLY")} to get them again.`,
           );
           break;
         }
@@ -2894,7 +2937,47 @@ async function runEffects(
           extra.push(VOICE.notBuiltYet("Referrals"));
           break;
         case "document_action": {
-          const number = effect.number;
+          let number = effect.number;
+          /*
+           * No number, but they replied to one of our messages (5 November
+           * 2026): the document that message was about. A draft, or nothing
+           * at all, means nothing was sent, which is the answer to "did you
+           * send it?" and "reverse it" alike.
+           */
+          let fromQuote = false;
+          if (number === null && ctx.quoted?.known && QUOTABLE.has(effect.intent)) {
+            const q = ctx.quoted.doc;
+            if (!q || q.status === "draft" || q.number === null) {
+              extra.push(
+                lines(
+                  `✅ ${b("Nothing was sent from that message.")}`,
+                  `A draft only goes to your client when you tap ${b("Send it")}${q ? "" : ", and drafts you don't send are dropped"}.`,
+                ),
+              );
+              break;
+            }
+            number = q.number;
+            fromQuote = true;
+          }
+
+          /*
+           * "Reverse it" under a sent invoice: asked back, since the number
+           * came from the quote and not from them.
+           */
+          if (fromQuote && effect.intent === "cancel_document" && number !== null) {
+            const noun = ctx.quoted?.doc?.type === "quote" ? "quote" : "invoice";
+            const ask = `↩️ Cancel ${b(`${noun} #${number}`)}? Its link stops working and your client is not reminded about it again.`;
+            const yes = { id: `cancel ${noun} ${number}`, title: "Yes, cancel it" };
+            if (ctx.phone) {
+              const sent = await sendButtons(ctx.phone, { body: ask, buttons: [yes, { id: "keep invoices", title: "No, keep it" }] });
+              if (sent.ok) {
+                await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+                break;
+              }
+            }
+            extra.push(lines(ask, `Reply ${b(yes.id)} to confirm.`));
+            break;
+          }
 
           /*
            * Asked back first (6 October 2026): stopping reminders means the

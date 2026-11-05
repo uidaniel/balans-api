@@ -43,3 +43,24 @@ describe("the first-document nudge", () => {
     for (const b of NUDGE_BUTTONS) assert.ok(say(b.id).effects.length > 0, b.id);
   });
 });
+
+describe("invoice them again (5 November 2026)", () => {
+  it("hears the ways people say it, with or without a client", async () => {
+    const { repeatAsked } = await import("./machine.ts");
+    assert.deepEqual(repeatAsked("Invoice Zenith Homes again"), { client: "Zenith Homes" });
+    assert.deepEqual(repeatAsked("same as last time for Zenith"), { client: "Zenith" });
+    assert.deepEqual(repeatAsked("Same as last time"), { client: null });
+    assert.deepEqual(repeatAsked("repeat my last invoice"), { client: null });
+    assert.deepEqual(repeatAsked("invoice them again!"), { client: null });
+  });
+
+  it("leaves everything else to the parser", async () => {
+    const { repeatAsked } = await import("./machine.ts");
+    assert.equal(repeatAsked("again"), null);
+    assert.equal(repeatAsked("Invoice Tunde 20k for logo"), null);
+  });
+
+  it("drafts it as an effect", () => {
+    assert.deepEqual(say("Invoice Zenith again").effects, [{ type: "repeat_invoice", client: "Zenith" }]);
+  });
+});
