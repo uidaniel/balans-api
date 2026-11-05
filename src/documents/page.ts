@@ -245,7 +245,7 @@ padding:13px 16px;border-top:1px solid rgba(246,241,231,.07)}
 .tv .acct{font-family:var(--display);font-variant-numeric:tabular-nums;letter-spacing:.03em;
 font-size:21px;font-weight:500;line-height:1.2}
 button.tcopy{height:52px;margin-top:14px}
-.invite{margin:18px 16px 6px;padding:18px 18px 16px;border-radius:18px;background:#08130F;color:#F6F1E7;text-align:center}
+.invite{margin:12px 10px 6px;padding:18px 18px 16px;border-radius:18px;background:#08130F;color:#F6F1E7;text-align:center}
 .invite-head{font-size:17px;font-weight:600;line-height:1.3}
 .invite-sub{margin-top:6px;font-size:13.5px;line-height:1.45;color:rgba(246,241,231,.68)}
 a.invite-btn{display:inline-flex;align-items:center;justify-content:center;margin-top:14px;height:44px;padding:0 22px;border-radius:999px;
