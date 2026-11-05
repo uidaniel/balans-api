@@ -105,7 +105,6 @@ type BaseTemplateName =
   | "pro_plan_stops"
   | "pro_plan_free"
   | "weekly_owed"
-  | "win_back_again"
   | "reminder_heads_up";
 
 /**
@@ -353,19 +352,6 @@ const BASE_TEMPLATES: Record<BaseTemplateName, TemplateSpec> = {
     params: ["invoice number, e.g. #12", "client", "amount owed", "due today, or 3 days late", "time, e.g. 2pm"],
     example: ["#12", "Zenith Homes", "₦350,000", "due today", "2pm"],
     quickReplies: ["Already paid", "Remind them now"],
-  },
-
-  /*
-   * The win-back (5 November 2026, jobs/win-back.ts): selling, so marketing,
-   * and only to people who said yes to updates. Stop is one tap.
-   */
-  win_back_again: {
-    name: "win_back_again",
-    category: "MARKETING",
-    body: "Need to bill {{1}} again? Tap below and Balans makes the same invoice, dated today, for you to check before it goes.",
-    params: ["their last client"],
-    example: ["Zenith Homes"],
-    quickReplies: ["Invoice them again", "Stop updates"],
   },
 
   /*

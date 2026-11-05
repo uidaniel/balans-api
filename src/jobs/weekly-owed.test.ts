@@ -45,18 +45,17 @@ describe("its way out", () => {
 });
 
 describe("the win-back (5 November 2026)", () => {
-  it("offers the same invoice to their last client, and a way out", async () => {
-    const { winBackText, winBackButtons } = await import("./win-back.ts");
+  it("is an email that types the same invoice into the chat, with a way out", async () => {
+    const { winBackEmail, againText } = await import("./win-back.ts");
     const { repeatAsked } = await import("../conversation/machine.ts");
-    assert.match(winBackText("Zenith Homes"), /Need to bill Zenith Homes again\?/);
-    const [again, stop] = winBackButtons("Zenith Homes");
-    assert.deepEqual(repeatAsked(again!.id), { client: "Zenith Homes" });
-    assert.deepEqual(say(stop!.id).effects, [{ type: "set_updates", on: false }]);
+    const e = winBackEmail({ client: "Zenith Homes", userId: "00000000-0000-0000-0000-000000000001", waNumber: "2348000000000" });
+    assert.equal(e.subject, "Need to bill Zenith Homes again?");
+    assert.match(e.html ?? "", /wa\.me\/2348000000000\?text=invoice%20Zenith%20Homes%20again/);
+    assert.match(e.html ?? "", /Stop Balans updates/);
+    assert.deepEqual(repeatAsked(againText("Zenith Homes")), { client: "Zenith Homes" });
   });
 
-  it("is marketing, honestly, with the same two buttons", () => {
-    const t = TEMPLATES.win_back_again;
-    assert.equal(t.category, "MARKETING");
-    assert.deepEqual(t.quickReplies, ["Invoice them again", "Stop updates"]);
+  it("is not a WhatsApp template, so it costs nothing", () => {
+    assert.equal((TEMPLATES as Record<string, unknown>).win_back_again, undefined);
   });
 });
