@@ -97,7 +97,8 @@ type BaseTemplateName =
   | "setup_reminder"
   | "monthly_statement"
   | "business_name_check"
-  | "announcement";
+  | "announcement"
+  | "client_says_paid";
 
 /**
  * A bold line above the words, for the templates that say one thing
@@ -558,6 +559,20 @@ const BASE_TEMPLATES: Record<BaseTemplateName, TemplateSpec> = {
     body: "Update from Balans: {{1}}\n\nReply STOP UPDATES to stop these messages.",
     params: ["the message, one paragraph"],
     example: ["Balans now sends a summary of your month on the 1st, with your full statement by email."],
+  },
+
+  /*
+   * The client tapped "I've paid" on the invoice page (5 November 2026): the
+   * sender is asked to check their bank and confirm. Its buttons are the same
+   * as the "Did they pay?" check, so a tap marks it paid the same way.
+   */
+  client_says_paid: {
+    name: "client_says_paid",
+    category: "UTILITY",
+    body: "Your client {{1}} says they have paid invoice {{2}} for {{3}}. Check your bank, then tap Yes to mark it paid.",
+    params: ["client name", "invoice number", "amount"],
+    example: ["Zenith Homes", "#12", "₦350,000"],
+    quickReplies: ["Yes, mark paid", "Not yet"],
   },
 
   launch_setup: {

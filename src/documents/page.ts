@@ -245,6 +245,14 @@ padding:13px 16px;border-top:1px solid rgba(246,241,231,.07)}
 .tv .acct{font-family:var(--display);font-variant-numeric:tabular-nums;letter-spacing:.03em;
 font-size:21px;font-weight:500;line-height:1.2}
 button.tcopy{height:52px;margin-top:14px}
+.invite{margin:18px 16px 6px;padding:18px 18px 16px;border-radius:18px;background:#08130F;color:#F6F1E7;text-align:center}
+.invite-head{font-size:17px;font-weight:600;line-height:1.3}
+.invite-sub{margin-top:6px;font-size:13.5px;line-height:1.45;color:rgba(246,241,231,.68)}
+a.invite-btn{display:inline-flex;align-items:center;justify-content:center;margin-top:14px;height:44px;padding:0 22px;border-radius:999px;
+background:#F5B82E;color:#08130F;font-weight:600;font-size:15px;text-decoration:none}
+.claim{margin-top:14px}.claim .tfine{margin-top:8px;text-align:center}
+button.claim-btn{width:100%;background:transparent;border:1.5px solid currentColor}
+.claimed{margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(63,143,95,.12);color:#2f6f49;font-size:14px;line-height:1.45}
 button.icopy{flex:none;display:grid;place-items:center;width:34px;height:34px;margin:-6px -6px -6px 0;
 border:0;border-radius:10px;background:transparent;color:rgba(246,241,231,.55);cursor:pointer;
 -webkit-tap-highlight-color:transparent}
@@ -585,6 +593,7 @@ function renderDocumentPage(
     ${doc.notes ? `<div class="note">${esc(doc.notes)}</div>` : ""}
   </section>
 </main>
+${doc.plan === "pro" || doc.amountPaidKobo >= doc.totalKobo ? "" : invite(doc)}
 ${doc.plan === "pro" ? "" : footer(doc)}
 ${doc.bank && can.ok === false ? `<script>${COPY_JS}</script>` : ""}
 ${opts.pending ? `<script>${pollJs(opts.token, doc.amountPaidKobo)}</script>` : ""}
@@ -726,7 +735,7 @@ function payBlock(
 ): string {
   if (can.ok) {
     // Paid to the sender's own details: those, and no button of ours.
-    if (doc.paymentDetails) return ownDetailsBlock(doc, amount, partLabel);
+    if (doc.paymentDetails) return ownDetailsBlock(doc, amount, partLabel, opts.token);
 
     /*
      * No button when a card cannot be taken at all.
@@ -814,7 +823,7 @@ function payBlock(
 
   switch (can.why) {
     case "bank_details":
-      return bankBlock(doc, amount, partLabel);
+      return bankBlock(doc, amount, partLabel, opts.token);
     case "paid":
       return `<div class="banner paid">Paid in full. Nothing more to do.</div>${doc.plan === "pro" ? "" : tryBalans()}`;
     case "cancelled":
@@ -853,7 +862,7 @@ function payBlock(
  * for the money, so the client should not expect a receipt from Balans until
  * the sender confirms it.
  */
-function bankBlock(doc: PublicDocument, amountKobo: number, partLabel: string | null): string {
+function bankBlock(doc: PublicDocument, amountKobo: number, partLabel: string | null, token: string): string {
   const k = doc.bank!;
   const amount = formatNaira(amountKobo);
   const typed = amountKobo % 100 === 0 ? String(amountKobo / 100) : (amountKobo / 100).toFixed(2);
@@ -879,7 +888,24 @@ function bankBlock(doc: PublicDocument, amountKobo: number, partLabel: string | 
   <p class="tfine">Send <strong>${amount}</strong> to ${esc(doc.businessName)}&rsquo;s own account.
     Payments made directly to this account are not tracked automatically &mdash; ask
     ${esc(doc.businessName)} to confirm once you have paid.</p>
+  ${paidClaim(doc, token)}
 </div>`;
+}
+
+/**
+ * "I've paid" (5 November 2026): the client says it, and the sender is asked
+ * to check their bank and confirm (documents/paid-claim.ts). Once pressed, the
+ * page says it was passed on rather than offering the button again.
+ */
+function paidClaim(doc: PublicDocument, token: string): string {
+  const recent = doc.paidClaimAt && Date.now() - doc.paidClaimAt.getTime() < 12 * 3_600_000;
+  if (recent) {
+    return `<p class="claimed" id="paid">&#10003; We told ${esc(doc.businessName)} you&rsquo;ve paid. They&rsquo;ll confirm once it arrives.</p>`;
+  }
+  return `<form method="post" action="/i/${esc(token)}/paid" class="claim" id="paid">
+    <button class="tcopy claim-btn" type="submit">I&rsquo;ve paid</button>
+    <p class="tfine">Tap after you send it, and we&rsquo;ll ask ${esc(doc.businessName)} to check.</p>
+  </form>`;
 }
 
 /**
@@ -899,7 +925,7 @@ function bankBlock(doc: PublicDocument, amountKobo: number, partLabel: string | 
  * abroad). Balans takes no part in this payment and cannot see it, so the
  * page says so, and that the sender confirms it.
  */
-function ownDetailsBlock(doc: PublicDocument, amount: number, partLabel: string | null): string {
+function ownDetailsBlock(doc: PublicDocument, amount: number, partLabel: string | null, token: string): string {
   const agreed = doc.foreign
     ? formatMoney(
         doc.amountPaidKobo === 0 && amount === doc.totalKobo
@@ -922,6 +948,7 @@ function ownDetailsBlock(doc: PublicDocument, amount: number, partLabel: string 
     <p class="tsmall own-note">${esc(doc.businessName)} gave these details. Balans has not checked them and does not
       receive this payment. Something not right?
       <a href="mailto:${esc(env.SUPPORT_EMAIL)}?subject=${encodeURIComponent(`Payment details on ${clientNumber(doc.ref, doc.number) ?? "an invoice"}`)}">Tell us</a>.</p>
+    ${paidClaim(doc, token)}
   </div>`;
 }
 
@@ -934,7 +961,7 @@ function ownDetailsBlock(doc: PublicDocument, amount: number, partLabel: string 
  */
 function tryBalans(): string {
   const site = env.SITE_URL.replace(/\/$/, "");
-  return `<a class="trybalans" href="${site}/?utm_source=paid_invoice&amp;utm_medium=invoice_page" target="_blank" rel="noopener">
+  return `<a class="trybalans" href="${esc(startLink(site))}" target="_blank" rel="noopener">
     Get paid like this. Send invoices on WhatsApp in seconds. <b>Try Balans free &rarr;</b></a>`;
 }
 
@@ -1043,8 +1070,30 @@ function footer(doc: PublicDocument): string {
   const site = env.SITE_URL.replace(/\/$/, "");
   const verb = doc.type === "quote" ? "Quoted" : doc.type === "payment_request" ? "Requested" : "Billed";
   return `<p class="foot">${markSvg("16px")}<span>${verb} with <b>Balans</b> on WhatsApp. <a href="${esc(
-    `${site}/?utm_source=${doc.type}&utm_medium=page_footer`,
+    startLink(site),
   )}">Send your own invoices in seconds</a></span></p>`;
+}
+
+/**
+ * Straight into the chat, tagged (5 November 2026): balans.ng/start?ref=invoice
+ * counts the tap and the sign-up comes in as "From invoices" in the admin.
+ */
+const startLink = (site: string): string => `${site}/start?ref=invoice`;
+
+/**
+ * The invitation, on a Free sender's page (5 November 2026). 58 clients
+ * opened invoices in a week and none followed the quiet footer link, so it
+ * says it plainly, once, under everything the client came for. Clients are
+ * very often people who send invoices themselves. Never on a Pro page.
+ */
+function invite(doc: PublicDocument): string {
+  const site = env.SITE_URL.replace(/\/$/, "");
+  const noun = doc.type === "quote" ? "quotes" : "invoices";
+  return `<div class="invite">
+  <p class="invite-head">Send ${noun} like this, free, on WhatsApp</p>
+  <p class="invite-sub">Type the job, Balans draws the ${noun === "quotes" ? "quote" : "invoice"} and sends it. Your first ${defaults.plans.free.trialDocuments} are free.</p>
+  <a class="invite-btn" href="${esc(startLink(site))}" target="_blank" rel="noopener">Try Balans free</a>
+</div>`;
 }
 
 /**

@@ -410,6 +410,7 @@ import { clearSignature, issueSignatureToken } from "../brand/signature.ts";
 import { signatureUrl } from "../http/routes/signature.ts";
 import { accountToStamp, bankDetailsOf, deliveryFor } from "../documents/bank-details.ts";
 import { findPayableByNumber, recordOfflinePayment } from "../payments/offline.ts";
+import { renderSamplePdf } from "../documents/sample.ts";
 
 export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promise<void> {
   const user = await upsertUser(msg.from);
@@ -1327,6 +1328,33 @@ async function runEffects(
               ? `✅ ${b(`Thank you. You've accepted version ${NEXT_CONSENT.version}`)} of our terms and privacy notice${nextConsentInForce() ? "" : `, which takes effect on ${NEXT_CONSENT.from}`}. That includes your data being processed outside Nigeria.`
               : "Finish setting up first, then you can accept the terms.",
           );
+          break;
+        }
+
+        case "offer_example": {
+          if (ctx.phone) await offerExample(userId, ctx.phone, log);
+          break;
+        }
+
+        case "send_example": {
+          if (!ctx.phone) break;
+          const sample = await renderSamplePdf(userId, ctx.today).catch((err: unknown) => {
+            log.error({ err, userId }, "could not draw the example invoice");
+            return null;
+          });
+          const up = sample ? await uploadDocument(sample.bytes, sample.filename) : null;
+          const sent = up?.ok
+            ? await sendButtons(ctx.phone, {
+                body: EXAMPLE_CAPTION,
+                buttons: [CREATE_INVOICE_BUTTON],
+                headerDocument: { id: up.mediaId, filename: sample!.filename },
+              })
+            : null;
+          if (sent?.ok) {
+            await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+          } else {
+            extra.push(VOICE.done);
+          }
           break;
         }
 
@@ -3578,6 +3606,27 @@ async function proNudgeLine(userId: string, log: FastifyBaseLogger): Promise<str
  */
 const NO_PRO_NUDGE = new Set(["show_upgrade", "start_pro", "save_draft", "send_flow", "record_consent", "offer_branding"]);
 
+/** The example's words, over the PDF (5 November 2026). */
+const EXAMPLE_CAPTION = para(
+  `👀 ${b("This is what your client gets.")}`,
+  "Your name, your bank account, a link to pay. Made up client, marked SAMPLE: nothing went to anyone.",
+);
+
+const CREATE_INVOICE_BUTTON: ReplyButton = { id: "create invoice", title: "Create invoice" };
+
+/**
+ * After setup, the offer of an example (5 November 2026). One message, as
+ * the branding link it replaces was, so it costs no more.
+ */
+async function offerExample(userId: string, phone: string, log: FastifyBaseLogger): Promise<void> {
+  const sent = await sendButtons(phone, {
+    body: para(`👀 ${b("See what your client gets first.")}`, "One tap: an example invoice in your name. It goes to you, nobody else."),
+    buttons: [{ id: "try an example", title: "Try an example" }],
+  });
+  if (sent.ok) await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
+  else log.warn({ userId, reason: sent.reason }, "could not offer the example");
+}
+
 /**
  * The invitation to brand their invoices (20 October 2026).
  *
@@ -3683,7 +3732,7 @@ async function finishSetupFromForm(userId: string, phone: string, log: FastifyBa
   if (outcome.lines.length) {
     await reply(userId, phone, outcome.lines, log, outcome.buttons, outcome.buttonsImage);
   }
-  await offerBranding(userId, phone, "setup", log);
+  await offerExample(userId, phone, log);
 }
 
 async function handleConsentForm(
@@ -3746,7 +3795,7 @@ async function handleConsentForm(
   if (outcome.lines.length) {
     await reply(userId, phone, outcome.lines, log, outcome.buttons, outcome.buttonsImage);
   }
-  await offerBranding(userId, phone, "setup", log);
+  await offerExample(userId, phone, log);
 }
 
 /**

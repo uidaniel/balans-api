@@ -61,6 +61,7 @@ import { notifyPaid } from "../../payments/notify.ts";
 import { get as getFile, getCard } from "../../storage/files.ts";
 import { fileName } from "../../storage/files.ts";
 import { db } from "../../db/pool.ts";
+import { recordPaidClaim, tellSenderClientPaid } from "../../documents/paid-claim.ts";
 
 const HTML = "text/html; charset=utf-8";
 
@@ -187,6 +188,23 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
    * that URL is in browser histories and in the back button, and a 404 is the
    * last thing anybody who has paid should ever see.
    */
+  /*
+   * "I've paid", from the client (5 November 2026; documents/paid-claim.ts).
+   * Nothing is marked paid on their word: the sender is asked to check and
+   * confirm. A second press inside 12 hours changes nothing, and the same
+   * limit as paying keeps a token from being used to pester the sender.
+   */
+  app.post<{ Params: { token: string } }>("/i/:token/paid", async (req, reply) => {
+    const token = req.params.token;
+    const doc = await findByToken(token);
+    if (!doc) return reply.status(404).type(HTML).send(renderNotFound());
+    if (!tooMany(token) && (await recordPaidClaim(doc.id))) {
+      void tellSenderClientPaid(doc.id, req.log);
+      req.log.info({ documentId: doc.id }, "client says they have paid");
+    }
+    return reply.redirect(`/i/${encodeURIComponent(token)}#paid`, 303);
+  });
+
   app.get<{ Params: { token: string } }>("/i/:token/pay", async (req, reply) =>
     reply.redirect(`/i/${encodeURIComponent(req.params.token)}`, 303),
   );

@@ -115,6 +115,8 @@ export type PublicDocument = {
   } | null;
   /** The sender's own account, on a naira invoice sent with bank details. */
   bank?: BankDetails | null;
+  /** When the client tapped "I've paid", if they did (migration 0069). */
+  paidClaimAt?: Date | null;
 };
 
 const civil = (d: Date | null): Civil | null =>
@@ -155,6 +157,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     ref: string | null;
     delivery_type: "payment_link" | "bank_details" | "own_details";
     payment_details: string | null;
+    client_paid_claim_at: Date | null;
     bank_details_bank_name: string | null;
     bank_details_account_name: string | null;
     bank_details_account_last4: string | null;
@@ -164,7 +167,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
             d.subtotal_kobo, d.vat_kobo, d.total_kobo, d.amount_paid_kobo,
             d.pass_fees_to_client, d.due_date, d.valid_until, d.issue_date, d.notes, d.title,
             d.currency, d.original_amount_minor, d.fx_rate,
-            d.delivery_type, d.payment_details, d.bank_details_bank_name, d.bank_details_account_name,
+            d.delivery_type, d.payment_details, d.client_paid_claim_at, d.bank_details_bank_name, d.bank_details_account_name,
             d.bank_details_account_last4, d.bank_details_account_number_encrypted,
             u.business_name, (CASE WHEN balans_doc_pro(d, u) THEN 'pro' ELSE 'free' END) AS plan, u.logo_url, u.brand_color,
             c.name AS client_name,
@@ -239,6 +242,7 @@ export async function findByToken(token: string): Promise<PublicDocument | null>
     logoTile: r.plan === "pro" && r.logo_url ? await logoIsTile(r.user_id) : false,
     brandColor: r.plan === "pro" ? r.brand_color : null,
     paymentDetails: r.delivery_type === "own_details" ? r.payment_details : null,
+    paidClaimAt: r.client_paid_claim_at,
     // The account stamped on it when it was sent — never the live one, so a
     // bank change cannot redirect money a client is about to send.
     bank:

@@ -536,3 +536,43 @@ describe("their own payment details (3 November 2026)", () => {
     assert.match(html, /href="mailto:[^"?]+\?subject=Payment%20details/);
   });
 });
+
+describe("\"I've paid\" (5 November 2026)", () => {
+  const bank = { bankName: "GTBank", accountNumber: "0123456789", accountName: "KEMI ADEYEMI", last4: "6789" };
+  it("offers the button under the bank details, posting to the claim route", () => {
+    const html = renderDocument(doc({ bank } as never), TODAY, { token: "a".repeat(32) });
+    assert.match(html, new RegExp(`<form method="post" action="/i/${"a".repeat(32)}/paid"`));
+    assert.match(html, /I&rsquo;ve paid/);
+  });
+
+  it("says it was passed on, once pressed, instead of offering it again", () => {
+    const html = renderDocument(doc({ bank, paidClaimAt: new Date() } as never), TODAY, { token: "a".repeat(32) });
+    assert.match(html, /We told Kemi Adeyemi Studio you&rsquo;ve paid/);
+    assert.doesNotMatch(html, /\/paid" class="claim"/);
+  });
+
+  it("is under their own details too", () => {
+    const html = renderDocument(doc({ paymentDetails: "Opay 8012345678" }), TODAY, { token: "a".repeat(32) });
+    assert.match(html, /\/paid" class="claim"/);
+  });
+});
+
+describe("the invitation (5 November 2026)", () => {
+  it("is on a Free sender's page, straight into the chat, tagged", () => {
+    const html = renderDocument(doc(), TODAY, { token: "a".repeat(32) });
+    assert.match(html, /class="invite"/);
+    assert.match(html, /href="[^"]+\/start\?ref=invoice"/);
+  });
+
+  it("is never on a Pro sender's page", () => {
+    const html = renderDocument(doc({ plan: "pro" }), TODAY, { token: "a".repeat(32) });
+    assert.doesNotMatch(html, /class="invite"/);
+  });
+});
+
+describe("one invitation, not two", () => {
+  it("leaves a paid invoice to the line under Paid in full", () => {
+    const html = renderDocument(doc({ amountPaidKobo: 350_000_00, status: "paid" }), TODAY, { token: "a".repeat(32) });
+    assert.doesNotMatch(html, /class="invite"/);
+  });
+});

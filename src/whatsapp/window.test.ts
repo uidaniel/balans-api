@@ -32,6 +32,7 @@ describe("the templates we register with Meta", () => {
         "client_reminded_v2",
         "client_reminder",
         "client_reminder_doc",
+        "client_says_paid",
         "invoice_overdue_prompt",
         "invoice_viewed",
         "invoice_viewed_v2",

@@ -292,6 +292,10 @@ export type Effect =
   | { type: "set_updates"; on: boolean }
   /** "I accept" under the notice of terms 6.0 (legal/notice.ts). */
   | { type: "accept_terms" }
+  /** "Try an example": a sample invoice in their own name (documents/sample.ts). */
+  | { type: "send_example" }
+  /** After setup: the offer of that example, in place of the branding link. */
+  | { type: "offer_example" }
   /**
    * Open a Flow on the user's phone.
    *
@@ -1868,6 +1872,27 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       }
       if (/^((start|resume) updates|yes, send updates)[.!]*$/i.test(text.trim())) {
         return { replies: [], next: "idle", context, effects: [{ type: "set_updates", on: true }] };
+      }
+      // An example in their own name, and the way into a real one (5 November 2026).
+      if (/^(try an example|show me an example|see an example|example)[.!]*$/i.test(text.trim())) {
+        return { replies: [], next: "idle", context, effects: [{ type: "send_example" }] };
+      }
+      if (/^(create (?:an |my |my first |a new )?invoice|make (?:an |my first )?invoice)[.!]*$/i.test(text.trim())) {
+        return {
+          replies: [],
+          next: "idle",
+          context,
+          effects: [
+            {
+              type: "send_flow",
+              key: "invoice",
+              body: VOICE.invoiceFormBody,
+              cta: "Create invoice",
+              ...formValues({ type: "invoice", lines: [] }, today(msg)),
+              fallback: { line: VOICE.done, holdAt: "idle" },
+            },
+          ],
+        };
       }
       // The buttons under the first invoice (2 November 2026).
       if (/^add my email[.!]*$/i.test(text.trim())) {
@@ -3977,7 +4002,10 @@ function takeConsent(text: string, ctx: Context, version: string, now: Civil): S
           // has to carry the example the card was showing.
           fallback: { line: VOICE.done, holdAt: "idle" },
         },
-        { type: "offer_branding" },
+        // The example rather than the branding link (5 November 2026): half
+        // of those who finish setup never send anything, and seeing the
+        // result is what gets them to. The logo is asked after the first.
+        { type: "offer_example" },
       ],
     };
   }
