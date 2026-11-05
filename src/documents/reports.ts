@@ -203,9 +203,11 @@ export function limitReachedMessage(allowance: number, perMonth: string | null =
  * cannot know, and that nothing already sent is affected: somebody stopped
  * mid-invoice will wonder whether money they are owed is at risk.
  */
-export function limitReachedCaption(allowance: number, perMonth: string | null = null): string {
+export function limitReachedCaption(allowance: number, perMonth: string | null = null, owedKobo = 0): string {
   return para(
     `🛑 ${b(`You have used your ${allowance} free documents.`)}`,
+    // What Pro is worth to them, when clients still owe them (5 November 2026).
+    owedKobo > 0 ? `${b(formatNaira(owedKobo))} is still owed to you, and Pro keeps chasing it for you.` : "",
     perMonth
       ? `Get Pro to keep sending invoices, from ${perMonth} a month on the yearly plan.`
       : "Get Pro to keep sending invoices, monthly or yearly.",

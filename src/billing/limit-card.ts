@@ -40,7 +40,7 @@ const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "e
  * documents tends to try again straight away, and the picture would be the
  * same each time.
  */
-const cache = new Map<string, { documentId: string; mediaId: string; at: number }>();
+const cache = new Map<string, { documentId: string; owedKobo: number; mediaId: string; at: number }>();
 const KEEP_MS = 6 * 60 * 60 * 1000;
 
 /** The newest document they sent on the trial, invoices first. */
@@ -55,7 +55,7 @@ async function lastTrialDocument(userId: string): Promise<string | null> {
   return rows[0]?.id ?? null;
 }
 
-export function limitCardHtml(sheetPng: Buffer, allowance: number): string {
+export function limitCardHtml(sheetPng: Buffer, allowance: number, owedKobo = 0): string {
   const { priceKobo, yearPriceKobo } = defaults.plans.pro;
   const n = WORDS[allowance] ?? String(allowance);
   // The art of the stock limit card (brand/cards.ts) at half size: night
@@ -73,6 +73,7 @@ box-shadow:inset 0 0 0 1.5px rgb(246 241 231/.14);font-weight:500;font-size:24px
 h1{position:absolute;left:72px;top:200px;font-weight:400;font-size:92px;line-height:.98;letter-spacing:-.05em}
 h1 span{display:block}h1 .m{color:rgb(246 241 231/.48)}
 .sub{position:absolute;left:75px;top:410px;width:620px;font-size:30px;line-height:1.36;color:rgb(246 241 231/.66)}
+.sub b{color:#f5b82e;font-weight:600}
 .sheet{position:absolute;left:200px;top:650px;width:660px;transform:rotate(-3deg);transform-origin:top left;border-radius:18px;
 overflow:hidden;box-shadow:0 40px 90px rgba(0,0,0,.55);background:#fff}
 .sheet img{display:block;width:660px;height:auto}
@@ -91,7 +92,13 @@ background:linear-gradient(180deg,#ffd877,#f5b82e);box-shadow:inset 0 2px 0 rgb(
 <img class="logo" src="${artUri("logo-dark.svg")}" alt="Balans">
 <div class="pill">Balans Pro</div>
 <h1><span>This is yours.</span><span class="m">Keep sending it.</span></h1>
-<p class="sub">Your ${n} free documents are used. Pro keeps your logo, colour and design on every invoice.</p>
+<p class="sub">${
+    // Their own money when clients still owe them (5 November 2026): what
+    // Pro is worth to them, not what it has.
+    owedKobo > 0
+      ? `<b>${naira(owedKobo)}</b> is still owed to you. Pro keeps chasing it for you, by WhatsApp and email.`
+      : `Your ${n} free documents are used. Pro keeps your logo, colour and design on every invoice.`
+  }</p>
 <div class="sheet"><img src="data:image/png;base64,${sheetPng.toString("base64")}" alt=""></div>
 <div class="price">
   <div><p class="amount">${naira(priceKobo)}</p><p class="per">a month, or ${naira(yearPriceKobo)} a year</p></div>
@@ -104,14 +111,14 @@ background:linear-gradient(180deg,#ffd877,#f5b82e);box-shadow:inset 0 2px 0 rgb(
  * The card as a PNG, drawn from their last trial document. Null when there is
  * none to draw or Chrome is not here; the caller has a stock picture.
  */
-export async function drawLimitCard(userId: string, allowance: number): Promise<{ documentId: string; png: Buffer } | null> {
+export async function drawLimitCard(userId: string, allowance: number, owedKobo = 0): Promise<{ documentId: string; png: Buffer } | null> {
   if (!rendererAvailable()) return null;
   const documentId = await lastTrialDocument(userId);
   if (!documentId) return null;
   const sheet = await documentSheetHtml(documentId);
   if (!sheet) return null;
   const sheetPng = await renderPng(sheet, SHEET_W, SHEET_H, { sheet: true });
-  return { documentId, png: await renderPng(limitCardHtml(sheetPng, allowance), LIMIT_W, LIMIT_H) };
+  return { documentId, png: await renderPng(limitCardHtml(sheetPng, allowance, owedKobo), LIMIT_W, LIMIT_H) };
 }
 
 /** The card as an uploaded media id, or null for the stock card. */
@@ -119,22 +126,24 @@ export async function brandedLimitCard(
   userId: string,
   allowance: number,
   log: FastifyBaseLogger,
+  /** What clients still owe them, for the line under the headline. */
+  owedKobo = 0,
 ): Promise<string | null> {
   try {
     const last = await lastTrialDocument(userId);
     if (!last) return null;
     const hit = cache.get(userId);
-    if (hit && hit.documentId === last && Date.now() - hit.at < KEEP_MS) return hit.mediaId;
+    if (hit && hit.documentId === last && hit.owedKobo === owedKobo && Date.now() - hit.at < KEEP_MS) return hit.mediaId;
 
     const started = Date.now();
-    const drawn = await drawLimitCard(userId, allowance);
+    const drawn = await drawLimitCard(userId, allowance, owedKobo);
     if (!drawn) return null;
     const up = await uploadDocument(drawn.png, "pro.png", "image/png");
     if (!up.ok) {
       log.warn({ userId, reason: up.reason }, "branded limit card could not be uploaded");
       return null;
     }
-    cache.set(userId, { documentId: drawn.documentId, mediaId: up.mediaId, at: Date.now() });
+    cache.set(userId, { documentId: drawn.documentId, owedKobo, mediaId: up.mediaId, at: Date.now() });
     log.info({ userId, ms: Date.now() - started }, "branded limit card drawn");
     return up.mediaId;
   } catch (e) {

@@ -215,9 +215,10 @@ async function limitCard(
 
   // Their own last invoice on the card when it can be drawn; the stock card
   // when it cannot (billing/limit-card.ts).
+  const owed = (await proOutcomeFor(userId, todayIn(defaults.behaviour.timezone))).owedKobo;
   const sent = await sendButtons(phone, {
-    headerImage: (await brandedLimitCard(userId, trial.allowance, log)) ?? LIMIT_CARD,
-    body: limitReachedCaption(trial.allowance, perMonth),
+    headerImage: (await brandedLimitCard(userId, trial.allowance, log, owed)) ?? LIMIT_CARD,
+    body: limitReachedCaption(trial.allowance, perMonth, owed),
     // The id is the word the parser already reads, so tapping this and typing
     // "upgrade" are the same message arriving by different routes.
     buttons: [{ id: "upgrade", title: "Get Pro" }],
