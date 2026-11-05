@@ -8,6 +8,7 @@
  */
 
 import { setWeeklyOwed } from "../jobs/weekly-owed.ts";
+import { noteInbound, noteReply } from "../review/turns.ts";
 import { sendDueReminders, withinQuietHours } from "../jobs/overdue.ts";
 import { lastInvoiceAgain } from "../documents/again.ts";
 import { quotedDocument, QUOTABLE, type Quoted } from "./quoted.ts";
@@ -446,6 +447,9 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
     log.info({ waMessageId: msg.waMessageId }, "duplicate delivery ignored");
     return;
   }
+
+  // For the daily review of the bot's answers (src/review), masked.
+  if (!msg.replay) void noteInbound(user.id, { kind: msg.kind, text: msg.text, quoted: msg.kind === "text" && Boolean(msg.repliedTo) });
 
   /*
    * Somebody is writing to us after closing their account.
@@ -4891,6 +4895,8 @@ async function reply(
   buttonsImage?: string,
 ): Promise<void> {
   const send = lines.filter((l) => l.trim());
+  // What the bot said, for the daily review (src/review).
+  void noteReply(userId, send.join("\n\n") + (buttons?.length ? `\n[buttons: ${buttons.map((x) => x.title).join(" | ")}]` : ""));
 
   for (const [i, body] of send.entries()) {
     // A beat between lines. Two messages landing in the same instant read as a

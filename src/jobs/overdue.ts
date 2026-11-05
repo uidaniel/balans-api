@@ -21,6 +21,7 @@ import { sendTermsNotices } from "../legal/notice.ts";
 import { sendFirstDocumentNudges } from "./first-document.ts";
 import { sendWeeklyOwed } from "./weekly-owed.ts";
 import { sendWinBacks } from "./win-back.ts";
+import { runBotReview } from "../review/daily.ts";
 import { syncWhatsAppSpend } from "../whatsapp/spend.ts";
 import { purgeExpiredCodes } from "../lib/codes.ts";
 import { tellPayouts } from "../payments/payouts.ts";
@@ -928,6 +929,12 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
     if (emptied) log.info({ count: emptied }, "old whatsapp message payloads emptied");
     // Step timings (migration 0064) are for spotting slow steps, not history.
     await db().query(`DELETE FROM step_timings WHERE at < now() - interval '30 days'`).catch(() => {});
+    // The masked turns kept for the daily bot review: 30 days, as the
+    // privacy notice says of message text (review/turns.ts).
+    await db().query(`DELETE FROM bot_turns WHERE at < now() - interval '30 days'`).catch(() => {});
+    // Yesterday's answers that look wrong, reviewed and emailed once a day
+    // from 7am (review/daily.ts).
+    await runBotReview(log).catch((err: unknown) => log.error({ err }, "bot review failed"));
 
     // F15. Returns early on every day but the 1st.
     await sendMonthlySummaries(today, log);

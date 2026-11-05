@@ -88,6 +88,9 @@ const lagos = (d: Date) =>
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
+/** The same team email, for reports that are not errors (the daily bot review). */
+export const mailTeam = (subject: string, text: string, html: string, log: FastifyBaseLogger) => mail(subject, text, html, log);
+
 async function mail(subject: string, text: string, html: string, log: FastifyBaseLogger): Promise<void> {
   if (!env.ALERTS_ENABLED) return;
   for (const to of ALERT_TO) {
