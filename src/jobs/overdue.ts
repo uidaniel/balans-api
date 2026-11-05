@@ -242,7 +242,7 @@ export async function sendDueReminders(
             -- Whether Balans itself reminds the client (email-reminder.ts,
             -- client-whatsapp.ts): only then is there something to warn of.
             (balans_doc_pro(d, u) AND (c.phone IS NOT NULL OR (c.email IS NOT NULL AND c.email <> ''
-              AND COALESCE(c.email_status, '') NOT IN ('bounced', 'complained', 'invalid')))) AS reachable,
+              AND COALESCE(c.email_status::text, '') NOT IN ('bounced', 'complained', 'invalid')))) AS reachable,
             -- Paid by transfer, which only the sender can see (paidButtons).
             (d.delivery_type IN ('bank_details', 'own_details') OR d.currency = 'NGN') AS manual,
             d.number, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token,
