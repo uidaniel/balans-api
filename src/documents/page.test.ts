@@ -557,6 +557,16 @@ describe("\"I've paid\" (5 November 2026)", () => {
   });
 });
 
+describe("I've paid asks first (5 November 2026)", () => {
+  it("opens a confirmation with a way back before it tells the sender", () => {
+    const html = renderDocument(doc({ paymentDetails: "Opay 8012345678" }), TODAY, { token: "a".repeat(32) });
+    assert.match(html, /<dialog class="confirm" id="paid-confirm"/);
+    assert.match(html, />Cancel</);
+    assert.match(html, />Yes, I&rsquo;ve paid</);
+    assert.match(html, /showModal/);
+  });
+});
+
 describe("the invitation (5 November 2026)", () => {
   it("is on a Free sender's page, straight into the chat, tagged", () => {
     const html = renderDocument(doc(), TODAY, { token: "a".repeat(32) });

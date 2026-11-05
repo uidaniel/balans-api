@@ -251,7 +251,20 @@ button.tcopy{height:52px;margin-top:14px}
 a.invite-btn{display:inline-flex;align-items:center;justify-content:center;margin-top:14px;height:44px;padding:0 22px;border-radius:999px;
 background:#F5B82E;color:#08130F;font-weight:600;font-size:15px;text-decoration:none}
 .claim{margin-top:14px}.claim .tfine{margin-top:8px;text-align:center}
-button.claim-btn{width:100%;background:transparent;border:1.5px solid currentColor}
+button.tcopy.claim-btn{width:100%;background:transparent;color:inherit;border:1.5px solid currentColor;box-shadow:none}
+.tcard .claim{margin-top:10px}
+.tcard .claim .tfine{color:rgba(246,241,231,.6)}
+.tcard .claimed{background:rgba(63,143,95,.24);color:#cfeedb}
+dialog.confirm{width:min(340px,calc(100% - 32px));padding:24px 22px 18px;border:0;border-radius:24px;
+background:var(--paper);color:var(--ink);box-shadow:0 24px 60px rgba(8,19,15,.28);text-align:center}
+dialog.confirm::backdrop{background:rgba(8,19,15,.45)}
+.confirm-head{margin:0;font-size:18px;font-weight:600;line-height:1.3}
+.confirm-sub{margin:8px 0 18px;font-size:14px;line-height:1.5;color:var(--ink-65)}
+.confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.confirm-actions button{height:48px;border-radius:999px;font:500 15px/1 var(--sans);cursor:pointer;border:0}
+.confirm-no{background:var(--cream);color:var(--ink)}
+.confirm-yes{${GOLD}}
+.confirm-yes:disabled{opacity:.6}
 .claimed{margin-top:14px;padding:12px 14px;border-radius:14px;background:rgba(63,143,95,.12);color:#2f6f49;font-size:14px;line-height:1.45}
 button.icopy{flex:none;display:grid;place-items:center;width:34px;height:34px;margin:-6px -6px -6px 0;
 border:0;border-radius:10px;background:transparent;color:rgba(246,241,231,.55);cursor:pointer;
@@ -883,8 +896,8 @@ function bankBlock(doc: PublicDocument, amountKobo: number, partLabel: string | 
       ${row("Amount", `<span class="tamt">${amount}</span>${copyIcon("amount", typed)}`)}
     </div>
     <button class="tcopy copy" type="button" data-copy="${esc(k.accountNumber)}">Copy account number</button>
+    ${paidClaim(doc, token)}
   </div>
-  ${paidClaim(doc, token)}
 </div>`;
 }
 
@@ -898,11 +911,30 @@ function paidClaim(doc: PublicDocument, token: string): string {
   if (recent) {
     return `<p class="claimed" id="paid">&#10003; We told ${esc(doc.businessName)} you&rsquo;ve paid. They&rsquo;ll confirm once it arrives.</p>`;
   }
+  // Asked once more before it goes (5 November 2026), so a tap by mistake can
+  // be taken back. Without script the form still posts straight away.
   return `<form method="post" action="/i/${esc(token)}/paid" class="claim" id="paid">
     <button class="tcopy claim-btn" type="submit">I&rsquo;ve paid</button>
     <p class="tfine">Tap after you send it, and we&rsquo;ll ask ${esc(doc.businessName)} to check.</p>
-  </form>`;
+  </form>
+  <dialog class="confirm" id="paid-confirm" aria-labelledby="paid-confirm-head">
+    <p class="confirm-head" id="paid-confirm-head">Have you sent the payment?</p>
+    <p class="confirm-sub">We&rsquo;ll tell ${esc(doc.businessName)} you&rsquo;ve paid and ask them to check their account.</p>
+    <div class="confirm-actions">
+      <button type="button" class="confirm-no">Cancel</button>
+      <button type="button" class="confirm-yes">Yes, I&rsquo;ve paid</button>
+    </div>
+  </dialog>
+  <script>${CLAIM_JS}</script>`;
 }
+
+/** The confirmation before "I've paid" goes: a dialog over the page. */
+const CLAIM_JS = `(function(){var f=document.querySelector("form.claim"),d=document.getElementById("paid-confirm");
+if(!f||!d||typeof d.showModal!=="function")return;
+f.addEventListener("submit",function(e){if(f.dataset.sure)return;e.preventDefault();d.showModal();});
+d.querySelector(".confirm-no").addEventListener("click",function(){d.close();});
+d.addEventListener("click",function(e){if(e.target===d)d.close();});
+d.querySelector(".confirm-yes").addEventListener("click",function(){this.disabled=true;f.dataset.sure="1";d.close();f.submit();});})();`;
 
 /**
  * Who is handling the money, and who is not.

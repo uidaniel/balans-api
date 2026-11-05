@@ -35,7 +35,7 @@ export async function recordPaidClaim(documentId: string): Promise<boolean> {
     `UPDATE documents SET client_paid_claim_at = now()
       WHERE id = $1
         AND type IN ('invoice', 'payment_request')
-        AND status IN ('sent', 'viewed', 'overdue')
+        AND status IN ('sent', 'viewed', 'overdue', 'part_paid')
         AND total_kobo > amount_paid_kobo
         AND (delivery_type IN ('bank_details', 'own_details') OR currency = 'NGN')
         AND (client_paid_claim_at IS NULL OR client_paid_claim_at < now() - make_interval(hours => $2::int))`,
