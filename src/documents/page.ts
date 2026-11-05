@@ -265,6 +265,20 @@ dialog.confirm{position:fixed;inset:0;margin:auto;height:fit-content;max-height:
 width:min(340px,calc(100% - 32px));padding:24px 22px 18px;border:0;border-radius:24px;
 background:var(--paper);color:var(--ink);box-shadow:0 24px 60px rgba(8,19,15,.28);text-align:center}
 dialog.confirm::backdrop{background:rgba(8,19,15,.45)}
+/* It takes the focus itself on opening (autofocus), not Cancel, which then
+   showed the keyboard ring as a dark border on every tap. */
+dialog.confirm:focus{outline:none}
+.confirm-actions button{-webkit-tap-highlight-color:transparent}
+/* In and out (5 November 2026): rises and fades in over a dimming page, and
+   sinks away the same way; the script waits for the way out before closing. */
+dialog.confirm[open]{animation:pop-in .26s cubic-bezier(.2,.9,.25,1)}
+dialog.confirm[open]::backdrop{animation:dim-in .26s ease-out}
+dialog.confirm.closing{animation:pop-out .18s ease-in forwards}
+dialog.confirm.closing::backdrop{animation:dim-out .18s ease-in forwards}
+@keyframes pop-in{from{opacity:0;transform:translateY(16px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes pop-out{from{opacity:1;transform:none}to{opacity:0;transform:translateY(10px) scale(.97)}}
+@keyframes dim-in{from{opacity:0}to{opacity:1}}
+@keyframes dim-out{from{opacity:1}to{opacity:0}}
 .confirm-head{margin:0;font-size:18px;font-weight:600;line-height:1.3}
 .confirm-sub{margin:8px 0 18px;font-size:14px;line-height:1.5;color:var(--ink-65)}
 .confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -293,7 +307,8 @@ button.tcopy.done{background:var(--moss);color:var(--cream)}
 border-radius:50%;background:var(--marigold);margin-right:8px;animation:pulse 1.8s ease-in-out infinite}
 .twait .tleft{color:rgba(246,241,231,.45)}
 @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
-@media(prefers-reduced-motion:reduce){.twait .dot,.modal:target,.modal:target .msheet{animation:none}}
+@media(prefers-reduced-motion:reduce){.twait .dot,.modal:target,.modal:target .msheet{animation:none}
+dialog.confirm[open],dialog.confirm[open]::backdrop{animation-duration:.01s}}
 .tussd{margin-top:12px;text-align:center;font-size:13.5px;color:var(--ink-65)}
 /* The page for when there is nothing to show: one card, centred. */
 .sheet{max-width:520px;margin:-120px auto 0;padding:0 16px;position:relative}
@@ -923,7 +938,7 @@ function paidClaim(doc: PublicDocument, token: string): string {
   return `<form method="post" action="/i/${esc(token)}/paid" class="claim" id="paid">
     <button class="tcopy claim-btn" type="submit">I&rsquo;ve paid</button>
   </form>
-  <dialog class="confirm" id="paid-confirm" aria-labelledby="paid-confirm-head">
+  <dialog class="confirm" id="paid-confirm" aria-labelledby="paid-confirm-head" autofocus>
     <p class="confirm-head" id="paid-confirm-head">Have you sent the payment?</p>
     <p class="confirm-sub">We&rsquo;ll tell ${esc(doc.businessName)} you&rsquo;ve paid and ask them to check their account.</p>
     <div class="confirm-actions">
@@ -937,10 +952,16 @@ function paidClaim(doc: PublicDocument, token: string): string {
 /** The confirmation before "I've paid" goes: a dialog over the page. */
 const CLAIM_JS = `(function(){var f=document.querySelector("form.claim"),d=document.getElementById("paid-confirm");
 if(!f||!d||typeof d.showModal!=="function")return;
+var yes=d.querySelector(".confirm-yes");
+function shut(){if(!d.open||d.classList.contains("closing"))return;d.classList.add("closing");var done=false;
+function end(){if(done)return;done=true;d.classList.remove("closing");d.close();}
+d.addEventListener("animationend",end,{once:true});setTimeout(end,260);}
 f.addEventListener("submit",function(e){if(f.dataset.sure)return;e.preventDefault();d.showModal();});
-d.querySelector(".confirm-no").addEventListener("click",function(){d.close();});
-d.addEventListener("click",function(e){if(e.target===d)d.close();});
-d.querySelector(".confirm-yes").addEventListener("click",function(){this.disabled=true;f.dataset.sure="1";d.close();f.submit();});})();`;
+d.addEventListener("cancel",function(e){e.preventDefault();shut();});
+d.querySelector(".confirm-no").addEventListener("click",shut);
+d.addEventListener("click",function(e){if(e.target===d)shut();});
+yes.addEventListener("click",function(){yes.disabled=true;yes.textContent="Sending\u2026";f.dataset.sure="1";f.submit();});
+window.addEventListener("pageshow",function(e){if(!e.persisted)return;yes.disabled=false;yes.textContent="Yes, I\u2019ve paid";delete f.dataset.sure;if(d.open)d.close();});})();`;
 
 /**
  * Who is handling the money, and who is not.
