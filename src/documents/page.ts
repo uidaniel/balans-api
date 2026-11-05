@@ -151,6 +151,11 @@ color:var(--ink-65);font-weight:500;vertical-align:1px}
 .side .files{padding-top:16px;border-top:1px solid var(--line)}
 .side .trust{padding:0}
 .side .tfine{margin:12px 2px 0}
+/* A bank transfer (5 November 2026): the dark card stands on its own, not
+   inside a white one, and what follows it sits on the page. */
+.side:has(.bankpay){background:none;box-shadow:none;padding:0}
+.side:has(.bankpay) .files{border-top:0;padding-top:0}
+.side:has(.bankpay) .tcard{box-shadow:var(--lift)}
 .pay{padding:0}
 .paycard{padding:22px}
 .teyebrow{font-size:13px;font-weight:500}
@@ -192,8 +197,8 @@ font-size:11.5px;font-weight:500;color:var(--ink-65);white-space:nowrap}
 .badge svg.psmark{width:12px;height:12px;margin-right:-3px}
 .tsmall{margin:10px auto 0;max-width:420px;font-size:12.5px;line-height:1.6;color:var(--ink-50)}
 .tsmall b{color:var(--ink-65);font-weight:500}
-.files{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
-.files a{display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 16px 0 14px;border-radius:999px;
+.files{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:8px}
+.files a{display:flex;align-items:center;justify-content:center;gap:7px;height:46px;padding:0 12px;border-radius:999px;white-space:nowrap;
 font-size:13.5px;font-weight:500;color:var(--ink);text-decoration:none;background:var(--paper);
 box-shadow:inset 0 0 0 1px var(--ink-10);transition:box-shadow .2s}
 .files a:hover{box-shadow:inset 0 0 0 1px var(--ink-40)}
@@ -558,18 +563,18 @@ function renderDocumentPage(
       // drawn under a rule.
       doc.type === "payment_request" && doc.amountPaidKobo === 0
         ? ""
-        : `<div class="files">
-      ${
-        doc.type === "payment_request"
-          ? ""
-          : `<a href="${opts.base ?? "/i"}/${esc(opts.token)}/pdf">${DOWNLOAD}Download ${label.toLowerCase()} (PDF)</a>`
-      }
-      ${
-        doc.amountPaidKobo > 0
-          ? `<a href="/i/${esc(opts.token)}/receipt">${DOWNLOAD}Download receipt</a>`
-          : ""
-      }
-    </div>`
+        : (() => {
+            // Side by side and the same width when there are two
+            // (5 November 2026). Half a phone is too narrow for "Download
+            // invoice (PDF)", so a pair says just what each one is.
+            const pdf = doc.type !== "payment_request";
+            const receipt = doc.amountPaidKobo > 0;
+            const both = pdf && receipt;
+            return `<div class="files">
+      ${pdf ? `<a href="${opts.base ?? "/i"}/${esc(opts.token)}/pdf">${DOWNLOAD}${both ? `${label} (PDF)` : `Download ${label.toLowerCase()} (PDF)`}</a>` : ""}
+      ${receipt ? `<a href="/i/${esc(opts.token)}/receipt">${DOWNLOAD}${both ? "Receipt (PDF)" : "Download receipt"}</a>` : ""}
+    </div>`;
+          })()
     }
   </aside>
 
