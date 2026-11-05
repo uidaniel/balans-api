@@ -20,6 +20,7 @@ import { sendNameChecks } from "./name-check.ts";
 import { sendTermsNotices } from "../legal/notice.ts";
 import { sendFirstDocumentNudges } from "./first-document.ts";
 import { sendWeeklyOwed } from "./weekly-owed.ts";
+import { sendWinBacks } from "./win-back.ts";
 import { syncWhatsAppSpend } from "../whatsapp/spend.ts";
 import { purgeExpiredCodes } from "../lib/codes.ts";
 import { tellPayouts } from "../payments/payouts.ts";
@@ -229,8 +230,10 @@ export async function sendDueReminders(
     currency: string;
     original_amount_minor: number | null;
     plan: string;
+    claimed: boolean;
   }>(
     `SELECT r.id, r.kind, d.type, d.id AS document_id, d.user_id, u.wa_phone, (CASE WHEN balans_doc_pro(d, u) THEN 'pro' ELSE 'free' END) AS plan,
+            (d.client_paid_claim_at IS NOT NULL) AS claimed,
             d.number, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token,
             d.subtotal_kobo, d.vat_kobo, d.currency, d.original_amount_minor,
             c.name AS client_name, u.business_name
@@ -258,6 +261,21 @@ export async function sendDueReminders(
       [r.id],
     );
     if (claimed.rowCount === 0) continue;
+
+    /*
+     * The client said "I've paid" on the invoice page (5 November 2026). A
+     * reminder now would chase somebody who says they have paid, over a
+     * sender who has not yet looked at their bank, and the client blames
+     * whoever sent it. So none goes while the sender has not answered: their
+     * "Yes, mark paid" ends it, and "Not yet" clears the claim, so the next
+     * step goes as usual. This one counts as done rather than waiting, or it
+     * would go out beside the next one the day the claim is cleared.
+     */
+    if (r.claimed) {
+      await db().query(`UPDATE reminders SET status = 'skipped' WHERE id = $1`, [r.id]);
+      log.info({ documentId: r.document_id }, "client says they paid; reminder held back");
+      continue;
+    }
 
     /*
      * One reminder that throws must not end the hour (9 October 2026): it
@@ -767,6 +785,8 @@ export async function runDailyJobs(log: FastifyBaseLogger): Promise<void> {
       await sendFirstDocumentNudges(log);
       // Monday morning: who still owes them, once a week (5 November 2026).
       await sendWeeklyOwed(today, new Date(), log);
+      // Quiet two weeks, owed nothing, said yes to updates: once (5 November 2026).
+      await sendWinBacks(log);
     }
 
     // What the privacy policy promises: typed text gone after 30 days, and

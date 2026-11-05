@@ -21,6 +21,7 @@
  * copy of the database alone is enough to read a request.
  */
 
+import { noteSetupStep } from "../../conversation/setup-steps.ts";
 import {
   constants,
   createCipheriv,
@@ -279,6 +280,8 @@ export async function answer(req: FlowRequest, deps: Deps = {}): Promise<Record<
   const str = (k: string) => (typeof data[k] === "string" ? (data[k] as string) : "");
   const setup = key === "onboarding";
   const version = versionOf(data);
+  // Each setup screen as it is submitted (conversation/setup-steps.ts).
+  if (setup && req.screen && !deps.actions) await noteSetupStep(userId, req.screen.toLowerCase());
 
   /* -- Setup, first screen, since 31 October 2026: the business alone ---- */
   if (setup && req.screen === "BUSINESS" && data.form_version === "4") {

@@ -6,6 +6,7 @@
  * calling a function, with no database in sight.
  */
 
+import { noteSetupStep } from "./setup-steps.ts";
 import { db, tx } from "../db/pool.ts";
 import type { Context, State } from "./machine.ts";
 import { defaults } from "../config.ts";
@@ -80,6 +81,9 @@ export async function saveConversation(
            updated_at = now()`,
     [userId, state, JSON.stringify(context)],
   );
+  // Setup by steps, for the admin (conversation/setup-steps.ts): the setup
+  // card going out is "welcome", and each chat step is its own.
+  if (state.startsWith("onboarding:")) await noteSetupStep(userId, state === "onboarding:form" ? "welcome" : state);
 }
 
 /**

@@ -47,7 +47,7 @@ export async function recordPaidClaim(documentId: string): Promise<boolean> {
 export function claimText(client: string, number: number, owed: string): string {
   return para(
     `💸 ${b(`${client} says they've paid invoice #${number}`)}`,
-    `${owed}. Balans cannot see your bank, so check it's there, then tap below.`,
+    `${owed}. Balans cannot see your bank, so check it's there, then tap below. I won't remind them about it until you answer.`,
   );
 }
 
@@ -103,7 +103,7 @@ export async function tellSenderClientPaid(documentId: string, log: FastifyBaseL
             preheader: `${owed}. Check your bank, then mark it paid.`,
             heading: `${client} says they've paid invoice #${r.number}`,
             body: [
-              paragraph(`${esc(owed)}. Balans cannot see your bank, so check it's there first.`),
+              paragraph(`${esc(owed)}. Balans cannot see your bank, so check it's there first. We won't remind them about it until you answer.`),
               paragraph(`Once it is, mark it paid in WhatsApp: reply <strong>mark invoice ${r.number} as paid</strong> to Balans.`, true),
             ].join("\n"),
           }),

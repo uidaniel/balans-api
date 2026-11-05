@@ -3019,6 +3019,15 @@ async function runEffects(
           }
 
           if (effect.intent === "not_paid_yet") {
+            // "Not yet" under "says they've paid": the claim is answered, so
+            // reminders to the client carry on (jobs/overdue.ts).
+            if (number !== null) {
+              await db().query(
+                `UPDATE documents SET client_paid_claim_at = NULL
+                  WHERE user_id = $1 AND number = $2 AND type IN ('invoice', 'payment_request')`,
+                [userId, number],
+              );
+            }
             extra.push(
               lines(
                 `👍 Okay. When it is in your bank, send ${b(`mark invoice ${number ?? ""} paid`.replace("  ", " "))}.`,

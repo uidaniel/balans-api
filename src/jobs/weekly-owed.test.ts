@@ -43,3 +43,20 @@ describe("its way out", () => {
     assert.deepEqual(say("start weekly").effects, [{ type: "set_weekly_owed", on: true }]);
   });
 });
+
+describe("the win-back (5 November 2026)", () => {
+  it("offers the same invoice to their last client, and a way out", async () => {
+    const { winBackText, winBackButtons } = await import("./win-back.ts");
+    const { repeatAsked } = await import("../conversation/machine.ts");
+    assert.match(winBackText("Zenith Homes"), /Need to bill Zenith Homes again\?/);
+    const [again, stop] = winBackButtons("Zenith Homes");
+    assert.deepEqual(repeatAsked(again!.id), { client: "Zenith Homes" });
+    assert.deepEqual(say(stop!.id).effects, [{ type: "set_updates", on: false }]);
+  });
+
+  it("is marketing, honestly, with the same two buttons", () => {
+    const t = TEMPLATES.win_back_again;
+    assert.equal(t.category, "MARKETING");
+    assert.deepEqual(t.quickReplies, ["Invoice them again", "Stop updates"]);
+  });
+});

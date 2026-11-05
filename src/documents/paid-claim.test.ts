@@ -11,6 +11,7 @@ describe("telling the sender their client says they paid", () => {
     const t = claimText("Zenith Homes", 12, "₦350,000");
     assert.match(t, /Zenith Homes says they've paid invoice #12/);
     assert.match(t, /check it's there/);
+    assert.match(t, /won't remind them about it until you answer/);
   });
 
   it("has a utility template with the same two answers as the paid check", () => {

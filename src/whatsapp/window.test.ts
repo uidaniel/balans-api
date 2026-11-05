@@ -58,6 +58,7 @@ describe("the templates we register with Meta", () => {
         "security_alert",
         "setup_reminder",
         "weekly_owed",
+        "win_back_again",
       ],
     );
   });
@@ -122,8 +123,10 @@ describe("the templates we register with Meta", () => {
      */
     for (const name of names) {
       // `announcement` (3 November 2026): only from a broadcast an admin
-      // sends, always with STOP UPDATES on it.
-      assert.equal(TEMPLATES[name].category, name === "launch_setup" || name === "announcement" ? "MARKETING" : "UTILITY", name);
+      // sends, always with STOP UPDATES on it. `win_back_again` (5 November
+      // 2026): only to people who opted in to updates, with Stop updates.
+      const marketing = ["launch_setup", "announcement", "win_back_again"];
+      assert.equal(TEMPLATES[name].category, marketing.includes(name) ? "MARKETING" : "UTILITY", name);
     }
   });
 });

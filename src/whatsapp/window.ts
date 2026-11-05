@@ -104,7 +104,8 @@ type BaseTemplateName =
   | "pro_plan_ended"
   | "pro_plan_stops"
   | "pro_plan_free"
-  | "weekly_owed";
+  | "weekly_owed"
+  | "win_back_again";
 
 /**
  * A bold line above the words, for the templates that say one thing
@@ -337,6 +338,19 @@ const BASE_TEMPLATES: Record<BaseTemplateName, TemplateSpec> = {
     params: ["free invoices a month", "price"],
     example: ["3", "₦3,000"],
     button: { text: "Get Pro back", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
+  },
+
+  /*
+   * The win-back (5 November 2026, jobs/win-back.ts): selling, so marketing,
+   * and only to people who said yes to updates. Stop is one tap.
+   */
+  win_back_again: {
+    name: "win_back_again",
+    category: "MARKETING",
+    body: "Need to bill {{1}} again? Tap below and Balans makes the same invoice, dated today, for you to check before it goes.",
+    params: ["their last client"],
+    example: ["Zenith Homes"],
+    quickReplies: ["Invoice them again", "Stop updates"],
   },
 
   /*
