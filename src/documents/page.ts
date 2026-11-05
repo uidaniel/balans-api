@@ -857,10 +857,9 @@ function payBlock(
  *
  * The same panel as the transfer one, because it asks the same thing of the
  * client: an account, a name, an exact amount. What is different is said
- * plainly underneath. This is the business's own account, so the name the
- * client's bank shows them is one they recognise — and nothing here watches
- * for the money, so the client should not expect a receipt from Balans until
- * the sender confirms it.
+ * by the button underneath: nothing here watches for the money, so the
+ * client taps "I've paid" and the sender is asked to check (5 November 2026:
+ * the paragraph that said so in words went, the button says it).
  */
 function bankBlock(doc: PublicDocument, amountKobo: number, partLabel: string | null, token: string): string {
   const k = doc.bank!;
@@ -885,9 +884,6 @@ function bankBlock(doc: PublicDocument, amountKobo: number, partLabel: string | 
     </div>
     <button class="tcopy copy" type="button" data-copy="${esc(k.accountNumber)}">Copy account number</button>
   </div>
-  <p class="tfine">Send <strong>${amount}</strong> to ${esc(doc.businessName)}&rsquo;s own account.
-    Payments made directly to this account are not tracked automatically &mdash; ask
-    ${esc(doc.businessName)} to confirm once you have paid.</p>
   ${paidClaim(doc, token)}
 </div>`;
 }
