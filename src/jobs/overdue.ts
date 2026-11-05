@@ -205,6 +205,8 @@ export async function sendDueReminders(
   today: Civil,
   log: FastifyBaseLogger,
   limit = 100,
+  /** One invoice only: "Remind them now" under the warning. */
+  only: string | null = null,
 ): Promise<number> {
   if (withinQuietHours()) {
     log.info("within quiet hours; no reminders sent");
@@ -231,9 +233,18 @@ export async function sendDueReminders(
     original_amount_minor: number | null;
     plan: string;
     claimed: boolean;
+    was: "pending" | "warned";
+    reachable: boolean;
+    manual: boolean;
   }>(
     `SELECT r.id, r.kind, d.type, d.id AS document_id, d.user_id, u.wa_phone, (CASE WHEN balans_doc_pro(d, u) THEN 'pro' ELSE 'free' END) AS plan,
-            (d.client_paid_claim_at IS NOT NULL) AS claimed,
+            (d.client_paid_claim_at IS NOT NULL) AS claimed, r.status AS was,
+            -- Whether Balans itself reminds the client (email-reminder.ts,
+            -- client-whatsapp.ts): only then is there something to warn of.
+            (balans_doc_pro(d, u) AND (c.phone IS NOT NULL OR (c.email IS NOT NULL AND c.email <> ''
+              AND COALESCE(c.email_status, '') NOT IN ('bounced', 'complained', 'invalid')))) AS reachable,
+            -- Paid by transfer, which only the sender can see (paidButtons).
+            (d.delivery_type IN ('bank_details', 'own_details') OR d.currency = 'NGN') AS manual,
             d.number, d.total_kobo, d.amount_paid_kobo, d.due_date, d.public_token,
             d.subtotal_kobo, d.vat_kobo, d.currency, d.original_amount_minor,
             c.name AS client_name, u.business_name
@@ -241,7 +252,11 @@ export async function sendDueReminders(
        JOIN documents d ON d.id = r.document_id
        JOIN users u     ON u.id = d.user_id
        JOIN clients c   ON c.id = d.client_id
-      WHERE r.status = 'pending' AND r.channel = 'whatsapp'
+      WHERE r.channel = 'whatsapp'
+        AND (r.status = 'pending'
+             -- Warned three hours ago, and not marked paid since.
+             OR (r.status = 'warned' AND r.warned_at <= now() - make_interval(hours => $2::int)))
+        AND ($3::uuid IS NULL OR d.id = $3::uuid)
         -- A suspended or deleted sender's clients are not chased.
         AND u.status = 'active'
         -- Paid or cancelled since it was scheduled: F13 says each stops.
@@ -249,7 +264,7 @@ export async function sendDueReminders(
         AND d.total_kobo > d.amount_paid_kobo
       ORDER BY r.scheduled_at
       LIMIT $1`,
-    [limit],
+    [limit, WARN_HOURS, only],
   );
 
   let sent = 0;
@@ -257,8 +272,8 @@ export async function sendDueReminders(
   for (const r of rows) {
     // Claim it first. Whoever wins the update owns the send.
     const claimed = await db().query(
-      `UPDATE reminders SET status = 'sending' WHERE id = $1 AND status = 'pending'`,
-      [r.id],
+      `UPDATE reminders SET status = 'sending' WHERE id = $1 AND status = $2`,
+      [r.id, r.was],
     );
     if (claimed.rowCount === 0) continue;
 
@@ -275,6 +290,29 @@ export async function sendDueReminders(
       await db().query(`UPDATE reminders SET status = 'skipped' WHERE id = $1`, [r.id]);
       log.info({ documentId: r.document_id }, "client says they paid; reminder held back");
       continue;
+    }
+
+    /*
+     * The sender first (5 November 2026). On an invoice paid by transfer,
+     * which Balans cannot see, the client could already have paid and the
+     * sender not marked it. So they hear first, with "Already paid" and
+     * "Remind them now", and the client is reminded three hours on. Only in
+     * the working day, so "at 2pm" is never "tomorrow at 8am". A warning
+     * that cannot be delivered changes nothing: the reminder goes as before.
+     */
+    if (r.was === "pending" && r.manual && r.reachable && r.number !== null) {
+      if (!warningHours()) {
+        await db().query(`UPDATE reminders SET status = 'pending' WHERE id = $1`, [r.id]);
+        continue;
+      }
+      const warned = await warnSender(r as WarnRow, today, log).catch((err: unknown) => {
+        log.error({ err, documentId: r.document_id }, "could not warn the sender before a reminder");
+        return false;
+      });
+      if (warned) {
+        await db().query(`UPDATE reminders SET status = 'warned', warned_at = now() WHERE id = $1`, [r.id]);
+        continue;
+      }
     }
 
     /*
@@ -323,6 +361,14 @@ export async function sendDueReminders(
       });
       const reminded = { email: emailed, whatsapp: whatsapped.ok };
       const how = remindedHow(reminded);
+
+      // Warned already: they knew it was coming, so no second message to
+      // them, unless nothing reached the client and they must send it.
+      if (r.was === "warned" && how) {
+        await db().query(`UPDATE reminders SET status = 'sent', sent_at = now() WHERE id = $1`, [r.id]);
+        sent += 1;
+        continue;
+      }
       const buttons = await paidButtons(r.document_id, r.number);
       /*
        * The Pro line, at the moment it is true (2 November 2026): Balans has
@@ -403,6 +449,82 @@ export async function sendDueReminders(
 
   if (sent) log.info({ count: sent }, "reminders sent");
   return sent;
+}
+
+/** How long the sender has between the warning and the reminder. */
+export const WARN_HOURS = 3;
+
+/**
+ * Warnings go from 8am to 5pm, Lagos time, so the reminder three hours on
+ * lands before the 8pm quiet hours and on the day the warning names.
+ */
+export function warningHours(now = new Date(), tz = defaults.behaviour.timezone): boolean {
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hour12: false }).format(now));
+  return hour >= defaults.behaviour.quietHoursEnd && hour < 17;
+}
+
+/** "2pm", "11am": when the reminder goes, in Lagos. */
+export function remindAt(now = new Date(), tz = defaults.behaviour.timezone): string {
+  const at = new Date(now.getTime() + WARN_HOURS * 3_600_000);
+  return new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: true })
+    .format(at)
+    .replace(/\s/g, "")
+    .toLowerCase();
+}
+
+/** "due today", "1 day late", "3 days late". */
+export function lateness(due: Civil, today: Civil): string {
+  const days = Math.round((Date.UTC(today.y, today.m - 1, today.d) - Date.UTC(due.y, due.m - 1, due.d)) / 86_400_000);
+  if (days <= 0) return "due today";
+  return days === 1 ? "1 day late" : `${days} days late`;
+}
+
+export function warningText(w: { client: string; number: number; owed: string; when: string; at: string }): string {
+  return para(
+    `⏰ ${b(`${w.client}'s invoice #${w.number} is ${w.when}`)}`,
+    `${w.owed}. I'll remind them at about ${b(w.at)} unless you tell me they've paid.`,
+  );
+}
+
+type WarnRow = {
+  document_id: string;
+  user_id: string;
+  wa_phone: string;
+  number: number;
+  client_name: string;
+  total_kobo: number;
+  amount_paid_kobo: number;
+  due_date: Date;
+};
+
+/** The warning itself. True when it reached them. */
+async function warnSender(r: WarnRow, today: Civil, log: FastifyBaseLogger): Promise<boolean> {
+  const paid = (await paidButtons(r.document_id, r.number))[0];
+  if (!paid) return false;
+  const buttons: ReplyButton[] = [
+    { id: paid.id, title: "Already paid" },
+    { id: `remind now ${r.number}`, title: "Remind them now" },
+  ];
+  const due: Civil = { y: r.due_date.getFullYear(), m: r.due_date.getMonth() + 1, d: r.due_date.getDate() };
+  const owed = formatNaira(r.total_kobo - r.amount_paid_kobo);
+  const when = lateness(due, today);
+  const at = remindAt();
+  const pitch = await trialReminderPitch(r.user_id, r.document_id);
+  const outcome = await send(
+    {
+      userId: r.user_id,
+      phone: r.wa_phone,
+      text: warningText({ client: r.client_name, number: r.number, owed, when, at }) + (pitch ? `\n\n${pitch}` : ""),
+      buttons,
+      fallback: {
+        template: "reminder_heads_up",
+        params: [`#${r.number}`, r.client_name, owed, when, at],
+        payloads: buttons.map((x) => x.id),
+      },
+    },
+    log,
+  );
+  return outcome.kind === "sent";
 }
 
 /**

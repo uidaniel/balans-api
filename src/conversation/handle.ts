@@ -8,6 +8,7 @@
  */
 
 import { setWeeklyOwed } from "../jobs/weekly-owed.ts";
+import { sendDueReminders, withinQuietHours } from "../jobs/overdue.ts";
 import { lastInvoiceAgain } from "../documents/again.ts";
 import { quotedDocument, QUOTABLE, type Quoted } from "./quoted.ts";
 import { identityRequired, identityStatusOf, type IdentityStatus } from "../identity/verify.ts";
@@ -1326,6 +1327,34 @@ async function runEffects(
             effect.on
               ? `🔔 ${b("You'll get the occasional update from Balans.")} Send ${b("STOP UPDATES")} any time to stop them.`
               : `🔕 ${b("No more updates from Balans.")} Your invoices, receipts and reminders are not affected. Send ${b("START UPDATES")} to get them again.`,
+          );
+          break;
+        }
+
+        case "remind_now": {
+          // The warned reminder for this invoice, made due now and sent.
+          const { rows } = await db().query<{ id: string; client: string }>(
+            `UPDATE reminders r SET warned_at = now() - interval '1 day'
+               FROM documents d JOIN clients c ON c.id = d.client_id
+              WHERE r.document_id = d.id AND d.user_id = $1 AND d.number = $2
+                AND d.type IN ('invoice', 'payment_request') AND r.status = 'warned'
+              RETURNING d.id, c.name AS client`,
+            [userId, effect.number],
+          );
+          const doc = rows[0];
+          if (!doc) {
+            extra.push(`There's no reminder waiting for ${b(`invoice #${effect.number}`)}. It may be paid, or already sent.`);
+            break;
+          }
+          if (withinQuietHours()) {
+            extra.push(`🌙 It's late, so I'll remind ${b(doc.client)} first thing tomorrow, at 8am.`);
+            break;
+          }
+          const n = await sendDueReminders(ctx.today, log, 5, doc.id);
+          extra.push(
+            n
+              ? `📨 ${b(`${doc.client} has been reminded`)} about invoice #${effect.number}.`
+              : `I couldn't reach ${b(doc.client)} just now. I'll try again within the hour.`,
           );
           break;
         }

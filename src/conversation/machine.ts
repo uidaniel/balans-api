@@ -306,6 +306,7 @@ export type Effect =
   | { type: "set_updates"; on: boolean }
   | { type: "set_weekly_owed"; on: boolean }
   | { type: "repeat_invoice"; client: string | null }
+  | { type: "remind_now"; number: number }
   /** "I accept" under the notice of terms 6.0 (legal/notice.ts). */
   | { type: "accept_terms" }
   /** "Try an example": a sample invoice in their own name (documents/sample.ts). */
@@ -1888,6 +1889,11 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       }
       if (/^((start|resume) updates|yes, send updates)[.!]*$/i.test(text.trim())) {
         return { replies: [], next: "idle", context, effects: [{ type: "set_updates", on: true }] };
+      }
+      // "Remind them now", under the warning before a reminder (5 November 2026).
+      {
+        const now = /^remind (?:them |the client )?now #?(\d{1,6})[.!]*$/i.exec(text.trim());
+        if (now) return { replies: [], next: "idle", context, effects: [{ type: "remind_now", number: Number(now[1]) }] };
       }
       // "Invoice them again" (5 November 2026): the last invoice, or the last
       // to the client named, as a new draft dated today (documents/again.ts).

@@ -105,7 +105,8 @@ type BaseTemplateName =
   | "pro_plan_stops"
   | "pro_plan_free"
   | "weekly_owed"
-  | "win_back_again";
+  | "win_back_again"
+  | "reminder_heads_up";
 
 /**
  * A bold line above the words, for the templates that say one thing
@@ -338,6 +339,20 @@ const BASE_TEMPLATES: Record<BaseTemplateName, TemplateSpec> = {
     params: ["free invoices a month", "price"],
     example: ["3", "₦3,000"],
     button: { text: "Get Pro back", url: `${PRO_START}?t={{1}}`, example: `${PRO_START}?t=example` },
+  },
+
+  /*
+   * Before a client is reminded about a transfer invoice (5 November 2026,
+   * jobs/overdue.ts warnSender): the sender may have been paid and not
+   * marked it, so they hear first and the client three hours on.
+   */
+  reminder_heads_up: {
+    name: "reminder_heads_up",
+    category: "UTILITY",
+    body: "Invoice {{1}} to {{2}} for {{3}} is {{4}}. Balans will remind them at about {{5}} unless you tell us it has been paid.",
+    params: ["invoice number, e.g. #12", "client", "amount owed", "due today, or 3 days late", "time, e.g. 2pm"],
+    example: ["#12", "Zenith Homes", "₦350,000", "due today", "2pm"],
+    quickReplies: ["Already paid", "Remind them now"],
   },
 
   /*

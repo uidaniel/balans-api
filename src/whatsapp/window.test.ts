@@ -55,6 +55,7 @@ describe("the templates we register with Meta", () => {
         "pro_plan_free",
         "pro_plan_stops",
         "pro_renewal",
+        "reminder_heads_up",
         "security_alert",
         "setup_reminder",
         "weekly_owed",
