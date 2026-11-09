@@ -16,12 +16,23 @@ import { env, require_ } from "../config.ts";
 import { note, sentReply } from "../lib/timing.ts";
 
 export type SendResult =
-  | { ok: true; waMessageId: string }
+  | {
+      ok: true;
+      waMessageId: string;
+      /**
+       * Set when the message went without the picture it was given, and why:
+       * Meta could not fetch it, so it was sent again with the words and the
+       * button alone. See `sendCta`.
+       */
+      imageDropped?: string;
+    }
   | { ok: false; retryable: boolean; code?: number; reason: string; outsideWindow?: boolean };
 
 /** Meta error codes worth telling apart. */
 const OUTSIDE_WINDOW = new Set([131047, 131051, 470]);
 const RETRYABLE = new Set([130429, 131048, 133016, 1, 2, 4]);
+/** Meta could not fetch or take the media a message pointed at. */
+const MEDIA_FAILED = new Set([131052, 131053]);
 
 type Transport = typeof fetch;
 
@@ -548,7 +559,7 @@ export function sendTemplate(
  * Costs exactly what a text message costs, so it replaces one rather than
  * following it.
  */
-export function sendCta(
+export async function sendCta(
   to: string,
   content: {
     body: string;
@@ -589,39 +600,61 @@ export function sendCta(
     return Promise.resolve({ ok: false, retryable: false, reason: `not a link: ${content.url}` });
   }
 
-  return call(
-    `${env.WA_PHONE_NUMBER_ID}/messages`,
-    {
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: phone,
-      type: "interactive",
-      interactive: {
-        type: "cta_url",
-        ...(content.headerImage && isUrl(content.headerImage)
-          ? {
-              /*
-               * A URL, because Meta accepts nothing else in this one header
-               * — see the comment on `headerImage`. A media id is dropped
-               * rather than sent, because sending it loses the whole message:
-               * the words and the button go with it, and the words are the
-               * part that matters.
-               */
-              header: { type: "image", image: { link: content.headerImage } },
-            }
-          : content.header
-            ? { header: { type: "text", text: content.header.slice(0, 60) } }
-            : {}),
-        body: { text: content.body.slice(0, 1024) },
-        ...(content.footer ? { footer: { text: content.footer.slice(0, 60) } } : {}),
-        action: {
-          name: "cta_url",
-          parameters: { display_text: content.label.slice(0, 20), url: content.url },
+  const send = (image: boolean) =>
+    call(
+      `${env.WA_PHONE_NUMBER_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: phone,
+        type: "interactive",
+        interactive: {
+          type: "cta_url",
+          ...(image && content.headerImage && isUrl(content.headerImage)
+            ? {
+                /*
+                 * A URL, because Meta accepts nothing else in this one header
+                 * — see the comment on `headerImage`. A media id is dropped
+                 * rather than sent, because sending it loses the whole message:
+                 * the words and the button go with it, and the words are the
+                 * part that matters.
+                 */
+                header: { type: "image", image: { link: content.headerImage } },
+              }
+            : content.header
+              ? { header: { type: "text", text: content.header.slice(0, 60) } }
+              : {}),
+          body: { text: content.body.slice(0, 1024) },
+          ...(content.footer ? { footer: { text: content.footer.slice(0, 60) } } : {}),
+          action: {
+            name: "cta_url",
+            parameters: { display_text: content.label.slice(0, 20), url: content.url },
+          },
         },
       },
-    },
-    opts.fetchImpl ?? fetch,
-  );
+      opts.fetchImpl ?? fetch,
+    );
+
+  const first = await send(true);
+
+  /*
+   * Meta fetches a header image while it takes the message, and when that
+   * fetch fails it refuses the whole message (9 November 2026, /owed, twice
+   * in one morning):
+   *
+   *     (#131053) Media upload error
+   *
+   * The picture is an addition to the words and the button, never the reason
+   * for the message. So the same message goes again without it, and the
+   * caller hears that the picture was dropped rather than that nothing was
+   * sent. A refusal for any other reason — the window, a rate limit — would
+   * refuse the second send as well, so only a media failure is retried.
+   */
+  if (!first.ok && content.headerImage && isUrl(content.headerImage) && first.code !== undefined && MEDIA_FAILED.has(first.code)) {
+    const plain = await send(false);
+    return plain.ok ? { ...plain, imageDropped: first.reason } : plain;
+  }
+  return first;
 }
 
 /**

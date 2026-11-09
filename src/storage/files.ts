@@ -40,13 +40,18 @@ export const receiptKey = (paymentId: string): string => `receipts/${paymentId}.
  * the send. The same message already carries a link to the summary page,
  * which shows strictly more than the card does and lives a day.
  */
-export const cardKey = (token: string): string => `cards/${token}.png`;
+/*
+ * JPEG since 9 November 2026. The cards are painted over lit 3D art with
+ * grain, which as a PNG is four times the bytes for nothing anyone can see,
+ * and Meta has to fetch it while the person waits (see sendCta).
+ */
+export const cardKey = (token: string): string => `cards/${token}.jpg`;
 
 /** How long a card's address is worth anything. Meta fetches it at once. */
 const CARD_MINUTES = 60;
 
-export async function putCard(token: string, png: Buffer, userId: string): Promise<void> {
-  await put(cardKey(token), png, "image/png", userId);
+export async function putCard(token: string, jpg: Buffer, userId: string): Promise<void> {
+  await put(cardKey(token), jpg, "image/jpeg", userId);
 
   /*
    * Sweep on the way past, rather than in a job.

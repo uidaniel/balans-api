@@ -257,14 +257,14 @@ export async function publicRoutes(app: FastifyInstance): Promise<void> {
    * been.
    */
   app.get<{ Params: { file: string } }>("/c/:file", async (req, reply) => {
-    const token = req.params.file.replace(/\.png$/i, "");
+    const token = req.params.file.replace(/\.jpg$/i, "");
     if (!/^[0-9a-f]{64}$/.test(token)) return reply.status(404).send();
 
     const bytes = await getCard(token);
     if (!bytes) return reply.status(404).send();
 
     return reply
-      .type("image/png")
+      .type("image/jpeg")
       .header("cache-control", "no-store, private")
       .header("referrer-policy", "no-referrer")
       .header("x-content-type-options", "nosniff")

@@ -123,9 +123,9 @@ ${hidden > 0 ? `<p class="more">and ${hidden} more — tap View Summary for all 
  * Null on every failure, deliberately. A render that does not come back must
  * cost somebody a picture, never their answer.
  *
- * Uploaded rather than linked, for the same reason as the draft receipt: this
- * image carries client names and what they owe, and a URL for that is a public
- * page for private money however unguessable the path.
+ * Linked rather than uploaded, because the message it heads carries a link
+ * button and Meta takes that header only as a URL. The address is built to be
+ * worth as little as possible: see card-link.ts.
  */
 export async function owedCard(
   userId: string,
@@ -139,10 +139,10 @@ export async function owedCard(
 
   const started = Date.now();
   try {
-    const png = await renderPng(owedHtml(owed, today), CARD, CARD);
-    const url = await publishCard(userId, png, log);
+    const jpg = await renderPng(owedHtml(owed, today), CARD, CARD, { jpeg: true });
+    const url = await publishCard(userId, jpg, log);
 
-    log.info({ ms: Date.now() - started, bytes: png.length, parked: Boolean(url) }, "owed card drawn");
+    log.info({ ms: Date.now() - started, bytes: jpg.length, parked: Boolean(url) }, "owed card drawn");
     return url;
   } catch (e) {
     log.warn({ err: (e as Error).message }, "owed card could not be drawn, sending the words");

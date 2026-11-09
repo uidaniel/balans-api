@@ -41,13 +41,13 @@ import { putCard } from "../storage/files.ts";
  */
 export async function publishCard(
   userId: string,
-  png: Buffer,
+  jpg: Buffer,
   log: FastifyBaseLogger,
 ): Promise<string | null> {
   try {
     const token = randomBytes(32).toString("hex");
-    await putCard(token, png, userId);
-    return `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/c/${token}.png`;
+    await putCard(token, jpg, userId);
+    return `${env.PUBLIC_BASE_URL.replace(/\/$/, "")}/c/${token}.jpg`;
   } catch (e) {
     log.warn({ err: (e as Error).message }, "card could not be parked, sending the words");
     return null;

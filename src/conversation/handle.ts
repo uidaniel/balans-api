@@ -2389,6 +2389,9 @@ async function runEffects(
             });
 
             if (sent.ok) {
+              // Went without its picture: the words and the button arrived,
+              // which is the answer, so a warning rather than an error.
+              if (sent.imageDropped) log.warn({ userId, reason: sent.imageDropped }, "owed card refused by WhatsApp, sent without it");
               await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
               break;
             }
@@ -2463,6 +2466,9 @@ async function runEffects(
             });
 
             if (sent.ok) {
+              // Went without its picture: the words and the button arrived,
+              // which is the answer, so a warning rather than an error.
+              if (sent.imageDropped) log.warn({ userId, reason: sent.imageDropped }, "summary card refused by WhatsApp, sent without it");
               await recordOutbound(userId, sent.waMessageId, "sent", { kind: "interactive" });
               break;
             }

@@ -101,6 +101,49 @@ describe("a card on a message with a link button", () => {
   });
 });
 
+describe("a card Meta cannot fetch", () => {
+  /** Refuses the first send with `code`, then accepts whatever comes next. */
+  function refusesFirst(code: number, message: string) {
+    const sent: Payload[] = [];
+    const impl = (async (_url: string, init: { body?: string }) => {
+      sent.push(JSON.parse(String(init.body)) as Payload);
+      return sent.length === 1
+        ? { ok: false, status: 400, text: async () => JSON.stringify({ error: { code, message } }) }
+        : { ok: true, status: 200, text: async () => JSON.stringify({ messages: [{ id: "wamid.y" }] }) };
+    }) as unknown as typeof fetch;
+    return { impl, sent };
+  }
+
+  it("sends the words and the button without it", async () => {
+    // 9 November 2026: /owed refused twice with "(#131053) Media upload
+    // error", and the person got a paragraph with no button.
+    const t = refusesFirst(131053, "(#131053) Media upload error");
+    const res = await sendCta(
+      PHONE,
+      { body: "You are owed ₦1,250,000.", label: "View Summary", url: "https://x.ng/s/t", headerImage: LINK },
+      { fetchImpl: t.impl },
+    );
+    assert.equal(t.sent.length, 2);
+    assert.deepEqual(t.sent[0]?.interactive?.header, { type: "image", image: { link: LINK } });
+    assert.equal(t.sent[1]?.interactive?.header, undefined, "the second send still had the picture");
+    assert.equal(t.sent[1]?.interactive?.body?.text, "You are owed ₦1,250,000.");
+    assert.equal(t.sent[1]?.interactive?.action?.parameters?.url, "https://x.ng/s/t");
+    assert.equal(res.ok, true);
+    assert.equal(res.ok && res.imageDropped, "(#131053) Media upload error");
+  });
+
+  it("does not send twice for a refusal that has nothing to do with the picture", async () => {
+    const t = refusesFirst(131009, "(#131009) Parameter value is not valid");
+    const res = await sendCta(
+      PHONE,
+      { body: "You are owed ₦1,250,000.", label: "View Summary", url: "https://x.ng/s/t", headerImage: LINK },
+      { fetchImpl: t.impl },
+    );
+    assert.equal(t.sent.length, 1);
+    assert.equal(res.ok, false);
+  });
+});
+
 describe("a card in a message of its own", () => {
   it("goes by uploaded id, which is how it stays private", async () => {
     const t = captor();
@@ -158,7 +201,7 @@ describe("the two commands that draw one", () => {
     // 32 bytes of CSPRNG, which is not guessed, and hex so the route can
     // recognise it without decoding anything.
     assert.match(link, /randomBytes\(32\)\.toString\("hex"\)/);
-    assert.match(link, /\/c\/\$\{token\}\.png/);
+    assert.match(link, /\/c\/\$\{token\}\.jpg/);
 
     const files = readFileSync(new URL("../storage/files.ts", import.meta.url), "utf8");
     // Refused by age in the query, so a row the sweep has not reached is

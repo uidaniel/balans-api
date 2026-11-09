@@ -15,6 +15,14 @@ import { whatsappPaymentAlert } from "../ops/alerts.ts";
 
 /** Meta's code for "Business eligibility payment issue". */
 const PAYMENT_CODES = new Set([131042]);
+/*
+ * The phone at the other end, not us (9 November 2026): "Message
+ * undeliverable" is a number that is not on WhatsApp, an app too old to take
+ * the message, or somebody who has blocked the business. Nothing here can
+ * fix it, so it is logged as a warning and kept out of the error digest,
+ * which is for things somebody should go and look at.
+ */
+const RECIPIENT_CODES = new Set([131026]);
 const ALERT_EVERY_MS = 60 * 60_000;
 let lastPaymentAlert = 0;
 
@@ -46,7 +54,8 @@ export function noteDeliveryFailures(events: { type: string; payload: unknown }[
     // digits of the number, which is enough to find it and no more.
     // An error on live, which the digest emails; a warning on staging, where
     // the test account fails paid messages by design.
-    const say = env.DATABASE_SCHEMA ? log.warn.bind(log) : log.error.bind(log);
+    const quiet = env.DATABASE_SCHEMA || (f.code !== null && RECIPIENT_CODES.has(f.code));
+    const say = quiet ? log.warn.bind(log) : log.error.bind(log);
     say({ code: f.code, to: f.recipient ? `…${f.recipient.slice(-4)}` : null }, `WhatsApp message failed: ${f.title}`);
     // Live only: the test account has no payment method, so on staging every
     // paid message fails this way and the alert would be noise every hour.

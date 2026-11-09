@@ -116,10 +116,10 @@ export async function periodCard(
 
   const started = Date.now();
   try {
-    const png = await renderPng(periodHtml(s), CARD, CARD);
-    const url = await publishCard(userId, png, log);
+    const jpg = await renderPng(periodHtml(s), CARD, CARD, { jpeg: true });
+    const url = await publishCard(userId, jpg, log);
 
-    log.info({ ms: Date.now() - started, bytes: png.length, parked: Boolean(url) }, "summary card drawn");
+    log.info({ ms: Date.now() - started, bytes: jpg.length, parked: Boolean(url) }, "summary card drawn");
     return url;
   } catch (e) {
     log.warn({ err: (e as Error).message }, "summary card could not be drawn, sending the words");
