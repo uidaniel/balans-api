@@ -58,3 +58,41 @@ describe("what looks wrong", () => {
     assert.match(cases[0]!.after!, /User: \?\?\?/);
   });
 });
+
+describe("every kind of answer is recorded (9 November 2026)", async () => {
+  const { describeSent } = await import("./turns.ts");
+  it("a PDF, a list, a form and buttons read as what they are", () => {
+    assert.equal(describeSent({ type: "document", document: { filename: "Invoice-0001.pdf", caption: "Here it is" } }), "[PDF: Invoice-0001.pdf] Here it is");
+    assert.match(describeSent({ type: "interactive", interactive: { type: "list", body: { text: "Settings" }, action: { sections: [{ rows: [{ title: "Business name" }, { title: "Bank" }] }] } } })!, /Settings\n\[list: Business name \| Bank\]/);
+    assert.match(describeSent({ type: "interactive", interactive: { type: "flow", body: { text: "Set up" }, action: { parameters: { flow_cta: "Get started" } } } })!, /\[form: Get started\]/);
+    assert.match(describeSent({ type: "interactive", interactive: { type: "button", body: { text: "Send it?" }, action: { buttons: [{ reply: { title: "Send it" } }] } } })!, /\[buttons: Send it\]/);
+  });
+});
+
+describe("settings let go of a sentence (9 November 2026)", async () => {
+  const { step } = await import("../conversation/machine.ts");
+  const at = (text: string) => step("settings:menu", {}, { text, today: { y: 2026, m: 11, d: 9 } } as never, "5.2");
+  it("answers a sentence from idle instead of asking for a number again", () => {
+    const r = at("Have not received the money");
+    assert.equal(r.next, "idle");
+    assert.deepEqual(r.effects, [{ type: "replay_text", text: "Have not received the money" }]);
+  });
+  it("shows the list again for a number that is not on it", () => {
+    const r = at("1234");
+    assert.equal(r.next, "settings:menu");
+    assert.deepEqual(r.effects, [{ type: "show_settings" }]);
+  });
+  it("still takes the menu's own rows", () => {
+    assert.equal(at("2").next, "settings:bank_code");
+    assert.equal(at("cancel").next, "idle");
+  });
+});
+
+describe("settings, asked which number", async () => {
+  const { step } = await import("../conversation/machine.ts");
+  it("shows the list again", () => {
+    const r = step("settings:menu", {}, { text: "Which number on the list", today: { y: 2026, m: 11, d: 9 } } as never, "5.2");
+    assert.equal(r.next, "settings:menu");
+    assert.deepEqual(r.effects, [{ type: "show_settings" }]);
+  });
+});

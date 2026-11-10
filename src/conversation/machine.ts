@@ -307,6 +307,8 @@ export type Effect =
   | { type: "set_weekly_owed"; on: boolean }
   | { type: "repeat_invoice"; client: string | null }
   | { type: "remind_now"; number: number }
+  /** Answer this text again from idle, after leaving a state it did not fit (9 November 2026). */
+  | { type: "replay_text"; text: string }
   /** "I accept" under the notice of terms 6.0 (legal/notice.ts). */
   | { type: "accept_terms" }
   /** "Try an example": a sample invoice in their own name (documents/sample.ts). */
@@ -1456,8 +1458,7 @@ export const VOICE = {
   settingsClosed: lines(`\u2699\ufe0f ${b("Closed settings.")}`, "Nothing changed."),
 
   settingsUnknown: lines(
-    `🔢 Reply with a ${b("number")} from the list.`,
-    `Or ${b("cancel")} to leave settings.`,
+    `🔢 That isn't on the list. Pick one below, or reply ${b("cancel")} to leave settings.`,
   ),
 
   /** F17: "confirm twice", and the second one is not a yes/no. */
@@ -2081,7 +2082,23 @@ function atSettingsMenu(text: string, ctx: Context, msg: Inbound): Step {
   const escape = commandEscape(msg, ctx, now);
   if (escape) return escape;
 
-  return retry("settings:menu", ctx, VOICE.settingsUnknown);
+  /*
+   * A sentence is not a wrong menu choice (9 November 2026). Somebody wrote
+   * "Have not received the money" and "Which number" here and was told five
+   * times to reply with a number. Words mean they have moved on: settings
+   * close, and the sentence is answered as if settings had never opened.
+   */
+  // "Which number?", "what list": they cannot see it, so it comes again.
+  if (/\b(which|what) (number|one|list)\b|\bthe list\b|\bwhere is the list\b/i.test(text)) {
+    return { replies: [], next: "settings:menu", context: ctx, effects: [{ type: "show_settings" }] };
+  }
+
+  if (/[a-z]{2,}.*\s+.*[a-z]/i.test(text.trim())) {
+    return { replies: [], next: "idle", context: forget(ctx), effects: [{ type: "replay_text", text }] };
+  }
+
+  // A number that is not on it, or a stray word: the list again, not just "a number".
+  return { ...retry("settings:menu", ctx, VOICE.settingsUnknown), effects: [{ type: "show_settings" }] };
 }
 
 /**

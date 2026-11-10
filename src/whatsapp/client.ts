@@ -12,6 +12,7 @@
  *   needs to know that is what happened rather than treating it as an outage.
  */
 
+import { noteSentTo } from "../review/turns.ts";
 import { env, require_ } from "../config.ts";
 import { note, sentReply } from "../lib/timing.ts";
 
@@ -127,6 +128,9 @@ async function call(
     const messages = (json.messages as { id?: string }[] | undefined) ?? [];
     const id = messages[0]?.id;
     if (id) sentReply();
+    // For the daily review of the bot's answers (review/turns.ts): whatever
+    // kind of message it was, in words. Never waited on.
+    if (id && to) void noteSentTo(to, body);
     return id
       ? { ok: true, waMessageId: id }
       : { ok: false, retryable: false, reason: "accepted but no message id returned" };

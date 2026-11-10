@@ -53,3 +53,58 @@ export async function noteReply(userId: string, text: string): Promise<void> {
     // As above.
   }
 }
+
+/**
+ * What we sent, in words, from the request body itself (9 November 2026).
+ * Recorded where every message leaves (whatsapp/client.ts `call`), so a card,
+ * a form, a PDF or a list counts as an answer as much as a line of text does:
+ * the first review emails showed those as "(nothing)".
+ */
+export function describeSent(body: unknown): string | null {
+  const m = body as Record<string, any>;
+  if (!m || typeof m !== "object") return null;
+  switch (m.type) {
+    case "text":
+      return m.text?.body ?? null;
+    case "image":
+      return `[picture]${m.image?.caption ? ` ${m.image.caption}` : ""}`;
+    case "document":
+      return `[PDF: ${m.document?.filename ?? "file"}]${m.document?.caption ? ` ${m.document.caption}` : ""}`;
+    case "template":
+      return `[template: ${m.template?.name ?? "?"}]`;
+    case "interactive": {
+      const i = m.interactive ?? {};
+      const text = i.body?.text ?? "";
+      const extra =
+        i.type === "button"
+          ? `[buttons: ${(i.action?.buttons ?? []).map((x: any) => x.reply?.title).filter(Boolean).join(" | ")}]`
+          : i.type === "list"
+            ? `[list: ${(i.action?.sections ?? []).flatMap((sec: any) => sec.rows ?? []).map((r: any) => r.title).join(" | ")}]`
+            : i.type === "flow"
+              ? `[form: ${i.action?.parameters?.flow_cta ?? "open"}]`
+              : i.type === "cta_url"
+                ? `[link button: ${i.action?.parameters?.display_text ?? ""}]`
+                : `[${i.type ?? "interactive"}]`;
+      return [text, extra].filter(Boolean).join("\n");
+    }
+    default:
+      return null;
+  }
+}
+
+/** Added to the latest turn of whoever has this WhatsApp number, from the last five minutes. */
+export async function noteSentTo(phone: string, body: unknown): Promise<void> {
+  try {
+    const text = describeSent(body);
+    if (!text?.trim()) return;
+    await db().query(
+      `UPDATE bot_turns SET reply = left(COALESCE(reply || E'\\n\\n', '') || $2, ${MAX * 2})
+        WHERE id = (SELECT t.id FROM bot_turns t JOIN users u ON u.id = t.user_id
+                     WHERE u.wa_phone = $1 AND t.at > now() - interval '5 minutes'
+                     ORDER BY t.at DESC LIMIT 1)`,
+      [phone, maskText(text)],
+    );
+  } catch {
+    // The review misses one; the message still went.
+  }
+}

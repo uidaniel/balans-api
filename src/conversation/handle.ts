@@ -8,7 +8,7 @@
  */
 
 import { setWeeklyOwed } from "../jobs/weekly-owed.ts";
-import { noteInbound, noteReply } from "../review/turns.ts";
+import { noteInbound } from "../review/turns.ts";
 import { sendDueReminders, withinQuietHours } from "../jobs/overdue.ts";
 import { lastInvoiceAgain } from "../documents/again.ts";
 import { quotedDocument, QUOTABLE, type Quoted } from "./quoted.ts";
@@ -963,6 +963,14 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   await saveConversation(user.id, next, context);
   await reply(user.id, msg.from, replies, log, buttons, buttonsImage);
 
+  // Left a state the sentence did not fit (settings, 9 November 2026): it is
+  // answered now from idle, as if that state had never opened. Once only: a
+  // replay never asks for another.
+  if (outcome.replay && !msg.replay && next === "idle") {
+    await replayOpener(user.id, msg.from, outcome.replay, log);
+    return;
+  }
+
   if (next === "idle" && !opener && !result.effects.some((e) => NO_PRO_NUDGE.has(e.type))) {
     const nudge = await proNudgeLine(user.id, log).catch(() => null);
     if (nudge) await reply(user.id, msg.from, [nudge], log);
@@ -997,7 +1005,7 @@ async function replayOpener(
   log: FastifyBaseLogger,
 ): Promise<void> {
   try {
-    log.info({ userId }, "replaying the sentence they opened with");
+    log.info({ userId }, "replaying a sentence from idle");
     await handleInbound(
       {
         // Nothing stores this: a replay skips `recordInbound` because nothing
@@ -1026,6 +1034,8 @@ async function replayOpener(
  */
 type EffectOutcome = {
   lines: string[];
+  /** A sentence to answer again from idle, once this turn is saved (replay_text). */
+  replay?: string;
   holdAt?: State;
   /**
    * An effect threw.
@@ -1154,6 +1164,7 @@ async function runEffects(
   let editing: { id: string; number: number } | undefined;
   let flowFell: true | undefined;
   let wroteDoc: PendingDoc | undefined;
+  let replayAfter: string | undefined;
   let chat: ChatMemory | undefined;
 
   for (const effect of effects) {
@@ -1333,6 +1344,12 @@ async function runEffects(
               ? `🔔 ${b("You'll get the occasional update from Balans.")} Send ${b("STOP UPDATES")} any time to stop them.`
               : `🔕 ${b("No more updates from Balans.")} Your invoices, receipts and reminders are not affected. Send ${b("START UPDATES")} to get them again.`,
           );
+          break;
+        }
+
+        case "replay_text": {
+          // Settings were left for this sentence; answered once the state is saved.
+          if (ctx.phone) replayAfter = effect.text;
           break;
         }
 
@@ -3449,6 +3466,7 @@ async function runEffects(
     flowFell,
     doc: wroteDoc,
     chat,
+    ...(replayAfter ? { replay: replayAfter } : {}),
   };
 }
 
@@ -4901,8 +4919,6 @@ async function reply(
   buttonsImage?: string,
 ): Promise<void> {
   const send = lines.filter((l) => l.trim());
-  // What the bot said, for the daily review (src/review).
-  void noteReply(userId, send.join("\n\n") + (buttons?.length ? `\n[buttons: ${buttons.map((x) => x.title).join(" | ")}]` : ""));
 
   for (const [i, body] of send.entries()) {
     // A beat between lines. Two messages landing in the same instant read as a
