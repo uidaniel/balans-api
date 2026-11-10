@@ -15,6 +15,7 @@
  * restyle the invoices of the business billing them.
  */
 
+import { offerRedraw } from "../../documents/redraw.ts";
 import { liveSettingsPath } from "../../settings/page-token.ts";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -675,8 +676,12 @@ export async function templateRoutes(app: FastifyInstance): Promise<void> {
         return reply.redirect(`/designs/${req.params.token}`, 303);
       }
 
+      const changed = owner.templateId !== spec.id;
       await db().query(`UPDATE users SET template_id = $2 WHERE id = $1`, [owner.id, spec.id]);
       req.log.info({ userId: owner.id, template: spec.id }, "invoice design chosen");
+      // An unpaid invoice already sent in the old design: offer to redraw it
+      // (9 November 2026). In the chat, after the page has answered.
+      if (changed) void offerRedraw(owner.id, spec.id, req.log);
 
       // Opened from settings: straight back there, which says it saved.
       const back = req.query?.from === "settings" ? await liveSettingsPath(owner.id) : null;

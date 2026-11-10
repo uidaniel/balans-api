@@ -12,6 +12,7 @@
  * question repeated at them.
  */
 
+import { DESIGN_WORDS } from "../pdf/design-names.ts";
 import { payByIn } from "../parser/corrections.ts";
 import { extractDocument } from "../parser/extract.ts";
 import { stageDatesIn } from "../parser/corrections.ts";
@@ -182,6 +183,40 @@ export function repeatAsked(text: string): { client: string | null } | null {
   return null;
 }
 
+/**
+ * "redraw invoice 1", "redo the pdf with my chosen design", "use the new
+ * design on invoice 1". The number, or null for their latest unpaid one.
+ * Null when it is not one of those.
+ */
+/**
+ * A design asked for in a sentence (9 November 2026). "Let's use Slip design"
+ * names one; "use another template", "I don't like this design" asks for the
+ * picker. Null when it is neither.
+ */
+export function designAsked(text: string): { name: string } | { pick: true } | null {
+  const t = text.trim().replace(/[.!?]+$/, "");
+  const named = /\b(?:use|switch to|change (?:it |this )?to|go with|pick|choose|i want|i'?d like|let'?s use|try)\s+(?:the\s+)?([a-z]+)\s+(?:design|template|layout|style)\b/i.exec(t);
+  // Only a word that is one of ours: "I want logo design for Tunde" is an invoice.
+  if (named && DESIGN_WORDS.has(named[1]!.toLowerCase())) return { name: named[1]!.toLowerCase() };
+  if (/\b(another|different|other|a new)\s+(design|template|layout|style)\b|\b(?:don'?t|do not|no)\s+like\s+(?:this|the|my|that)\s+(design|template|layout|style)\b/i.test(t)) {
+    return { pick: true };
+  }
+  return null;
+}
+
+export function redrawAsked(text: string): { number: number | null } | null {
+  const t = text.trim().replace(/[.!?]+$/, "");
+  let m = /^(?:redraw|redo|regenerate|remake|refresh)\s+(?:the\s+)?(?:pdf\s+(?:for|of)\s+)?(?:invoice|inv|quote)\s*#?(\d{1,6})$/i.exec(t);
+  if (m) return { number: Number(m[1]) };
+  m = /\b(?:use|put|apply)\b.*\b(?:new|chosen|this|that|my)\s+(?:design|template)\b.*\b(?:on|for|to)\s+(?:invoice|inv|quote)\s*#?(\d{1,6})\b/i.exec(t);
+  if (m) return { number: Number(m[1]) };
+  if (/\b(?:redo|redraw|regenerate|remake|update|change)\b.*\b(?:pdf|invoice)\b.*\b(?:new|chosen|my|this|that)\s+(?:design|template)\b/i.test(t)) {
+    const n = /(?:invoice|inv|quote)\s*#?(\d{1,6})\b/i.exec(t);
+    return { number: n ? Number(n[1]) : null };
+  }
+  return null;
+}
+
 export type PendingDoc = {
   type: "invoice" | "quote" | "payment_request";
   clientName?: string;
@@ -309,6 +344,10 @@ export type Effect =
   | { type: "remind_now"; number: number }
   /** Answer this text again from idle, after leaving a state it did not fit (9 November 2026). */
   | { type: "replay_text"; text: string }
+  /** The PDF of a sent, unpaid invoice drawn again in the current design (9 November 2026). */
+  | { type: "redraw_document"; number: number | null }
+  /** "Let's use Slip design": a design named in words, checked by the caller (9 November 2026). */
+  | { type: "set_design"; name: string }
   /** "I accept" under the notice of terms 6.0 (legal/notice.ts). */
   | { type: "accept_terms" }
   /** "Try an example": a sample invoice in their own name (documents/sample.ts). */
@@ -1890,6 +1929,18 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       }
       if (/^((start|resume) updates|yes, send updates)[.!]*$/i.test(text.trim())) {
         return { replies: [], next: "idle", context, effects: [{ type: "set_updates", on: true }] };
+      }
+      // A design asked for in words (9 November 2026). After a redraw request,
+      // which can also mention "my new design".
+      if (!redrawAsked(text)) {
+        const design = designAsked(text);
+        if (design && "name" in design) return { replies: [], next: "idle", context, effects: [{ type: "set_design", name: design.name }] };
+        if (design) return { replies: [], next: "idle", context, effects: [{ type: "show_designs" }] };
+      }
+      // A sent invoice drawn again in the design they now have (9 November 2026).
+      {
+        const redraw = redrawAsked(text);
+        if (redraw) return { replies: [], next: "idle", context, effects: [{ type: "redraw_document", number: redraw.number }] };
       }
       // "Remind them now", under the warning before a reminder (5 November 2026).
       {

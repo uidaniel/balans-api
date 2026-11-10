@@ -11,6 +11,7 @@ import { setWeeklyOwed } from "../jobs/weekly-owed.ts";
 import { noteInbound } from "../review/turns.ts";
 import { sendDueReminders, withinQuietHours } from "../jobs/overdue.ts";
 import { lastInvoiceAgain } from "../documents/again.ts";
+import { findRedrawable, offerRedraw, redrawCaption } from "../documents/redraw.ts";
 import { quotedDocument, QUOTABLE, type Quoted } from "./quoted.ts";
 import { identityRequired, identityStatusOf, type IdentityStatus } from "../identity/verify.ts";
 import { identityUrl } from "../http/routes/verify.ts";
@@ -100,7 +101,7 @@ import {
 } from "../documents/reports.ts";
 import { defaultPeriod, readPeriod } from "../../core/period.ts";
 import { converse, type ChatMemory } from "../chat/assistant.ts";
-import { prepareDocumentPdf, renderDocumentPdf } from "../documents/pdf.ts";
+import { forgetRecentRender, prepareDocumentPdf, renderDocumentPdf } from "../documents/pdf.ts";
 import { deliverPaidToClient, receiptForDocument } from "../email/paid-delivery.ts";
 import { emailDocumentToClient } from "../email/client-delivery.ts";
 import { whatsappDocumentToClient } from "../documents/client-whatsapp.ts";
@@ -1344,6 +1345,47 @@ async function runEffects(
               ? `🔔 ${b("You'll get the occasional update from Balans.")} Send ${b("STOP UPDATES")} any time to stop them.`
               : `🔕 ${b("No more updates from Balans.")} Your invoices, receipts and reminders are not affected. Send ${b("START UPDATES")} to get them again.`,
           );
+          break;
+        }
+
+        case "set_design": {
+          const spec = TEMPLATES.find((t) => t.ready && (t.id === effect.name || t.name.toLowerCase() === effect.name));
+          if (!spec) {
+            extra.push(`I don't have a design called ${b(effect.name)}. Reply ${b("designs")} to see them all.`);
+            break;
+          }
+          if (spec.pro && (await planOf(userId)) !== "pro") {
+            extra.push(`${b(spec.name)} is a Pro design. Reply ${b("designs")} to see the ones on your plan, or ${b("upgrade")} for all of them.`);
+            break;
+          }
+          await db().query(`UPDATE users SET template_id = $2 WHERE id = $1`, [userId, spec.id]);
+          // With an unpaid invoice already sent, the saving and the offer to
+          // redraw it are one message; without one, just the saving.
+          if (!(await offerRedraw(userId, spec.id, log))) extra.push(`🎨 ${b(`Saved: new invoices use ${spec.name}.`)}`);
+          break;
+        }
+
+        case "redraw_document": {
+          const found = await findRedrawable(userId, effect.number);
+          if (!found.ok) {
+            extra.push(found.line);
+            break;
+          }
+          // Drawn fresh in the design they have now, replacing the stored PDF.
+          forgetRecentRender(found.id);
+          const pdf = await renderDocumentPdf(found.id, log);
+          if (pdf && ctx.phone) {
+            const up = await uploadDocument(pdf.bytes, pdf.filename);
+            if (up.ok) {
+              const sent = await sendDocument(ctx.phone, up.mediaId, pdf.filename, redrawCaption(found));
+              if (sent.ok) {
+                await recordOutbound(userId, sent.waMessageId, "sent", { kind: "document" });
+                log.info({ userId, documentId: found.id }, "invoice redrawn in the current design");
+                break;
+              }
+            }
+          }
+          extra.push(`I couldn't redraw ${b(`invoice #${found.number}`)} just now. Try again in a minute.`);
           break;
         }
 

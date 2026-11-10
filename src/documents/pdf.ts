@@ -102,6 +102,15 @@ export async function renderDocumentPdf(
 
 const recent = new Map<string, Promise<Rendered | null>>();
 
+/**
+ * Forgets the shared render of a document, so the next one is drawn fresh:
+ * a redraw after a change of design must not be handed the copy drawn a
+ * minute before it (9 November 2026).
+ */
+export function forgetRecentRender(documentId: string): void {
+  for (const k of recent.keys()) if (k.startsWith(`${documentId}:`)) recent.delete(k);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Prepared before "Send it" (3 November 2026)                                */
 /* -------------------------------------------------------------------------- */
