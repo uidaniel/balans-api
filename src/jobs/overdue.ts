@@ -22,6 +22,8 @@ import { sendFirstDocumentNudges } from "./first-document.ts";
 import { sendWeeklyOwed } from "./weekly-owed.ts";
 import { sendWinBacks } from "./win-back.ts";
 import { runBotReview } from "../review/daily.ts";
+import { emailProNotice, marketingWouldBeUsed } from "../billing/notice-route.ts";
+import { windowFor } from "../whatsapp/window.ts";
 import { syncWhatsAppSpend } from "../whatsapp/spend.ts";
 import { purgeExpiredCodes } from "../lib/codes.ts";
 import { tellPayouts } from "../payments/payouts.ts";
@@ -825,6 +827,31 @@ async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<nu
       win_back: { text: proWinBack(p, y), label: "Get Pro back", template: "pro_back_pay" as TemplateName, params: [price] },
     }[stage];
 
+    /*
+     * Outside the window, when the template that would go is one Meta files
+     * as marketing: by email instead (billing/notice-route.ts, 19 November
+     * 2026). The win-back is selling, so by email only with the updates
+     * opt-in. Without a confirmed email, the template still goes: a billing
+     * notice late or dear is better than none.
+     */
+    const candidates = [words.template, ...[words.orElse ?? []].flat().map((x) => x.template)];
+    if (!(await windowFor(r.userId)).open && (await marketingWouldBeUsed(candidates))) {
+      const optedIn =
+        stage !== "win_back" ||
+        Boolean((await db().query(`SELECT 1 FROM users WHERE id = $1 AND updates_opt_in_at IS NOT NULL`, [r.userId])).rowCount);
+      const emailed = optedIn
+        ? await emailProNotice(
+            { userId: r.userId, subject: PRO_SUBJECT[stage], text: words.text, label: words.label, url: proStartUrl(r.userId) },
+            log,
+          )
+        : "no_email";
+      if (emailed === "sent") {
+        sent += 1;
+        continue;
+      }
+      if (stage === "win_back") continue; // never a marketing template to somebody who did not opt in
+    }
+
     // The same signed link the chat's Pay button opens: a fresh Paystack
     // checkout for this person, renewal included (see renewalOpen).
     const outcome = await send(
@@ -849,6 +876,15 @@ async function sendProStage(stage: ProStage, log: FastifyBaseLogger): Promise<nu
   if (sent) log.info({ stage, count: sent }, "pro reminders sent");
   return sent;
 }
+
+/** The email subject for each Pro notice, when it goes by email (billing/notice-route.ts). */
+const PRO_SUBJECT: Record<ProStage, string> = {
+  ending_soon: "Your Balans Pro ends soon",
+  ended: "Your Balans Pro has ended",
+  grace_ending: "Your Balans Pro features stop soon",
+  lapsed: "Your Balans account is on the Free plan",
+  win_back: "Your Balans Pro, when you want it back",
+};
 
 async function sendProReminders(log: FastifyBaseLogger): Promise<void> {
   if (withinQuietHours()) return;

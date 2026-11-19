@@ -10,6 +10,8 @@
  * the moment. So everything here catches, and nothing here throws.
  */
 
+import { windowFor } from "../whatsapp/window.ts";
+import { emailProNotice, marketingWouldBeUsed } from "../billing/notice-route.ts";
 import type { FastifyBaseLogger } from "fastify";
 import { db } from "../db/pool.ts";
 import { formatNaira } from "../../core/totals.ts";
@@ -186,6 +188,18 @@ export async function notifyPaid(n: PaidNotice, log: FastifyBaseLogger): Promise
  * courtesy, not the mechanism, so a WhatsApp failure here costs a message and
  * never a month somebody paid for.
  */
+
+/**
+ * Outside the window, when the "Pro is active" template is one Meta files as
+ * marketing: by email instead (billing/notice-route.ts, 19 November 2026).
+ * True when the email went, so the caller sends nothing more.
+ */
+async function proActiveByEmail(userId: string, text: string, log: FastifyBaseLogger): Promise<boolean> {
+  if ((await windowFor(userId)).open) return false;
+  if (!(await marketingWouldBeUsed(["pro_plan_active", "pro_active"]))) return false;
+  return (await emailProNotice({ userId, subject: "Your Balans Pro is active", text }, log)) === "sent";
+}
+
 export async function notifyProActive(
   userId: string,
   until: Date,
@@ -203,6 +217,8 @@ export async function notifyProActive(
     log.error({ userId }, "pro activated, but the user has no number on file");
     return;
   }
+
+  if (await proActiveByEmail(userId, proStarted(paidKobo ? { paidKobo, until, method } : undefined), log)) return;
 
   const outcome = await send(
     {
@@ -248,6 +264,8 @@ export async function notifyProGranted(
     .catch(() => ({ rows: [] as { wa_phone: string }[] }));
   const phone = rows[0]?.wa_phone;
   if (!phone) return;
+
+  if (await proActiveByEmail(userId, proStarted(undefined, { until }), log)) return;
 
   const outcome = await send(
     {
