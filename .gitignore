@@ -16,3 +16,6 @@ origin.pem
 origin.key
 *.pem
 *.key
+
+# Written by deploy/deploy.sh for /health (20 November 2026).
+VERSION

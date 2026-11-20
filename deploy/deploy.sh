@@ -45,6 +45,11 @@ fi
 
 AFTER=$(git rev-parse --short HEAD)
 
+# The commit, for /health to say which build is answering (20 November 2026),
+# so a deploy can be checked from outside. Untracked (.gitignore), so the
+# reset above never touches it; inside the build context, so the image has it.
+echo "$AFTER" > "$APP/VERSION"
+
 if [ "$BEFORE" = "$AFTER" ]; then
   say "Already on $AFTER — rebuilding anyway, in case the environment changed"
 else
