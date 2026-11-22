@@ -1957,3 +1957,39 @@ describe("no due date, when they say so", () => {
     assert.equal(back.context.doc?.noDue, undefined);
   });
 });
+
+describe("a new price for a line, said with edit (22 November 2026)", () => {
+  /*
+   * From the bot review: "Edit the grip to 150k" on a draft of DOP, 1st AC
+   * and Grip renamed the line "150k" and left it at ₦100,000; "No I meant
+   * the price" then got "I did not catch that".
+   */
+  const TODAY: Civil = { y: 2026, m: 11, d: 21 };
+  const shoot = () => ({
+    type: "invoice" as const,
+    clientName: "Dir Walter Banks",
+    lines: [
+      { description: "DOP", qty: 1, unitAmountKobo: 650_000_00 },
+      { description: "1st AC / Focus puller", qty: 1, unitAmountKobo: 250_000_00 },
+      { description: "Grip", qty: 1, unitAmountKobo: 100_000_00 },
+    ],
+    dueDate: { y: 2026, m: 11, d: 28 },
+  });
+  const say = (text: string) =>
+    step("awaiting_confirm", { doc: shoot(), draftId: "d1" }, { text, today: TODAY, correction: readCorrection(text, TODAY) ?? undefined }, V);
+  const lines = (out: ReturnType<typeof say>) => (out.context.doc?.lines ?? []).map((l) => [l.description, l.unitAmountKobo] as const);
+
+  for (const text of ["Edit the grip to 150k", "make the grip 150k", "raise the grip to ₦150,000", "set grip price 150k"]) {
+    it(`"${text}" reprices the grip and keeps its name`, () => {
+      assert.deepEqual(lines(say(text)), [
+        ["DOP", 650_000_00],
+        ["1st AC / Focus puller", 250_000_00],
+        ["Grip", 150_000_00],
+      ]);
+    });
+  }
+
+  it("still renames a line to words", () => {
+    assert.deepEqual(readCorrection("edit the grip to lighting assistant", TODAY), { renameLine: { match: "grip", to: "lighting assistant" } });
+  });
+});

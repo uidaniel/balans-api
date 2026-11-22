@@ -190,8 +190,21 @@ const MONEY = String.raw`(?:₦|\$|£|\bngn|\bn)?\s?\d[\d,]*(?:\.\d+)?\s?[hkm]?`
  * to the line called ui rather than to a line called "ui amount".
  */
 const LINE_AMOUNT = new RegExp(
-  String.raw`^${FILLER}(?:change|make|set|update|correct|fix|adjust|put)\s+(?:the\s+)?(.+?)(?:'s)?` +
+  // "edit", "raise", "reduce" (22 November 2026): "Edit the grip to 150k"
+  // was missed here and renamed the line "150k" instead.
+  String.raw`^${FILLER}(?:change|make|set|update|correct|fix|adjust|put|edit|raise|increase|reduce|lower|bump)\s+(?:the\s+)?(.+?)(?:'s)?` +
     String.raw`(?:\s+(?:amount|price|fee|cost|rate|charge|figure))?\s*(?:to|=|:)\s*(${MONEY})\s*$`,
+  "i",
+);
+
+/**
+ * The same without the "to": "make the grip 150k", "set grip 150k"
+ * (22 November 2026). Only "make" and "set", where a name then a sum can only
+ * be a price; "change grip 150k" reads too much like a new line.
+ */
+const LINE_AMOUNT_NO_TO = new RegExp(
+  String.raw`^${FILLER}(?:make|set)\s+(?:the\s+)?([a-z][^\d₦$£]*?)(?:'s)?` +
+    String.raw`(?:\s+(?:amount|price|fee|cost|rate|charge|figure))?\s+(${MONEY})\s*$`,
   "i",
 );
 
@@ -663,7 +676,11 @@ function readOneCorrection(
    * not need to know which line — only the machine holding the draft can
    * match it, and it leaves the draft alone when nothing matches.
    */
-  const named = LINE_AMOUNT.exec(rest);
+  // Without "to", only a line by name: "make it 400k" keeps its own meaning
+  // (the total, or "which one?" on several lines), read further down.
+  const noTo = LINE_AMOUNT.exec(rest) ? null : LINE_AMOUNT_NO_TO.exec(rest);
+  const named =
+    LINE_AMOUNT.exec(rest) ?? (noTo && !WHOLE_DOCUMENT.has((clean(noTo[1]!) ?? "").toLowerCase()) ? noTo : null);
   if (named) {
     const what = clean(named[1]!);
     const kobo = toMinor(named[2]!);
@@ -733,7 +750,13 @@ function readOneCorrection(
       // name that got this far is a change nothing above could read, and is
       // better asked about than turned into a rename of a line that is not there.
       const field = /^(?:the\s+)?(?:due\s*date|due|date|deadline|deposit|balance|vat|tax|total|amount|price|client|customer|name|email|phone|number|it|am)$/i;
-      if (from && to && from.toLowerCase() !== to.toLowerCase() && !field.test(from)) {
+      // A sum is a price, never a name: "edit the grip to 150k" must not
+      // leave a line called "150k" still at ₦100,000 (22 November 2026).
+      const sum = to && new RegExp(String.raw`^${MONEY}$`, "i").test(to) ? toMinor(to) : null;
+      if (from && sum != null && sum >= floor && !field.test(from)) {
+        out.setLineAmount = { match: from, amountKobo: sum };
+        rest = "";
+      } else if (from && to && from.toLowerCase() !== to.toLowerCase() && !field.test(from)) {
         out.renameLine = { match: from, to };
         rest = "";
       }
