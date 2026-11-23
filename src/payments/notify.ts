@@ -196,7 +196,7 @@ export async function notifyPaid(n: PaidNotice, log: FastifyBaseLogger): Promise
  */
 async function proActiveByEmail(userId: string, text: string, log: FastifyBaseLogger): Promise<boolean> {
   if ((await windowFor(userId)).open) return false;
-  if (!(await marketingWouldBeUsed(["pro_plan_active", "pro_active"]))) return false;
+  if (!(await marketingWouldBeUsed(["pro_active"]))) return false;
   return (await emailProNotice({ userId, subject: "Your Balans Pro is active", text }, log)) === "sent";
 }
 
@@ -236,10 +236,10 @@ export async function notifyProActive(
       image: proCardUrl(new Date()),
       // Outside the window this is worth a template: somebody who has just
       // parted with ₦4,000 should not wait a day to hear it worked.
+      // pro_active: Meta filed it as utility again on 23 November 2026.
       fallback: {
-        template: "pro_plan_active",
+        template: "pro_active",
         params: [until.toLocaleDateString("en-GB", { day: "numeric", month: "long" })],
-        orElse: { template: "pro_active", params: [until.toLocaleDateString("en-GB", { day: "numeric", month: "long" })] },
       },
     },
     log,
@@ -274,12 +274,8 @@ export async function notifyProGranted(
       text: proStarted(undefined, { until }),
       image: proCardUrl(new Date()),
       fallback: {
-        template: "pro_plan_active",
+        template: "pro_active",
         params: [until ? until.toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "no end date"],
-        orElse: {
-          template: "pro_active",
-          params: [until ? until.toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "no end date"],
-        },
       },
     },
     log,

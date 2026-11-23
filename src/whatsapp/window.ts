@@ -99,7 +99,6 @@ type BaseTemplateName =
   | "business_name_check"
   | "announcement"
   | "client_says_paid"
-  | "pro_plan_active"
   | "pro_plan_ending"
   | "pro_plan_ended"
   | "pro_plan_stops"
@@ -379,14 +378,8 @@ const BASE_TEMPLATES: Record<BaseTemplateName, TemplateSpec> = {
    * approves it the old one still goes (`orElse`). The win-back to somebody
    * whose Pro ended weeks ago is selling, honestly, and stays pro_back_pay.
    */
-  pro_plan_active: {
-    name: "pro_plan_active",
-    category: "UTILITY",
-    body: "Your Balans account is now on the Pro plan, active until {{1}}.",
-    params: ["until"],
-    example: ["4 December"],
-  },
-
+  // pro_plan_active went (23 November 2026): Meta never accepted it, since a
+  // template may not end in a placeholder, and pro_active is utility again.
   pro_plan_ending: {
     name: "pro_plan_ending",
     category: "UTILITY",

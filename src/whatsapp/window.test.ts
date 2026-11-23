@@ -49,7 +49,6 @@ describe("the templates we register with Meta", () => {
         "pro_free_pay",
         "pro_last_day_pay",
         "pro_last_day_pay_v2",
-        "pro_plan_active",
         "pro_plan_ended",
         "pro_plan_ending",
         "pro_plan_free",
@@ -66,12 +65,21 @@ describe("the templates we register with Meta", () => {
   it("words the Pro account notices as notices, not selling (5 November 2026)", () => {
     // Meta billed every pro_* template as marketing for lines like these.
     const plan = names.filter((n) => n.startsWith("pro_plan_"));
-    assert.equal(plan.length, 5);
+    assert.equal(plan.length, 4);
     for (const n of plan) {
       const t = TEMPLATES[n];
       assert.equal(t.category, "UTILITY");
       assert.doesNotMatch(t.body, /see what|keep pro|get pro back|come back|don't miss|unlock/i, n);
       if (t.button) assert.equal(t.button.text, "Renew plan", n);
+    }
+  });
+
+  it("neither starts nor ends with a placeholder, which Meta refuses (23 November 2026)", () => {
+    // pro_plan_active ended "active until {{1}}." and was never accepted.
+    for (const name of names) {
+      const body = TEMPLATES[name].body.trim();
+      assert.doesNotMatch(body, /^\W*\{\{\d+\}\}/, `${name} starts with a placeholder`);
+      assert.doesNotMatch(body, /\{\{\d+\}\}\W*$/, `${name} ends with a placeholder`);
     }
   });
 

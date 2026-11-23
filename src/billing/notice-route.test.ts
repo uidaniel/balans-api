@@ -22,6 +22,6 @@ describe("where the routing is wired", () => {
     assert.match(overdue, /if \(stage === "win_back"\) continue;/);
   });
   it("so does the notice that Pro is active", () => {
-    assert.match(notify, /marketingWouldBeUsed\(\["pro_plan_active", "pro_active"\]\)/);
+    assert.match(notify, /marketingWouldBeUsed\(\["pro_active"\]\)/);
   });
 });
