@@ -52,3 +52,33 @@ describe("a design word, not any word", () => {
     assert.deepEqual(designAsked("switch to Glare design"), { name: "glare" });
   });
 });
+
+describe("a change typed about a sent invoice (25 November 2026)", async () => {
+  const { editSentAsked } = await import("../conversation/machine.ts");
+  const { readCorrection } = await import("../parser/corrections.ts");
+  const T = { y: 2026, m: 11, d: 25 };
+
+  it("is heard, with the invoice when named", () => {
+    assert.deepEqual(editSentAsked("Change the title to Good life fitness experience"), { number: null });
+    assert.deepEqual(editSentAsked("add the note to the items on invoice 2"), { number: 2 });
+    assert.deepEqual(editSentAsked("change the due date to friday"), { number: null });
+  });
+
+  it("is not a new invoice", () => {
+    assert.equal(editSentAsked("Make an invoice for Tunde, price 50k"), null);
+    assert.equal(editSentAsked("Invoice Tunde 50k for logo"), null);
+    assert.equal(editSentAsked("hi"), null);
+  });
+
+  it("opens the invoice as a draft, with their sentence to apply", () => {
+    const t = "Change the title to Good life fitness experience";
+    assert.deepEqual(say(t).effects, [{ type: "edit_sent", number: null, viaText: t }]);
+  });
+
+  it("does not take a title and drop the rest of the message", () => {
+    // The draft hands it whole to the model instead.
+    assert.equal(readCorrection("Change the title to Good life fitness experience\n\nAnd add the content of the note to the item list", T), null);
+    assert.deepEqual(readCorrection("call it Phase 1 and make it 400k", T), { totalKobo: 400_000_00, title: "Phase 1" });
+    assert.deepEqual(readCorrection("title: Fish and chips catering", T), { title: "Fish and chips catering" });
+  });
+});

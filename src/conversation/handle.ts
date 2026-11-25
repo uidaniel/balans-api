@@ -967,7 +967,7 @@ export async function handleInbound(msg: Inbound, log: FastifyBaseLogger): Promi
   // Left a state the sentence did not fit (settings, 9 November 2026): it is
   // answered now from idle, as if that state had never opened. Once only: a
   // replay never asks for another.
-  if (outcome.replay && !msg.replay && next === "idle") {
+  if (outcome.replay && !msg.replay) {
     await replayOpener(user.id, msg.from, outcome.replay, log);
     return;
   }
@@ -1959,18 +1959,46 @@ async function runEffects(
          * the draft it makes goes into the same invoice (see send_document).
          */
         case "edit_sent": {
+          /*
+           * A change typed about a sent invoice (25 November 2026): which one
+           * is the one named, else the card they replied to, else the only
+           * one open. Several open and none of those: asked, not guessed.
+           */
+          let target = effect.number;
+          if (effect.viaText && target === null) {
+            const q = ctx.quoted?.doc;
+            if (q && q.status !== "draft" && q.type === "invoice" && q.number !== null) target = q.number;
+            else {
+              const open = await db().query<{ number: number }>(
+                `SELECT number FROM documents
+                  WHERE user_id = $1 AND type = 'invoice' AND number IS NOT NULL
+                    AND status IN ('sent', 'viewed', 'overdue')
+                  ORDER BY created_at DESC LIMIT 2`,
+                [userId],
+              );
+              if (open.rows.length === 1) target = open.rows[0]!.number;
+              else {
+                extra.push(
+                  open.rows.length
+                    ? `✏️ Which invoice should I change? Reply like ${b(`edit invoice ${open.rows[0]!.number}`)}, then tell me the change.`
+                    : "📭 There's no unpaid invoice to change. Paid ones keep what was paid for.",
+                );
+                break;
+              }
+            }
+          }
           const { rows } = await db().query<{ id: string; number: number; status: string; paid: number }>(
-            effect.number === null
+            target === null
               ? `SELECT id, number, status::text, amount_paid_kobo::int AS paid FROM documents
                   WHERE user_id = $1 AND type = 'invoice' AND status <> 'draft'
                   ORDER BY COALESCE(sent_at, created_at) DESC LIMIT 1`
               : `SELECT id, number, status::text, amount_paid_kobo::int AS paid FROM documents
                   WHERE user_id = $1 AND type = 'invoice' AND number = $2 LIMIT 1`,
-            effect.number === null ? [userId] : [userId, effect.number],
+            target === null ? [userId] : [userId, target],
           );
           const found = rows[0];
           if (!found) {
-            extra.push(effect.number === null ? "📭 There is no invoice to change yet." : notFoundMessage({ number: effect.number }));
+            extra.push(target === null ? "📭 There is no invoice to change yet." : notFoundMessage({ number: target }));
             break;
           }
           const shown = String(found.number).padStart(4, "0");
@@ -2013,6 +2041,31 @@ async function runEffects(
             payBy: sent.payBy ?? null,
             ...(sent.foreign ? { foreign: sent.foreign } : {}),
           };
+          /*
+           * Typed: no form. The invoice as a draft for changing, and their own
+           * sentence answered by that draft, which reads "change the title",
+           * "make the grip 150k" and the rest, and hands anything harder to
+           * the model with the draft attached. One line now; the changed
+           * draft follows. Send updates the same invoice.
+           */
+          if (effect.viaText) {
+            const drafted = await runEffects([{ type: "save_draft", doc }], userId, businessName, log, ctx);
+            if (!drafted.draftId) {
+              extra.push(...drafted.lines);
+              if (drafted.holdAt) holdAt = drafted.holdAt;
+              break;
+            }
+            extra.push(`✏️ ${b(`Changing invoice ${shown}.`)} Same number, same link: your client sees the new one.`);
+            draftId = drafted.draftId;
+            wroteDoc = doc;
+            holdAt = "awaiting_confirm";
+            editing = { id: found.id, number: found.number };
+            // The invoice is chosen; "on invoice 2" left in would read as a ₦2 line.
+            replayAfter = effect.viaText.replace(/\s*\b(?:on|for|to|in|of)?\s*(?:the\s+)?(?:invoice|inv|quote)\s*#?\d{1,6}\b/gi, " ").replace(/\s+/g, " ").trim();
+            log.info({ userId, documentId: found.id }, "sent invoice opened as a draft for a typed change");
+            break;
+          }
+
           const form = formValues(doc, ctx.today);
           const inner = await runEffects(
             [

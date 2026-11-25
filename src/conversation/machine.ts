@@ -204,6 +204,24 @@ export function designAsked(text: string): { name: string } | { pick: true } | n
   return null;
 }
 
+/**
+ * A change typed about an invoice already sent, with no draft open
+ * (25 November 2026): "Change the title to Good life fitness experience",
+ * "make the grip 150k", "add the note to the items". The invoice number when
+ * named. Null for anything else, a new invoice above all: "make an invoice
+ * for Tunde, price 50k" is not an edit.
+ */
+export function editSentAsked(text: string): { number: number | null } | null {
+  const t = text.trim();
+  if (/^(?:pls|please|kindly)?\s*(?:create|make|send|new|raise|generate|do)\s+(?:me\s+)?(?:an?\s+|another\s+|new\s+)?(?:invoice|quote|bill|receipt|payment request)\b/i.test(t)) return null;
+  if (/^(?:invoice|bill|quote)\s+(?!#?\d)[a-z]/i.test(t)) return null;
+  const verb = /^(?:pls|please|kindly|can you|could you|abeg)?[\s,]*(?:change|edit|update|rename|replace|correct|fix|remove|delete|add|put|set|make|raise|reduce)\b/i;
+  const field = /\b(?:title|items?|lines?|note|notes|description|price|amount|due(?:\s+date)?|date|quantity|qty|vat|deposit|client(?:'s)?\s+(?:name|email|phone|number))\b/i;
+  if (!verb.test(t) || !field.test(t)) return null;
+  const n = /\b(?:invoice|inv|quote)\s*#?(\d{1,6})\b/i.exec(t);
+  return { number: n ? Number(n[1]) : null };
+}
+
 export function redrawAsked(text: string): { number: number | null } | null {
   const t = text.trim().replace(/[.!?]+$/, "");
   let m = /^(?:redraw|redo|regenerate|remake|refresh)\s+(?:the\s+)?(?:pdf\s+(?:for|of)\s+)?(?:invoice|inv|quote)\s*#?(\d{1,6})$/i.exec(t);
@@ -429,7 +447,12 @@ export type Effect =
   /** `withoutBank`: "Send without it", under the no-bank question (31 October 2026). */
   | { type: "send_document"; withoutBank?: boolean }
   /** Open a sent invoice in the form, to change it. Null: the latest one. */
-  | { type: "edit_sent"; number: number | null }
+  | {
+      type: "edit_sent";
+      number: number | null;
+      /** A change typed about a sent invoice: applied to it as a draft (25 November 2026). */
+      viaText?: string;
+    }
   | { type: "discard_draft" }
   | { type: "show_debtors" }
   | { type: "show_summary" }
@@ -1929,6 +1952,12 @@ export function step(state: State, context: Context, msg: Inbound, consentVersio
       }
       if (/^((start|resume) updates|yes, send updates)[.!]*$/i.test(text.trim())) {
         return { replies: [], next: "idle", context, effects: [{ type: "set_updates", on: true }] };
+      }
+      // A change typed about a sent invoice, with no draft open (25 November
+      // 2026): opened as a draft with the change applied (handle.ts edit_sent).
+      if (!redrawAsked(text) && !designAsked(text)) {
+        const edit = editSentAsked(text);
+        if (edit) return { replies: [], next: "idle", context, effects: [{ type: "edit_sent", number: edit.number, viaText: text }] };
       }
       // A design asked for in words (9 November 2026). After a redraw request,
       // which can also mention "my new design".

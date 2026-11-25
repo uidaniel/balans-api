@@ -875,6 +875,12 @@ export function readCorrection(
     ...(ask ? { askFor: ask } : {}),
   };
   const whole0 = qty || ask ? null : titled ? (titled.rest ? readOneCorrection(titled.rest, today, money) : null) : readOneCorrection(text, today, money);
+  // A title and something this reader cannot follow ("…and add the content
+  // of the note to the item list"): not the title alone, which dropped the
+  // rest without a word (25 November 2026). Nothing, so the whole message
+  // goes to the model with the draft attached.
+  const titleRest = titled?.rest?.replace(/^[\s,;.]*(?:and|also|then)?[\s,;.]*/i, "").trim();
+  if (titled && titleRest && !whole0 && !qty && !ask) return null;
   const whole =
     Object.keys(extra).length && (!whole0 || Object.keys(whole0).length === 0)
       ? extra
@@ -1019,7 +1025,7 @@ export function titleIn(text: string): { title: string | null; rest: string } | 
   if (/\b(?:no|remove|delete|drop|clear)\s+(?:the\s+)?title\b/i.test(text)) {
     return { title: null, rest: text.replace(/[,;]?\s*\b(?:no|remove|delete|drop|clear)\s+(?:the\s+)?title\b/i, "").trim() };
   }
-  const m = /[,;]?\s*\b(?:(?:change|set|make|update)\s+(?:the\s+)?title\s+(?:to|as)|title(?:\s+it)?\s*(?:[:=-]|is|as|to)|titled|call\s+it)\s*["“']?([^"”'\n]{2,120}?)["”']?\s*(?=$|[;\n]|,\s*(?:due|vat|deposit|split|pay|send)\b)/i.exec(
+  const m = /[,;]?\s*\b(?:(?:change|set|make|update)\s+(?:the\s+)?title\s+(?:to|as)|title(?:\s+it)?\s*(?:[:=-]|is|as|to)|titled|call\s+it)\s*["“']?([^"”'\n]{2,120}?)["”']?\s*(?=$|[;\n]|,\s*(?:due|vat|deposit|split|pay|send)\b|\s+and\s+(?:make|change|set|add|remove|put|due|split|send|edit)\b)/i.exec(
     text,
   );
   if (!m) return null;
