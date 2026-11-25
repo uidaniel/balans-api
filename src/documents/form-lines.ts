@@ -83,15 +83,26 @@ export function linesFromForm(fields: Record<string, string>): FormLines {
 
     if (!description && !hasAmount && qty === "unset") continue;
 
-    if (!description || !hasAmount) {
+    // Words with no amount are a line at no charge (25 November 2026), not a
+    // reason to throw the whole form away: "It's no charge at #0, leave it
+    // that way" was answered "I can't find a document #0" because the form
+    // it was about had already been discarded. The draft says it is ₦0.
+    // No words, or an amount it cannot read ("a lot"): still asked, since
+    // neither can go on an invoice as it is.
+    if (!description || (rawAmount && kobo === null)) {
       return { ok: false, reason: "half", position: index + 1, hasDescription: Boolean(description) };
     }
 
     if (qty === "bad") return { ok: false, reason: "qty", position: index + 1 };
 
-    lines.push({ description, qty: qty === "unset" ? 1 : qty, unitAmountKobo: kobo });
+    lines.push({ description, qty: qty === "unset" ? 1 : qty, unitAmountKobo: hasAmount ? kobo : 0 });
   }
 
+  // At least one line has to cost something: an invoice for nothing is not
+  // one, so with no price anywhere the first item is asked about as before.
+  if (lines.length && !lines.some((l) => l.unitAmountKobo > 0)) {
+    return { ok: false, reason: "half", position: 1, hasDescription: true };
+  }
   return lines.length ? { ok: true, lines } : { ok: false, reason: "nothing" };
 }
 

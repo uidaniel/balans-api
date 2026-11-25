@@ -3062,6 +3062,24 @@ async function runEffects(
           }
 
           /*
+           * Still no number, nobody named, and only one invoice open: that is
+           * the one (25 November 2026). "I just made some changes on this,
+           * send me the invoice" was answered "Which one?" by somebody with a
+           * single unpaid invoice. With several open, it still asks.
+           */
+          if (number === null && !ctx.parsed?.clientName && (effect.intent === "status" || effect.intent === "resend_document")) {
+            const open = await db().query<{ number: number }>(
+              `SELECT number FROM documents
+                WHERE user_id = $1 AND number IS NOT NULL
+                  AND type IN ('invoice', 'quote', 'payment_request')
+                  AND status IN ('sent', 'viewed', 'overdue', 'part_paid')
+                ORDER BY created_at DESC LIMIT 2`,
+              [userId],
+            );
+            if (open.rows.length === 1) number = open.rows[0]!.number;
+          }
+
+          /*
            * "Reverse it" under a sent invoice: asked back, since the number
            * came from the quote and not from them.
            */
@@ -4439,7 +4457,18 @@ async function handleInvoiceForm(
     : phoneTyped && !clientPhone
       ? [para(`📵 ${b(`"${phoneTyped}" is not a number I can send to.`)}`, "The draft is below without it. Say *their number is 0803 123 4567* to add it.")]
       : [];
-  await reply(userId, phone, [...phoneNote, ...depositNote, ...outcome.lines], log, outcome.buttons, outcome.buttonsImage);
+  // Lines with work and no amount went on at no charge (form-lines.ts): said
+  // above the draft, so a forgotten price is seen before it is sent.
+  const free = items.lines.map((l, i) => ({ l, n: i + 1 })).filter((x) => x.l.unitAmountKobo === 0);
+  const freeNote = free.length
+    ? [
+        lines(
+          `🆓 ${free.map((x) => b(x.l.description)).join(", ")} ${free.length === 1 ? "is" : "are"} on the invoice at no charge (₦0).`,
+          `If that's not right, tell me the price, like ${b(`change ${free[0]!.l.description} to 50k`)}.`,
+        ),
+      ]
+    : [];
+  await reply(userId, phone, [...phoneNote, ...freeNote, ...depositNote, ...outcome.lines], log, outcome.buttons, outcome.buttonsImage);
 
   log.info({ userId, draftId: outcome.draftId, depositPercent, instalments }, "draft from a form");
 }

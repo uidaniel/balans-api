@@ -137,15 +137,17 @@ describe("an item that is only half there", () => {
    * those cards cost, with nothing on screen to say so. Their own words are
    * the evidence they meant to bill for it.
    */
-  it("refuses words with no money rather than dropping them", () => {
+  it("keeps words with no money as a line at no charge, never drops them (25 November 2026)", () => {
+    // It used to refuse the whole form, and the answer ("no charge at #0")
+    // arrived with no form left to apply it to. Now it stays, at ₦0, and the
+    // draft names it above the buttons (handleInvoiceForm).
     const out = linesFromForm(form({ item_two_description: "Business cards", item_two_amount: "" }));
-    assert.equal(out.ok, false);
-    assert.ok(!out.ok && out.reason === "half");
-    assert.ok(!out.ok && out.reason === "half" && out.hasDescription);
+    assert.ok(out.ok);
+    assert.deepEqual(out.ok && out.lines.find((l) => l.description === "Business cards"), { description: "Business cards", qty: 1, unitAmountKobo: 0 });
   });
 
   it("says which slot, counting the way the screen does", () => {
-    const out = linesFromForm(form({ item_three_description: "Business cards" }));
+    const out = linesFromForm(form({ item_three_description: "", item_three_amount: "5000" }));
     assert.ok(!out.ok && out.reason === "half");
     assert.equal(!out.ok && out.reason === "half" && out.position, 3);
   });
@@ -164,7 +166,7 @@ describe("an item that is only half there", () => {
     assert.ok(!out.ok && out.reason === "half");
   });
 
-  it("catches the first slot as well as the rest", () => {
+  it("still asks when nothing on the form has a price", () => {
     const out = linesFromForm({ client_name: "Tunde", description: "Logo design", amount: "" });
     assert.ok(!out.ok && out.reason === "half");
     assert.equal(!out.ok && out.reason === "half" && out.position, 1);
