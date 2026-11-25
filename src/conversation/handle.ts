@@ -2049,7 +2049,13 @@ async function runEffects(
            * draft follows. Send updates the same invoice.
            */
           if (effect.viaText) {
-            const drafted = await runEffects([{ type: "save_draft", doc }], userId, businessName, log, ctx);
+            // Told it is an edit, so the free-document limit does not count
+            // changing an invoice already sent as a new one.
+            const drafted = await runEffects([{ type: "save_draft", doc }], userId, businessName, log, {
+              ...ctx,
+              editingId: found.id,
+              editingNumber: found.number,
+            });
             if (!drafted.draftId) {
               extra.push(...drafted.lines);
               if (drafted.holdAt) holdAt = drafted.holdAt;
@@ -2095,7 +2101,11 @@ async function runEffects(
            * the form again, and Send updates the same invoice.
            */
           if (inner.flowFell) {
-            const drafted = await runEffects([{ type: "save_draft", doc }], userId, businessName, log, ctx);
+            const drafted = await runEffects([{ type: "save_draft", doc }], userId, businessName, log, {
+              ...ctx,
+              editingId: found.id,
+              editingNumber: found.number,
+            });
             if (drafted.draftId) {
               extra.push(
                 lines(
